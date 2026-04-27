@@ -3,14 +3,24 @@
 import Link from "next/link";
 import { BellIcon, SearchIcon } from "@/components/icons";
 
-const SEARCH_ENTRY_HISTORY_LENGTH_KEY = "buncheol-search-entry-history-length";
+const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
+
+function getHistoryIndex() {
+  const historyState = window.history.state as { idx?: unknown } | null;
+
+  return typeof historyState?.idx === "number" ? historyState.idx : null;
+}
 
 export function AppHeader() {
   function handleSearchClick() {
-    sessionStorage.setItem(
-      SEARCH_ENTRY_HISTORY_LENGTH_KEY,
-      String(window.history.length),
-    );
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      sessionStorage.removeItem(SEARCH_ENTRY_HISTORY_INDEX_KEY);
+      return;
+    }
+
+    sessionStorage.setItem(SEARCH_ENTRY_HISTORY_INDEX_KEY, String(historyIndex));
   }
 
   return (
