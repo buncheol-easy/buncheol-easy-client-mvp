@@ -40,7 +40,7 @@ export const productDetails: ProductDetailItem[] = [
     liked: true,
     tone: "from-black via-zinc-800 to-zinc-500",
     courier: "CJ대한통운",
-    deadline: "2026.05.03 23:59",
+    deadline: "2026.05.03 23",
     purchaseSource: "스타쉽 스퀘어",
     shippingDeadline: "마감 후 7일 이내",
     shippingMethods: [
@@ -144,7 +144,7 @@ export const productDetails: ProductDetailItem[] = [
     liked: true,
     tone: "from-zinc-700 via-zinc-500 to-zinc-100",
     courier: "우체국택배",
-    deadline: "2026.05.04 22:00",
+    deadline: "2026.05.04 22",
     purchaseSource: "IVE POP-UP STORE",
     shippingDeadline: "마감 후 5일 이내",
     shippingMethods: [
@@ -187,7 +187,7 @@ export const productDetails: ProductDetailItem[] = [
     badge: "신규",
     tone: "from-zinc-900 via-zinc-700 to-zinc-300",
     courier: "한진택배",
-    deadline: "2026.05.05 21:30",
+    deadline: "2026.05.05 21",
     purchaseSource: "시즌그리팅 공동구매",
     shippingDeadline: "입고 후 10일 이내",
     shippingMethods: [
@@ -229,7 +229,7 @@ export const productDetails: ProductDetailItem[] = [
     badge: "마감임박",
     tone: "from-zinc-300 via-zinc-100 to-neutral-400",
     courier: "롯데택배",
-    deadline: "2026.05.06 23:00",
+    deadline: "2026.05.06 23",
     purchaseSource: "SMTOWN &STORE",
     shippingDeadline: "마감 후 6일 이내",
     shippingMethods: [
@@ -272,7 +272,7 @@ export const productDetails: ProductDetailItem[] = [
     badge: "소량",
     tone: "from-zinc-950 via-zinc-700 to-stone-300",
     courier: "GS 반값택배",
-    deadline: "2026.05.07 20:00",
+    deadline: "2026.05.07 20",
     purchaseSource: "팬미팅 현장 MD",
     shippingDeadline: "마감 후 4일 이내",
     shippingMethods: [
@@ -314,7 +314,7 @@ export const productDetails: ProductDetailItem[] = [
     badge: "인기",
     tone: "from-neutral-300 via-zinc-100 to-zinc-500",
     courier: "CJ대한통운",
-    deadline: "2026.05.08 23:59",
+    deadline: "2026.05.08 23",
     purchaseSource: "컴백 위크 특전몰",
     shippingDeadline: "특전 입고 후 7일 이내",
     shippingMethods: [
