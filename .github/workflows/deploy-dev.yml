@@ -1,0 +1,52 @@
+name: Deploy Frontend Dev
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync source to EC2
+        run: |
+          rsync -avz --delete \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude ".next" \
+            -e "ssh -i ~/.ssh/ec2_key" \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.DEPLOY_PATH }}/
+
+      - name: Build and run Docker container
+        run: |
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+
+            cd /home/ubuntu/buncheol-easy-client
+
+            docker stop buncheoleasy-frontend || true
+            docker rm buncheoleasy-frontend || true
+
+            docker build -t buncheoleasy-frontend .
+
+            docker run -d \
+              --name buncheoleasy-frontend \
+              --restart unless-stopped \
+              -p 3000:3000 \
+              buncheoleasy-frontend
+
+            docker image prune -f
+          EOF
