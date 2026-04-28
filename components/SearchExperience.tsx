@@ -2,156 +2,27 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
+import { ArtistRail } from "@/components/ArtistRail";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HomeContent } from "@/components/HomeContent";
 import { CloseIcon } from "@/components/icons";
-import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { SearchHeader } from "@/components/SearchHeader";
-
-type RecentSearch = {
-  label: string;
-};
-
-type PopularArtist = {
-  rank: number;
-  name: string;
-  group: string;
-  initials: string;
-  tone: string;
-};
+import {
+  popularArtists,
+  recentSearches,
+  searchResultArtists,
+  searchResultItems,
+} from "@/lib/mock-home-search";
 
 type SearchExperienceProps = {
   query?: string;
+  skipEnterAnimation?: boolean;
 };
 
-const recentSearches: RecentSearch[] = [
-  { label: "카리나" },
-  { label: "사나" },
-  { label: "설화" },
-];
-
-const popularArtists: PopularArtist[] = [
-  {
-    rank: 1,
-    name: "안유진",
-    group: "IVE",
-    initials: "AY",
-    tone: "from-stone-100 via-zinc-50 to-neutral-300",
-  },
-  {
-    rank: 2,
-    name: "카리나",
-    group: "aespa",
-    initials: "KR",
-    tone: "from-zinc-900 via-zinc-700 to-stone-400",
-  },
-  {
-    rank: 3,
-    name: "사나",
-    group: "TWICE",
-    initials: "SN",
-    tone: "from-neutral-200 via-white to-zinc-300",
-  },
-  {
-    rank: 4,
-    name: "설화",
-    group: "NewJeans",
-    initials: "SH",
-    tone: "from-black via-zinc-800 to-zinc-400",
-  },
-  {
-    rank: 5,
-    name: "윈터",
-    group: "aespa",
-    initials: "WT",
-    tone: "from-stone-300 via-zinc-100 to-white",
-  },
-];
-
-const resultArtists: ArtistRailItem[] = [
-  {
-    id: "wonyoung",
-    name: "장원영",
-    group: "IVE",
-    initials: "WY",
-    tone: "from-zinc-100 via-white to-zinc-300",
-  },
-  {
-    id: "yujin",
-    name: "안유진",
-    group: "IVE",
-    initials: "YJ",
-    tone: "from-stone-200 via-zinc-50 to-neutral-300",
-  },
-  {
-    id: "karina",
-    name: "카리나",
-    group: "aespa",
-    initials: "KR",
-    tone: "from-neutral-200 via-stone-100 to-zinc-200",
-  },
-  {
-    id: "winter",
-    name: "윈터",
-    group: "aespa",
-    initials: "WR",
-    tone: "from-neutral-200 via-stone-100 to-zinc-200",
-  },
-];
-
-const resultItems: ProductCardItem[] = [
-  {
-    id: "result-love-dive-wonyoung-1st",
-    title: "러브다이브 미공포 1차 분철",
-    member: "장원영",
-    era: "IVE LOVE DIVE",
-    price: "3,000원",
-    rating: "4.8",
-    reviews: "41",
-    badge: "인기",
-    liked: true,
-    tone: "from-black via-zinc-800 to-zinc-500",
-  },
-  {
-    id: "result-favorite-cut-wonyoung-small",
-    title: "최애컷 포카 소량 분철",
-    member: "장원영",
-    era: "공식 MD",
-    price: "5,500원",
-    rating: "4.9",
-    reviews: "63",
-    badge: "추천",
-    liked: true,
-    tone: "from-zinc-700 via-zinc-500 to-zinc-100",
-  },
-  {
-    id: "result-season-greeting-yujin-special",
-    title: "시즌그리팅 특전 공동구매",
-    member: "안유진",
-    era: "2026 SG",
-    price: "4,500원",
-    rating: "4.7",
-    reviews: "29",
-    badge: "신규",
-    tone: "from-zinc-900 via-zinc-700 to-zinc-300",
-  },
-  {
-    id: "result-drama-karina-fansign",
-    title: "드라마 팬싸 포카 분철",
-    member: "카리나",
-    era: "aespa DRAMA",
-    price: "6,000원",
-    rating: "4.6",
-    reviews: "87",
-    badge: "마감임박",
-    tone: "from-zinc-300 via-zinc-100 to-neutral-400",
-  },
-];
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
 const SEARCH_QUERY_STACK_KEY = "buncheol-search-query-stack";
-const SEARCH_SKIP_ENTER_KEY = "buncheol-search-skip-enter";
+export const SEARCH_SKIP_ENTER_KEY = "buncheol-search-skip-enter";
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -218,11 +89,14 @@ function takeShouldSkipSearchEnter() {
   return shouldSkip;
 }
 
-export function SearchExperience({ query }: SearchExperienceProps) {
+export function SearchExperience({
+  query,
+  skipEnterAnimation = false,
+}: SearchExperienceProps) {
   const router = useRouter();
   const isOpeningSearchSheetRef = useRef(false);
   const [isSearchEntered, setIsSearchEntered] = useState(
-    takeShouldSkipSearchEnter,
+    () => skipEnterAnimation || takeShouldSkipSearchEnter(),
   );
   const [isExiting, setIsExiting] = useState(false);
   const [isClearingSearch, setIsClearingSearch] = useState(false);
@@ -438,7 +312,7 @@ export function SearchExperience({ query }: SearchExperienceProps) {
               <>
                 <section className="-mx-1">
                   <ArtistRail
-                    items={resultArtists}
+                    items={searchResultArtists}
                     leadingItem={{ label: "전체", icon: "all", active: true }}
                   />
                 </section>
@@ -449,11 +323,11 @@ export function SearchExperience({ query }: SearchExperienceProps) {
                       검색 결과
                     </h2>
                     <span className="text-[13px] font-medium text-black/45">
-                      {resultItems.length}개
+                      {searchResultItems.length}개
                     </span>
                   </div>
 
-                  <ProductGrid items={resultItems} />
+                  <ProductGrid items={searchResultItems} />
                 </section>
               </>
             ) : (
@@ -586,7 +460,7 @@ export function SearchExperience({ query }: SearchExperienceProps) {
       <>
         <section className="-mx-1">
           <ArtistRail
-            items={resultArtists}
+            items={searchResultArtists}
             leadingItem={{ label: "전체", icon: "all", active: true }}
           />
         </section>
@@ -597,11 +471,11 @@ export function SearchExperience({ query }: SearchExperienceProps) {
               검색 결과
             </h2>
             <span className="text-[13px] font-medium text-black/45">
-              {resultItems.length}개
+              {searchResultItems.length}개
             </span>
           </div>
 
-          <ProductGrid items={resultItems} />
+          <ProductGrid items={searchResultItems} />
         </section>
       </>
     );

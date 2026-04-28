@@ -1,3 +1,7 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { HeartIcon, StarIcon } from "@/components/icons";
 
 export type ProductCardItem = {
@@ -18,8 +22,35 @@ type ProductCardProps = {
 };
 
 export function ProductCard({ item }: ProductCardProps) {
+  const router = useRouter();
+
   return (
-    <article className="space-y-3">
+    <Link
+      href={`/products/${item.id}`}
+      className="block space-y-3"
+      prefetch={false}
+      onClick={(event) => {
+        const pathname = window.location.pathname;
+
+        if (pathname === "/search") {
+          event.preventDefault();
+
+          const searchParams = new URLSearchParams(window.location.search);
+          const query = searchParams.get("q") ?? "";
+
+          router.push(
+            `/products/${item.id}?from=search&q=${encodeURIComponent(query)}`,
+          );
+          return;
+        }
+
+        if (pathname === "/") {
+          event.preventDefault();
+          router.push(`/products/${item.id}?from=home`);
+          return;
+        }
+      }}
+    >
       <div
         className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br ${item.tone}`}
       >
@@ -35,14 +66,13 @@ export function ProductCard({ item }: ProductCardProps) {
             {item.member}
           </p>
         </div>
-        <button
-          aria-label={item.liked ? "찜 해제" : "찜하기"}
+        <span
           className={`absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 ${
             item.liked ? "bg-black text-white" : "bg-white/95 text-black/45"
           }`}
         >
           <HeartIcon filled={item.liked} />
-        </button>
+        </span>
       </div>
 
       <div>
@@ -60,6 +90,6 @@ export function ProductCard({ item }: ProductCardProps) {
           <span>({item.reviews})</span>
         </div>
       </div>
-    </article>
+    </Link>
   );
 }

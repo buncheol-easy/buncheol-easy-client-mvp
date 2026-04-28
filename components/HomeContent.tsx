@@ -1,116 +1,7 @@
 import { AppHeader } from "@/components/AppHeader";
-import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
+import { ArtistRail } from "@/components/ArtistRail";
 import { ProductGrid } from "@/components/ProductGrid";
-import type { ProductCardItem } from "@/components/ProductCard";
-
-const favoriteIdols: ArtistRailItem[] = [
-  {
-    id: "wonyoung",
-    name: "장원영",
-    group: "IVE",
-    initials: "WY",
-    tone: "from-zinc-100 via-white to-zinc-300",
-  },
-  {
-    id: "yujin",
-    name: "안유진",
-    group: "IVE",
-    initials: "YJ",
-    tone: "from-stone-200 via-zinc-50 to-neutral-300",
-  },
-  {
-    id: "karina",
-    name: "카리나",
-    group: "aespa",
-    initials: "KR",
-    tone: "from-neutral-200 via-stone-100 to-zinc-200",
-  },
-  {
-    id: "winter",
-    name: "윈터",
-    group: "aespa",
-    initials: "WR",
-    tone: "from-neutral-200 via-stone-100 to-zinc-200",
-  },
-  {
-    id: "giselle",
-    name: "지젤",
-    group: "aespa",
-    initials: "JR",
-    tone: "from-neutral-200 via-stone-100 to-zinc-200",
-  },
-];
-
-const listings: ProductCardItem[] = [
-  {
-    id: "love-dive-wonyoung-1st",
-    title: "러브다이브 미공포 1차 분철",
-    member: "장원영",
-    era: "IVE LOVE DIVE",
-    price: "3,000원",
-    rating: "4.8",
-    reviews: "41",
-    badge: "인기",
-    liked: true,
-    tone: "from-black via-zinc-800 to-zinc-500",
-  },
-  {
-    id: "drama-karina-fansign",
-    title: "드라마 팬싸 포카 분철",
-    member: "카리나",
-    era: "aespa DRAMA",
-    price: "6,000원",
-    rating: "4.6",
-    reviews: "87",
-    badge: "마감임박",
-    tone: "from-zinc-300 via-zinc-100 to-neutral-400",
-  },
-  {
-    id: "season-greeting-yujin-special",
-    title: "시즌그리팅 특전 공구",
-    member: "안유진",
-    era: "2026 SG",
-    price: "4,500원",
-    rating: "4.7",
-    reviews: "29",
-    badge: "신규",
-    tone: "from-zinc-900 via-zinc-700 to-zinc-300",
-  },
-  {
-    id: "favorite-cut-wonyoung-small",
-    title: "최애컷 셀카 포카 소량 분철",
-    member: "장원영",
-    era: "팬콘 MD",
-    price: "5,500원",
-    rating: "4.9",
-    reviews: "63",
-    badge: "추천",
-    liked: true,
-    tone: "from-zinc-700 via-zinc-500 to-zinc-100",
-  },
-  {
-    id: "fan-meeting-karina-limited",
-    title: "팬미팅 한정 포카 분철",
-    member: "카리나",
-    era: "FAN MEET",
-    price: "4,000원",
-    rating: "4.5",
-    reviews: "18",
-    badge: "소량",
-    tone: "from-zinc-950 via-zinc-700 to-stone-300",
-  },
-  {
-    id: "comeback-week-yujin-special",
-    title: "컴백 주간 특전 묶음",
-    member: "안유진",
-    era: "COMEBACK WEEK",
-    price: "7,500원",
-    rating: "4.9",
-    reviews: "72",
-    badge: "인기",
-    tone: "from-neutral-300 via-zinc-100 to-zinc-500",
-  },
-];
+import { favoriteIdols, homeListings } from "@/lib/mock-home-search";
 
 export function HomeContent() {
   return (
@@ -177,7 +68,7 @@ export function HomeContent() {
               </button>
             </div>
 
-            <ProductGrid items={listings} />
+            <ProductGrid items={homeListings} />
           </div>
         </section>
       </div>
