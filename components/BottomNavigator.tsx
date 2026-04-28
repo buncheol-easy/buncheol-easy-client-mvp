@@ -10,7 +10,7 @@ const navItems: NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/upload", label: "Upload" },
   { href: "/favorites", label: "Favorites" },
-  { label: "Profile" },
+  { href: "/profile", label: "Profile" },
 ];
 
 type BottomNavigatorProps = {

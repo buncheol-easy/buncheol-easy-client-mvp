@@ -37,9 +37,17 @@ export default async function ProductDetailPage({
 
   return (
     <ProductDetail
-      backHref={returnSource === "upload" ? "/" : undefined}
+      backHref={
+        returnSource === "upload"
+          ? "/"
+            : undefined
+      }
       product={product}
-      initialReturnSource={returnSource === "home" ? "home" : undefined}
+      initialReturnSource={
+        returnSource === "home" || returnSource === "profile"
+          ? returnSource
+          : undefined
+      }
       initialReturnQuery={
         returnSource === "search" ? returnQuery ?? "" : undefined
       }

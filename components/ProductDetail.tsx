@@ -6,6 +6,7 @@ import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { BackIcon, CloseIcon, HeartIcon, StarIcon } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HomeContent } from "@/components/HomeContent";
+import { ProfileContent } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
   SearchExperience,
@@ -14,9 +15,31 @@ import {
 type ProductDetailProps = {
   product: ProductDetailItem;
   backHref?: string;
-  initialReturnSource?: "home";
+  initialReturnSource?: "home" | "profile";
   initialReturnQuery?: string;
 };
+
+const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
+const PRODUCT_PROFILE_ENTRY_STATE_KEY = "__buncheolProductFromProfile";
+
+type ProductHistoryState = {
+  idx?: unknown;
+  [PRODUCT_PROFILE_ENTRY_STATE_KEY]?: unknown;
+};
+
+function getHistoryState() {
+  return window.history.state as ProductHistoryState | null;
+}
+
+function getHistoryIndex() {
+  const historyState = getHistoryState();
+
+  return typeof historyState?.idx === "number" ? historyState.idx : null;
+}
+
+function hasProfileEntryState() {
+  return getHistoryState()?.[PRODUCT_PROFILE_ENTRY_STATE_KEY] === true;
+}
 
 function priceToNumber(price: string) {
   return Number(price.replace(/[^0-9]/g, ""));
@@ -258,10 +281,40 @@ export function ProductDetail({
       return;
     }
 
+    if (initialReturnSource === "profile") {
+      if (hasProfileEntryState()) {
+        router.back();
+        return;
+      }
+
+      router.replace("/profile");
+      return;
+    }
+
     router.back();
-  }, [backHref, router]);
+  }, [backHref, initialReturnSource, router]);
 
   useEffect(() => {
+    const historyIndex = getHistoryIndex();
+    const expectedEntryIndex = window.sessionStorage.getItem(
+      PRODUCT_PROFILE_ENTRY_INDEX_KEY,
+    );
+    window.sessionStorage.removeItem(PRODUCT_PROFILE_ENTRY_INDEX_KEY);
+
+    if (
+      initialReturnSource === "profile" &&
+      historyIndex !== null &&
+      expectedEntryIndex === String(historyIndex)
+    ) {
+      window.history.replaceState(
+        {
+          ...(getHistoryState() ?? {}),
+          [PRODUCT_PROFILE_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
+
     const animationFrame = window.requestAnimationFrame(() => {
       setIsEntered(true);
     });
@@ -269,7 +322,7 @@ export function ProductDetail({
     return () => {
       window.cancelAnimationFrame(animationFrame);
     };
-  }, []);
+  }, [initialReturnSource]);
 
   useEffect(() => {
     if (!isExiting) {
@@ -307,6 +360,12 @@ export function ProductDetail({
       window.sessionStorage.setItem(SEARCH_SKIP_ENTER_KEY, "true");
     } else {
       window.sessionStorage.removeItem(SEARCH_SKIP_ENTER_KEY);
+    }
+
+    if (initialReturnSource === "profile") {
+      window.sessionStorage.setItem("skip-profile-enter-animation", "true");
+    } else {
+      window.sessionStorage.removeItem("skip-profile-enter-animation");
     }
 
     setIsExiting(true);
@@ -365,6 +424,17 @@ export function ProductDetail({
         >
           <HomeContent />
           <BottomNavigator />
+        </div>
+      ) : null}
+
+      {initialReturnSource === "profile" ? (
+        <div
+          className={`product-underlay pointer-events-none absolute inset-0 mx-auto flex h-full w-full max-w-[430px] flex-col bg-white ${
+            isEntered && !isExiting ? "product-underlay-active" : ""
+          } ${isExiting ? "product-underlay-exit" : ""}`}
+        >
+          <ProfileContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Profile" />
         </div>
       ) : null}
 

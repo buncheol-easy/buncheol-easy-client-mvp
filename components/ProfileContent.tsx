@@ -1,0 +1,1127 @@
+"use client";
+
+import Link from "next/link";
+import {
+  type MouseEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { CloseIcon, ProfileIcon } from "@/components/icons";
+import { productDetails } from "@/lib/mock-products";
+
+function priceToNumber(price: string) {
+  return Number(price.replace(/[^0-9]/g, ""));
+}
+
+function formatPrice(price: number) {
+  return `${price.toLocaleString("ko-KR")}원`;
+}
+
+const kstOffsetHours = 9;
+const paymentDeadlineDays = 3;
+const BID_HISTORY_PROFILE_ENTRY_INDEX_KEY =
+  "bid-history-profile-entry-index";
+const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
+
+function getHistoryIndex() {
+  const historyState = window.history.state as { idx?: unknown } | null;
+
+  return typeof historyState?.idx === "number" ? historyState.idx : null;
+}
+
+function parseDeadline(deadline: string) {
+  const match = deadline
+    .trim()
+    .match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})\s+(\d{1,2})(?::00)?$/);
+
+  if (!match) {
+    return new Date(Number.NaN);
+  }
+
+  const [, year, month, day, hour] = match;
+
+  return new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour) - kstOffsetHours,
+    ),
+  );
+}
+
+function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
+  const difference = deadlineDate.getTime() - now.getTime();
+
+  if (Number.isNaN(deadlineDate.getTime()) || difference <= 0) {
+    return "마감됨";
+  }
+
+  const totalMinutes = Math.ceil(difference / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days}일 ${hours}시간 남았어요`;
+  }
+
+  if (hours > 0) {
+    return `${hours}시간 ${minutes}분 남았어요`;
+  }
+
+  return `${minutes}분 남았어요`;
+}
+
+function formatRemainingTime(deadline: string, now: Date) {
+  return formatRemainingTimeFromDate(parseDeadline(deadline), now);
+}
+
+function formatPaymentRemainingTime(deadline: string, now: Date) {
+  const paymentDeadline = parseDeadline(deadline);
+
+  if (Number.isNaN(paymentDeadline.getTime())) {
+    return "결제 기한 확인 필요";
+  }
+
+  paymentDeadline.setUTCDate(
+    paymentDeadline.getUTCDate() + paymentDeadlineDays,
+  );
+
+  return formatRemainingTimeFromDate(paymentDeadline, now);
+}
+
+const mockBidAmounts = [3200, 5600, 4700, 5800];
+const mockClosedDeadlines = ["2026.04.26 23", null, null, "2026.04.26 20"];
+const shippingFee = 3200;
+type DeliveryAddress = {
+  id: string;
+  label: string;
+  name: string;
+  phone: string;
+  address: string;
+};
+
+const initialDeliveryAddresses: DeliveryAddress[] = [
+  {
+    id: "home",
+    label: "집",
+    name: "김번철",
+    phone: "010-1234-5678",
+    address: "서울특별시 마포구 월드컵북로 00, 101동 1203호",
+  },
+  {
+    id: "office",
+    label: "회사",
+    name: "김번철",
+    phone: "010-9876-5432",
+    address: "서울특별시 성동구 왕십리로 00, 8층",
+  },
+];
+
+const mockBidEntries = productDetails.slice(0, 4).map((product, index) => {
+  const option = product.options[0];
+  const amount = mockBidAmounts[index] ?? priceToNumber(option.currentBid) + 200;
+  const topBids = option.topBids ?? [option.currentBid];
+  const rank =
+    topBids
+      .map((bid) => priceToNumber(bid))
+      .filter((bid) => bid > amount).length + 1;
+
+  return {
+    id: `${product.id}-${option.id}`,
+    amount,
+    deadline: mockClosedDeadlines[index] ?? product.deadline,
+    member: product.member,
+    optionLabel: option.label,
+    participantCount: option.participantCount,
+    productId: product.id,
+    rank,
+    submittedAt: ["오늘 20:12", "오늘 18:40", "어제 23:08", "어제 19:22"][
+      index
+    ],
+    title: product.title,
+    tone: product.tone,
+  };
+});
+
+type ProfileContentProps = {
+  skipEnterAnimation?: boolean;
+};
+
+type AddressSheetMode = "manage" | "select";
+
+export function ProfileContent({
+  skipEnterAnimation = false,
+}: ProfileContentProps) {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const addressListRef = useRef<HTMLDivElement | null>(null);
+  const [shouldSkipEnterAnimation] = useState(() => {
+    if (skipEnterAnimation || typeof window === "undefined") {
+      return skipEnterAnimation;
+    }
+
+    const shouldSkip =
+      window.sessionStorage.getItem("skip-profile-enter-animation") === "true";
+    window.sessionStorage.removeItem("skip-profile-enter-animation");
+
+    return shouldSkip;
+  });
+  const [withdrawnBidIds, setWithdrawnBidIds] = useState<string[]>([]);
+  const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
+    string | null
+  >(null);
+  const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
+  const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
+  const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
+  const paymentSheetCloseTimerRef = useRef<number | null>(null);
+  const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
+    string | null
+  >(null);
+  const [deliveryAddresses, setDeliveryAddresses] = useState(
+    initialDeliveryAddresses,
+  );
+  const [defaultAddressId, setDefaultAddressId] = useState("home");
+  const [addressSheetMode, setAddressSheetMode] =
+    useState<AddressSheetMode>("manage");
+  const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
+  const [isAddressSheetEntered, setIsAddressSheetEntered] = useState(false);
+  const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
+  const addressSheetCloseTimerRef = useRef<number | null>(null);
+  const [isAddressFormOpen, setIsAddressFormOpen] = useState(false);
+  const [newAddressLabel, setNewAddressLabel] = useState("");
+  const [newAddressName, setNewAddressName] = useState("");
+  const [newAddressValue, setNewAddressValue] = useState("");
+  const [newAddressPhone, setNewAddressPhone] = useState("");
+  const [now, setNow] = useState(() => new Date());
+
+  const allBids = useMemo(
+    () =>
+      mockBidEntries.filter((bid) => !withdrawnBidIds.includes(bid.id)),
+    [withdrawnBidIds],
+  );
+  const activeBids = useMemo(
+    () =>
+      allBids.filter((bid) => {
+        const isClosed = parseDeadline(bid.deadline).getTime() <= now.getTime();
+
+        return !isClosed || bid.rank === 1;
+      }),
+    [allBids, now],
+  );
+
+  const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
+  const selectedPaymentBid =
+    activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+  const defaultDeliveryAddress =
+    deliveryAddresses.find((address) => address.id === defaultAddressId) ??
+    deliveryAddresses[0];
+  const paymentDeliveryAddress =
+    deliveryAddresses.find(
+      (address) => address.id === selectedPaymentAddressId,
+    ) ?? defaultDeliveryAddress;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(timer);
+
+      if (paymentSheetCloseTimerRef.current !== null) {
+        window.clearTimeout(paymentSheetCloseTimerRef.current);
+      }
+
+      if (addressSheetCloseTimerRef.current !== null) {
+        window.clearTimeout(addressSheetCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  function finishPaymentSheetClose() {
+    if (paymentSheetCloseTimerRef.current !== null) {
+      window.clearTimeout(paymentSheetCloseTimerRef.current);
+      paymentSheetCloseTimerRef.current = null;
+    }
+
+    setIsPaymentSheetOpen(false);
+    setIsPaymentSheetClosing(false);
+    setSelectedPaymentBidId(null);
+  }
+
+  function finishAddressSheetClose() {
+    if (addressSheetCloseTimerRef.current !== null) {
+      window.clearTimeout(addressSheetCloseTimerRef.current);
+      addressSheetCloseTimerRef.current = null;
+    }
+
+    setIsAddressSheetOpen(false);
+    setIsAddressSheetClosing(false);
+  }
+
+  function withdrawBid(bidId: string) {
+    setWithdrawnBidIds((current) =>
+      current.includes(bidId) ? current : [...current, bidId],
+    );
+  }
+
+  function rememberScrollPosition() {
+    if (!scrollContainerRef.current) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      "profile-scroll-top",
+      String(scrollContainerRef.current.scrollTop),
+    );
+  }
+
+  function openPaymentSheet(bidId: string) {
+    if (paymentSheetCloseTimerRef.current !== null) {
+      window.clearTimeout(paymentSheetCloseTimerRef.current);
+      paymentSheetCloseTimerRef.current = null;
+    }
+
+    setSelectedPaymentBidId(bidId);
+    setSelectedPaymentAddressId((current) => current ?? defaultAddressId);
+    setIsPaymentSheetOpen(true);
+    setIsPaymentSheetClosing(false);
+
+    window.requestAnimationFrame(() => {
+      setIsPaymentSheetEntered(true);
+    });
+  }
+
+  function closePaymentSheet() {
+    if (paymentSheetCloseTimerRef.current !== null) {
+      return;
+    }
+
+    setIsPaymentSheetClosing(true);
+    setIsPaymentSheetEntered(false);
+    paymentSheetCloseTimerRef.current = window.setTimeout(
+      finishPaymentSheetClose,
+      280,
+    );
+  }
+
+  function rememberBidHistoryEntry(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      window.sessionStorage.removeItem(BID_HISTORY_PROFILE_ENTRY_INDEX_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      BID_HISTORY_PROFILE_ENTRY_INDEX_KEY,
+      String(historyIndex + 1),
+    );
+  }
+
+  function rememberProfileProductEntry(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    rememberScrollPosition();
+
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      window.sessionStorage.removeItem(PRODUCT_PROFILE_ENTRY_INDEX_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      PRODUCT_PROFILE_ENTRY_INDEX_KEY,
+      String(historyIndex + 1),
+    );
+  }
+
+  function resetNewAddressDraft() {
+    setNewAddressLabel("");
+    setNewAddressName("");
+    setNewAddressValue("");
+    setNewAddressPhone("");
+  }
+
+  function openAddressSheet(mode: AddressSheetMode = "manage") {
+    if (addressSheetCloseTimerRef.current !== null) {
+      window.clearTimeout(addressSheetCloseTimerRef.current);
+      addressSheetCloseTimerRef.current = null;
+    }
+
+    setAddressSheetMode(mode);
+    setIsAddressFormOpen(false);
+    setIsAddressSheetOpen(true);
+    setIsAddressSheetClosing(false);
+
+    window.requestAnimationFrame(() => {
+      setIsAddressSheetEntered(true);
+    });
+  }
+
+  function closeAddressSheet() {
+    if (addressSheetCloseTimerRef.current !== null) {
+      return;
+    }
+
+    setIsAddressSheetClosing(true);
+    setIsAddressSheetEntered(false);
+    setIsAddressFormOpen(false);
+    resetNewAddressDraft();
+    addressSheetCloseTimerRef.current = window.setTimeout(
+      finishAddressSheetClose,
+      280,
+    );
+  }
+
+  function addDeliveryAddress() {
+    const trimmedLabel = newAddressLabel.trim();
+    const trimmedName = newAddressName.trim();
+    const trimmedAddress = newAddressValue.trim();
+    const trimmedPhone = newAddressPhone.trim();
+
+    if (!trimmedLabel || !trimmedName || !trimmedAddress || !trimmedPhone) {
+      return;
+    }
+
+    const nextAddress = {
+      id: `address-${Date.now()}`,
+      label: trimmedLabel,
+      name: trimmedName,
+      phone: trimmedPhone,
+      address: trimmedAddress,
+    };
+
+    setDeliveryAddresses((current) => [...current, nextAddress]);
+
+    if (addressSheetMode === "select") {
+      setSelectedPaymentAddressId(nextAddress.id);
+    }
+
+    resetNewAddressDraft();
+    setIsAddressFormOpen(false);
+  }
+
+  function selectPaymentAddress(addressId: string) {
+    setSelectedPaymentAddressId(addressId);
+  }
+
+  function setAsDefaultAddress(addressId: string) {
+    setDefaultAddressId(addressId);
+    setDeliveryAddresses((current) => {
+      const selectedAddress = current.find((address) => address.id === addressId);
+
+      if (!selectedAddress) {
+        return current;
+      }
+
+      return [
+        selectedAddress,
+        ...current.filter((address) => address.id !== addressId),
+      ];
+    });
+    window.requestAnimationFrame(() => {
+      addressListRef.current?.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    });
+  }
+
+  function deleteDeliveryAddress(addressId: string) {
+    setDeliveryAddresses((current) => {
+      if (current.length <= 1) {
+        return current;
+      }
+
+      const nextAddresses = current.filter((address) => address.id !== addressId);
+
+      if (addressId === defaultAddressId) {
+        setDefaultAddressId(nextAddresses[0]?.id ?? "");
+      }
+
+      if (addressId === selectedPaymentAddressId) {
+        setSelectedPaymentAddressId(nextAddresses[0]?.id ?? null);
+      }
+
+      return nextAddresses;
+    });
+  }
+
+  useLayoutEffect(() => {
+    const storedScrollTop = window.sessionStorage.getItem("profile-scroll-top");
+
+    if (!storedScrollTop || !scrollContainerRef.current) {
+      return;
+    }
+
+    scrollContainerRef.current.scrollTop = Number(storedScrollTop);
+
+    if (!skipEnterAnimation) {
+      window.sessionStorage.removeItem("profile-scroll-top");
+    }
+  }, [skipEnterAnimation]);
+
+  return (
+    <div
+      className={`flex min-h-0 flex-1 flex-col ${
+        shouldSkipEnterAnimation ? "" : "tab-content-enter"
+      } relative overflow-hidden`}
+    >
+      <header className="shrink-0 px-4 pb-4 pt-5">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">
+          My Page
+        </p>
+        <h1 className="mt-1 text-[26px] font-semibold tracking-[-0.06em]">
+          마이페이지
+        </h1>
+      </header>
+
+      <main
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        ref={scrollContainerRef}
+      >
+        <section className="rounded-[1.15rem] bg-black p-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white text-black">
+              <ProfileIcon />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-[20px] font-semibold tracking-[-0.05em]">
+                김분철
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-white/55">
+                buncheol_easy
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
+              <p className="text-[11px] font-medium text-white/45">참여중</p>
+              <p className="mt-1 text-[19px] font-semibold">
+                {activeBids.length}
+              </p>
+            </div>
+            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
+              <p className="text-[11px] font-medium text-white/45">1등</p>
+              <p className="mt-1 text-[19px] font-semibold">
+                {highestRankCount}
+              </p>
+            </div>
+            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
+              <p className="text-[11px] font-medium text-white/45">찜</p>
+              <p className="mt-1 text-[19px] font-semibold">10</p>
+            </div>
+          </div>
+
+          <Link
+            className="mt-3 flex h-11 items-center justify-center rounded-full bg-white/10 text-[14px] font-semibold text-white"
+            href="/profile/bids?from=profile"
+            onClick={rememberBidHistoryEntry}
+          >
+            입찰 기록
+          </Link>
+        </section>
+
+        <section className="mt-5 border-t border-black/10 pt-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+              기본 배송지
+            </h2>
+            <button
+              className="text-[13px] font-semibold text-black/45"
+              onClick={() => openAddressSheet("manage")}
+              type="button"
+            >
+              배송지 관리
+            </button>
+          </div>
+          <div className="mt-3 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
+                기본
+              </span>
+              <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                {defaultDeliveryAddress.name}
+              </p>
+            </div>
+            <p className="mt-3 text-[14px] leading-6 tracking-[-0.04em] text-black/65">
+              {defaultDeliveryAddress.address}
+            </p>
+            <p className="mt-2 text-[14px] font-medium text-black/45">
+              {defaultDeliveryAddress.phone}
+            </p>
+          </div>
+        </section>
+
+        <section className="mt-6 border-t border-black/10 pt-5">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                입찰 현황
+              </h2>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                등수 확인과 철회를 여기서 관리해요.
+              </p>
+            </div>
+            <span className="shrink-0 text-[13px] font-semibold text-black/45">
+              {activeBids.length}개
+            </span>
+          </div>
+
+          {activeBids.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              {activeBids.map((bid) => {
+                const isClosed =
+                  parseDeadline(bid.deadline).getTime() <= now.getTime();
+                const remainingTime = formatRemainingTime(bid.deadline, now);
+                const paymentRemainingTime = formatPaymentRemainingTime(
+                  bid.deadline,
+                  now,
+                );
+
+                return (
+                  <article
+                    className="rounded-[1rem] border border-black/10 px-4 py-4"
+                    key={bid.id}
+                  >
+                    <div className="flex items-start gap-3">
+                      <Link
+                        aria-label={`${bid.title} 상세 보기`}
+                        className={`h-14 w-14 shrink-0 rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
+                        href={`/products/${bid.productId}?from=profile`}
+                        onClick={rememberProfileProductEntry}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <Link
+                            className="min-w-0"
+                            href={`/products/${bid.productId}?from=profile`}
+                            onClick={rememberProfileProductEntry}
+                          >
+                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                              {bid.title}
+                            </p>
+                            <p className="mt-1 text-[13px] font-medium text-black/45">
+                              {bid.member} · {bid.optionLabel}
+                            </p>
+                          </Link>
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
+                              bid.rank === 1
+                                ? "bg-black text-white"
+                                : "bg-[#f1f1f1] text-black/55"
+                            }`}
+                          >
+                            {bid.rank}등
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                              <p className="text-[11px] font-medium text-black/35">
+                                내 입찰가
+                              </p>
+                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                                {formatPrice(bid.amount)}
+                              </p>
+                            </div>
+                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                              <p className="text-[11px] font-medium text-black/35">
+                                상태
+                              </p>
+                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                                {isClosed
+                                  ? bid.rank === 1
+                                    ? "낙찰"
+                                    : "미낙찰"
+                                  : "입찰중"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                            <p className="text-[11px] font-medium text-black/35">
+                              마감
+                            </p>
+                            <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
+                              {bid.deadline}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between gap-3">
+                          <div
+                            className={`min-w-0 text-[12px] font-medium ${
+                              isClosed && bid.rank === 1
+                                ? "text-black"
+                                : "text-black/35"
+                            }`}
+                          >
+                            {isClosed
+                              ? bid.rank === 1
+                                ? (
+                                  <>
+                                    <p>결제가 필요해요</p>
+                                    <p className="mt-0.5 text-black/45">
+                                      결제까지 {paymentRemainingTime}
+                                    </p>
+                                  </>
+                                )
+                                : <p>마감된 입찰이에요</p>
+                              : `철회까지 ${remainingTime}`}
+                          </div>
+                          {!isClosed ? (
+                            <button
+                              className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55"
+                              onClick={() => withdrawBid(bid.id)}
+                              type="button"
+                            >
+                              철회
+                            </button>
+                          ) : bid.rank === 1 ? (
+                            <button
+                              className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
+                              onClick={() => openPaymentSheet(bid.id)}
+                              type="button"
+                            >
+                              결제
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+              <p className="text-[14px] font-medium text-black/45">
+                참여 중인 입찰이 없습니다.
+              </p>
+            </div>
+          )}
+
+        </section>
+      </main>
+
+      {isPaymentSheetOpen && selectedPaymentBid ? (
+        <div
+          className={`bid-sheet-backdrop absolute inset-0 z-20 flex items-end ${
+            isPaymentSheetEntered && !isPaymentSheetClosing
+              ? "bid-sheet-backdrop-active"
+              : ""
+          }`}
+        >
+          <button
+            aria-label="결제 배송지 선택 닫기"
+            className="absolute inset-0 cursor-default"
+            onClick={closePaymentSheet}
+            type="button"
+          />
+          <section
+            className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              isPaymentSheetEntered && !isPaymentSheetClosing
+                ? "bid-sheet-panel-active"
+                : ""
+            }`}
+            onTransitionEnd={(event) => {
+              if (
+                isPaymentSheetClosing &&
+                event.currentTarget === event.target &&
+                event.propertyName === "transform"
+              ) {
+                finishPaymentSheetClose();
+              }
+            }}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
+                  배송지 선택
+                </h2>
+                <p className="mt-1 text-[13px] font-medium text-black/45">
+                  낙찰 상품을 받을 주소를 확인해 주세요.
+                </p>
+              </div>
+              <button
+                aria-label="닫기"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                onClick={closePaymentSheet}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+              <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                {selectedPaymentBid.title}
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                {selectedPaymentBid.member} · {selectedPaymentBid.optionLabel}
+              </p>
+            </div>
+
+            <div className="mt-4 rounded-[0.95rem] border border-black bg-white px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="rounded-full bg-[#f7f7f7] px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                  {paymentDeliveryAddress.label}
+                </span>
+                <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                  {paymentDeliveryAddress.name}
+                </p>
+              </div>
+              <p className="mt-3 text-[13px] leading-5 tracking-[-0.04em] text-black/65">
+                {paymentDeliveryAddress.address}
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                {paymentDeliveryAddress.phone}
+              </p>
+            </div>
+            <button
+              className="mt-2 h-11 w-full rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
+              onClick={() => openAddressSheet("select")}
+              type="button"
+            >
+              다른 배송지 선택
+            </button>
+
+            <div className="mt-5 border-t border-black/10 pt-4">
+              <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
+                <span>낙찰가</span>
+                <span>{formatPrice(selectedPaymentBid.amount)}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
+                <span>배송비</span>
+                <span>{formatPrice(shippingFee)}</span>
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-[15px] font-semibold tracking-[-0.04em]">
+                  결제 예정 금액
+                </span>
+                <span className="text-[22px] font-semibold tracking-[-0.05em]">
+                  {formatPrice(selectedPaymentBid.amount + shippingFee)}
+                </span>
+              </div>
+            </div>
+
+            <button
+              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white"
+              onClick={closePaymentSheet}
+              type="button"
+            >
+              결제하기
+            </button>
+          </section>
+        </div>
+      ) : null}
+
+      {isAddressSheetOpen ? (
+        <div
+          className={`bid-sheet-backdrop absolute inset-0 z-30 flex items-end ${
+            isAddressSheetEntered && !isAddressSheetClosing
+              ? "bid-sheet-backdrop-active"
+              : ""
+          }`}
+        >
+          <button
+            aria-label={
+              addressSheetMode === "manage"
+                ? "배송지 관리 닫기"
+                : "다른 배송지 선택 닫기"
+            }
+            className="absolute inset-0 cursor-default"
+            onClick={closeAddressSheet}
+            type="button"
+          />
+          <section
+            className={`bid-sheet-panel relative flex h-[76dvh] w-full flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              isAddressSheetEntered && !isAddressSheetClosing
+                ? "bid-sheet-panel-active"
+                : ""
+            }`}
+            onTransitionEnd={(event) => {
+              if (
+                isAddressSheetClosing &&
+                event.currentTarget === event.target &&
+                event.propertyName === "transform"
+              ) {
+                finishAddressSheetClose();
+              }
+            }}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
+                  {addressSheetMode === "manage"
+                    ? "배송지 관리"
+                    : "다른 배송지 선택"}
+                </h2>
+                <p className="mt-1 text-[13px] font-medium text-black/45">
+                  {addressSheetMode === "manage"
+                    ? "배송지를 추가하고 기본 배송지를 설정해요."
+                    : "이번 결제에 사용할 배송지를 골라 주세요."}
+                </p>
+              </div>
+              <button
+                aria-label="닫기"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                onClick={closeAddressSheet}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div
+              className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
+              ref={addressListRef}
+            >
+              {deliveryAddresses.map((address) => {
+                const isDefault = address.id === defaultAddressId;
+                const isSelected =
+                  address.id ===
+                  (selectedPaymentAddressId ?? defaultAddressId);
+
+                return (
+                  <div
+                    className={`w-full rounded-[0.95rem] border px-4 py-3 text-left ${
+                      addressSheetMode === "select" && isSelected
+                        ? "border-black bg-white"
+                        : addressSheetMode === "select"
+                        ? "border-black/10 bg-[#f7f7f7]"
+                        : isDefault
+                        ? "border-black bg-white"
+                        : "border-black/10 bg-[#f7f7f7]"
+                    }`}
+                    key={address.id}
+                    onKeyDown={(event) => {
+                      if (event.currentTarget !== event.target) {
+                        return;
+                      }
+
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        if (addressSheetMode === "manage") {
+                          setAsDefaultAddress(address.id);
+                        } else {
+                          selectPaymentAddress(address.id);
+                        }
+                      }
+                    }}
+                    onClick={() => {
+                      if (addressSheetMode === "manage") {
+                        setAsDefaultAddress(address.id);
+                        return;
+                      }
+
+                      selectPaymentAddress(address.id);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1 pr-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                              addressSheetMode === "select"
+                                ? "bg-white text-black/45"
+                                : isDefault
+                                ? "bg-black text-white"
+                                : "bg-white text-black/45"
+                            }`}
+                          >
+                            {address.label}
+                          </span>
+                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                            {address.name}
+                          </p>
+                        </div>
+                      </div>
+                      {addressSheetMode === "select" ? (
+                        <span
+                          className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
+                            isSelected
+                              ? "bg-black text-white"
+                              : "bg-white text-black/45 ring-1 ring-black/10"
+                          }`}
+                        >
+                          {isSelected ? "선택됨" : "선택"}
+                        </span>
+                      ) : isDefault ? (
+                        <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
+                          <span className="inline-flex h-8 items-center rounded-full bg-black px-2.5 text-[12px] font-semibold text-white">
+                            기본 배송지
+                          </span>
+                          <button
+                            aria-label={`${address.label} 배송지 삭제`}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10 disabled:text-black/15"
+                            disabled={deliveryAddresses.length <= 1}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteDeliveryAddress(address.id);
+                            }}
+                            type="button"
+                          >
+                            <CloseIcon />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
+                          <button
+                            className="h-8 rounded-full bg-white px-2.5 text-[12px] font-semibold text-black/55 ring-1 ring-black/10"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setAsDefaultAddress(address.id);
+                            }}
+                            type="button"
+                          >
+                            기본 설정
+                          </button>
+                          <button
+                            aria-label={`${address.label} 배송지 삭제`}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteDeliveryAddress(address.id);
+                            }}
+                            type="button"
+                          >
+                            <CloseIcon />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-3 text-[13px] leading-5 tracking-[-0.04em] text-black/65">
+                      {address.address}
+                    </p>
+                    <p className="mt-1 text-[13px] font-medium text-black/45">
+                      {address.phone}
+                    </p>
+                  </div>
+                );
+              })}
+
+              <div className="rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] px-4 py-3">
+                {isAddressFormOpen ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                        새 배송지 추가
+                      </p>
+                      <button
+                        className="text-[12px] font-semibold text-black/35"
+                        onClick={() => {
+                          setIsAddressFormOpen(false);
+                          resetNewAddressDraft();
+                        }}
+                        type="button"
+                      >
+                        닫기
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <input
+                        className="h-9 rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
+                        onChange={(event) =>
+                          setNewAddressLabel(event.target.value)
+                        }
+                        placeholder="별칭"
+                        value={newAddressLabel}
+                      />
+                      <input
+                        className="h-9 rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
+                        onChange={(event) =>
+                          setNewAddressName(event.target.value)
+                        }
+                        placeholder="받는 분"
+                        value={newAddressName}
+                      />
+                    </div>
+                    <input
+                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
+                      inputMode="tel"
+                      onChange={(event) =>
+                        setNewAddressPhone(event.target.value)
+                      }
+                      placeholder="연락처"
+                      value={newAddressPhone}
+                    />
+                    <input
+                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
+                      onChange={(event) =>
+                        setNewAddressValue(event.target.value)
+                      }
+                      placeholder="주소"
+                      value={newAddressValue}
+                    />
+                    <button
+                      className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-semibold text-white disabled:bg-black/20"
+                      disabled={
+                        !newAddressLabel.trim() ||
+                        !newAddressName.trim() ||
+                        !newAddressValue.trim() ||
+                        !newAddressPhone.trim()
+                      }
+                      onClick={addDeliveryAddress}
+                      type="button"
+                    >
+                      배송지 추가
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="flex min-h-[4.9rem] w-full items-center justify-center text-[14px] font-semibold text-black/45"
+                    onClick={() => setIsAddressFormOpen(true)}
+                    type="button"
+                  >
+                    + 새 배송지 추가
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {addressSheetMode === "select" ? (
+              <button
+                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold text-white"
+                onClick={closeAddressSheet}
+                type="button"
+              >
+                이 배송지로 받기
+              </button>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+    </div>
+  );
+}
