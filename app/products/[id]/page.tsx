@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ProductDetail } from "@/components/ProductDetail";
+import { UploadedProductDetail } from "@/components/UploadedProductDetail";
 import { getProductById } from "@/lib/mock-products";
 
 type ProductDetailPageProps = {
@@ -27,11 +28,16 @@ export default async function ProductDetailPage({
   const product = getProductById(id);
 
   if (!product) {
+    if (id.startsWith("uploaded-")) {
+      return <UploadedProductDetail id={id} />;
+    }
+
     notFound();
   }
 
   return (
     <ProductDetail
+      backHref={returnSource === "upload" ? "/" : undefined}
       product={product}
       initialReturnSource={returnSource === "home" ? "home" : undefined}
       initialReturnQuery={

@@ -8,7 +8,7 @@ export function HomeContent() {
     <>
       <AppHeader />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="tab-content-enter min-h-0 flex-1 overflow-y-auto">
         <section className="px-4 pt-4">
           <div className="grid grid-cols-[1fr_1.15fr] overflow-hidden rounded-[1.35rem] border border-black bg-black">
             <div className="flex items-center p-5">

@@ -13,6 +13,7 @@ import {
 
 type ProductDetailProps = {
   product: ProductDetailItem;
+  backHref?: string;
   initialReturnSource?: "home";
   initialReturnQuery?: string;
 };
@@ -26,6 +27,7 @@ function formatPrice(price: number) {
 }
 
 export function ProductDetail({
+  backHref,
   product,
   initialReturnSource,
   initialReturnQuery,
@@ -251,8 +253,13 @@ export function ProductDetail({
     }
 
     didNavigateBack.current = true;
+    if (backHref) {
+      router.replace(backHref);
+      return;
+    }
+
     router.back();
-  }, [router]);
+  }, [backHref, router]);
 
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
@@ -412,19 +419,30 @@ export function ProductDetail({
             <div
               className={`relative aspect-square overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
+              {product.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt=""
+                  className="h-full w-full object-cover"
+                  src={product.imageUrl}
+                />
+              ) : (
+                <>
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
+                  <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
+                  <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
+                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
+                      {product.era}
+                    </p>
+                    <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
+                      {product.member}
+                    </p>
+                  </div>
+                </>
+              )}
               <div className="absolute left-5 top-5 rounded-full bg-black px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-white">
                 {product.badge}
-              </div>
-              <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
-              <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
-              <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
-                  {product.era}
-                </p>
-                <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
-                  {product.member}
-                </p>
               </div>
             </div>
           </section>

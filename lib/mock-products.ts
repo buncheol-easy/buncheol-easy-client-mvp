@@ -20,6 +20,7 @@ export type ProductDetailItem = ProductCardItem & {
   courier: string;
   description: string;
   deadline: string;
+  imageUrl?: string;
   purchaseSource?: string;
   shippingDeadline?: string;
   shippingMethods?: ShippingMethod[];
