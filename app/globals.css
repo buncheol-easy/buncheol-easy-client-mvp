@@ -140,10 +140,6 @@ button {
   transition: none;
 }
 
-.home-page-underlay-exit {
-  transform: translate3d(0, 0, 0);
-}
-
 .bid-history-panel {
   border-bottom-left-radius: 24px;
   border-top-left-radius: 24px;
@@ -219,16 +215,16 @@ button {
   transform: translateX(100%);
 }
 
-.product-underlay {
+.swipe-underlay {
   transform: translateX(0);
   transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.product-underlay-active {
+.swipe-underlay-active {
   transform: translateX(-14px);
 }
 
-.product-underlay-exit {
+.swipe-underlay-exit {
   transform: translateX(0);
 }
 

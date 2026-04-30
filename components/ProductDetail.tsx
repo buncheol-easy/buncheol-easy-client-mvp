@@ -5,26 +5,35 @@ import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { BackIcon, CloseIcon, HeartIcon, StarIcon } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import { BidHistoryContent } from "@/components/BidHistoryContent";
+import { FavoritesContent } from "@/components/FavoritesContent";
 import { HomeContent } from "@/components/HomeContent";
 import { ProfileContent } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
   SearchExperience,
 } from "@/components/SearchExperience";
+import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 
 type ProductDetailProps = {
   product: ProductDetailItem;
   backHref?: string;
-  initialReturnSource?: "home" | "profile";
+  initialReturnSource?: "home" | "profile" | "bids" | "favorites";
   initialReturnQuery?: string;
 };
 
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 const PRODUCT_PROFILE_ENTRY_STATE_KEY = "__buncheolProductFromProfile";
+const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
+const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
+const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
+const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 
 type ProductHistoryState = {
   idx?: unknown;
   [PRODUCT_PROFILE_ENTRY_STATE_KEY]?: unknown;
+  [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
+  [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
 };
 
 function getHistoryState() {
@@ -39,6 +48,14 @@ function getHistoryIndex() {
 
 function hasProfileEntryState() {
   return getHistoryState()?.[PRODUCT_PROFILE_ENTRY_STATE_KEY] === true;
+}
+
+function hasBidHistoryEntryState() {
+  return getHistoryState()?.[PRODUCT_BID_HISTORY_ENTRY_STATE_KEY] === true;
+}
+
+function hasFavoritesEntryState() {
+  return getHistoryState()?.[PRODUCT_FAVORITES_ENTRY_STATE_KEY] === true;
 }
 
 function priceToNumber(price: string) {
@@ -291,6 +308,26 @@ export function ProductDetail({
       return;
     }
 
+    if (initialReturnSource === "bids") {
+      if (hasBidHistoryEntryState()) {
+        router.back();
+        return;
+      }
+
+      router.replace("/profile/bids");
+      return;
+    }
+
+    if (initialReturnSource === "favorites") {
+      if (hasFavoritesEntryState()) {
+        router.back();
+        return;
+      }
+
+      router.replace("/favorites");
+      return;
+    }
+
     router.back();
   }, [backHref, initialReturnSource, router]);
 
@@ -299,7 +336,15 @@ export function ProductDetail({
     const expectedEntryIndex = window.sessionStorage.getItem(
       PRODUCT_PROFILE_ENTRY_INDEX_KEY,
     );
+    const expectedBidHistoryEntryIndex = window.sessionStorage.getItem(
+      PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
+    );
+    const expectedFavoritesEntryIndex = window.sessionStorage.getItem(
+      PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
+    );
     window.sessionStorage.removeItem(PRODUCT_PROFILE_ENTRY_INDEX_KEY);
+    window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
+    window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
 
     if (
       initialReturnSource === "profile" &&
@@ -310,6 +355,34 @@ export function ProductDetail({
         {
           ...(getHistoryState() ?? {}),
           [PRODUCT_PROFILE_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
+
+    if (
+      initialReturnSource === "bids" &&
+      historyIndex !== null &&
+      expectedBidHistoryEntryIndex === String(historyIndex)
+    ) {
+      window.history.replaceState(
+        {
+          ...(getHistoryState() ?? {}),
+          [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
+
+    if (
+      initialReturnSource === "favorites" &&
+      historyIndex !== null &&
+      expectedFavoritesEntryIndex === String(historyIndex)
+    ) {
+      window.history.replaceState(
+        {
+          ...(getHistoryState() ?? {}),
+          [PRODUCT_FAVORITES_ENTRY_STATE_KEY]: true,
         },
         "",
       );
@@ -417,35 +490,41 @@ export function ProductDetail({
   return (
     <main className="relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       {initialReturnSource === "home" ? (
-        <div
-          className={`product-underlay pointer-events-none absolute inset-0 mx-auto flex h-full w-full max-w-[430px] flex-col bg-white ${
-            isEntered && !isExiting ? "product-underlay-active" : ""
-          } ${isExiting ? "product-underlay-exit" : ""}`}
-        >
+        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
           <HomeContent />
           <BottomNavigator />
-        </div>
+        </SwipeUnderlay>
       ) : null}
 
       {initialReturnSource === "profile" ? (
-        <div
-          className={`product-underlay pointer-events-none absolute inset-0 mx-auto flex h-full w-full max-w-[430px] flex-col bg-white ${
-            isEntered && !isExiting ? "product-underlay-active" : ""
-          } ${isExiting ? "product-underlay-exit" : ""}`}
-        >
+        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
           <ProfileContent skipEnterAnimation />
           <BottomNavigator activeLabel="Profile" />
-        </div>
+        </SwipeUnderlay>
+      ) : null}
+
+      {initialReturnSource === "bids" ? (
+        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+          <BidHistoryContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Bids" />
+        </SwipeUnderlay>
+      ) : null}
+
+      {initialReturnSource === "favorites" ? (
+        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+          <FavoritesContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Favorites" />
+        </SwipeUnderlay>
       ) : null}
 
       {returnQuery !== undefined ? (
-        <div
-          className={`product-underlay pointer-events-none absolute inset-0 ${
-            isEntered && !isExiting ? "product-underlay-active" : ""
-          } ${isExiting ? "product-underlay-exit" : ""}`}
+        <SwipeUnderlay
+          constrainWidth={false}
+          isEntered={isEntered}
+          isExiting={isExiting}
         >
           <SearchExperience query={returnQuery} skipEnterAnimation />
-        </div>
+        </SwipeUnderlay>
       ) : null}
 
       <div

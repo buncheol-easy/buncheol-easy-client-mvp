@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import {
-  type MouseEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import type { MouseEvent } from "react";
 import { CloseIcon, ProfileIcon } from "@/components/icons";
 import { productDetails } from "@/lib/mock-products";
 
@@ -22,8 +22,6 @@ function formatPrice(price: number) {
 
 const kstOffsetHours = 9;
 const paymentDeadlineDays = 3;
-const BID_HISTORY_PROFILE_ENTRY_INDEX_KEY =
-  "bid-history-profile-entry-index";
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 
 function getHistoryIndex() {
@@ -309,30 +307,6 @@ export function ProfileContent({
     );
   }
 
-  function rememberBidHistoryEntry(event: MouseEvent<HTMLAnchorElement>) {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-
-    const historyIndex = getHistoryIndex();
-
-    if (historyIndex === null) {
-      window.sessionStorage.removeItem(BID_HISTORY_PROFILE_ENTRY_INDEX_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      BID_HISTORY_PROFILE_ENTRY_INDEX_KEY,
-      String(historyIndex + 1),
-    );
-  }
-
   function rememberProfileProductEntry(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
@@ -537,14 +511,6 @@ export function ProfileContent({
               <p className="mt-1 text-[19px] font-semibold">10</p>
             </div>
           </div>
-
-          <Link
-            className="mt-3 flex h-11 items-center justify-center rounded-full bg-white/10 text-[14px] font-semibold text-white"
-            href="/profile/bids?from=profile"
-            onClick={rememberBidHistoryEntry}
-          >
-            입찰 기록
-          </Link>
         </section>
 
         <section className="mt-5 border-t border-black/10 pt-5">

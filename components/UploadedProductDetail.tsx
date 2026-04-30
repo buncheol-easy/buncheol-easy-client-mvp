@@ -13,22 +13,28 @@ export function UploadedProductDetail({ id }: UploadedProductDetailProps) {
   const [product, setProduct] = useState<ProductDetailItem | null>(null);
 
   useEffect(() => {
-    const storedProduct = window.sessionStorage.getItem(
-      `uploaded-product:${id}`,
-    );
+    const animationFrame = window.requestAnimationFrame(() => {
+      const storedProduct = window.sessionStorage.getItem(
+        `uploaded-product:${id}`,
+      );
 
-    if (!storedProduct) {
+      if (!storedProduct) {
+        setIsLoaded(true);
+        return;
+      }
+
+      try {
+        setProduct(JSON.parse(storedProduct) as ProductDetailItem);
+      } catch {
+        setProduct(null);
+      }
+
       setIsLoaded(true);
-      return;
-    }
+    });
 
-    try {
-      setProduct(JSON.parse(storedProduct) as ProductDetailItem);
-    } catch {
-      setProduct(null);
-    }
-
-    setIsLoaded(true);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
   }, [id]);
 
   if (!isLoaded) {

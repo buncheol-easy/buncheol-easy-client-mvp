@@ -8,6 +8,7 @@ import { HomeContent } from "@/components/HomeContent";
 import { CloseIcon } from "@/components/icons";
 import { ProductGrid } from "@/components/ProductGrid";
 import { SearchHeader } from "@/components/SearchHeader";
+import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 import {
   popularArtists,
   recentSearches,
@@ -149,7 +150,7 @@ export function SearchExperience({
     if (stack.at(-1) !== keyword) {
       writeSearchQueryStack([...stack, keyword]);
     }
-  }, [keyword]);
+  }, [isRestoringPreviousResult, keyword]);
 
   function closeSearch() {
     const searchEntryHistoryIndex = sessionStorage.getItem(
@@ -243,10 +244,9 @@ export function SearchExperience({
   return (
     <main className="h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
-        <div
-          className={`pointer-events-none absolute inset-0 flex flex-col ${
-            isExiting ? "home-page-underlay-exit" : ""
-          }`}
+        <SwipeUnderlay
+          isEntered={isSearchEntered}
+          isExiting={isExiting || isResultBacking}
         >
           {isResultBacking && previousKeyword ? (
             <>
@@ -266,13 +266,15 @@ export function SearchExperience({
               <BottomNavigator />
             </>
           )}
-        </div>
+        </SwipeUnderlay>
 
         <div
           className={`search-panel absolute inset-0 flex flex-col bg-white shadow-[-18px_0_36px_rgba(0,0,0,0.16)] ${
             isSearchEntered ? "search-panel--entered" : ""
           } ${isExiting ? "search-panel--exit" : ""} ${
             isResultBacking ? "search-panel--back" : ""
+          } ${
+            isClearingSearch ? "swipe-underlay swipe-underlay-active" : ""
           } ${
             isRestoringPreviousResult ? "search-panel--no-transition" : ""
           }`}

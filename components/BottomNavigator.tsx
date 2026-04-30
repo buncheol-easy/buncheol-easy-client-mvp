@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { HeartIcon, HomeIcon, PlusIcon, ProfileIcon } from "@/components/icons";
+import {
+  BidIcon,
+  HeartIcon,
+  HomeIcon,
+  PlusIcon,
+  ProfileIcon,
+} from "@/components/icons";
 
 type NavItem = {
   href?: string;
@@ -9,6 +15,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/upload", label: "Upload" },
+  { href: "/profile/bids", label: "Bids" },
   { href: "/favorites", label: "Favorites" },
   { href: "/profile", label: "Profile" },
 ];
@@ -19,11 +26,11 @@ type BottomNavigatorProps = {
 
 export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) {
   return (
-    <nav className="shrink-0 bg-black px-5 pb-4 pt-3 text-white">
-      <div className="flex items-start justify-between">
+    <nav className="shrink-0 bg-black px-3 pb-4 pt-3 text-white">
+      <div className="grid grid-cols-5 items-start">
         {navItems.map((item) => {
           const isActive = item.label === activeLabel;
-          const className = `flex min-w-[60px] flex-col items-center gap-1.5 text-[12px] ${
+          const className = `flex min-w-0 flex-col items-center gap-1.5 px-1 text-[11px] ${
             isActive ? "text-white" : "text-white/55"
           }`;
           const content = (
@@ -37,13 +44,17 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
                   <HomeIcon />
                 ) : item.label === "Upload" ? (
                   <PlusIcon />
+                ) : item.label === "Bids" ? (
+                  <BidIcon />
                 ) : item.label === "Favorites" ? (
                   <HeartIcon />
                 ) : (
                   <ProfileIcon />
                 )}
               </span>
-              <span>{item.label}</span>
+              <span className="max-w-full truncate">
+                {item.label === "Bids" ? "입찰" : item.label}
+              </span>
             </>
           );
 

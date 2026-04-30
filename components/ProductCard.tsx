@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HeartIcon, StarIcon } from "@/components/icons";
 
+const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
+
 export type ProductCardItem = {
   id: string;
   title: string;
@@ -23,6 +25,36 @@ type ProductCardProps = {
 
 export function ProductCard({ item }: ProductCardProps) {
   const router = useRouter();
+
+  function isPlainPrimaryClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    return (
+      event.button === 0 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    );
+  }
+
+  function getHistoryIndex() {
+    const historyState = window.history.state as { idx?: unknown } | null;
+
+    return typeof historyState?.idx === "number" ? historyState.idx : null;
+  }
+
+  function rememberFavoritesProductEntry() {
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
+      String(historyIndex + 1),
+    );
+  }
 
   return (
     <Link
@@ -48,6 +80,12 @@ export function ProductCard({ item }: ProductCardProps) {
           event.preventDefault();
           router.push(`/products/${item.id}?from=home`);
           return;
+        }
+
+        if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
+          event.preventDefault();
+          rememberFavoritesProductEntry();
+          router.push(`/products/${item.id}?from=favorites`);
         }
       }}
     >

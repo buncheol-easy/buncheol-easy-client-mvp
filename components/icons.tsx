@@ -82,6 +82,30 @@ export function HeartIcon({ filled = false }: { filled?: boolean }) {
   );
 }
 
+export function BidIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-6 w-6"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path
+        d="M8 7h8M8 12h8M8 17h4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 3.5h12A1.5 1.5 0 0 1 19.5 5v14.5L16 17.8l-4 1.9-4-1.9-3.5 1.7V5A1.5 1.5 0 0 1 6 3.5Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function HomeIcon() {
   return (
     <svg

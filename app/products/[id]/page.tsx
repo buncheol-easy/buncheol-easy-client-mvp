@@ -44,7 +44,10 @@ export default async function ProductDetailPage({
       }
       product={product}
       initialReturnSource={
-        returnSource === "home" || returnSource === "profile"
+        returnSource === "home" ||
+        returnSource === "profile" ||
+        returnSource === "bids" ||
+        returnSource === "favorites"
           ? returnSource
           : undefined
       }

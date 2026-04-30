@@ -8,6 +8,10 @@ import { productDetails } from "@/lib/mock-products";
 type FavoriteFilter = "all" | "favoriteArtist";
 type FavoriteSort = "deadline" | "recent";
 
+type FavoritesContentProps = {
+  skipEnterAnimation?: boolean;
+};
+
 // Deadline strings are entered as Korea-local cutoff times.
 const kstOffsetHours = 9;
 const favoriteProducts = productDetails
@@ -51,7 +55,9 @@ function isClosed(deadline: string, now: Date) {
   return deadlineDate.getTime() <= now.getTime();
 }
 
-export function FavoritesContent() {
+export function FavoritesContent({
+  skipEnterAnimation = false,
+}: FavoritesContentProps) {
   const [filter, setFilter] = useState<FavoriteFilter>("all");
   const [sort, setSort] = useState<FavoriteSort>("recent");
   const [isSortOpen, setIsSortOpen] = useState(false);
@@ -95,7 +101,11 @@ export function FavoritesContent() {
   }, [filter, hideClosed, now, sort]);
 
   return (
-    <div className="tab-content-enter flex min-h-0 flex-1 flex-col">
+    <div
+      className={`flex min-h-0 flex-1 flex-col ${
+        skipEnterAnimation ? "" : "tab-content-enter"
+      }`}
+    >
       <header className="shrink-0 px-4 pb-5 pt-5">
         <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">
           Favorites

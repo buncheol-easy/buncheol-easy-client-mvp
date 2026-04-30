@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BackIcon, CloseIcon } from "@/components/icons";
+import type { MouseEvent } from "react";
+import { CloseIcon } from "@/components/icons";
 import { productDetails } from "@/lib/mock-products";
 
 function priceToNumber(price: string) {
@@ -15,6 +16,13 @@ function formatPrice(price: number) {
 
 const kstOffsetHours = 9;
 const paymentDeadlineDays = 3;
+const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
+
+function getHistoryIndex() {
+  const historyState = window.history.state as { idx?: unknown } | null;
+
+  return typeof historyState?.idx === "number" ? historyState.idx : null;
+}
 
 function parseDeadline(deadline: string) {
   const match = deadline
@@ -58,10 +66,6 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   }
 
   return `${minutes}분 남았어요`;
-}
-
-function formatRemainingTime(deadline: string, now: Date) {
-  return formatRemainingTimeFromDate(parseDeadline(deadline), now);
 }
 
 function formatPaymentRemainingTime(deadline: string, now: Date) {
@@ -141,12 +145,10 @@ const bidRecords = productDetails.slice(0, 4).map((product, index) => {
 });
 
 type BidHistoryContentProps = {
-  onBack?: () => void;
   skipEnterAnimation?: boolean;
 };
 
 export function BidHistoryContent({
-  onBack,
   skipEnterAnimation = false,
 }: BidHistoryContentProps) {
   const addressListRef = useRef<HTMLDivElement | null>(null);
@@ -337,6 +339,30 @@ export function BidHistoryContent({
     setIsAddressFormOpen(false);
   }
 
+  function rememberBidHistoryProductEntry(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
+      String(historyIndex + 1),
+    );
+  }
+
   return (
     <div
       className={`relative flex min-h-0 flex-1 flex-col overflow-hidden ${
@@ -344,34 +370,12 @@ export function BidHistoryContent({
       }`}
     >
       <header className="shrink-0 px-4 pb-4 pt-5">
-        <div className="flex h-12 items-center justify-between">
-          {onBack ? (
-            <button
-              aria-label="마이페이지로 돌아가기"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
-              onClick={onBack}
-              type="button"
-            >
-              <BackIcon />
-            </button>
-          ) : (
-            <Link
-              aria-label="마이페이지로 돌아가기"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
-              href="/profile"
-            >
-              <BackIcon />
-            </Link>
-          )}
-          <div className="text-right">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">
-              History
-            </p>
-            <h1 className="text-[22px] font-semibold tracking-[-0.05em]">
-              입찰 기록
-            </h1>
-          </div>
-        </div>
+        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">
+          History
+        </p>
+        <h1 className="mt-1 text-[26px] font-semibold tracking-[-0.06em]">
+          입찰 기록
+        </h1>
       </header>
 
       <div className="shrink-0 px-4 pb-4">
@@ -402,129 +406,134 @@ export function BidHistoryContent({
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <div className="space-y-3">
-          {records.map((bid) => {
-            const isClosed = parseDeadline(bid.deadline).getTime() <= now.getTime();
-            const paymentRemainingTime = formatPaymentRemainingTime(
-              bid.deadline,
-              now,
-            );
+        <div className="tab-content-enter" key={filter}>
+          <div className="space-y-3">
+            {records.map((bid) => {
+              const isClosed =
+                parseDeadline(bid.deadline).getTime() <= now.getTime();
+              const paymentRemainingTime = formatPaymentRemainingTime(
+                bid.deadline,
+                now,
+              );
 
-            return (
-              <article
-                className="rounded-[1rem] border border-black/10 px-4 py-4"
-                key={bid.id}
-              >
-                <div className="flex items-start gap-3">
-                  <Link
-                    aria-label={`${bid.title} 상세 보기`}
-                    className={`h-14 w-14 shrink-0 rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
-                    href={`/products/${bid.productId}`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <Link
-                        className="min-w-0"
-                        href={`/products/${bid.productId}`}
-                      >
-                        <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                          {bid.title}
-                        </p>
-                        <p className="mt-1 text-[13px] font-medium text-black/45">
-                          {bid.member} · {bid.optionLabel}
-                        </p>
-                      </Link>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                          bid.rank === 1
-                            ? "bg-black text-white"
-                            : "bg-[#f1f1f1] text-black/55"
-                        }`}
-                      >
-                        {bid.rank}등
-                      </span>
-                    </div>
-
-                    <div className="mt-4 grid gap-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                          <p className="text-[11px] font-medium text-black/35">
-                            내 입찰가
-                          </p>
-                          <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                            {formatPrice(bid.amount)}
-                          </p>
-                        </div>
-                        <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                          <p className="text-[11px] font-medium text-black/35">
-                            상태
-                          </p>
-                          <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                            {bid.paidAt
-                              ? "결제 완료"
-                              : isClosed
-                              ? bid.rank === 1
-                                ? "낙찰"
-                                : "미낙찰"
-                              : "입찰중"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                        <p className="text-[11px] font-medium text-black/35">
-                          마감
-                        </p>
-                        <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
-                          {bid.deadline}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between gap-3">
-                      <div
-                        className={`min-w-0 text-[12px] font-medium ${
-                          isClosed && bid.rank === 1
-                            ? "text-black"
-                            : "text-black/35"
-                        }`}
-                      >
-                        {isClosed ? (
-                          bid.paidAt ? (
-                            <>
-                              <p>결제가 완료됐어요</p>
-                              <p className="mt-0.5 text-black/45">
-                                결제일 {bid.paidAt}
-                              </p>
-                            </>
-                          ) : bid.rank === 1 ? (
-                            <>
-                              <p>결제가 필요해요</p>
-                              <p className="mt-0.5 text-black/45">
-                                결제까지 {paymentRemainingTime}
-                              </p>
-                            </>
-                          ) : (
-                            <p>마감된 입찰이에요</p>
-                          )
-                        ) : (
-                          <p>진행 중인 입찰이에요</p>
-                        )}
-                      </div>
-                      {isClosed && bid.rank === 1 && !bid.paidAt ? (
-                        <button
-                          className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
-                          onClick={() => openPaymentSheet(bid.id)}
-                          type="button"
+              return (
+                <article
+                  className="rounded-[1rem] border border-black/10 px-4 py-4"
+                  key={bid.id}
+                >
+                  <div className="flex items-start gap-3">
+                    <Link
+                      aria-label={`${bid.title} 상세 보기`}
+                      className={`h-14 w-14 shrink-0 rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
+                      href={`/products/${bid.productId}?from=bids`}
+                      onClick={rememberBidHistoryProductEntry}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <Link
+                          className="min-w-0"
+                          href={`/products/${bid.productId}?from=bids`}
+                          onClick={rememberBidHistoryProductEntry}
                         >
-                          결제
-                        </button>
-                      ) : null}
+                          <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                            {bid.title}
+                          </p>
+                          <p className="mt-1 text-[13px] font-medium text-black/45">
+                            {bid.member} · {bid.optionLabel}
+                          </p>
+                        </Link>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
+                            bid.rank === 1
+                              ? "bg-black text-white"
+                              : "bg-[#f1f1f1] text-black/55"
+                          }`}
+                        >
+                          {bid.rank}등
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                            <p className="text-[11px] font-medium text-black/35">
+                              내 입찰가
+                            </p>
+                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                              {formatPrice(bid.amount)}
+                            </p>
+                          </div>
+                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                            <p className="text-[11px] font-medium text-black/35">
+                              상태
+                            </p>
+                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                              {bid.paidAt
+                                ? "결제 완료"
+                                : isClosed
+                                ? bid.rank === 1
+                                  ? "낙찰"
+                                  : "미낙찰"
+                                : "입찰중"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                          <p className="text-[11px] font-medium text-black/35">
+                            마감
+                          </p>
+                          <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
+                            {bid.deadline}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <div
+                          className={`min-w-0 text-[12px] font-medium ${
+                            isClosed && bid.rank === 1
+                              ? "text-black"
+                              : "text-black/35"
+                          }`}
+                        >
+                          {isClosed ? (
+                            bid.paidAt ? (
+                              <>
+                                <p>결제가 완료됐어요</p>
+                                <p className="mt-0.5 text-black/45">
+                                  결제일 {bid.paidAt}
+                                </p>
+                              </>
+                            ) : bid.rank === 1 ? (
+                              <>
+                                <p>결제가 필요해요</p>
+                                <p className="mt-0.5 text-black/45">
+                                  결제까지 {paymentRemainingTime}
+                                </p>
+                              </>
+                            ) : (
+                              <p>마감된 입찰이에요</p>
+                            )
+                          ) : (
+                            <p>진행 중인 입찰이에요</p>
+                          )}
+                        </div>
+                        {isClosed && bid.rank === 1 && !bid.paidAt ? (
+                          <button
+                            className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
+                            onClick={() => openPaymentSheet(bid.id)}
+                            type="button"
+                          >
+                            결제
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </article>
-            );
-          })}
+                </article>
+              );
+            })}
+          </div>
         </div>
       </main>
 
