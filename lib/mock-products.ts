@@ -4,6 +4,7 @@ export type ProductOption = {
   id: string;
   label: string;
   price: string;
+  startingBid?: string;
   currentBid: string;
   participantCount: number;
   topBids?: [string, string, string];

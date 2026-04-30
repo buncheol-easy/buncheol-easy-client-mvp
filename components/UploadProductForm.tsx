@@ -1,17 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { BackIcon, CloseIcon, PlusIcon, SearchIcon } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import type { IdolGroup } from "@/lib/mock-idol-directory";
 import { idolDirectory } from "@/lib/mock-idol-directory";
-import type { ProductDetailItem } from "@/lib/mock-products";
+import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
 type PhotoPreview = {
   id: string;
   name: string;
   url: string;
+};
+
+type MinimumPricePrompt = {
+  memberId: string;
+  price: string;
 };
 
 type ScheduleWheelProps = {
@@ -24,16 +36,35 @@ type ScheduleWheelProps = {
   selectedValue: number;
 };
 
+type SoftPanelProps = {
+  children: ReactNode;
+  className?: string;
+  isOpen: boolean;
+};
+
 const shippingOptions = ["GS 편의점 택배", "CU 편의점 택배"];
 const maxPhotos = 5;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
+const minimumPricePromptExitDelay = 220;
 
 type ScheduleField = "closing" | "shipping";
 type SchedulePart = "year" | "month" | "day" | "hour";
 
 function padNumber(value: number) {
   return String(value).padStart(2, "0");
+}
+
+function parsePriceInput(value: string) {
+  return Number(value.replace(/[^\d]/g, "")) || 0;
+}
+
+function toNumericInput(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
+function formatWon(value: number) {
+  return `${value.toLocaleString("ko-KR")}원`;
 }
 
 function getDaysInMonth(year: number, month: number) {
@@ -284,15 +315,39 @@ function ScheduleWheel({
   );
 }
 
+function SoftPanel({ children, className = "", isOpen }: SoftPanelProps) {
+  return (
+    <div
+      aria-hidden={!isOpen}
+      className={`soft-panel-presence ${className} ${
+        isOpen ? "soft-panel-presence--open" : "soft-panel-presence--closed"
+      }`}
+      inert={isOpen ? undefined : true}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function UploadProductForm() {
   const router = useRouter();
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const photoIdSeed = useRef(0);
+  const minimumPricePromptTimeoutRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [idolQuery, setIdolQuery] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [targetMemberIds, setTargetMemberIds] = useState<string[]>([]);
+  const [excludedMemberIds, setExcludedMemberIds] = useState<string[]>([]);
+  const [memberMinimumPrices, setMemberMinimumPrices] = useState<
+    Record<string, string>
+  >({});
+  const [renderedMinimumPricePrompt, setRenderedMinimumPricePrompt] =
+    useState<MinimumPricePrompt | null>(null);
+  const [isMinimumPricePromptOpen, setIsMinimumPricePromptOpen] =
+    useState(false);
   const [closingDate, setClosingDate] = useState("");
   const [shippingDate, setShippingDate] = useState("");
   const [description, setDescription] = useState("");
@@ -334,31 +389,103 @@ export function UploadProductForm() {
     });
   }, [idolQuery]);
 
-  const targetMembers =
+  const allTargetMembers =
     selectedGroup?.members.filter((member) =>
       targetMemberIds.includes(member.id),
     ) ?? [];
+  const targetMembers = allTargetMembers.filter(
+    (member) => !excludedMemberIds.includes(member.id),
+  );
   const coverPhoto =
     photos.find((photo) => photo.id === coverPhotoId) ?? photos[0] ?? null;
   const canSubmit =
     photos.length > 0 &&
     title.trim().length > 0 &&
     targetMembers.length > 0 &&
+    targetMembers.every(
+      (member) => memberMinimumPrices[member.id]?.trim().length > 0,
+    ) &&
     selectedShipping.length > 0 &&
     selectedShipping.every(
       (option) => shippingPrices[option]?.trim().length > 0,
     );
 
+  useEffect(() => {
+    return () => {
+      if (minimumPricePromptTimeoutRef.current) {
+        clearTimeout(minimumPricePromptTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function showMinimumPricePrompt(prompt: MinimumPricePrompt) {
+    if (minimumPricePromptTimeoutRef.current) {
+      clearTimeout(minimumPricePromptTimeoutRef.current);
+    }
+
+    setRenderedMinimumPricePrompt(prompt);
+    setIsMinimumPricePromptOpen(true);
+  }
+
+  const hideMinimumPricePrompt = useCallback(() => {
+    if (minimumPricePromptTimeoutRef.current) {
+      clearTimeout(minimumPricePromptTimeoutRef.current);
+    }
+
+    setIsMinimumPricePromptOpen(false);
+    minimumPricePromptTimeoutRef.current = setTimeout(() => {
+      setRenderedMinimumPricePrompt(null);
+      minimumPricePromptTimeoutRef.current = null;
+    }, minimumPricePromptExitDelay);
+  }, []);
+
+  useEffect(() => {
+    if (!renderedMinimumPricePrompt || !isMinimumPricePromptOpen) {
+      return;
+    }
+
+    const isPromptOwnerActive = targetMembers.some(
+      (member) => member.id === renderedMinimumPricePrompt.memberId,
+    );
+    const hasEmptyActiveMembers = targetMembers.some(
+      (member) =>
+        member.id !== renderedMinimumPricePrompt.memberId &&
+        !memberMinimumPrices[member.id]?.trim(),
+    );
+
+    if (isPromptOwnerActive && hasEmptyActiveMembers) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      hideMinimumPricePrompt();
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    hideMinimumPricePrompt,
+    isMinimumPricePromptOpen,
+    memberMinimumPrices,
+    renderedMinimumPricePrompt,
+    targetMembers,
+  ]);
+
   function selectGroup(group: IdolGroup) {
     setSelectedGroupId(group.id);
     setIdolQuery("");
     setTargetMemberIds(group.members.map((member) => member.id));
+    setExcludedMemberIds([]);
+    setMemberMinimumPrices({});
+    hideMinimumPricePrompt();
   }
 
   function clearSelectedGroup() {
     setSelectedGroupId(null);
     setIdolQuery("");
     setTargetMemberIds([]);
+    setExcludedMemberIds([]);
+    setMemberMinimumPrices({});
+    hideMinimumPricePrompt();
   }
 
   async function addPhotos(files: FileList | null) {
@@ -402,15 +529,80 @@ export function UploadProductForm() {
     });
   }
 
-  function removeMember(memberId: string) {
-    const nextMemberIds = targetMemberIds.filter((id) => id !== memberId);
+  function toggleMemberExclusion(memberId: string) {
+    const prompt = renderedMinimumPricePrompt;
+    const isCurrentlyExcluded = excludedMemberIds.includes(memberId);
+    const nextExcludedMemberIds = isCurrentlyExcluded
+      ? excludedMemberIds.filter((id) => id !== memberId)
+      : [...excludedMemberIds, memberId];
+    const nextActiveMemberCount = allTargetMembers.filter(
+      (member) => !nextExcludedMemberIds.includes(member.id),
+    ).length;
 
-    if (nextMemberIds.length === 0) {
+    if (!isCurrentlyExcluded && nextActiveMemberCount === 0) {
       clearSelectedGroup();
       return;
     }
 
-    setTargetMemberIds(nextMemberIds);
+    setExcludedMemberIds(nextExcludedMemberIds);
+
+    if (!prompt || isCurrentlyExcluded) {
+      return;
+    }
+
+    const hasEmptyActiveMembers = allTargetMembers.some(
+      (member) =>
+        member.id !== prompt.memberId &&
+        !nextExcludedMemberIds.includes(member.id) &&
+        !memberMinimumPrices[member.id]?.trim(),
+    );
+
+    if (prompt.memberId === memberId || !hasEmptyActiveMembers) {
+      hideMinimumPricePrompt();
+    }
+  }
+
+  function updateMemberMinimumPrice(memberId: string, price: string) {
+    const numericPrice = toNumericInput(price);
+
+    setMemberMinimumPrices((current) => ({
+      ...current,
+      [memberId]: numericPrice,
+    }));
+
+    const trimmedPrice = numericPrice.trim();
+    const hasEmptyActiveMembers = targetMembers.some(
+      (member) =>
+        member.id !== memberId &&
+        !memberMinimumPrices[member.id]?.trim(),
+    );
+
+    if (trimmedPrice && hasEmptyActiveMembers) {
+      showMinimumPricePrompt({ memberId, price: numericPrice });
+    } else {
+      hideMinimumPricePrompt();
+    }
+  }
+
+  function applyMinimumPriceToEmptyMembers(price: string) {
+    const trimmedPrice = price.trim();
+
+    if (!trimmedPrice || targetMembers.length === 0) {
+      return;
+    }
+
+    setMemberMinimumPrices((current) => {
+      const nextPrices = { ...current };
+
+      targetMembers.forEach((member) => {
+        if (!nextPrices[member.id]?.trim()) {
+          nextPrices[member.id] = trimmedPrice;
+        }
+      });
+
+      return nextPrices;
+    });
+    hideMinimumPricePrompt();
   }
 
   function toggleShipping(option: string) {
@@ -426,7 +618,7 @@ export function UploadProductForm() {
   function updateShippingPrice(option: string, price: string) {
     setShippingPrices((current) => ({
       ...current,
-      [option]: price,
+      [option]: toNumericInput(price),
     }));
   }
 
@@ -531,9 +723,26 @@ export function UploadProductForm() {
     const productId = createUploadedProductId();
     const selectedShippingMethods = selectedShipping.map((name) => ({
       name,
-      price: `${shippingPrices[name]}원`,
+      price: formatWon(parsePriceInput(shippingPrices[name])),
     }));
     const firstMember = targetMembers[0];
+    const productOptions = targetMembers.map((member) => {
+      const minimumPrice = parsePriceInput(
+        memberMinimumPrices[member.id] ?? "0",
+      );
+
+      return {
+        id: `uploaded-option-${member.id}`,
+        label: member.name,
+        price: formatWon(minimumPrice),
+        startingBid: formatWon(minimumPrice),
+        currentBid: formatWon(minimumPrice),
+        participantCount: 0,
+        topBids: ["-", "-", "-"] as [string, string, string],
+        avatarInitials: member.initials,
+        avatarTone: member.tone,
+      };
+    }) as [ProductOption, ...ProductOption[]];
     const product: ProductDetailItem = {
       id: productId,
       title: title.trim(),
@@ -542,7 +751,6 @@ export function UploadProductForm() {
           ? `${firstMember.name} 외 ${targetMembers.length - 1}명`
           : firstMember.name,
       era: selectedGroup.name,
-      price: "가격 미정",
       rating: "0.0",
       reviews: "0",
       badge: "신규",
@@ -556,18 +764,7 @@ export function UploadProductForm() {
       shippingMethods: selectedShippingMethods,
       description:
         description.trim() || "판매자가 아직 상품 설명을 작성하지 않았습니다.",
-      options: [
-        {
-          id: "uploaded-option",
-          label: "기본 구성",
-          price: "0원",
-          currentBid: "0원",
-          participantCount: 0,
-          topBids: ["-", "-", "-"],
-          avatarInitials: "UP",
-          avatarTone: "from-zinc-100 via-white to-zinc-400",
-        },
-      ],
+      options: productOptions,
     };
 
     try {
@@ -789,35 +986,110 @@ export function UploadProductForm() {
                       대상 멤버
                     </p>
                     <span className="shrink-0 text-[13px] font-semibold text-black/45">
-                      {targetMembers.length}명
+                      {targetMembers.length}/{allTargetMembers.length}명
                     </span>
                   </div>
 
-                  {targetMembers.length > 0 ? (
+                  {allTargetMembers.length > 0 ? (
                     <div className="mt-4 space-y-2">
-                      {targetMembers.map((member) => (
-                        <div
-                          className="flex min-w-0 items-center gap-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3"
-                          key={member.id}
-                        >
-                          <div
-                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${member.tone} text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
-                          >
-                            {member.initials}
+                      {allTargetMembers.map((member) => {
+                        const isExcluded = excludedMemberIds.includes(member.id);
+                        const shouldShowPrompt =
+                          renderedMinimumPricePrompt?.memberId === member.id &&
+                          isMinimumPricePromptOpen &&
+                          !isExcluded;
+
+                        return (
+                          <div className="space-y-2" key={member.id}>
+                            <div
+                              className={`flex min-w-0 items-center gap-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 ${
+                                isExcluded ? "opacity-40" : ""
+                              }`}
+                            >
+                              <div
+                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${member.tone} text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
+                              >
+                                {member.initials}
+                              </div>
+                              <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                                {member.name}
+                              </p>
+                              <label className="flex h-9 w-24 shrink-0 items-center rounded-[0.65rem] bg-white px-2 ring-1 ring-black/10 focus-within:ring-black">
+                                <input
+                                  aria-label={`${member.name} 최소 가격`}
+                                  className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
+                                  disabled={isExcluded}
+                                  inputMode="numeric"
+                                  onChange={(event) =>
+                                    updateMemberMinimumPrice(
+                                      member.id,
+                                      event.currentTarget.value,
+                                    )
+                                  }
+                                  placeholder="0"
+                                  type="text"
+                                  value={memberMinimumPrices[member.id] ?? ""}
+                                />
+                                <span className="ml-1 shrink-0 text-[11px] font-semibold text-black/35">
+                                  원
+                                </span>
+                              </label>
+                              <button
+                                aria-label={
+                                  isExcluded
+                                    ? `${member.name} 다시 포함`
+                                    : `${member.name} 제외`
+                                }
+                                className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 ${
+                                  isExcluded
+                                    ? "w-8 text-black"
+                                    : "w-8 text-black/55"
+                                }`}
+                                onClick={() => toggleMemberExclusion(member.id)}
+                                type="button"
+                              >
+                                {isExcluded ? <PlusIcon /> : <CloseIcon />}
+                              </button>
+                            </div>
+
+                            {shouldShowPrompt && renderedMinimumPricePrompt ? (
+                              <div
+                                className={`minimum-price-prompt flex items-center justify-between gap-3 rounded-[0.8rem] bg-black px-3 py-2 text-white ${
+                                  isMinimumPricePromptOpen
+                                    ? "minimum-price-prompt--open"
+                                    : "minimum-price-prompt--closed"
+                                }`}
+                              >
+                                <p className="min-w-0 text-[12px] font-semibold">
+                                  나머지도 같은 가격으로 채울까요?
+                                </p>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <button
+                                    aria-label="최소 가격 전체 적용 취소"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[14px] font-semibold text-white"
+                                    onClick={hideMinimumPricePrompt}
+                                    type="button"
+                                  >
+                                    ×
+                                  </button>
+                                  <button
+                                    aria-label="비어있는 멤버에 최소 가격 적용"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[13px] font-semibold text-black"
+                                    onClick={() =>
+                                      applyMinimumPriceToEmptyMembers(
+                                        renderedMinimumPricePrompt.price,
+                                      )
+                                    }
+                                    type="button"
+                                  >
+                                    ✓
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
-                          <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                            {member.name}
-                          </p>
-                          <button
-                            aria-label={`${member.name} 제외`}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-black/55 ring-1 ring-black/10"
-                            onClick={() => removeMember(member.id)}
-                            type="button"
-                          >
-                            <CloseIcon />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="mt-4 rounded-[0.8rem] bg-[#f7f7f7] px-4 py-5 text-[14px] font-medium text-black/45">
@@ -892,7 +1164,7 @@ export function UploadProductForm() {
                   const isSelected = selectedShipping.includes(option);
 
                   return (
-                    <div className="space-y-2" key={option}>
+                    <div key={option}>
                       <button
                         className={`flex min-h-12 w-full items-center justify-between rounded-[0.8rem] px-4 text-left ${
                           isSelected
@@ -916,7 +1188,7 @@ export function UploadProductForm() {
                         </span>
                       </button>
 
-                      {isSelected ? (
+                      <SoftPanel className="mt-2" isOpen={isSelected}>
                         <label className="block rounded-[0.9rem] border border-black/10 px-4 py-4">
                           <span className="text-[13px] font-semibold text-black/45">
                             배송비
@@ -941,7 +1213,7 @@ export function UploadProductForm() {
                             </span>
                           </div>
                         </label>
-                      ) : null}
+                      </SoftPanel>
                     </div>
                   );
                 })}
@@ -1046,8 +1318,8 @@ export function UploadProductForm() {
                         </span>
                       </button>
 
-                      {isActive ? (
-                        <div className="idol-selection-enter mt-2 rounded-[0.95rem] border border-black/10 bg-[#f7f7f7] p-3">
+                      <SoftPanel className="mt-2" isOpen={isActive}>
+                        <div className="rounded-[0.95rem] border border-black/10 bg-[#f7f7f7] p-3">
                           <div className="grid grid-cols-[1.25fr_0.85fr_0.85fr_0.85fr] gap-2">
                             <ScheduleWheel
                               field={field}
@@ -1086,7 +1358,7 @@ export function UploadProductForm() {
                             />
                           </div>
                         </div>
-                      ) : null}
+                      </SoftPanel>
                     </div>
                   );
                 })}

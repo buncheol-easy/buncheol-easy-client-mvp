@@ -66,6 +66,29 @@ function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
 }
 
+function getTopBids(option: ProductOption) {
+  return option.topBids ?? [option.currentBid, "-", "-"];
+}
+
+function getStartingBid(option: ProductOption) {
+  return option.startingBid ?? option.price ?? option.currentBid;
+}
+
+function hasOptionBids(option: ProductOption) {
+  return (
+    option.participantCount > 0 &&
+    getTopBids(option).some((bid) => priceToNumber(bid) > 0)
+  );
+}
+
+function getOptionPriceLabel(option: ProductOption) {
+  return hasOptionBids(option) ? "현재 최고가" : "입찰 시작가";
+}
+
+function getBidBaseline(option: ProductOption) {
+  return hasOptionBids(option) ? option.currentBid : getStartingBid(option);
+}
+
 export function ProductDetail({
   backHref,
   product,
@@ -92,7 +115,7 @@ export function ProductDetail({
     return auctionOptions.filter((option) => {
       const bidAmount = Number(bidAmounts[option.id] ?? 0);
 
-      return bidAmount > priceToNumber(option.currentBid);
+      return bidAmount > priceToNumber(getBidBaseline(option));
     }).length;
   }, [auctionOptions, bidAmounts]);
 
@@ -100,7 +123,7 @@ export function ProductDetail({
     return auctionOptions.reduce((sum, option) => {
       const bidAmount = Number(bidAmounts[option.id] ?? 0);
 
-      if (bidAmount <= priceToNumber(option.currentBid)) {
+      if (bidAmount <= priceToNumber(getBidBaseline(option))) {
         return sum;
       }
 
@@ -146,10 +169,6 @@ export function ProductDetail({
   const shippingMethods = product.shippingMethods ?? [
     { name: product.courier, price: "판매자 안내" },
   ];
-
-  function getTopBids(option: ProductOption) {
-    return option.topBids ?? [option.currentBid, "-", "-"];
-  }
 
   function buildTopBids(
     option: ProductOption,
@@ -253,7 +272,7 @@ export function ProductDetail({
       currentOptions.map((option) => {
         const bidAmount = Number(bidAmounts[option.id] ?? 0);
 
-        if (bidAmount <= priceToNumber(option.currentBid)) {
+        if (bidAmount <= priceToNumber(getBidBaseline(option))) {
           return option;
         }
 
@@ -276,7 +295,7 @@ export function ProductDetail({
       auctionOptions.forEach((option) => {
         const bidAmount = Number(bidAmounts[option.id] ?? 0);
 
-        if (bidAmount > priceToNumber(option.currentBid)) {
+        if (bidAmount > priceToNumber(getBidBaseline(option))) {
           nextBids[option.id] = bidAmount;
         }
       });
@@ -608,10 +627,6 @@ export function ProductDetail({
             <h1 className="mt-4 text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
               {product.title}
             </h1>
-            <p className="mt-3 text-[24px] font-semibold tracking-[-0.05em]">
-              {product.price}
-            </p>
-
             <div className="mt-7 grid grid-cols-2 gap-3">
               <div className="col-span-2 rounded-[0.9rem] border border-black/10 px-4 py-3">
                 <p className="text-[12px] font-medium text-black/45">구매처</p>
@@ -753,20 +768,34 @@ export function ProductDetail({
                         참여 {option.participantCount}명
                       </span>
                     </div>
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      {getTopBids(option).map((bid, index) => (
-                        <div
-                          key={`${option.id}-${index}`}
-                          className="rounded-[0.7rem] bg-[#f7f7f7] px-3 py-2"
-                        >
-                          <p className="text-[11px] font-semibold text-black/35">
-                            TOP {index + 1}
-                          </p>
-                          <p className="mt-1 text-[13px] font-semibold tracking-[-0.04em]">
-                            {bid}
-                          </p>
+                    <div className="relative mt-3">
+                      <div
+                        className={`grid grid-cols-3 gap-2 ${
+                          hasOptionBids(option) ? "" : "opacity-55"
+                        }`}
+                      >
+                        {getTopBids(option).map((bid, index) => (
+                          <div
+                            key={`${option.id}-${index}`}
+                            className="rounded-[0.7rem] bg-[#f7f7f7] px-3 py-2"
+                          >
+                            <p className="text-[11px] font-semibold text-black/35">
+                              TOP {index + 1}
+                            </p>
+                            <p className="mt-1 text-[13px] font-semibold tracking-[-0.04em]">
+                              {bid}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {!hasOptionBids(option) ? (
+                        <div className="absolute inset-0 flex items-center justify-center rounded-[0.75rem] bg-white/25">
+                          <div className="rounded-full bg-black px-3 py-1.5 text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_8px_20px_rgba(0,0,0,0.16)]">
+                            입찰 시작가 {getStartingBid(option)}
+                          </div>
                         </div>
-                      ))}
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -876,10 +905,10 @@ export function ProductDetail({
 
                         <div className="shrink-0 text-right">
                           <p className="text-[12px] font-medium text-black/45">
-                            현재 최고가
+                            {getOptionPriceLabel(option)}
                           </p>
                           <p className="mt-1 text-[15px] font-semibold tracking-[-0.04em]">
-                            {option.currentBid}
+                            {getBidBaseline(option)}
                           </p>
                         </div>
                       </div>
@@ -894,12 +923,18 @@ export function ProductDetail({
                         <input
                           className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold outline-none placeholder:text-black/30"
                           inputMode="numeric"
-                          min={priceToNumber(option.currentBid) + 100}
+                          min={
+                            priceToNumber(
+                              getBidBaseline(option),
+                            ) + 100
+                          }
                           onChange={(event) =>
                             updateBidAmount(option.id, event.currentTarget.value)
                           }
                           placeholder={`${formatPrice(
-                            priceToNumber(option.currentBid) + 100,
+                            priceToNumber(
+                              getBidBaseline(option),
+                            ) + 100,
                           )} 이상`}
                           type="number"
                           value={bidAmounts[option.id] ?? ""}

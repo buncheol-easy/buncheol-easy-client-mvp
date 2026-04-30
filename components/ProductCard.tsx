@@ -11,7 +11,7 @@ export type ProductCardItem = {
   title: string;
   member: string;
   era: string;
-  price: string;
+  price?: string;
   rating: string;
   reviews: string;
   badge: string;
@@ -117,10 +117,7 @@ export function ProductCard({ item }: ProductCardProps) {
         <p className="line-clamp-2 text-[15px] leading-6 tracking-[-0.04em] text-black">
           {item.title}
         </p>
-        <p className="mt-3 text-[15px] font-semibold tracking-[-0.04em]">
-          {item.price}
-        </p>
-        <div className="mt-2 flex items-center gap-1.5 text-[13px] text-black/55">
+        <div className="mt-3 flex items-center gap-1.5 text-[13px] text-black/55">
           <span className="inline-flex items-center justify-center rounded-[0.35rem] bg-black p-1 text-white">
             <StarIcon />
           </span>
