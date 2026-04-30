@@ -335,6 +335,9 @@ export function UploadProductForm() {
   const photoIdSeed = useRef(0);
   const minimumPricePromptTimeoutRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
+  const memberToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [idolQuery, setIdolQuery] = useState("");
@@ -352,6 +355,10 @@ export function UploadProductForm() {
   const [shippingDate, setShippingDate] = useState("");
   const [description, setDescription] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const [memberToastMessage, setMemberToastMessage] = useState("");
+  const [memberToastTargetId, setMemberToastTargetId] = useState<string | null>(
+    null,
+  );
   const [activeScheduleField, setActiveScheduleField] =
     useState<ScheduleField | null>(null);
   const [selectedShipping, setSelectedShipping] = useState<string[]>([]);
@@ -415,8 +422,26 @@ export function UploadProductForm() {
       if (minimumPricePromptTimeoutRef.current) {
         clearTimeout(minimumPricePromptTimeoutRef.current);
       }
+
+      if (memberToastTimeoutRef.current) {
+        clearTimeout(memberToastTimeoutRef.current);
+      }
     };
   }, []);
+
+  function showMemberToast(memberId: string, message: string) {
+    if (memberToastTimeoutRef.current) {
+      clearTimeout(memberToastTimeoutRef.current);
+    }
+
+    setMemberToastTargetId(memberId);
+    setMemberToastMessage(message);
+    memberToastTimeoutRef.current = setTimeout(() => {
+      setMemberToastMessage("");
+      setMemberToastTargetId(null);
+      memberToastTimeoutRef.current = null;
+    }, 1800);
+  }
 
   function showMinimumPricePrompt(prompt: MinimumPricePrompt) {
     if (minimumPricePromptTimeoutRef.current) {
@@ -476,6 +501,8 @@ export function UploadProductForm() {
     setTargetMemberIds(group.members.map((member) => member.id));
     setExcludedMemberIds([]);
     setMemberMinimumPrices({});
+    setMemberToastMessage("");
+    setMemberToastTargetId(null);
     hideMinimumPricePrompt();
   }
 
@@ -485,6 +512,8 @@ export function UploadProductForm() {
     setTargetMemberIds([]);
     setExcludedMemberIds([]);
     setMemberMinimumPrices({});
+    setMemberToastMessage("");
+    setMemberToastTargetId(null);
     hideMinimumPricePrompt();
   }
 
@@ -540,7 +569,7 @@ export function UploadProductForm() {
     ).length;
 
     if (!isCurrentlyExcluded && nextActiveMemberCount === 0) {
-      clearSelectedGroup();
+      showMemberToast(memberId, "대상 멤버는 1명 이상 필요해요");
       return;
     }
 
@@ -991,105 +1020,132 @@ export function UploadProductForm() {
                   </div>
 
                   {allTargetMembers.length > 0 ? (
-                    <div className="mt-4 space-y-2">
-                      {allTargetMembers.map((member) => {
-                        const isExcluded = excludedMemberIds.includes(member.id);
-                        const shouldShowPrompt =
-                          renderedMinimumPricePrompt?.memberId === member.id &&
-                          isMinimumPricePromptOpen &&
-                          !isExcluded;
+                    <div className="mt-4">
+                      <div className="space-y-2">
+                        {allTargetMembers.map((member, index) => {
+                          const isExcluded = excludedMemberIds.includes(
+                            member.id,
+                          );
+                          const shouldShowToast =
+                            memberToastMessage &&
+                            memberToastTargetId === member.id;
+                          const isLastMember =
+                            index === allTargetMembers.length - 1;
+                          const shouldShowPrompt =
+                            renderedMinimumPricePrompt?.memberId ===
+                              member.id &&
+                            isMinimumPricePromptOpen &&
+                            !isExcluded;
 
-                        return (
-                          <div className="space-y-2" key={member.id}>
-                            <div
-                              className={`flex min-w-0 items-center gap-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 ${
-                                isExcluded ? "opacity-40" : ""
-                              }`}
-                            >
+                          return (
+                            <div className="relative" key={member.id}>
                               <div
-                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${member.tone} text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
-                              >
-                                {member.initials}
-                              </div>
-                              <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                                {member.name}
-                              </p>
-                              <label className="flex h-9 w-24 shrink-0 items-center rounded-[0.65rem] bg-white px-2 ring-1 ring-black/10 focus-within:ring-black">
-                                <input
-                                  aria-label={`${member.name} 최소 가격`}
-                                  className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
-                                  disabled={isExcluded}
-                                  inputMode="numeric"
-                                  onChange={(event) =>
-                                    updateMemberMinimumPrice(
-                                      member.id,
-                                      event.currentTarget.value,
-                                    )
-                                  }
-                                  placeholder="0"
-                                  type="text"
-                                  value={memberMinimumPrices[member.id] ?? ""}
-                                />
-                                <span className="ml-1 shrink-0 text-[11px] font-semibold text-black/35">
-                                  원
-                                </span>
-                              </label>
-                              <button
-                                aria-label={
-                                  isExcluded
-                                    ? `${member.name} 다시 포함`
-                                    : `${member.name} 제외`
-                                }
-                                className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 ${
-                                  isExcluded
-                                    ? "w-8 text-black"
-                                    : "w-8 text-black/55"
-                                }`}
-                                onClick={() => toggleMemberExclusion(member.id)}
-                                type="button"
-                              >
-                                {isExcluded ? <PlusIcon /> : <CloseIcon />}
-                              </button>
-                            </div>
-
-                            {shouldShowPrompt && renderedMinimumPricePrompt ? (
-                              <div
-                                className={`minimum-price-prompt flex items-center justify-between gap-3 rounded-[0.8rem] bg-black px-3 py-2 text-white ${
-                                  isMinimumPricePromptOpen
-                                    ? "minimum-price-prompt--open"
-                                    : "minimum-price-prompt--closed"
+                                className={`flex min-w-0 items-center gap-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 ${
+                                  isExcluded ? "opacity-40" : ""
                                 }`}
                               >
-                                <p className="min-w-0 text-[12px] font-semibold">
-                                  나머지도 같은 가격으로 채울까요?
+                                <div
+                                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${member.tone} text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
+                                >
+                                  {member.initials}
+                                </div>
+                                <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                                  {member.name}
                                 </p>
-                                <div className="flex shrink-0 items-center gap-2">
-                                  <button
-                                    aria-label="최소 가격 전체 적용 취소"
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[14px] font-semibold text-white"
-                                    onClick={hideMinimumPricePrompt}
-                                    type="button"
-                                  >
-                                    ×
-                                  </button>
-                                  <button
-                                    aria-label="비어있는 멤버에 최소 가격 적용"
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[13px] font-semibold text-black"
-                                    onClick={() =>
-                                      applyMinimumPriceToEmptyMembers(
-                                        renderedMinimumPricePrompt.price,
+                                <label className="flex h-9 w-24 shrink-0 items-center rounded-[0.65rem] bg-white px-2 ring-1 ring-black/10 focus-within:ring-black">
+                                  <input
+                                    aria-label={`${member.name} 최소 가격`}
+                                    className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
+                                    disabled={isExcluded}
+                                    inputMode="numeric"
+                                    onChange={(event) =>
+                                      updateMemberMinimumPrice(
+                                        member.id,
+                                        event.currentTarget.value,
                                       )
                                     }
-                                    type="button"
-                                  >
-                                    ✓
-                                  </button>
-                                </div>
+                                    placeholder="0"
+                                    type="text"
+                                    value={memberMinimumPrices[member.id] ?? ""}
+                                  />
+                                  <span className="ml-1 shrink-0 text-[11px] font-semibold text-black/35">
+                                    원
+                                  </span>
+                                </label>
+                                <button
+                                  aria-label={
+                                    isExcluded
+                                      ? `${member.name} 다시 포함`
+                                      : `${member.name} 제외`
+                                  }
+                                  className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 ${
+                                    isExcluded
+                                      ? "w-8 text-black"
+                                      : "w-8 text-black/55"
+                                  }`}
+                                  onClick={() =>
+                                    toggleMemberExclusion(member.id)
+                                  }
+                                  type="button"
+                                >
+                                  {isExcluded ? <PlusIcon /> : <CloseIcon />}
+                                </button>
                               </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
+
+                              {shouldShowToast ? (
+                                <p
+                                  aria-live="polite"
+                                  className={`soft-panel-enter pointer-events-none absolute left-3 right-3 z-10 rounded-full bg-black px-3 py-2 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] ${
+                                    isLastMember
+                                      ? "bottom-full mb-2"
+                                      : "top-full mt-2"
+                                  }`}
+                                  role="status"
+                                >
+                                  {memberToastMessage}
+                                </p>
+                              ) : null}
+
+                              {shouldShowPrompt &&
+                              renderedMinimumPricePrompt ? (
+                                <div
+                                  className={`minimum-price-prompt mt-2 flex items-center justify-between gap-3 rounded-[0.8rem] bg-black px-3 py-2 text-white ${
+                                    isMinimumPricePromptOpen
+                                      ? "minimum-price-prompt--open"
+                                      : "minimum-price-prompt--closed"
+                                  }`}
+                                >
+                                  <p className="min-w-0 text-[12px] font-semibold">
+                                    나머지도 같은 가격으로 채울까요?
+                                  </p>
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    <button
+                                      aria-label="최소 가격 전체 적용 취소"
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[14px] font-semibold text-white"
+                                      onClick={hideMinimumPricePrompt}
+                                      type="button"
+                                    >
+                                      ×
+                                    </button>
+                                    <button
+                                      aria-label="비어있는 멤버에 최소 가격 적용"
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[13px] font-semibold text-black"
+                                      onClick={() =>
+                                        applyMinimumPriceToEmptyMembers(
+                                          renderedMinimumPricePrompt.price,
+                                        )
+                                      }
+                                      type="button"
+                                    >
+                                      ✓
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     <p className="mt-4 rounded-[0.8rem] bg-[#f7f7f7] px-4 py-5 text-[14px] font-medium text-black/45">
