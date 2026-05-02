@@ -828,22 +828,22 @@ export function UploadProductForm() {
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div className="absolute inset-0 flex flex-col bg-white">
-            <header className="shrink-0 border-b border-black bg-black px-4 pb-4 pt-5 text-white">
-              <div className="flex h-12 items-center justify-between">
+            <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
+              <div className="upload-header__inner flex h-10 items-center justify-between">
                 <button
                   aria-label="이전 화면"
-                  className="inline-flex h-11 w-11 items-center justify-center text-white"
+                  className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
                   onClick={() => router.replace("/")}
                   type="button"
                 >
                   <BackIcon />
                 </button>
 
-                <div className="text-right">
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                <div className="upload-header__copy translate-y-0.5 text-right">
+                  <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
                     Upload
                   </p>
-                  <h1 className="text-[22px] tracking-[-0.05em]">
+                  <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
                     상품 등록
                   </h1>
                 </div>

@@ -369,13 +369,15 @@ export function BidHistoryContent({
         skipEnterAnimation ? "" : "tab-content-enter"
       }`}
     >
-      <header className="shrink-0 px-4 pb-4 pt-5">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">
-          History
-        </p>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-[-0.06em]">
-          입찰 기록
-        </h1>
+      <header className="bid-history-header shrink-0 px-4 py-3">
+        <div className="bid-history-header__copy flex h-10 flex-col justify-center">
+          <p className="bid-history-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
+            History
+          </p>
+          <h1 className="bid-history-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+            입찰 기록
+          </h1>
+        </div>
       </header>
 
       <div className="shrink-0 px-4 pb-4">

@@ -465,13 +465,15 @@ export function ProfileContent({
         shouldSkipEnterAnimation ? "" : "tab-content-enter"
       } relative overflow-hidden`}
     >
-      <header className="shrink-0 px-4 pb-4 pt-5">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">
-          My Page
-        </p>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-[-0.06em]">
-          마이페이지
-        </h1>
+      <header className="profile-header shrink-0 px-4 py-3">
+        <div className="profile-header__copy flex h-10 flex-col justify-center">
+          <p className="profile-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
+            My Page
+          </p>
+          <h1 className="profile-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+            마이페이지
+          </h1>
+        </div>
       </header>
 
       <main

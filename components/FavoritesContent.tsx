@@ -106,15 +106,17 @@ export function FavoritesContent({
         skipEnterAnimation ? "" : "tab-content-enter"
       }`}
     >
-      <header className="shrink-0 px-4 pb-5 pt-5">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-black/35">
-          Favorites
-        </p>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-[-0.06em]">
-          찜한 상품
-        </h1>
+      <header className="favorites-header shrink-0 px-4 py-3">
+        <div className="favorites-header__copy flex h-10 flex-col justify-center">
+          <p className="favorites-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
+            Favorites
+          </p>
+          <h1 className="favorites-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+            찜한 상품
+          </h1>
+        </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
+        <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
           {(
             [
               ["all", "전체"],
@@ -125,7 +127,7 @@ export function FavoritesContent({
 
             return (
               <button
-                className={`h-11 rounded-[0.8rem] text-[14px] font-semibold tracking-[-0.04em] ${
+                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
                   isActive
                     ? "bg-black text-white"
                     : "text-black/45"

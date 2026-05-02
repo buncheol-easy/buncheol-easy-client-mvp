@@ -26,11 +26,11 @@ type BottomNavigatorProps = {
 
 export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) {
   return (
-    <nav className="shrink-0 bg-black px-3 pb-4 pt-3 text-white">
-      <div className="grid grid-cols-5 items-start">
+    <nav className="bottom-navigator shrink-0 bg-black px-3 py-2 text-white">
+      <div className="bottom-navigator__grid grid grid-cols-5 items-center">
         {navItems.map((item) => {
           const isActive = item.label === activeLabel;
-          const className = `flex min-w-0 flex-col items-center gap-1.5 px-1 text-[11px] ${
+          const className = `bottom-navigator__item flex min-w-0 items-center justify-center px-1 ${
             isActive ? "text-white" : "text-white/55"
           }`;
           const content = (
@@ -52,7 +52,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
                   <ProfileIcon />
                 )}
               </span>
-              <span className="max-w-full truncate">
+              <span className="bottom-navigator__label hidden max-w-full truncate">
                 {item.label === "Bids" ? "입찰" : item.label}
               </span>
             </>
@@ -60,7 +60,12 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
 
           if (item.href) {
             return (
-              <Link key={item.label} href={item.href} className={className}>
+              <Link
+                key={item.label}
+                href={item.href}
+                className={className}
+                aria-label={item.label}
+              >
                 {content}
               </Link>
             );
@@ -71,6 +76,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
               key={item.label}
               className={className}
               type="button"
+              aria-label={item.label}
             >
               {content}
             </button>

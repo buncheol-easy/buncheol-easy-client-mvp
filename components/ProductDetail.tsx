@@ -562,11 +562,11 @@ export function ProductDetail({
           }
         }}
       >
-        <header className="shrink-0 px-4 pb-3 pt-4">
+        <header className="product-detail-header shrink-0 px-4 pb-2 pt-3">
           <div className="flex items-center justify-between">
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white"
+              className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
               onClick={handleBack}
               aria-label="이전 화면"
             >
@@ -574,7 +574,7 @@ export function ProductDetail({
             </button>
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white text-black"
+              className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black"
               aria-label="찜하기"
             >
               <HeartIcon filled={product.liked} />
@@ -585,7 +585,7 @@ export function ProductDetail({
         <div className="min-h-0 flex-1 overflow-y-auto pb-28">
           <section className="px-4">
             <div
-              className={`relative aspect-square overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
+              className={`product-detail-media relative aspect-[4/3] overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
             >
               {product.imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
