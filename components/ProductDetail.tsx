@@ -100,7 +100,7 @@ export function ProductDetail({
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
-  const [isEntered, setIsEntered] = useState(false);
+  const [isEntered] = useState(true);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
@@ -407,13 +407,6 @@ export function ProductDetail({
       );
     }
 
-    const animationFrame = window.requestAnimationFrame(() => {
-      setIsEntered(true);
-    });
-
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-    };
   }, [initialReturnSource]);
 
   useEffect(() => {

@@ -342,7 +342,9 @@ export function SearchExperience({
                     {recentSearches.map((search) => (
                       <button
                         key={search.label}
+                        onClick={() => handleSearch(search.label)}
                         className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
+                        type="button"
                       >
                         <span>{search.label}</span>
                         <CloseIcon />
@@ -360,6 +362,8 @@ export function SearchExperience({
                       <button
                         key={artist.rank}
                         className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
+                        onClick={() => handleSearch(artist.name)}
+                        type="button"
                       >
                         <span className="text-[21px] font-medium tracking-[-0.04em]">
                           {artist.rank}
@@ -385,7 +389,7 @@ export function SearchExperience({
             )}
           </div>
 
-          {hasResults ? <BottomNavigator activeLabel={null} /> : null}
+          <BottomNavigator activeLabel={null} />
         </div>
 
         {isClearingSearch ? (
@@ -412,6 +416,8 @@ export function SearchExperience({
                     <button
                       key={search.label}
                       className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
+                      onClick={() => handleSearch(search.label)}
+                      type="button"
                     >
                       <span>{search.label}</span>
                       <CloseIcon />
@@ -429,6 +435,8 @@ export function SearchExperience({
                     <button
                       key={artist.rank}
                       className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
+                      onClick={() => handleSearch(artist.name)}
+                      type="button"
                     >
                       <span className="text-[21px] font-medium tracking-[-0.04em]">
                         {artist.rank}
@@ -451,6 +459,7 @@ export function SearchExperience({
                 </div>
               </section>
             </div>
+            <BottomNavigator activeLabel={null} />
           </div>
         ) : null}
       </div>

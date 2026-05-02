@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import type { MouseEvent } from "react";
+import { useRouter } from "next/navigation";
 import { BellIcon, SearchIcon } from "@/components/icons";
 
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
@@ -12,15 +13,42 @@ function getHistoryIndex() {
 }
 
 export function AppHeader() {
-  function handleSearchClick() {
-    const historyIndex = getHistoryIndex();
+  const router = useRouter();
 
-    if (historyIndex === null) {
-      sessionStorage.removeItem(SEARCH_ENTRY_HISTORY_INDEX_KEY);
+  function rememberSearchEntry() {
+    try {
+      const historyIndex = getHistoryIndex();
+
+      if (historyIndex === null) {
+        window.sessionStorage.removeItem(SEARCH_ENTRY_HISTORY_INDEX_KEY);
+        return;
+      }
+
+      window.sessionStorage.setItem(
+        SEARCH_ENTRY_HISTORY_INDEX_KEY,
+        String(historyIndex),
+      );
+    } catch {
+      // Navigation should still work if iOS blocks storage access.
+    }
+  }
+
+  function handleSearchClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
       return;
     }
 
-    sessionStorage.setItem(SEARCH_ENTRY_HISTORY_INDEX_KEY, String(historyIndex));
+    event.preventDefault();
+    rememberSearchEntry();
+
+    router.push("/search");
   }
 
   return (
@@ -29,7 +57,7 @@ export function AppHeader() {
         <h1 className="app-header__title shrink-0 text-[22px] tracking-[-0.05em]">
           분철이지
         </h1>
-        <Link
+        <a
           href="/search"
           onClick={handleSearchClick}
           className="app-header__search flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black"
@@ -38,7 +66,7 @@ export function AppHeader() {
             포토카드를 검색해보세요!
           </span>
           <SearchIcon />
-        </Link>
+        </a>
         <button
           aria-label="알림"
           className="app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white"
