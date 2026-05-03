@@ -110,6 +110,17 @@ export function SearchExperience({
   const hasResults = Boolean(keyword);
 
   useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--system-bottom-color",
+      hasResults ? "#000000" : "#ffffff",
+    );
+
+    return () => {
+      document.documentElement.style.setProperty("--system-bottom-color", "#000000");
+    };
+  }, [hasResults]);
+
+  useEffect(() => {
     if (isSearchEntered) {
       return;
     }
@@ -242,7 +253,13 @@ export function SearchExperience({
   }
 
   return (
-    <main className="h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main
+      className={`system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111] ${
+        hasResults
+          ? "search-results-shell"
+          : "search-entry-shell system-chrome-bottom-white"
+      }`}
+    >
       <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
         <SwipeUnderlay
           isEntered={isSearchEntered}
@@ -389,7 +406,7 @@ export function SearchExperience({
             )}
           </div>
 
-          <BottomNavigator activeLabel={null} />
+          {hasResults ? <BottomNavigator activeLabel={null} /> : null}
         </div>
 
         {isClearingSearch ? (
@@ -459,7 +476,6 @@ export function SearchExperience({
                 </div>
               </section>
             </div>
-            <BottomNavigator activeLabel={null} />
           </div>
         ) : null}
       </div>

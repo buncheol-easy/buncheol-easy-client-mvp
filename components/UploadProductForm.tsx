@@ -824,7 +824,7 @@ export function UploadProductForm() {
   }
 
   return (
-    <main className="h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div className="absolute inset-0 flex flex-col bg-white">

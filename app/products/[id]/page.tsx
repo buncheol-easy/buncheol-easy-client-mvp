@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 import { ProductDetail } from "@/components/ProductDetail";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
+import { whiteChromeViewport } from "@/lib/system-chrome";
 import { getProductById } from "@/lib/mock-products";
+
+export const viewport = whiteChromeViewport;
 
 type ProductDetailPageProps = {
   params: Promise<{

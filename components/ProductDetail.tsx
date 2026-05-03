@@ -100,7 +100,7 @@ export function ProductDetail({
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
-  const [isEntered] = useState(true);
+  const [isEntered, setIsEntered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
@@ -351,6 +351,16 @@ export function ProductDetail({
   }, [backHref, initialReturnSource, router]);
 
   useEffect(() => {
+    const enterAnimationFrame = window.requestAnimationFrame(() => {
+      setIsEntered(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(enterAnimationFrame);
+    };
+  }, []);
+
+  useEffect(() => {
     const historyIndex = getHistoryIndex();
     const expectedEntryIndex = window.sessionStorage.getItem(
       PRODUCT_PROFILE_ENTRY_INDEX_KEY,
@@ -500,30 +510,46 @@ export function ProductDetail({
   }
 
   return (
-    <main className="relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main className="product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       {initialReturnSource === "home" ? (
-        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
           <HomeContent />
           <BottomNavigator />
         </SwipeUnderlay>
       ) : null}
 
       {initialReturnSource === "profile" ? (
-        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
           <ProfileContent skipEnterAnimation />
           <BottomNavigator activeLabel="Profile" />
         </SwipeUnderlay>
       ) : null}
 
       {initialReturnSource === "bids" ? (
-        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
           <BidHistoryContent skipEnterAnimation />
           <BottomNavigator activeLabel="Bids" />
         </SwipeUnderlay>
       ) : null}
 
       {initialReturnSource === "favorites" ? (
-        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
           <FavoritesContent skipEnterAnimation />
           <BottomNavigator activeLabel="Favorites" />
         </SwipeUnderlay>
@@ -531,6 +557,7 @@ export function ProductDetail({
 
       {returnQuery !== undefined ? (
         <SwipeUnderlay
+          className="product-detail-underlay"
           constrainWidth={false}
           isEntered={isEntered}
           isExiting={isExiting}
@@ -575,7 +602,7 @@ export function ProductDetail({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-28">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-32">
           <section className="px-4">
             <div
               className={`product-detail-media relative aspect-[4/3] overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
@@ -797,7 +824,7 @@ export function ProductDetail({
           </section>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
+        <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
           <button
             type="button"
             className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white"

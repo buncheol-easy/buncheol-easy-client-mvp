@@ -1,4 +1,7 @@
 import { SearchExperience } from "@/components/SearchExperience";
+import { blackChromeViewport } from "@/lib/system-chrome";
+
+export const viewport = blackChromeViewport;
 
 type SearchPageProps = {
   searchParams: Promise<{

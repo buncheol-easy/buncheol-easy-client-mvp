@@ -5,10 +5,12 @@ type SwipeUnderlayProps = {
   isEntered: boolean;
   isExiting: boolean;
   constrainWidth?: boolean;
+  className?: string;
 };
 
 export function SwipeUnderlay({
   children,
+  className = "",
   isEntered,
   isExiting,
   constrainWidth = true,
@@ -17,7 +19,7 @@ export function SwipeUnderlay({
     <div
       className={`swipe-underlay pointer-events-none absolute inset-0 ${
         constrainWidth ? "mx-auto flex h-full w-full max-w-[430px] flex-col bg-white" : ""
-      } ${isEntered && !isExiting ? "swipe-underlay-active" : ""} ${
+      } ${className} ${isEntered && !isExiting ? "swipe-underlay-active" : ""} ${
         isExiting ? "swipe-underlay-exit" : ""
       }`}
     >

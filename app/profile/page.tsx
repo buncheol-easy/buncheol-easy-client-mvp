@@ -1,9 +1,12 @@
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { ProfileContent } from "@/components/ProfileContent";
+import { whiteChromeViewport } from "@/lib/system-chrome";
+
+export const viewport = whiteChromeViewport;
 
 export default function ProfilePage() {
   return (
-    <main className="h-[100dvh] overflow-hidden bg-white text-[#111111]">
+    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-white text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <ProfileContent />
         <BottomNavigator activeLabel="Profile" />

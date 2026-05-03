@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
+import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
+import { blackChromeViewport } from "@/lib/system-chrome";
+import { Suspense } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,6 +17,8 @@ export const metadata: Metadata = {
   description: "최애 포토카드를 멤버별로 나눠 사고 모으는 모바일 웹앱 홈 화면",
 };
 
+export const viewport = blackChromeViewport;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -23,6 +28,9 @@ export default function RootLayout({
     <html lang="ko" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <DisplayModeClassSync />
+        <Suspense fallback={null}>
+          <SystemChromeColorSync />
+        </Suspense>
         {children}
       </body>
     </html>

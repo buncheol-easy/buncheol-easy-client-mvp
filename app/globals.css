@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
 :root {
+  --app-viewport-height: 100lvh;
   --background: #f2f1ed;
   --foreground: #111111;
+  --system-bottom-color: #000000;
+  --system-top-color: #000000;
 }
 
 @theme inline {
@@ -36,6 +39,77 @@ body {
     sans-serif;
 }
 
+html:has(body.is-pwa-standalone),
+body.is-pwa-standalone {
+  height: var(--app-viewport-height);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html:has(.app-header),
+html:has(.search-header),
+html:has(.upload-header),
+html:has(.system-chrome-black),
+body:has(.app-header),
+body:has(.search-header),
+body:has(.upload-header),
+body:has(.system-chrome-black) {
+  --system-top-color: #000000;
+  background: #000000;
+}
+
+html:has(.favorites-header),
+html:has(.profile-header),
+html:has(.bid-history-header),
+html:has(.product-detail-header),
+html:has(.system-chrome-white),
+body:has(.favorites-header),
+body:has(.profile-header),
+body:has(.bid-history-header),
+body:has(.product-detail-header),
+body:has(.system-chrome-white) {
+  --system-top-color: #ffffff;
+  background: #ffffff;
+}
+
+html:has(.system-chrome-bottom-black),
+body:has(.system-chrome-bottom-black) {
+  --system-bottom-color: #000000;
+}
+
+html:has(body.is-browser-tab .system-chrome-bottom-black),
+body.is-browser-tab:has(.system-chrome-bottom-black) {
+  --system-bottom-color: #000000;
+  background: #000000;
+}
+
+html:has(.system-chrome-bottom-white),
+body:has(.system-chrome-bottom-white) {
+  --system-bottom-color: #ffffff;
+}
+
+body::before,
+body::after {
+  content: "";
+  left: 0;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+  z-index: 2147483647;
+}
+
+body::before {
+  background: var(--system-top-color);
+  height: env(safe-area-inset-top);
+  top: 0;
+}
+
+body::after {
+  background: var(--system-bottom-color);
+  bottom: 0;
+  height: env(safe-area-inset-bottom);
+}
+
 a,
 button {
   transition:
@@ -43,6 +117,12 @@ button {
     background-color 160ms ease,
     border-color 160ms ease,
     transform 160ms ease;
+}
+
+input,
+select,
+textarea {
+  font-size: max(16px, 1em);
 }
 
 ::selection {
@@ -105,6 +185,13 @@ button {
 }
 
 @media (display-mode: standalone) {
+  body > main {
+    height: var(--app-viewport-height);
+    min-height: var(--app-viewport-height);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: env(safe-area-inset-top);
+  }
+
   .app-header {
     padding-bottom: 1rem;
     padding-top: 1.25rem;
@@ -279,6 +366,35 @@ button {
   }
 }
 
+body.is-pwa-standalone > main {
+  height: var(--app-viewport-height);
+  min-height: var(--app-viewport-height);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: env(safe-area-inset-top);
+}
+
+@media (display-mode: standalone) {
+  body > main.product-detail-shell {
+    padding-bottom: 0;
+    padding-top: 0;
+  }
+
+  body > main.product-detail-shell .product-page-panel,
+  body > main.product-detail-shell .product-detail-underlay {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+body.is-pwa-standalone > main.product-detail-shell {
+  padding-bottom: 0;
+  padding-top: 0;
+}
+
+body.is-pwa-standalone > main.product-detail-shell .product-page-panel,
+body.is-pwa-standalone > main.product-detail-shell .product-detail-underlay {
+  padding-top: env(safe-area-inset-top);
+}
+
 body.is-pwa-standalone .app-header {
   padding-bottom: 1rem;
   padding-top: 1.25rem;
@@ -438,6 +554,10 @@ body.is-pwa-standalone .bottom-navigator {
   padding-top: 0.75rem;
 }
 
+body.is-browser-tab:has(.system-chrome-bottom-black) .bottom-navigator {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+
 body.is-pwa-standalone .bottom-navigator__grid {
   align-items: flex-start;
 }
@@ -450,6 +570,18 @@ body.is-pwa-standalone .bottom-navigator__item {
 
 body.is-pwa-standalone .bottom-navigator__label {
   display: block;
+}
+
+@media (display-mode: standalone) {
+  .product-detail-bid-bar,
+  .bid-sheet-panel {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  }
+}
+
+body.is-pwa-standalone .product-detail-bid-bar,
+body.is-pwa-standalone .bid-sheet-panel {
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
 }
 
 .idol-selection-enter {

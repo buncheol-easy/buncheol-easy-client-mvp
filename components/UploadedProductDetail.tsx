@@ -39,7 +39,7 @@ export function UploadedProductDetail({ id }: UploadedProductDetailProps) {
 
   if (!isLoaded) {
     return (
-      <main className="flex h-[100dvh] items-center justify-center bg-white px-6 text-center text-[15px] font-semibold text-black/45">
+      <main className="system-chrome-white system-chrome-bottom-white flex h-[100dvh] items-center justify-center bg-white px-6 text-center text-[15px] font-semibold text-black/45">
         상품 정보를 불러오고 있습니다.
       </main>
     );
@@ -47,7 +47,7 @@ export function UploadedProductDetail({ id }: UploadedProductDetailProps) {
 
   if (!product) {
     return (
-      <main className="flex h-[100dvh] items-center justify-center bg-white px-6 text-center text-[15px] font-semibold text-black/45">
+      <main className="system-chrome-white system-chrome-bottom-white flex h-[100dvh] items-center justify-center bg-white px-6 text-center text-[15px] font-semibold text-black/45">
         생성된 상품 정보를 찾을 수 없습니다.
       </main>
     );

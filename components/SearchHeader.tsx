@@ -87,7 +87,7 @@ export function SearchHeader({
         <label className="search-header__field flex h-10 min-w-0 flex-1 items-center gap-3 rounded-full bg-white px-4 text-black">
           <input
             aria-label="검색어"
-            className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-black/35"
+            className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-black/35"
             defaultValue={defaultValue}
             onPointerDown={handleInputPointerDown}
             readOnly={inputReadOnly}
