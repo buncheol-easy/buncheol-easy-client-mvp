@@ -22,6 +22,8 @@ function isStandaloneDisplay() {
 function syncDisplayModeClass() {
   const standalone = isStandaloneDisplay();
 
+  document.documentElement.classList.toggle("is-pwa-standalone", standalone);
+  document.documentElement.classList.toggle("is-browser-tab", !standalone);
   document.body.classList.toggle("is-pwa-standalone", standalone);
   document.body.classList.toggle("is-browser-tab", !standalone);
 }

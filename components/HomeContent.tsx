@@ -1,14 +1,63 @@
+"use client";
+
+import { useRef, useState, type UIEvent } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { ArtistRail } from "@/components/ArtistRail";
 import { ProductGrid } from "@/components/ProductGrid";
 import { favoriteIdols, homeListings } from "@/lib/mock-home-search";
 
-export function HomeContent() {
-  return (
-    <>
-      <AppHeader />
+const SCROLL_REVEAL_THRESHOLD = 8;
+const SCROLL_HIDE_START = 24;
+const SCROLL_EDGE_GUARD = 16;
 
-      <div className="tab-content-enter min-h-0 flex-1 overflow-y-auto">
+export function HomeContent() {
+  const lastScrollTopRef = useRef(0);
+  const [isHeaderHidden, setIsHeaderHidden] = useState(false);
+
+  function handleContentScroll(event: UIEvent<HTMLDivElement>) {
+    const scrollElement = event.currentTarget;
+    const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
+    const nextScrollTop = Math.max(0, Math.min(scrollElement.scrollTop, maxScrollTop));
+    const previousScrollTop = lastScrollTopRef.current;
+    const isNearBottom = maxScrollTop - nextScrollTop <= SCROLL_EDGE_GUARD;
+
+    if (nextScrollTop <= SCROLL_REVEAL_THRESHOLD) {
+      setIsHeaderHidden(false);
+      lastScrollTopRef.current = nextScrollTop;
+      return;
+    }
+
+    if (
+      isNearBottom ||
+      Math.abs(nextScrollTop - previousScrollTop) <= SCROLL_REVEAL_THRESHOLD
+    ) {
+      lastScrollTopRef.current = nextScrollTop;
+      return;
+    }
+
+    const shouldHide =
+      nextScrollTop > previousScrollTop && nextScrollTop > SCROLL_HIDE_START;
+
+    setIsHeaderHidden((current) => (current === shouldHide ? current : shouldHide));
+    lastScrollTopRef.current = nextScrollTop;
+  }
+
+  return (
+    <div className="scroll-reactive-shell">
+      <div
+        className={`scroll-reactive-header ${
+          isHeaderHidden ? "scroll-reactive-header--hidden" : ""
+        }`}
+      >
+        <div className="scroll-reactive-header__inner">
+          <AppHeader />
+        </div>
+      </div>
+
+      <div
+        className="scroll-reactive-content scroll-reactive-content--home tab-content-enter min-h-0 flex-1 overflow-y-auto"
+        onScroll={handleContentScroll}
+      >
         <section className="px-4 pt-4">
           <div className="grid grid-cols-[1fr_1.15fr] overflow-hidden rounded-[1.35rem] border border-black bg-black">
             <div className="flex items-center p-5">
@@ -72,6 +121,6 @@ export function HomeContent() {
           </div>
         </section>
       </div>
-    </>
+    </div>
   );
 }

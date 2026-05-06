@@ -39,11 +39,26 @@ body {
     sans-serif;
 }
 
+html.is-pwa-standalone,
 html:has(body.is-pwa-standalone),
 body.is-pwa-standalone {
   height: var(--app-viewport-height);
   overflow: hidden;
   overscroll-behavior: none;
+}
+
+@media (display-mode: standalone) {
+  :root {
+    --scroll-reactive-home-offset: 156px;
+    --scroll-reactive-search-offset: 104px;
+  }
+
+  html,
+  body {
+    height: var(--app-viewport-height);
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
 }
 
 html:has(.app-header),
@@ -123,6 +138,65 @@ input,
 select,
 textarea {
   font-size: max(16px, 1em);
+}
+
+.scroll-reactive-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  flex: 1 1 0;
+  overflow: hidden;
+}
+
+.scroll-reactive-header {
+  left: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 2;
+  transition: opacity 220ms ease;
+  will-change: opacity;
+}
+
+.scroll-reactive-header--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scroll-reactive-header__inner {
+  transform: translateY(0);
+  transition: transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.scroll-reactive-header--hidden .scroll-reactive-header__inner {
+  transform: translateY(-100%);
+}
+
+.scroll-reactive-content {
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  overscroll-behavior-y: contain;
+}
+
+.scroll-reactive-content--home {
+  padding-top: var(--scroll-reactive-home-offset, 76px);
+}
+
+.scroll-reactive-content--search {
+  padding-top: var(--scroll-reactive-search-offset, 88px);
+}
+
+html.is-pwa-standalone,
+body.is-pwa-standalone {
+  --scroll-reactive-home-offset: 156px;
+  --scroll-reactive-search-offset: 104px;
 }
 
 ::selection {

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type UIEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArtistRail } from "@/components/ArtistRail";
 import { BottomNavigator } from "@/components/BottomNavigator";
@@ -24,6 +24,9 @@ type SearchExperienceProps = {
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
 const SEARCH_QUERY_STACK_KEY = "buncheol-search-query-stack";
 export const SEARCH_SKIP_ENTER_KEY = "buncheol-search-skip-enter";
+const SCROLL_REVEAL_THRESHOLD = 8;
+const SCROLL_HIDE_START = 24;
+const SCROLL_EDGE_GUARD = 16;
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -96,6 +99,7 @@ export function SearchExperience({
 }: SearchExperienceProps) {
   const router = useRouter();
   const isOpeningSearchSheetRef = useRef(false);
+  const lastResultScrollTopRef = useRef(0);
   const [isSearchEntered, setIsSearchEntered] = useState(
     () => skipEnterAnimation || takeShouldSkipSearchEnter(),
   );
@@ -106,6 +110,7 @@ export function SearchExperience({
   const [isRestoringPreviousResult, setIsRestoringPreviousResult] =
     useState(false);
   const [previousKeyword, setPreviousKeyword] = useState<string | null>(null);
+  const [isResultHeaderHidden, setIsResultHeaderHidden] = useState(false);
   const keyword = query?.trim();
   const hasResults = Boolean(keyword);
 
@@ -252,6 +257,40 @@ export function SearchExperience({
     router.replace(nextHref);
   }
 
+  function handleResultScroll(event: UIEvent<HTMLDivElement>) {
+    if (!hasResults) {
+      return;
+    }
+
+    const scrollElement = event.currentTarget;
+    const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
+    const nextScrollTop = Math.max(0, Math.min(scrollElement.scrollTop, maxScrollTop));
+    const previousScrollTop = lastResultScrollTopRef.current;
+    const isNearBottom = maxScrollTop - nextScrollTop <= SCROLL_EDGE_GUARD;
+
+    if (nextScrollTop <= SCROLL_REVEAL_THRESHOLD) {
+      setIsResultHeaderHidden(false);
+      lastResultScrollTopRef.current = nextScrollTop;
+      return;
+    }
+
+    if (
+      isNearBottom ||
+      Math.abs(nextScrollTop - previousScrollTop) <= SCROLL_REVEAL_THRESHOLD
+    ) {
+      lastResultScrollTopRef.current = nextScrollTop;
+      return;
+    }
+
+    const shouldHide =
+      nextScrollTop > previousScrollTop && nextScrollTop > SCROLL_HIDE_START;
+
+    setIsResultHeaderHidden((current) =>
+      current === shouldHide ? current : shouldHide,
+    );
+    lastResultScrollTopRef.current = nextScrollTop;
+  }
+
   return (
     <main
       className={`system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111] ${
@@ -317,93 +356,108 @@ export function SearchExperience({
             }
           }}
         >
-          <SearchHeader
-            key={`search-header-${keyword ?? ""}`}
-            defaultValue={keyword}
-            inputReadOnly={hasResults}
-            onInputActivate={openEmptySearch}
-            onBack={handleBack}
-            onSearch={handleSearch}
-          />
+          <div className="scroll-reactive-shell">
+            <div
+              className={`scroll-reactive-header ${
+                hasResults && isResultHeaderHidden
+                  ? "scroll-reactive-header--hidden"
+                  : ""
+              }`}
+            >
+              <div className="scroll-reactive-header__inner">
+                <SearchHeader
+                  key={`search-header-${keyword ?? ""}`}
+                  defaultValue={keyword}
+                  inputReadOnly={hasResults}
+                  onInputActivate={openEmptySearch}
+                  onBack={handleBack}
+                  onSearch={handleSearch}
+                />
+              </div>
+            </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
-            {hasResults ? (
-              <>
-                <section className="-mx-1">
-                  <ArtistRail
-                    items={searchResultArtists}
-                    leadingItem={{ label: "전체", icon: "all", active: true }}
-                  />
-                </section>
+            <div
+              className="scroll-reactive-content scroll-reactive-content--search min-h-0 flex-1 overflow-y-auto px-5"
+              onScroll={handleResultScroll}
+            >
+              {hasResults ? (
+                <>
+                  <section className="-mx-1">
+                    <ArtistRail
+                      items={searchResultArtists}
+                      leadingItem={{ label: "전체", icon: "all", active: true }}
+                    />
+                  </section>
 
-                <section className="border-t border-black/10 pt-5">
-                  <div className="mb-4 flex items-end justify-between">
-                    <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                      검색 결과
+                  <section className="border-t border-black/10 pt-5">
+                    <div className="mb-4 flex items-end justify-between">
+                      <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                        검색 결과
+                      </h2>
+                      <span className="text-[13px] font-medium text-black/45">
+                        {searchResultItems.length}개
+                      </span>
+                    </div>
+
+                    <ProductGrid items={searchResultItems} />
+                  </section>
+                </>
+              ) : (
+                <>
+                  <section>
+                    <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
+                      최근 검색어
                     </h2>
-                    <span className="text-[13px] font-medium text-black/45">
-                      {searchResultItems.length}개
-                    </span>
-                  </div>
-
-                  <ProductGrid items={searchResultItems} />
-                </section>
-              </>
-            ) : (
-              <>
-                <section>
-                  <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
-                    최근 검색어
-                  </h2>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {recentSearches.map((search) => (
-                      <button
-                        key={search.label}
-                        onClick={() => handleSearch(search.label)}
-                        className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
-                        type="button"
-                      >
-                        <span>{search.label}</span>
-                        <CloseIcon />
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="mt-20">
-                  <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
-                    인기 아티스트
-                  </h2>
-                  <div className="mt-5 border-y border-black/20">
-                    {popularArtists.map((artist) => (
-                      <button
-                        key={artist.rank}
-                        className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
-                        onClick={() => handleSearch(artist.name)}
-                        type="button"
-                      >
-                        <span className="text-[21px] font-medium tracking-[-0.04em]">
-                          {artist.rank}
-                        </span>
-                        <span
-                          className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      {recentSearches.map((search) => (
+                        <button
+                          key={search.label}
+                          onClick={() => handleSearch(search.label)}
+                          className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
+                          type="button"
                         >
-                          {artist.initials}
-                        </span>
-                        <span>
-                          <span className="block text-[24px] font-medium tracking-[-0.05em]">
-                            {artist.name}
+                          <span>{search.label}</span>
+                          <CloseIcon />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="mt-20">
+                    <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
+                      인기 아티스트
+                    </h2>
+                    <div className="mt-5 border-y border-black/20">
+                      {popularArtists.map((artist) => (
+                        <button
+                          key={artist.rank}
+                          className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
+                          onClick={() => handleSearch(artist.name)}
+                          type="button"
+                        >
+                          <span className="text-[21px] font-medium tracking-[-0.04em]">
+                            {artist.rank}
                           </span>
-                          <span className="mt-0.5 block text-[12px] font-medium text-black/40">
-                            {artist.group}
+                          <span
+                            className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
+                          >
+                            {artist.initials}
                           </span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              </>
-            )}
+                          <span>
+                            <span className="block text-[24px] font-medium tracking-[-0.05em]">
+                              {artist.name}
+                            </span>
+                            <span className="mt-0.5 block text-[12px] font-medium text-black/40">
+                              {artist.group}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                </>
+              )}
+            </div>
           </div>
 
           {hasResults ? <BottomNavigator activeLabel={null} /> : null}

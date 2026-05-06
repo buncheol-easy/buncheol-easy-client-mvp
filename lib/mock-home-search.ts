@@ -98,11 +98,21 @@ export const popularArtists: PopularArtist[] = [
 
 export const searchResultArtists: ArtistRailItem[] = favoriteIdols.slice(0, 4);
 
-export const homeListings: ProductCardItem[] = productDetails;
+function repeatProductCards(items: ProductCardItem[], repeatCount = 2) {
+  return Array.from({ length: repeatCount }).flatMap((_, repeatIndex) =>
+    items.map((item) => ({
+      ...item,
+      id: `${item.id}-${repeatIndex + 1}`,
+      productId: item.productId ?? item.id,
+    })),
+  );
+}
 
-export const searchResultItems: ProductCardItem[] = [
+export const homeListings: ProductCardItem[] = repeatProductCards(productDetails);
+
+export const searchResultItems: ProductCardItem[] = repeatProductCards([
   productDetails[0],
   productDetails[1],
   productDetails[2],
   productDetails[3],
-];
+]);

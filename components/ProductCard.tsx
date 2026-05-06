@@ -8,6 +8,7 @@ const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 
 export type ProductCardItem = {
   id: string;
+  productId?: string;
   title: string;
   member: string;
   era: string;
@@ -25,6 +26,7 @@ type ProductCardProps = {
 
 export function ProductCard({ item }: ProductCardProps) {
   const router = useRouter();
+  const productId = item.productId ?? item.id;
 
   function isPlainPrimaryClick(event: React.MouseEvent<HTMLAnchorElement>) {
     return (
@@ -58,7 +60,7 @@ export function ProductCard({ item }: ProductCardProps) {
 
   return (
     <Link
-      href={`/products/${item.id}`}
+      href={`/products/${productId}`}
       className="block space-y-3"
       prefetch={false}
       onClick={(event) => {
@@ -71,21 +73,21 @@ export function ProductCard({ item }: ProductCardProps) {
           const query = searchParams.get("q") ?? "";
 
           router.push(
-            `/products/${item.id}?from=search&q=${encodeURIComponent(query)}`,
+            `/products/${productId}?from=search&q=${encodeURIComponent(query)}`,
           );
           return;
         }
 
         if (pathname === "/") {
           event.preventDefault();
-          router.push(`/products/${item.id}?from=home`);
+          router.push(`/products/${productId}?from=home`);
           return;
         }
 
         if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
           event.preventDefault();
           rememberFavoritesProductEntry();
-          router.push(`/products/${item.id}?from=favorites`);
+          router.push(`/products/${productId}?from=favorites`);
         }
       }}
     >
