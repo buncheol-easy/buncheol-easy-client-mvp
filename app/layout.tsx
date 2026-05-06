@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { blackChromeViewport } from "@/lib/system-chrome";
-import Script from "next/script";
 import { Suspense } from "react";
 import "./globals.css";
 
@@ -20,43 +19,14 @@ export const metadata: Metadata = {
 
 export const viewport = blackChromeViewport;
 
-const displayModeInitScript = `
-(function () {
-  try {
-    var isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      window.matchMedia("(display-mode: fullscreen)").matches ||
-      window.navigator.standalone === true;
-    var root = document.documentElement;
-    var viewportHeight = Math.max(
-      window.innerHeight || 0,
-      (window.visualViewport && window.visualViewport.height) || 0
-    );
-
-    root.classList.toggle("is-pwa-standalone", isStandalone);
-    root.classList.toggle("is-browser-tab", !isStandalone);
-
-    if (viewportHeight > 0) {
-      root.style.setProperty("--app-viewport-height", viewportHeight + "px");
-    }
-  } catch (error) {
-  }
-})();
-`;
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className="h-full antialiased" suppressHydrationWarning>
+    <html lang="ko" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <Script
-          id="display-mode-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: displayModeInitScript }}
-        />
         <DisplayModeClassSync />
         <Suspense fallback={null}>
           <SystemChromeColorSync />

@@ -39,7 +39,6 @@ body {
     sans-serif;
 }
 
-html.is-pwa-standalone,
 html:has(body.is-pwa-standalone),
 body.is-pwa-standalone {
   height: var(--app-viewport-height);
@@ -193,7 +192,6 @@ textarea {
   padding-top: var(--scroll-reactive-search-offset, 88px);
 }
 
-html.is-pwa-standalone,
 body.is-pwa-standalone {
   --scroll-reactive-home-offset: 156px;
   --scroll-reactive-search-offset: 104px;
