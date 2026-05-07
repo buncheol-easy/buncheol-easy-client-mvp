@@ -332,7 +332,11 @@ function SoftPanel({ children, className = "", isOpen }: SoftPanelProps) {
 export function UploadProductForm() {
   const router = useRouter();
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
+  const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
+  const photoLimitToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const minimumPricePromptTimeoutRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
   const memberToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -419,6 +423,10 @@ export function UploadProductForm() {
 
   useEffect(() => {
     return () => {
+      if (photoLimitToastTimeoutRef.current) {
+        clearTimeout(photoLimitToastTimeoutRef.current);
+      }
+
       if (minimumPricePromptTimeoutRef.current) {
         clearTimeout(minimumPricePromptTimeoutRef.current);
       }
@@ -428,6 +436,19 @@ export function UploadProductForm() {
       }
     };
   }, []);
+
+  function showPhotoLimitToast(message: string) {
+    setPhotoLimitToast(message);
+
+    if (photoLimitToastTimeoutRef.current) {
+      clearTimeout(photoLimitToastTimeoutRef.current);
+    }
+
+    photoLimitToastTimeoutRef.current = setTimeout(() => {
+      setPhotoLimitToast("");
+      photoLimitToastTimeoutRef.current = null;
+    }, 2200);
+  }
 
   function showMemberToast(memberId: string, message: string) {
     if (memberToastTimeoutRef.current) {
@@ -522,9 +543,19 @@ export function UploadProductForm() {
       return;
     }
 
-    const imageFiles = Array.from(files)
-      .filter((file) => file.type.startsWith("image/"))
-      .slice(0, maxPhotos - photos.length);
+    const allImageFiles = Array.from(files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    const remainingSlots = Math.max(0, maxPhotos - photos.length);
+    const imageFiles = allImageFiles.slice(0, remainingSlots);
+
+    if (allImageFiles.length > remainingSlots) {
+      showPhotoLimitToast("사진은 최대 5장까지 업로드할 수 있어요.");
+    }
+
+    if (imageFiles.length === 0) {
+      return;
+    }
 
     const nextPhotos = await Promise.all(
       imageFiles.map(async (file) => {
@@ -779,6 +810,8 @@ export function UploadProductForm() {
         targetMembers.length > 1
           ? `${firstMember.name} 외 ${targetMembers.length - 1}명`
           : firstMember.name,
+      targetMembers: targetMembers.map((member) => member.name),
+      uploadedAt: formatDateTimeLabel(new Date().toISOString()),
       era: selectedGroup.name,
       rating: "0.0",
       reviews: "0",
@@ -888,6 +921,15 @@ export function UploadProductForm() {
               <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
                 <PlusIcon />
               </span>
+              {photoLimitToast ? (
+                <p
+                  aria-live="polite"
+                  className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                  role="status"
+                >
+                  {photoLimitToast}
+                </p>
+              ) : null}
               <input
                 accept="image/*"
                 className="sr-only"

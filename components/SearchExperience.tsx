@@ -314,7 +314,6 @@ export function SearchExperience({
               <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
                 {renderPreviousSearchResultsContent()}
               </div>
-              <BottomNavigator activeLabel={null} />
             </>
           ) : (
             <>
@@ -323,6 +322,12 @@ export function SearchExperience({
             </>
           )}
         </SwipeUnderlay>
+
+        {isResultBacking ? (
+          <div className="absolute bottom-0 left-0 right-0 z-[1] mx-auto w-full max-w-[430px]">
+            <BottomNavigator activeLabel={null} />
+          </div>
+        ) : null}
 
         <div
           className={`search-panel absolute inset-0 flex flex-col bg-white shadow-[-18px_0_36px_rgba(0,0,0,0.16)] ${
@@ -460,7 +465,9 @@ export function SearchExperience({
             </div>
           </div>
 
-          {hasResults ? <BottomNavigator activeLabel={null} /> : null}
+          {hasResults && !isResultBacking ? (
+            <BottomNavigator activeLabel={null} />
+          ) : null}
         </div>
 
         {isClearingSearch ? (

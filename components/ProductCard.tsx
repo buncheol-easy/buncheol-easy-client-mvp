@@ -2,17 +2,22 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { HeartIcon, StarIcon } from "@/components/icons";
+import { HeartIcon } from "@/components/icons";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
+const HOME_SCROLL_TOP_KEY = "home-scroll-top";
+const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 
 export type ProductCardItem = {
   id: string;
   productId?: string;
   title: string;
   member: string;
+  targetMembers?: string[];
+  uploadedAt?: string;
   era: string;
   price?: string;
+  deadline: string;
   rating: string;
   reviews: string;
   badge: string;
@@ -24,9 +29,126 @@ type ProductCardProps = {
   item: ProductCardItem;
 };
 
+const kstOffsetHours = 9;
+const newProductDays = 3;
+const soonDeadlineDays = 7;
+const millisecondsPerHour = 60 * 60 * 1000;
+
+function getTargetTags(item: ProductCardItem) {
+  const tags = item.targetMembers ?? [item.member];
+
+  return tags
+    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
+    .map((tag) => `#${tag}`);
+}
+
+function parseKoreaDateTime(value: string) {
+  const match = value
+    .trim()
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
+
+  if (!match) {
+    return new Date(Number.NaN);
+  }
+
+  const [, year, month, day, hour = "0"] = match;
+
+  return new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour) - kstOffsetHours,
+    ),
+  );
+}
+
+function getKoreaCalendar(date: Date) {
+  const koreaTime = new Date(
+    date.getTime() + kstOffsetHours * millisecondsPerHour,
+  );
+
+  return new Date(
+    Date.UTC(
+      koreaTime.getUTCFullYear(),
+      koreaTime.getUTCMonth(),
+      koreaTime.getUTCDate(),
+    ),
+  );
+}
+
+function getDeadlineBadge(deadline: string) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return {
+      label: "마감",
+      value: deadline,
+    };
+  }
+
+  const now = new Date();
+
+  if (deadlineDate.getTime() <= now.getTime()) {
+    return {
+      label: "Closed",
+      value: null,
+    };
+  }
+
+  const deadlineCalendar = getKoreaCalendar(deadlineDate);
+  const nowCalendar = getKoreaCalendar(now);
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const remainingDays = Math.round(
+    (deadlineCalendar.getTime() - nowCalendar.getTime()) / millisecondsPerDay,
+  );
+
+  if (remainingDays === 0) {
+    return {
+      label: "오늘 마감",
+      value: "D-DAY",
+    };
+  }
+
+  if (remainingDays <= soonDeadlineDays) {
+    return {
+      label: "마감 임박",
+      value: `D-${remainingDays}`,
+    };
+  }
+
+  return {
+    label: `D-${remainingDays}`,
+    value: `${deadlineCalendar.getUTCMonth() + 1}월 ${deadlineCalendar.getUTCDate()}일`,
+  };
+}
+
+function isRecentlyUploaded(uploadedAt?: string) {
+  if (!uploadedAt) {
+    return false;
+  }
+
+  const uploadedDate = parseKoreaDateTime(uploadedAt);
+
+  if (Number.isNaN(uploadedDate.getTime())) {
+    return false;
+  }
+
+  const now = new Date();
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const elapsedDays = Math.floor(
+    (now.getTime() - uploadedDate.getTime()) / millisecondsPerDay,
+  );
+
+  return elapsedDays >= 0 && elapsedDays < newProductDays;
+}
+
 export function ProductCard({ item }: ProductCardProps) {
   const router = useRouter();
   const productId = item.productId ?? item.id;
+  const targetTags = getTargetTags(item);
+  const deadlineBadge = getDeadlineBadge(item.deadline);
+  const isNewProduct = isRecentlyUploaded(item.uploadedAt);
 
   function isPlainPrimaryClick(event: React.MouseEvent<HTMLAnchorElement>) {
     return (
@@ -58,6 +180,21 @@ export function ProductCard({ item }: ProductCardProps) {
     );
   }
 
+  function rememberProductListScrollPosition(
+    event: React.MouseEvent<HTMLAnchorElement>,
+    storageKey: string,
+  ) {
+    const scrollContainer = event.currentTarget.closest<HTMLElement>(
+      "[data-product-scroll-container]",
+    );
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    window.sessionStorage.setItem(storageKey, String(scrollContainer.scrollTop));
+  }
+
   return (
     <Link
       href={`/products/${productId}`}
@@ -80,12 +217,14 @@ export function ProductCard({ item }: ProductCardProps) {
 
         if (pathname === "/") {
           event.preventDefault();
+          rememberProductListScrollPosition(event, HOME_SCROLL_TOP_KEY);
           router.push(`/products/${productId}?from=home`);
           return;
         }
 
         if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
           event.preventDefault();
+          rememberProductListScrollPosition(event, FAVORITES_SCROLL_TOP_KEY);
           rememberFavoritesProductEntry();
           router.push(`/products/${productId}?from=favorites`);
         }
@@ -95,16 +234,20 @@ export function ProductCard({ item }: ProductCardProps) {
         className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br ${item.tone}`}
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
-        <div className="absolute left-3 top-3 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
-          {item.badge}
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent px-3 pb-3 pt-12 text-white">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">
-            {item.era}
+        {isNewProduct ? (
+          <div className="absolute left-3 top-3 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
+            신규
+          </div>
+        ) : null}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
+          <p className="inline-flex rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/75 backdrop-blur-sm">
+            {deadlineBadge.label}
           </p>
-          <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-            {item.member}
-          </p>
+          {deadlineBadge.value ? (
+            <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em] drop-shadow-[0_1px_6px_rgba(0,0,0,0.65)]">
+              {deadlineBadge.value}
+            </p>
+          ) : null}
         </div>
         <span
           className={`absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 ${
@@ -116,16 +259,12 @@ export function ProductCard({ item }: ProductCardProps) {
       </div>
 
       <div>
+        <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+          {targetTags.join(" ")}
+        </p>
         <p className="line-clamp-2 text-[15px] leading-6 tracking-[-0.04em] text-black">
           {item.title}
         </p>
-        <div className="mt-3 flex items-center gap-1.5 text-[13px] text-black/55">
-          <span className="inline-flex items-center justify-center rounded-[0.35rem] bg-black p-1 text-white">
-            <StarIcon />
-          </span>
-          <span>{item.rating}</span>
-          <span>({item.reviews})</span>
-        </div>
       </div>
     </Link>
   );

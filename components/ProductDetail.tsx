@@ -3,11 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
-import { BackIcon, CloseIcon, HeartIcon, StarIcon } from "@/components/icons";
+import { BackIcon, CloseIcon, HeartIcon } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
-import { BidHistoryContent } from "@/components/BidHistoryContent";
-import { FavoritesContent } from "@/components/FavoritesContent";
-import { HomeContent } from "@/components/HomeContent";
+import {
+  BID_HISTORY_SKIP_ENTER_KEY,
+  BidHistoryContent,
+} from "@/components/BidHistoryContent";
+import {
+  FAVORITES_SKIP_ENTER_KEY,
+  FavoritesContent,
+} from "@/components/FavoritesContent";
+import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { ProfileContent } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -87,6 +93,14 @@ function getOptionPriceLabel(option: ProductOption) {
 
 function getBidBaseline(option: ProductOption) {
   return hasOptionBids(option) ? option.currentBid : getStartingBid(option);
+}
+
+function getTargetTags(product: ProductDetailItem) {
+  const tags = product.targetMembers ?? [product.member];
+
+  return tags
+    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
+    .map((tag) => `#${tag}`);
 }
 
 export function ProductDetail({
@@ -169,6 +183,7 @@ export function ProductDetail({
   const shippingMethods = product.shippingMethods ?? [
     { name: product.courier, price: "판매자 안내" },
   ];
+  const targetTags = getTargetTags(product);
 
   function buildTopBids(
     option: ProductOption,
@@ -463,6 +478,24 @@ export function ProductDetail({
       window.sessionStorage.removeItem("skip-profile-enter-animation");
     }
 
+    if (initialReturnSource === "home") {
+      window.sessionStorage.setItem(HOME_SKIP_ENTER_KEY, "true");
+    } else {
+      window.sessionStorage.removeItem(HOME_SKIP_ENTER_KEY);
+    }
+
+    if (initialReturnSource === "bids") {
+      window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
+    } else {
+      window.sessionStorage.removeItem(BID_HISTORY_SKIP_ENTER_KEY);
+    }
+
+    if (initialReturnSource === "favorites") {
+      window.sessionStorage.setItem(FAVORITES_SKIP_ENTER_KEY, "true");
+    } else {
+      window.sessionStorage.removeItem(FAVORITES_SKIP_ENTER_KEY);
+    }
+
     setIsExiting(true);
   }
 
@@ -517,7 +550,7 @@ export function ProductDetail({
           isEntered={isEntered}
           isExiting={isExiting}
         >
-          <HomeContent />
+          <HomeContent skipEnterAnimation />
           <BottomNavigator />
         </SwipeUnderlay>
       ) : null}
@@ -636,15 +669,11 @@ export function ProductDetail({
           </section>
 
           <section className="px-5 pt-6">
-            <div className="flex items-center gap-2 text-[13px] text-black/55">
-              <span className="inline-flex items-center justify-center rounded-[0.35rem] bg-black p-1 text-white">
-                <StarIcon />
-              </span>
-              <span>{product.rating}</span>
-              <span>후기 {product.reviews}개</span>
-            </div>
+            <p className="text-[13px] font-semibold leading-5 text-black/40">
+              {targetTags.join(" ")}
+            </p>
 
-            <h1 className="mt-4 text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
+            <h1 className="mt-4 line-clamp-2 text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
               {product.title}
             </h1>
             <div className="mt-7 grid grid-cols-2 gap-3">

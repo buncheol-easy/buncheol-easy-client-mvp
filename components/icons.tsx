@@ -63,6 +63,25 @@ export function CloseIcon() {
   );
 }
 
+export function CheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-3.5 w-3.5"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="2.4"
+    >
+      <path
+        d="m5.5 12.5 4 4L18.5 7.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function HeartIcon({ filled = false }: { filled?: boolean }) {
   return (
     <svg

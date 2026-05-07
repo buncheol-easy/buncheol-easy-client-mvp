@@ -1,9 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
-import { CloseIcon } from "@/components/icons";
+import { CheckIcon, CloseIcon } from "@/components/icons";
+import {
+  convenienceStoreTypes,
+  convenienceStoreTypeLabels,
+  getAvailableConvenienceStoreTypes,
+  getConvenienceStoreLabel,
+  getDefaultDeliveryAddressesByType,
+  getPrioritizedDeliveryAddresses,
+  initialDefaultDeliveryAddressIds,
+  initialDeliveryAddresses,
+  type ConvenienceStoreType,
+  type DeliveryAddress,
+} from "@/lib/mock-delivery-addresses";
 import { productDetails } from "@/lib/mock-products";
 
 function priceToNumber(price: string) {
@@ -17,6 +29,7 @@ function formatPrice(price: number) {
 const kstOffsetHours = 9;
 const paymentDeadlineDays = 3;
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
+const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -82,41 +95,16 @@ function formatPaymentRemainingTime(deadline: string, now: Date) {
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
 
-type DeliveryAddress = {
-  id: string;
-  label: string;
-  name: string;
-  phone: string;
-  address: string;
-};
-
 type BidHistoryFilter = "all" | "payment" | "active";
 
 const shippingFee = 3200;
-const mockBidAmounts = [3200, 5600, 4700, 5800];
+const mockBidAmounts = [5400, 6000, 4800, 5800];
 const mockClosedDeadlines = [
   "2026.04.26 23",
-  null,
+  "2026.05.05 21",
   "2026.04.25 21",
   "2026.04.26 20",
 ];
-const initialDeliveryAddresses: DeliveryAddress[] = [
-  {
-    id: "home",
-    label: "집",
-    name: "김번철",
-    phone: "010-1234-5678",
-    address: "서울특별시 마포구 월드컵북로 00, 101동 1203호",
-  },
-  {
-    id: "office",
-    label: "회사",
-    name: "김번철",
-    phone: "010-9876-5432",
-    address: "서울특별시 성동구 왕십리로 00, 8층",
-  },
-];
-
 const bidRecords = productDetails.slice(0, 4).map((product, index) => {
   const option = product.options[0];
   const amount = mockBidAmounts[index] ?? priceToNumber(option.currentBid) + 200;
@@ -133,7 +121,7 @@ const bidRecords = productDetails.slice(0, 4).map((product, index) => {
     member: product.member,
     optionLabel: option.label,
     participantCount: option.participantCount,
-    paidAt: rank === 1 && index === 0 ? "2026.04.27 09:20" : null,
+    paidAt: rank === 1 && index === 3 ? "2026.04.27 09:20" : null,
     productId: product.id,
     rank,
     submittedAt: ["오늘 20:12", "오늘 18:40", "어제 23:08", "어제 19:22"][
@@ -148,10 +136,28 @@ type BidHistoryContentProps = {
   skipEnterAnimation?: boolean;
 };
 
+export const BID_HISTORY_SKIP_ENTER_KEY = "skip-bid-history-enter-animation";
+
+function takeShouldSkipBidHistoryEnter() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const shouldSkip =
+    window.sessionStorage.getItem(BID_HISTORY_SKIP_ENTER_KEY) === "true";
+  window.sessionStorage.removeItem(BID_HISTORY_SKIP_ENTER_KEY);
+
+  return shouldSkip;
+}
+
 export function BidHistoryContent({
   skipEnterAnimation = false,
 }: BidHistoryContentProps) {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const addressListRef = useRef<HTMLDivElement | null>(null);
+  const [shouldSkipEnterAnimation] = useState(
+    () => skipEnterAnimation || takeShouldSkipBidHistoryEnter(),
+  );
   const [now, setNow] = useState(() => new Date());
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
@@ -171,22 +177,54 @@ export function BidHistoryContent({
   const [deliveryAddresses, setDeliveryAddresses] = useState(
     initialDeliveryAddresses,
   );
-  const [defaultAddressId] = useState("home");
-  const [newAddressLabel, setNewAddressLabel] = useState("");
-  const [newAddressName, setNewAddressName] = useState("");
+  const [defaultAddressIds] = useState(initialDefaultDeliveryAddressIds);
+  const [newAddressStoreType, setNewAddressStoreType] =
+    useState<ConvenienceStoreType>("gs25");
+  const [newAddressAlias, setNewAddressAlias] = useState("");
+  const [newAddressBranchName, setNewAddressBranchName] = useState("");
   const [newAddressValue, setNewAddressValue] = useState("");
-  const [newAddressPhone, setNewAddressPhone] = useState("");
   const [filter, setFilter] = useState<BidHistoryFilter>("all");
 
   const selectedPaymentBid =
     bidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+  const selectedPaymentProduct = selectedPaymentBid
+    ? productDetails.find((product) => product.id === selectedPaymentBid.productId) ??
+      null
+    : null;
+  const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
+    deliveryAddresses,
+    defaultAddressIds,
+  );
+  const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
+    deliveryAddresses,
+    defaultAddressIds,
+  );
+  const availablePaymentStoreTypes = getAvailableConvenienceStoreTypes(
+    selectedPaymentProduct?.shippingMethods,
+    selectedPaymentProduct?.courier,
+  );
+  const eligiblePaymentAddresses = prioritizedDeliveryAddresses.filter((address) =>
+    availablePaymentStoreTypes.includes(address.storeType),
+  );
   const defaultDeliveryAddress =
-    deliveryAddresses.find((address) => address.id === defaultAddressId) ??
+    defaultDeliveryAddresses.gs25 ??
+    defaultDeliveryAddresses.cu ??
     deliveryAddresses[0];
-  const paymentDeliveryAddress =
-    deliveryAddresses.find(
+  const selectedEligiblePaymentAddress =
+    eligiblePaymentAddresses.find(
       (address) => address.id === selectedPaymentAddressId,
-    ) ?? defaultDeliveryAddress;
+    ) ?? null;
+  const paymentDeliveryAddress =
+    selectedEligiblePaymentAddress ??
+    eligiblePaymentAddresses[0] ??
+    null;
+  const paymentVisibleAddresses = availablePaymentStoreTypes.map((storeType) => ({
+    storeType,
+    address:
+      paymentDeliveryAddress?.storeType === storeType
+        ? paymentDeliveryAddress
+        : defaultDeliveryAddresses[storeType],
+  }));
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -250,10 +288,10 @@ export function BidHistoryContent({
   }, [filter, now]);
 
   function resetNewAddressDraft() {
-    setNewAddressLabel("");
-    setNewAddressName("");
+    setNewAddressStoreType("gs25");
+    setNewAddressAlias("");
+    setNewAddressBranchName("");
     setNewAddressValue("");
-    setNewAddressPhone("");
   }
 
   function openPaymentSheet(bidId: string) {
@@ -262,8 +300,38 @@ export function BidHistoryContent({
       paymentSheetCloseTimerRef.current = null;
     }
 
+    const selectedBid = bidRecords.find((bid) => bid.id === bidId) ?? null;
+    const selectedProduct = selectedBid
+      ? productDetails.find((product) => product.id === selectedBid.productId) ??
+        null
+      : null;
+    const allowedStoreTypes = getAvailableConvenienceStoreTypes(
+      selectedProduct?.shippingMethods,
+      selectedProduct?.courier,
+    );
+    const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
+      deliveryAddresses,
+      defaultAddressIds,
+    );
+    const fallbackAddress =
+      allowedStoreTypes
+        .map((storeType) => nextDefaultAddresses[storeType])
+        .find((address) => address !== null) ??
+      prioritizedDeliveryAddresses.find((address) =>
+        allowedStoreTypes.includes(address.storeType),
+      ) ??
+      null;
+
     setSelectedPaymentBidId(bidId);
-    setSelectedPaymentAddressId((current) => current ?? defaultAddressId);
+    setSelectedPaymentAddressId((current) =>
+      current &&
+      prioritizedDeliveryAddresses.some(
+        (address) =>
+          address.id === current && allowedStoreTypes.includes(address.storeType),
+      )
+        ? current
+        : fallbackAddress?.id ?? null,
+    );
     setIsPaymentSheetOpen(true);
     setIsPaymentSheetClosing(false);
 
@@ -282,6 +350,17 @@ export function BidHistoryContent({
     paymentSheetCloseTimerRef.current = window.setTimeout(
       finishPaymentSheetClose,
       280,
+    );
+  }
+
+  function rememberScrollPosition() {
+    if (!scrollContainerRef.current) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      BID_HISTORY_SCROLL_TOP_KEY,
+      String(scrollContainerRef.current.scrollTop),
     );
   }
 
@@ -316,25 +395,26 @@ export function BidHistoryContent({
   }
 
   function addDeliveryAddress() {
-    const trimmedLabel = newAddressLabel.trim();
-    const trimmedName = newAddressName.trim();
+    const trimmedBranchName = newAddressBranchName.trim();
     const trimmedAddress = newAddressValue.trim();
-    const trimmedPhone = newAddressPhone.trim();
 
-    if (!trimmedLabel || !trimmedName || !trimmedAddress || !trimmedPhone) {
+    if (!trimmedBranchName || !trimmedAddress) {
       return;
     }
 
     const nextAddress = {
       id: `address-${Date.now()}`,
-      label: trimmedLabel,
-      name: trimmedName,
-      phone: trimmedPhone,
+      storeType: newAddressStoreType,
+      alias: newAddressAlias.trim() || undefined,
+      branchName: trimmedBranchName,
       address: trimmedAddress,
     };
 
     setDeliveryAddresses((current) => [...current, nextAddress]);
-    setSelectedPaymentAddressId(nextAddress.id);
+
+    if (availablePaymentStoreTypes.includes(newAddressStoreType)) {
+      setSelectedPaymentAddressId(nextAddress.id);
+    }
     resetNewAddressDraft();
     setIsAddressFormOpen(false);
   }
@@ -350,6 +430,8 @@ export function BidHistoryContent({
       return;
     }
 
+    rememberScrollPosition();
+
     const historyIndex = getHistoryIndex();
 
     if (historyIndex === null) {
@@ -363,10 +445,26 @@ export function BidHistoryContent({
     );
   }
 
+  useLayoutEffect(() => {
+    const storedScrollTop = window.sessionStorage.getItem(
+      BID_HISTORY_SCROLL_TOP_KEY,
+    );
+
+    if (!storedScrollTop || !scrollContainerRef.current) {
+      return;
+    }
+
+    scrollContainerRef.current.scrollTop = Number(storedScrollTop);
+
+    if (!skipEnterAnimation) {
+      window.sessionStorage.removeItem(BID_HISTORY_SCROLL_TOP_KEY);
+    }
+  }, [skipEnterAnimation]);
+
   return (
     <div
       className={`relative flex min-h-0 flex-1 flex-col overflow-hidden ${
-        skipEnterAnimation ? "" : "tab-content-enter"
+        shouldSkipEnterAnimation ? "" : "tab-content-enter"
       }`}
     >
       <header className="bid-history-header shrink-0 px-4 py-3">
@@ -407,8 +505,14 @@ export function BidHistoryContent({
         </div>
       </div>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <div className="tab-content-enter" key={filter}>
+      <main
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        ref={scrollContainerRef}
+      >
+        <div
+          className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}
+          key={filter}
+        >
           <div className="space-y-3">
             {records.map((bid) => {
               const isClosed =
@@ -598,21 +702,86 @@ export function BidHistoryContent({
               </p>
             </div>
 
-            <div className="mt-4 rounded-[0.95rem] border border-black bg-white px-4 py-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="rounded-full bg-[#f7f7f7] px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                  {paymentDeliveryAddress.label}
-                </span>
-                <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
-                  {paymentDeliveryAddress.name}
-                </p>
-              </div>
-              <p className="mt-3 text-[13px] leading-5 tracking-[-0.04em] text-black/65">
-                {paymentDeliveryAddress.address}
-              </p>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                {paymentDeliveryAddress.phone}
-              </p>
+            <div className="mt-4 space-y-2">
+              {paymentVisibleAddresses.map(({ storeType, address }) => {
+                const isSelected = address?.id === paymentDeliveryAddress?.id;
+
+                return address ? (
+                  <button
+                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-[background-color,border-color,transform] duration-300 ease-out ${
+                      isSelected
+                        ? "border-[#d8d8d8] bg-[#ececec]"
+                        : "border-[#ededed] bg-white"
+                    }`}
+                    key={storeType}
+                    onClick={() => setSelectedPaymentAddressId(address.id)}
+                    type="button"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
+                              isSelected
+                                ? "bg-black text-white"
+                                : "bg-white text-black/45"
+                            }`}
+                          >
+                            {getConvenienceStoreLabel(storeType)}
+                          </span>
+                          {address.alias ? (
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
+                                "bg-black/10 text-black/60"
+                              }`}
+                            >
+                              {address.alias}
+                            </span>
+                          ) : null}
+                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                            {address.branchName}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors duration-300 ease-out ${
+                          isSelected
+                            ? "bg-black text-white"
+                            : "bg-white text-black/45"
+                        }`}
+                      >
+                        <span className="flex items-center gap-1">
+                          <span
+                            className={`inline-flex h-3.5 w-3.5 items-center justify-center transition-opacity duration-300 ease-out ${
+                              isSelected ? "opacity-100" : "opacity-0"
+                            }`}
+                          >
+                            <CheckIcon />
+                          </span>
+                          <span>선택</span>
+                        </span>
+                      </span>
+                    </div>
+                    <p className="mt-3 text-[13px] leading-5 tracking-[-0.04em] text-black/65">
+                      {address.address}
+                    </p>
+                  </button>
+                ) : (
+                  <div
+                    className="rounded-[0.95rem] bg-[#f3f4f6] px-4 py-3"
+                    key={storeType}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                        {getConvenienceStoreLabel(storeType)}
+                      </span>
+                      <p className="text-[14px] font-semibold tracking-[-0.04em] text-black/45">
+                        기본 배송지가 없어요
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <button
               className="mt-2 h-11 w-full rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
@@ -642,7 +811,8 @@ export function BidHistoryContent({
             </div>
 
             <button
-              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white"
+              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
+              disabled={!paymentDeliveryAddress}
               onClick={closePaymentSheet}
               type="button"
             >
@@ -706,17 +876,19 @@ export function BidHistoryContent({
               className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
               ref={addressListRef}
             >
-              {deliveryAddresses.map((address) => {
+              {eligiblePaymentAddresses.map((address) => {
+                const isDefault =
+                  address.id === defaultAddressIds[address.storeType];
                 const isSelected =
                   address.id ===
-                  (selectedPaymentAddressId ?? defaultAddressId);
+                  (selectedPaymentAddressId ?? paymentDeliveryAddress?.id);
 
                 return (
                   <div
-                    className={`w-full rounded-[0.95rem] border px-4 py-3 text-left ${
+                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
                       isSelected
-                        ? "border-black bg-white"
-                        : "border-black/10 bg-[#f7f7f7]"
+                        ? "border-[#d8d8d8] bg-[#ececec]"
+                        : "border-[#ededed] bg-white"
                     }`}
                     key={address.id}
                     onKeyDown={(event) => {
@@ -732,11 +904,28 @@ export function BidHistoryContent({
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1 pr-1">
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                            {address.label}
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                              isSelected
+                                ? "bg-black text-white"
+                                : isDefault
+                                ? "bg-black text-white"
+                                : "bg-white text-black/45"
+                            }`}
+                          >
+                            {getConvenienceStoreLabel(address.storeType)}
                           </span>
+                          {address.alias ? (
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                "bg-black/10 text-black/60"
+                              }`}
+                            >
+                              {address.alias}
+                            </span>
+                          ) : null}
                           <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
-                            {address.name}
+                            {address.branchName}
                           </p>
                         </div>
                       </div>
@@ -744,7 +933,7 @@ export function BidHistoryContent({
                         className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                           isSelected
                             ? "bg-black text-white"
-                            : "bg-white text-black/45 ring-1 ring-black/10"
+                            : "bg-white text-black/45"
                         }`}
                       >
                         {isSelected ? "선택됨" : "선택"}
@@ -753,12 +942,15 @@ export function BidHistoryContent({
                     <p className="mt-3 text-[13px] leading-5 tracking-[-0.04em] text-black/65">
                       {address.address}
                     </p>
-                    <p className="mt-1 text-[13px] font-medium text-black/45">
-                      {address.phone}
-                    </p>
                   </div>
                 );
               })}
+
+              {eligiblePaymentAddresses.length === 0 ? (
+                <div className="rounded-[0.95rem] border border-dashed border-black/12 bg-[#f7f7f7] px-4 py-5 text-center text-[14px] font-medium text-black/45">
+                  선택 가능한 배송지가 없어요.
+                </div>
+              ) : null}
 
               <div className="rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] px-4 py-3">
                 {isAddressFormOpen ? (
@@ -778,32 +970,35 @@ export function BidHistoryContent({
                         닫기
                       </button>
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <input
-                        className="h-9 rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                        onChange={(event) =>
-                          setNewAddressLabel(event.target.value)
-                        }
-                        placeholder="별칭"
-                        value={newAddressLabel}
-                      />
-                      <input
-                        className="h-9 rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                        onChange={(event) =>
-                          setNewAddressName(event.target.value)
-                        }
-                        placeholder="받는 분"
-                        value={newAddressName}
-                      />
+                    <div className="mt-3 grid grid-cols-2 gap-2 rounded-[0.8rem] bg-white p-1">
+                      {convenienceStoreTypes.map((storeType) => (
+                        <button
+                          className={`h-9 rounded-[0.65rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
+                            newAddressStoreType === storeType
+                              ? "bg-black text-white"
+                              : "text-black/45"
+                          }`}
+                          key={storeType}
+                          onClick={() => setNewAddressStoreType(storeType)}
+                          type="button"
+                        >
+                          {convenienceStoreTypeLabels[storeType]}
+                        </button>
+                      ))}
                     </div>
                     <input
                       className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                      inputMode="tel"
+                      onChange={(event) => setNewAddressAlias(event.target.value)}
+                      placeholder="별칭 (예: 집, 회사)"
+                      value={newAddressAlias}
+                    />
+                    <input
+                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
                       onChange={(event) =>
-                        setNewAddressPhone(event.target.value)
+                        setNewAddressBranchName(event.target.value)
                       }
-                      placeholder="연락처"
-                      value={newAddressPhone}
+                      placeholder="편의점 지점명"
+                      value={newAddressBranchName}
                     />
                     <input
                       className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
@@ -816,10 +1011,7 @@ export function BidHistoryContent({
                     <button
                       className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-semibold text-white disabled:bg-black/20"
                       disabled={
-                        !newAddressLabel.trim() ||
-                        !newAddressName.trim() ||
-                        !newAddressValue.trim() ||
-                        !newAddressPhone.trim()
+                        !newAddressBranchName.trim() || !newAddressValue.trim()
                       }
                       onClick={addDeliveryAddress}
                       type="button"

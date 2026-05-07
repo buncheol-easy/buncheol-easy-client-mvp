@@ -26,6 +26,14 @@ function syncDisplayModeClass() {
   document.body.classList.toggle("is-browser-tab", !standalone);
 }
 
+function syncVirtualKeyboardClass() {
+  const visualViewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  const layoutViewportHeight = window.innerHeight;
+  const keyboardInset = layoutViewportHeight - visualViewportHeight;
+
+  document.body.classList.toggle("is-virtual-keyboard-open", keyboardInset > 150);
+}
+
 let stableViewportHeight = 0;
 
 function resetDocumentScroll() {
@@ -81,6 +89,7 @@ export function DisplayModeClassSync() {
 
     function syncDisplayModeState(allowViewportShrink = false) {
       syncDisplayModeClass();
+      syncVirtualKeyboardClass();
       syncViewportHeight({ allowShrink: allowViewportShrink });
       resetDocumentScroll();
 
@@ -93,6 +102,7 @@ export function DisplayModeClassSync() {
 
     function syncOrientationChange() {
       syncDisplayModeClass();
+      syncVirtualKeyboardClass();
       syncViewportHeight({ allowShrink: true, reset: true });
       resetDocumentScroll();
 
@@ -108,6 +118,7 @@ export function DisplayModeClassSync() {
     }
 
     function syncVisualViewportChange() {
+      syncVirtualKeyboardClass();
       syncDisplayModeState(false);
     }
 

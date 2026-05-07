@@ -1,23 +1,64 @@
 "use client";
 
-import { useRef, useState, type UIEvent } from "react";
+import { useLayoutEffect, useRef, useState, type UIEvent } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { ArtistRail } from "@/components/ArtistRail";
 import { ProductGrid } from "@/components/ProductGrid";
 import { favoriteIdols, homeListings } from "@/lib/mock-home-search";
 
+export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
+const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 
-export function HomeContent() {
+type HomeContentProps = {
+  skipEnterAnimation?: boolean;
+};
+
+function takeShouldSkipHomeEnter() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const shouldSkip =
+    window.sessionStorage.getItem(HOME_SKIP_ENTER_KEY) === "true";
+  window.sessionStorage.removeItem(HOME_SKIP_ENTER_KEY);
+
+  return shouldSkip;
+}
+
+function getStoredHomeScrollTop() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const storedScrollTop = window.sessionStorage.getItem(HOME_SCROLL_TOP_KEY);
+
+  return storedScrollTop === null ? null : Number(storedScrollTop);
+}
+
+export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const isRestoringReturnScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
+  const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
+    useState(skipEnterAnimation);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
+  const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
+    useState(false);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
     const nextScrollTop = Math.max(0, Math.min(scrollElement.scrollTop, maxScrollTop));
+
+    if (isRestoringReturnScrollRef.current) {
+      setIsHeaderHidden(false);
+      lastScrollTopRef.current = nextScrollTop;
+      return;
+    }
+
     const previousScrollTop = lastScrollTopRef.current;
     const isNearBottom = maxScrollTop - nextScrollTop <= SCROLL_EDGE_GUARD;
 
@@ -42,11 +83,65 @@ export function HomeContent() {
     lastScrollTopRef.current = nextScrollTop;
   }
 
+  useLayoutEffect(() => {
+    const storedScrollTop = getStoredHomeScrollTop();
+    const shouldSkip = skipEnterAnimation || takeShouldSkipHomeEnter();
+    const shouldStartWithHiddenHeader =
+      storedScrollTop !== null &&
+      storedScrollTop > SCROLL_HIDE_START;
+
+    setShouldSkipEnterAnimation(shouldSkip);
+    setIsHeaderHidden(shouldStartWithHiddenHeader);
+    setShouldSuppressHeaderTransition(
+      shouldSkip && shouldStartWithHiddenHeader,
+    );
+
+    if (storedScrollTop === null || !scrollContainerRef.current) {
+      return;
+    }
+
+    isRestoringReturnScrollRef.current = !skipEnterAnimation;
+    scrollContainerRef.current.scrollTop = storedScrollTop;
+    lastScrollTopRef.current = storedScrollTop;
+
+    let restoreTimer: number | null = null;
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (!skipEnterAnimation) {
+        setIsHeaderHidden(false);
+        restoreTimer = window.setTimeout(() => {
+          isRestoringReturnScrollRef.current = false;
+        }, 320);
+      }
+
+      setShouldSuppressHeaderTransition(false);
+    });
+
+    if (!skipEnterAnimation) {
+      window.sessionStorage.removeItem(HOME_SCROLL_TOP_KEY);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(restoreFrame);
+
+      if (restoreTimer !== null) {
+        window.clearTimeout(restoreTimer);
+      }
+    };
+  }, [skipEnterAnimation]);
+
+  function resumeHeaderScrollReaction() {
+    isRestoringReturnScrollRef.current = false;
+  }
+
   return (
     <div className="scroll-reactive-shell">
       <div
         className={`scroll-reactive-header ${
           isHeaderHidden ? "scroll-reactive-header--hidden" : ""
+        } ${
+          shouldSuppressHeaderTransition
+            ? "scroll-reactive-header--instant"
+            : ""
         }`}
       >
         <div className="scroll-reactive-header__inner">
@@ -55,8 +150,14 @@ export function HomeContent() {
       </div>
 
       <div
-        className="scroll-reactive-content scroll-reactive-content--home tab-content-enter min-h-0 flex-1 overflow-y-auto"
+        className={`scroll-reactive-content scroll-reactive-content--home min-h-0 flex-1 overflow-y-auto ${
+          shouldSkipEnterAnimation ? "" : "tab-content-enter"
+        }`}
+        data-product-scroll-container="home"
         onScroll={handleContentScroll}
+        onTouchStart={resumeHeaderScrollReaction}
+        onWheel={resumeHeaderScrollReaction}
+        ref={scrollContainerRef}
       >
         <section className="px-4 pt-4">
           <div className="grid grid-cols-[1fr_1.15fr] overflow-hidden rounded-[1.35rem] border border-black bg-black">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProductGrid } from "@/components/ProductGrid";
 import { favoriteIdols } from "@/lib/mock-home-search";
 import { productDetails } from "@/lib/mock-products";
@@ -11,6 +11,9 @@ type FavoriteSort = "deadline" | "recent";
 type FavoritesContentProps = {
   skipEnterAnimation?: boolean;
 };
+
+export const FAVORITES_SKIP_ENTER_KEY = "skip-favorites-enter-animation";
+const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 
 // Deadline strings are entered as Korea-local cutoff times.
 const kstOffsetHours = 9;
@@ -55,13 +58,29 @@ function isClosed(deadline: string, now: Date) {
   return deadlineDate.getTime() <= now.getTime();
 }
 
+function takeShouldSkipFavoritesEnter() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const shouldSkip =
+    window.sessionStorage.getItem(FAVORITES_SKIP_ENTER_KEY) === "true";
+  window.sessionStorage.removeItem(FAVORITES_SKIP_ENTER_KEY);
+
+  return shouldSkip;
+}
+
 export function FavoritesContent({
   skipEnterAnimation = false,
 }: FavoritesContentProps) {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const [shouldSkipEnterAnimation] = useState(
+    () => skipEnterAnimation || takeShouldSkipFavoritesEnter(),
+  );
   const [filter, setFilter] = useState<FavoriteFilter>("all");
   const [sort, setSort] = useState<FavoriteSort>("recent");
   const [isSortOpen, setIsSortOpen] = useState(false);
-  const [hideClosed, setHideClosed] = useState(true);
+  const [hideClosed, setHideClosed] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -77,7 +96,9 @@ export function FavoritesContent({
       .filter((product) => {
         if (
           filter === "favoriteArtist" &&
-          !favoriteArtistNames.has(product.member)
+          !(product.targetMembers ?? [product.member]).some((member) =>
+            favoriteArtistNames.has(member),
+          )
         ) {
           return false;
         }
@@ -100,10 +121,26 @@ export function FavoritesContent({
       });
   }, [filter, hideClosed, now, sort]);
 
+  useLayoutEffect(() => {
+    const storedScrollTop = window.sessionStorage.getItem(
+      FAVORITES_SCROLL_TOP_KEY,
+    );
+
+    if (!storedScrollTop || !scrollContainerRef.current) {
+      return;
+    }
+
+    scrollContainerRef.current.scrollTop = Number(storedScrollTop);
+
+    if (!skipEnterAnimation) {
+      window.sessionStorage.removeItem(FAVORITES_SCROLL_TOP_KEY);
+    }
+  }, [skipEnterAnimation]);
+
   return (
     <div
       className={`flex min-h-0 flex-1 flex-col ${
-        skipEnterAnimation ? "" : "tab-content-enter"
+        shouldSkipEnterAnimation ? "" : "tab-content-enter"
       }`}
     >
       <header className="favorites-header shrink-0 px-4 py-3">
@@ -209,9 +246,13 @@ export function FavoritesContent({
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+      <main
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        data-product-scroll-container="favorites"
+        ref={scrollContainerRef}
+      >
         <div
-          className="tab-content-enter"
+          className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}
           key={`${filter}-${hideClosed}-${sort}`}
         >
           {filteredProducts.length > 0 ? (

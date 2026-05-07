@@ -166,6 +166,11 @@ textarea {
   pointer-events: none;
 }
 
+.scroll-reactive-header--instant,
+.scroll-reactive-header--instant .scroll-reactive-header__inner {
+  transition: none;
+}
+
 .scroll-reactive-header__inner {
   transform: translateY(0);
   transition: transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -642,6 +647,59 @@ body.is-pwa-standalone .bottom-navigator__item {
 
 body.is-pwa-standalone .bottom-navigator__label {
   display: block;
+}
+
+.bottom-navigator {
+  transition:
+    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+body.is-virtual-keyboard-open .bottom-navigator {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(100% + env(safe-area-inset-bottom)));
+}
+
+body.is-address-sheet-open .bottom-navigator {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+body.is-address-sheet-open.is-virtual-keyboard-open .bottom-navigator,
+body.is-address-sheet-open.is-virtual-keyboard-open .bottom-navigator * {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(calc(100% + env(safe-area-inset-bottom))) !important;
+}
+
+body.is-address-input-focused .bottom-navigator,
+body.is-address-input-focused .bottom-navigator * {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(calc(100% + env(safe-area-inset-bottom))) !important;
+}
+
+body.is-address-input-focused::after {
+  pointer-events: auto;
+}
+
+body.is-address-sheet-open.is-virtual-keyboard-open > main::after {
+  content: "";
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(100%, 430px);
+  height: calc(5.5rem + env(safe-area-inset-bottom));
+  z-index: 35;
+  pointer-events: auto;
+  touch-action: none;
+  background: transparent;
 }
 
 @media (display-mode: standalone) {
