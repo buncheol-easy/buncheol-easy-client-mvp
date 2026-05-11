@@ -157,12 +157,10 @@ textarea {
   right: 0;
   top: 0;
   z-index: 2;
-  transition: opacity 220ms ease;
-  will-change: opacity;
+  will-change: transform;
 }
 
 .scroll-reactive-header--hidden {
-  opacity: 0;
   pointer-events: none;
 }
 
@@ -685,7 +683,7 @@ body.is-address-input-focused .bottom-navigator * {
 }
 
 body.is-address-input-focused::after {
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 body.is-address-sheet-open.is-virtual-keyboard-open > main::after {
@@ -697,8 +695,8 @@ body.is-address-sheet-open.is-virtual-keyboard-open > main::after {
   width: min(100%, 430px);
   height: calc(5.5rem + env(safe-area-inset-bottom));
   z-index: 35;
-  pointer-events: auto;
-  touch-action: none;
+  pointer-events: none;
+  touch-action: auto;
   background: transparent;
 }
 

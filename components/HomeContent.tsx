@@ -90,19 +90,30 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       storedScrollTop !== null &&
       storedScrollTop > SCROLL_HIDE_START;
 
-    setShouldSkipEnterAnimation(shouldSkip);
-    setIsHeaderHidden(shouldStartWithHiddenHeader);
-    setShouldSuppressHeaderTransition(
-      shouldSkip && shouldStartWithHiddenHeader,
-    );
-
     if (storedScrollTop === null || !scrollContainerRef.current) {
-      return;
+      const initialStateFrame = window.requestAnimationFrame(() => {
+        setShouldSkipEnterAnimation(shouldSkip);
+        setIsHeaderHidden(false);
+        setShouldSuppressHeaderTransition(false);
+      });
+
+      return () => {
+        window.cancelAnimationFrame(initialStateFrame);
+      };
     }
 
-    isRestoringReturnScrollRef.current = !skipEnterAnimation;
     scrollContainerRef.current.scrollTop = storedScrollTop;
     lastScrollTopRef.current = storedScrollTop;
+
+    const initialStateFrame = window.requestAnimationFrame(() => {
+      setShouldSkipEnterAnimation(shouldSkip);
+      setIsHeaderHidden(shouldStartWithHiddenHeader);
+      setShouldSuppressHeaderTransition(
+        shouldSkip && shouldStartWithHiddenHeader,
+      );
+    });
+
+    isRestoringReturnScrollRef.current = !skipEnterAnimation;
 
     let restoreTimer: number | null = null;
     const restoreFrame = window.requestAnimationFrame(() => {
@@ -121,6 +132,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     }
 
     return () => {
+      window.cancelAnimationFrame(initialStateFrame);
       window.cancelAnimationFrame(restoreFrame);
 
       if (restoreTimer !== null) {

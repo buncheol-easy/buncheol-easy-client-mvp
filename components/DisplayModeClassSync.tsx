@@ -119,7 +119,7 @@ export function DisplayModeClassSync() {
 
     function syncVisualViewportChange() {
       syncVirtualKeyboardClass();
-      syncDisplayModeState(false);
+      syncViewportHeight();
     }
 
     syncDisplayModeState(true);

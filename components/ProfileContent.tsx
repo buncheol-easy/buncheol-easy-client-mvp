@@ -7,19 +7,28 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { MouseEvent } from "react";
 import { CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
 import {
-  convenienceStoreTypes,
+  addressReturnStateKey,
+  lastAddedDeliveryAddressIdKey,
+  type AddressReturnState,
+} from "@/lib/address-return-state";
+import {
+  getInitialDeliveryAddressState,
+  readDeliveryAddressState,
+  subscribeDeliveryAddressState,
+  type StoredDeliveryAddressState,
+  writeDeliveryAddressState,
+} from "@/lib/delivery-address-store";
+import {
   convenienceStoreTypeLabels,
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
-  initialDefaultDeliveryAddressIds,
-  initialDeliveryAddresses,
-  type ConvenienceStoreType,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
 import { productDetails } from "@/lib/mock-products";
@@ -149,7 +158,6 @@ export function ProfileContent({
   skipEnterAnimation = false,
 }: ProfileContentProps) {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
-  const addressListRef = useRef<HTMLDivElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(() => {
     if (skipEnterAnimation || typeof window === "undefined") {
       return skipEnterAnimation;
@@ -172,12 +180,12 @@ export function ProfileContent({
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
-  const [deliveryAddresses, setDeliveryAddresses] = useState(
-    initialDeliveryAddresses,
+  const storedAddressState = useSyncExternalStore(
+    subscribeDeliveryAddressState,
+    readDeliveryAddressState,
+    getInitialDeliveryAddressState,
   );
-  const [defaultAddressIds, setDefaultAddressIds] = useState(
-    initialDefaultDeliveryAddressIds,
-  );
+  const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [addressSheetMode, setAddressSheetMode] =
     useState<AddressSheetMode>("manage");
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
@@ -187,13 +195,6 @@ export function ProfileContent({
   const [manageAddressSnapshot, setManageAddressSnapshot] = useState<
     DeliveryAddress[]
   >([]);
-  const [isAddressFormOpen, setIsAddressFormOpen] = useState(false);
-  const [isAddressInputFocused, setIsAddressInputFocused] = useState(false);
-  const [newAddressStoreType, setNewAddressStoreType] =
-    useState<ConvenienceStoreType>("gs25");
-  const [newAddressAlias, setNewAddressAlias] = useState("");
-  const [newAddressBranchName, setNewAddressBranchName] = useState("");
-  const [newAddressValue, setNewAddressValue] = useState("");
   const [now, setNow] = useState(() => new Date());
 
   const allBids = useMemo(
@@ -233,10 +234,6 @@ export function ProfileContent({
   const eligiblePaymentAddresses = prioritizedDeliveryAddresses.filter(
     (address) => availablePaymentStoreTypes.includes(address.storeType),
   );
-  const defaultDeliveryAddress =
-    defaultDeliveryAddresses.gs25 ??
-    defaultDeliveryAddresses.cu ??
-    deliveryAddresses[0];
   const selectedEligiblePaymentAddress =
     eligiblePaymentAddresses.find(
       (address) => address.id === selectedPaymentAddressId,
@@ -270,6 +267,88 @@ export function ProfileContent({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const rawReturnState = window.sessionStorage.getItem(addressReturnStateKey);
+
+    if (!rawReturnState) {
+      return;
+    }
+
+    let returnState: AddressReturnState;
+
+    try {
+      returnState = JSON.parse(rawReturnState) as AddressReturnState;
+    } catch {
+      window.sessionStorage.removeItem(addressReturnStateKey);
+      return;
+    }
+
+    if (returnState.source !== "profile") {
+      return;
+    }
+
+    window.sessionStorage.removeItem(addressReturnStateKey);
+    const lastAddedAddressId = window.sessionStorage.getItem(
+      lastAddedDeliveryAddressIdKey,
+    );
+    window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
+
+    const returnBid = returnState.bidId
+      ? activeBids.find((bid) => bid.id === returnState.bidId)
+      : null;
+
+    if (!returnBid) {
+      return;
+    }
+
+    const returnProduct =
+      productDetails.find((product) => product.id === returnBid.productId) ??
+      null;
+    const returnAvailableStoreTypes = getAvailableConvenienceStoreTypes(
+      returnProduct?.shippingMethods,
+      returnProduct?.courier,
+    );
+    const returnEligibleAddresses = getPrioritizedDeliveryAddresses(
+      deliveryAddresses,
+      defaultAddressIds,
+    ).filter((address) => returnAvailableStoreTypes.includes(address.storeType));
+    const restoredAddressId = lastAddedAddressId ?? returnState.addressId;
+    const restoredPaymentAddressId =
+      restoredAddressId &&
+      returnEligibleAddresses.some((address) => address.id === restoredAddressId)
+        ? restoredAddressId
+        : null;
+
+    let isRestoreActive = true;
+    const restoreTimer = window.setTimeout(() => {
+      if (!isRestoreActive) {
+        return;
+      }
+
+      setSelectedPaymentBidId(returnBid.id);
+      setSelectedPaymentAddressId(restoredPaymentAddressId);
+      setAddressSheetMode("select");
+      setIsPaymentSheetOpen(true);
+      setIsPaymentSheetClosing(false);
+      setIsPaymentSheetEntered(true);
+      setIsAddressSheetOpen(true);
+      setIsAddressSheetClosing(false);
+
+      window.requestAnimationFrame(() => {
+        if (!isRestoreActive) {
+          return;
+        }
+
+        setIsAddressSheetEntered(true);
+      });
+    }, 0);
+
+    return () => {
+      isRestoreActive = false;
+      window.clearTimeout(restoreTimer);
+    };
+  }, [activeBids, defaultAddressIds, deliveryAddresses]);
 
   useEffect(() => {
     if (!isAddressSheetOpen) {
@@ -336,17 +415,6 @@ export function ProfileContent({
     };
   }, [isAddressSheetOpen]);
 
-  useEffect(() => {
-    document.body.classList.toggle(
-      "is-address-input-focused",
-      isAddressSheetOpen && isAddressInputFocused,
-    );
-
-    return () => {
-      document.body.classList.remove("is-address-input-focused");
-    };
-  }, [isAddressInputFocused, isAddressSheetOpen]);
-
   function finishPaymentSheetClose() {
     if (paymentSheetCloseTimerRef.current !== null) {
       window.clearTimeout(paymentSheetCloseTimerRef.current);
@@ -382,6 +450,20 @@ export function ProfileContent({
     window.sessionStorage.setItem(
       "profile-scroll-top",
       String(scrollContainerRef.current.scrollTop),
+    );
+  }
+
+  function rememberAddressAddReturn() {
+    const returnState: AddressReturnState = {
+      source: "profile",
+      bidId: selectedPaymentBidId,
+      addressId: selectedPaymentAddressId,
+    };
+
+    window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
+    window.sessionStorage.setItem(
+      addressReturnStateKey,
+      JSON.stringify(returnState),
     );
   }
 
@@ -470,11 +552,8 @@ export function ProfileContent({
     );
   }
 
-  function resetNewAddressDraft() {
-    setNewAddressStoreType("gs25");
-    setNewAddressAlias("");
-    setNewAddressBranchName("");
-    setNewAddressValue("");
+  function commitDeliveryAddressState(nextState: StoredDeliveryAddressState) {
+    writeDeliveryAddressState(nextState);
   }
 
   function openAddressSheet(mode: AddressSheetMode = "manage") {
@@ -490,7 +569,6 @@ export function ProfileContent({
     }
 
     setAddressSheetMode(mode);
-    setIsAddressFormOpen(false);
     setIsAddressSheetOpen(true);
     setIsAddressSheetClosing(false);
 
@@ -506,54 +584,10 @@ export function ProfileContent({
 
     setIsAddressSheetClosing(true);
     setIsAddressSheetEntered(false);
-    setIsAddressFormOpen(false);
-    resetNewAddressDraft();
     addressSheetCloseTimerRef.current = window.setTimeout(
       finishAddressSheetClose,
       280,
     );
-  }
-
-  function addDeliveryAddress() {
-    const trimmedBranchName = newAddressBranchName.trim();
-    const trimmedAddress = newAddressValue.trim();
-
-    if (!trimmedBranchName || !trimmedAddress) {
-      return;
-    }
-
-    const nextAddress = {
-      id: `address-${Date.now()}`,
-      storeType: newAddressStoreType,
-      alias: newAddressAlias.trim() || undefined,
-      branchName: trimmedBranchName,
-      address: trimmedAddress,
-    };
-
-    setDeliveryAddresses((current) => [...current, nextAddress]);
-
-    if (addressSheetMode === "manage") {
-      setManageAddressSnapshot((current) => [...current, nextAddress]);
-    }
-
-    if (
-      addressSheetMode === "select" &&
-      availablePaymentStoreTypes.includes(newAddressStoreType)
-    ) {
-      setSelectedPaymentAddressId(nextAddress.id);
-    }
-
-    setDefaultAddressIds((current) =>
-      current[newAddressStoreType]
-        ? current
-        : {
-            ...current,
-            [newAddressStoreType]: nextAddress.id,
-          },
-    );
-
-    resetNewAddressDraft();
-    setIsAddressFormOpen(false);
   }
 
   function selectPaymentAddress(addressId: string) {
@@ -569,50 +603,55 @@ export function ProfileContent({
       return;
     }
 
-    setDefaultAddressIds((current) => ({
-      ...current,
-      [selectedAddress.storeType]: addressId,
-    }));
+    commitDeliveryAddressState({
+      addresses: deliveryAddresses,
+      defaultAddressIds: {
+        ...defaultAddressIds,
+        [selectedAddress.storeType]: addressId,
+      },
+    });
   }
 
   function deleteDeliveryAddress(addressId: string) {
-    setDeliveryAddresses((current) => {
-      if (current.length <= 1) {
-        return current;
-      }
+    if (deliveryAddresses.length <= 1) {
+      return;
+    }
 
-      const targetAddress = current.find((address) => address.id === addressId);
+    const targetAddress = deliveryAddresses.find(
+      (address) => address.id === addressId,
+    );
 
-      if (!targetAddress) {
-        return current;
-      }
+    if (!targetAddress) {
+      return;
+    }
 
-      const nextAddresses = current.filter((address) => address.id !== addressId);
-      const sameTypeAddresses = nextAddresses.filter(
-        (address) => address.storeType === targetAddress.storeType,
-      );
+    const nextAddresses = deliveryAddresses.filter(
+      (address) => address.id !== addressId,
+    );
+    const sameTypeAddresses = nextAddresses.filter(
+      (address) => address.storeType === targetAddress.storeType,
+    );
 
-      setDefaultAddressIds((defaultIds) =>
-        defaultIds[targetAddress.storeType] === addressId
+    commitDeliveryAddressState({
+      addresses: nextAddresses,
+      defaultAddressIds:
+        defaultAddressIds[targetAddress.storeType] === addressId
           ? {
-              ...defaultIds,
+              ...defaultAddressIds,
               [targetAddress.storeType]: sameTypeAddresses[0]?.id ?? null,
             }
-          : defaultIds,
-      );
-
-      if (addressId === selectedPaymentAddressId) {
-        setSelectedPaymentAddressId(nextAddresses[0]?.id ?? null);
-      }
-
-      if (addressSheetMode === "manage") {
-        setManageAddressSnapshot((snapshot) =>
-          snapshot.filter((address) => address.id !== addressId),
-        );
-      }
-
-      return nextAddresses;
+          : defaultAddressIds,
     });
+
+    if (addressId === selectedPaymentAddressId) {
+      setSelectedPaymentAddressId(nextAddresses[0]?.id ?? null);
+    }
+
+    if (addressSheetMode === "manage") {
+      setManageAddressSnapshot((snapshot) =>
+        snapshot.filter((address) => address.id !== addressId),
+      );
+    }
   }
 
   useLayoutEffect(() => {
@@ -690,13 +729,12 @@ export function ProfileContent({
             <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
               기본 배송지
             </h2>
-            <button
+            <Link
               className="text-[13px] font-semibold text-black/45"
-              onClick={() => openAddressSheet("manage")}
-              type="button"
+              href="/profile/addresses"
             >
               배송지 관리
-            </button>
+            </Link>
           </div>
           <div className="mt-3 grid gap-3">
             {(["gs25", "cu"] as const).map((storeType) => {
@@ -971,10 +1009,10 @@ export function ProfileContent({
                               {address.alias}
                             </span>
                           ) : null}
-                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
-                            {address.branchName}
-                          </p>
                         </div>
+                        <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {address.branchName}
+                        </p>
                       </div>
                         <span
                           className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors duration-300 ease-out ${
@@ -995,9 +1033,6 @@ export function ProfileContent({
                           </span>
                         </span>
                     </div>
-                    <p className="mt-3 text-[13px] leading-5 tracking-[-0.04em] text-black/65">
-                      {address.address}
-                    </p>
                   </button>
                 ) : (
                   <div
@@ -1114,10 +1149,7 @@ export function ProfileContent({
             </div>
 
             <div
-              className={`mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 ${
-                isAddressFormOpen ? "pb-16" : "pb-4"
-              }`}
-              ref={addressListRef}
+              className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4 pr-1"
               style={{
                 WebkitOverflowScrolling: "touch",
                 overscrollBehavior: "contain",
@@ -1198,10 +1230,10 @@ export function ProfileContent({
                               {address.alias}
                             </span>
                           ) : null}
-                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
-                            {address.branchName}
-                          </p>
                         </div>
+                        <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {address.branchName}
+                        </p>
                       </div>
                       {addressSheetMode === "select" ? (
                         <span
@@ -1245,9 +1277,6 @@ export function ProfileContent({
                         </div>
                       )}
                     </div>
-                    <p className="mt-3 text-[13px] leading-5 tracking-[-0.04em] text-black/65">
-                      {address.address}
-                    </p>
                   </div>
                 );
               })}
@@ -1258,21 +1287,18 @@ export function ProfileContent({
                 </div>
               ) : null}
 
-              <div
-                className={`rounded-[0.95rem] border-[1.5px] border-[#ededed] ${
-                  isAddressFormOpen ? "bg-[#f7f7f7]" : "bg-white"
-                } ${
-                  isAddressFormOpen ? "px-4 py-3" : "px-0 py-0"
-                }`}
-              >
-                {isAddressFormOpen ? (
-                  <div className="idol-selection-enter px-4 py-3">
+              {/*
+                <div
+                  className="idol-selection-enter rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-[#f7f7f7] px-5 pb-4 pt-5"
+                  key="address-form"
+                >
                     <div className="flex items-center justify-between">
                       <p className="text-[13px] font-semibold tracking-[-0.04em]">
                         새 배송지 추가
                       </p>
                       <button
                         className="text-[12px] font-semibold text-black/35"
+                        disabled={!isAddressFormOpen}
                         onClick={() => {
                           setIsAddressFormOpen(false);
                           resetNewAddressDraft();
@@ -1282,7 +1308,7 @@ export function ProfileContent({
                         닫기
                       </button>
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 rounded-[0.8rem] bg-white/80 p-1">
+                    <div className="mt-4 grid grid-cols-2 gap-2 rounded-[0.8rem] bg-white/80 p-1">
                       {convenienceStoreTypes.map((storeType) => (
                         <button
                           className={`h-9 rounded-[0.65rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
@@ -1297,6 +1323,7 @@ export function ProfileContent({
                           onTouchStart={(event) => {
                             event.preventDefault();
                           }}
+                          disabled={!isAddressFormOpen}
                           onClick={() => setNewAddressStoreType(storeType)}
                           type="button"
                         >
@@ -1306,13 +1333,10 @@ export function ProfileContent({
                     </div>
                     <input
                       className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
+                      disabled={!isAddressFormOpen}
                       onChange={(event) => setNewAddressAlias(event.target.value)}
-                      onFocus={(event) => {
+                      onFocus={() => {
                         setIsAddressInputFocused(true);
-                        event.currentTarget.scrollIntoView({
-                          behavior: "smooth",
-                          block: "nearest",
-                        });
                       }}
                       onBlur={() => {
                         window.setTimeout(() => {
@@ -1332,15 +1356,12 @@ export function ProfileContent({
                     />
                     <input
                       className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
+                      disabled={!isAddressFormOpen}
                       onChange={(event) =>
                         setNewAddressBranchName(event.target.value)
                       }
-                      onFocus={(event) => {
+                      onFocus={() => {
                         setIsAddressInputFocused(true);
-                        event.currentTarget.scrollIntoView({
-                          behavior: "smooth",
-                          block: "nearest",
-                        });
                       }}
                       onBlur={() => {
                         window.setTimeout(() => {
@@ -1355,60 +1376,42 @@ export function ProfileContent({
                         }, 0);
                       }}
                       placeholder="편의점 지점명"
-                      style={{ scrollMarginBottom: "6rem" }}
+                      style={{ scrollMarginBottom: "1rem" }}
                       value={newAddressBranchName}
-                    />
-                    <input
-                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                      onChange={(event) =>
-                        setNewAddressValue(event.target.value)
-                      }
-                      onFocus={(event) => {
-                        setIsAddressInputFocused(true);
-                        event.currentTarget.scrollIntoView({
-                          behavior: "smooth",
-                          block: "nearest",
-                        });
-                      }}
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          const activeElement = document.activeElement;
-                          if (
-                            activeElement instanceof HTMLInputElement &&
-                            addressListRef.current?.contains(activeElement)
-                          ) {
-                            return;
-                          }
-                          setIsAddressInputFocused(false);
-                        }, 0);
-                      }}
-                      placeholder="주소"
-                      style={{ scrollMarginBottom: "6rem" }}
-                      value={newAddressValue}
                     />
                     <button
                       className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-semibold text-white disabled:bg-black/20"
-                      disabled={
-                        !newAddressBranchName.trim() || !newAddressValue.trim()
-                      }
+                      disabled={!isAddressFormOpen || !newAddressBranchName.trim()}
                       onClick={addDeliveryAddress}
                       type="button"
                     >
                       배송지 추가
                     </button>
                   </div>
-                ) : (
-                  <button
-                    className="idol-selection-enter flex h-[5.25rem] w-full items-center justify-center rounded-[0.95rem] text-[14px] font-semibold text-black/45"
-                    onClick={() => setIsAddressFormOpen(true)}
-                    type="button"
+              ) : (
+                <div
+                  className="idol-selection-enter"
+                  key="address-add-button"
+                >
+                  <Link
+                    className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-white text-[14px] font-semibold text-black/45"
+                    href="/profile/addresses"
                   >
                     + 새 배송지 추가
-                  </button>
-                )}
-              </div>
+                  </Link>
+                </div>
+              )}
 
-              {isAddressFormOpen ? <div aria-hidden="true" className="h-6" /> : null}
+              */}
+              <div className="idol-selection-enter" key="address-add-link">
+                <Link
+                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  href="/profile/addresses?openAdd=1&returnTo=profile"
+                  onNavigate={rememberAddressAddReturn}
+                >
+                  + 새 배송지 추가
+                </Link>
+              </div>
             </div>
 
             {addressSheetMode === "select" ? (
