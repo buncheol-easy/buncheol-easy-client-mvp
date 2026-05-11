@@ -101,6 +101,26 @@ export function HeartIcon({ filled = false }: { filled?: boolean }) {
   );
 }
 
+export function EditIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path
+        d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="m14.5 7.5 2 2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function BidIcon() {
   return (
     <svg

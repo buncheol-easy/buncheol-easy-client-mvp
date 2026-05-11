@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { BackIcon, CloseIcon, HeartIcon } from "@/components/icons";
@@ -24,7 +31,7 @@ import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 type ProductDetailProps = {
   product: ProductDetailItem;
   backHref?: string;
-  initialReturnSource?: "home" | "profile" | "bids" | "favorites";
+  initialReturnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
 };
 
@@ -41,6 +48,26 @@ type ProductHistoryState = {
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
 };
+
+function ProductEditIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path
+        d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="m14.5 7.5 2 2" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function getHistoryState() {
   return window.history.state as ProductHistoryState | null;
@@ -103,6 +130,14 @@ function getTargetTags(product: ProductDetailItem) {
     .map((tag) => `#${tag}`);
 }
 
+function getProductImageUrls(product: ProductDetailItem) {
+  return [product.imageUrl, ...(product.imageUrls ?? [])].filter(
+    (imageUrl, index, imageUrls): imageUrl is string => {
+      return Boolean(imageUrl) && imageUrls.indexOf(imageUrl) === index;
+    },
+  );
+}
+
 export function ProductDetail({
   backHref,
   product,
@@ -113,6 +148,7 @@ export function ProductDetail({
   const didNavigateBack = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
+  const productImagePointerStartXRef = useRef<number | null>(null);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
   const [isEntered, setIsEntered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -124,6 +160,9 @@ export function ProductDetail({
   );
   const [bidAmounts, setBidAmounts] = useState<Record<string, string>>({});
   const [myBids, setMyBids] = useState<Record<string, number>>({});
+  const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
+  const [productImageDragOffset, setProductImageDragOffset] = useState(0);
+  const [isProductImageDragging, setIsProductImageDragging] = useState(false);
 
   const activeBidCount = useMemo(() => {
     return auctionOptions.filter((option) => {
@@ -184,6 +223,15 @@ export function ProductDetail({
     { name: product.courier, price: "판매자 안내" },
   ];
   const targetTags = getTargetTags(product);
+  const productImages = getProductImageUrls(product);
+  const visibleProductImageIndex = Math.min(
+    currentProductImageIndex,
+    Math.max(0, productImages.length - 1),
+  );
+  const productImageTrackOffset = `calc(-${
+    visibleProductImageIndex * 100
+  }% + ${productImageDragOffset}px)`;
+  const canEditProduct = product.id.startsWith("uploaded-");
 
   function buildTopBids(
     option: ProductOption,
@@ -362,6 +410,11 @@ export function ProductDetail({
       return;
     }
 
+    if (initialReturnSource === "upload") {
+      router.replace("/");
+      return;
+    }
+
     router.back();
   }, [backHref, initialReturnSource, router]);
 
@@ -499,6 +552,79 @@ export function ProductDetail({
     setIsExiting(true);
   }
 
+  function openEditProduct() {
+    const returnSourceQuery = initialReturnSource
+      ? `&from=${initialReturnSource}`
+      : "";
+
+    router.push(
+      `/upload?edit=${encodeURIComponent(product.id)}${returnSourceQuery}`,
+    );
+  }
+
+  function startProductImageSwipe(event: PointerEvent<HTMLDivElement>) {
+    if (productImages.length <= 1) {
+      return;
+    }
+
+    productImagePointerStartXRef.current = event.clientX;
+    setIsProductImageDragging(true);
+    setProductImageDragOffset(0);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveProductImageSwipe(event: PointerEvent<HTMLDivElement>) {
+    const startX = productImagePointerStartXRef.current;
+
+    if (startX === null || productImages.length <= 1) {
+      return;
+    }
+
+    const distanceX = event.clientX - startX;
+    event.preventDefault();
+
+    const isFirstImage = visibleProductImageIndex === 0;
+    const isLastImage = visibleProductImageIndex === productImages.length - 1;
+    const dampenedDistance =
+      (isFirstImage && distanceX > 0) || (isLastImage && distanceX < 0)
+        ? distanceX * 0.28
+        : distanceX;
+
+    setProductImageDragOffset(dampenedDistance);
+  }
+
+  function finishProductImageSwipe(event: PointerEvent<HTMLDivElement>) {
+    const startX = productImagePointerStartXRef.current;
+    productImagePointerStartXRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setIsProductImageDragging(false);
+    setProductImageDragOffset(0);
+
+    if (startX === null || productImages.length <= 1) {
+      return;
+    }
+
+    const distance = event.clientX - startX;
+
+    if (Math.abs(distance) < 44) {
+      return;
+    }
+
+    setCurrentProductImageIndex((current) => {
+      const nextIndex = distance < 0 ? current + 1 : current - 1;
+
+      return Math.max(0, Math.min(productImages.length - 1, nextIndex));
+    });
+  }
+
+  function cancelProductImageSwipe() {
+    productImagePointerStartXRef.current = null;
+    setIsProductImageDragging(false);
+    setProductImageDragOffset(0);
+  }
+
   function openSheet() {
     if (sheetCloseFallbackTimerRef.current !== null) {
       window.clearTimeout(sheetCloseFallbackTimerRef.current);
@@ -616,15 +742,25 @@ export function ProductDetail({
         }}
       >
         <header className="product-detail-header shrink-0 px-4 pb-2 pt-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
+              className="product-detail-action mr-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
               onClick={handleBack}
               aria-label="이전 화면"
             >
               <BackIcon />
             </button>
+            {canEditProduct ? (
+              <button
+                type="button"
+                className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black"
+                onClick={openEditProduct}
+                aria-label="분철 수정"
+              >
+                <ProductEditIcon />
+              </button>
+            ) : null}
             <button
               type="button"
               className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black"
@@ -640,13 +776,47 @@ export function ProductDetail({
             <div
               className={`product-detail-media relative aspect-[4/3] overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
             >
-              {product.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  alt=""
-                  className="h-full w-full object-cover"
-                  src={product.imageUrl}
-                />
+              {productImages.length > 0 ? (
+                <>
+                  <div
+                    className="h-full touch-none select-none overflow-hidden"
+                    onPointerCancel={cancelProductImageSwipe}
+                    onPointerDown={startProductImageSwipe}
+                    onPointerMove={moveProductImageSwipe}
+                    onPointerUp={finishProductImageSwipe}
+                  >
+                    <div
+                      className={`flex h-full ${
+                        isProductImageDragging
+                          ? ""
+                          : "transition-transform duration-300 ease-out"
+                      }`}
+                      style={{
+                        transform: `translateX(${productImageTrackOffset})`,
+                      }}
+                    >
+                      {productImages.map((imageUrl) => (
+                        <div
+                          className="h-full w-full shrink-0 overflow-hidden"
+                          key={imageUrl}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            alt=""
+                            className="h-full w-full object-cover"
+                            draggable={false}
+                            src={imageUrl}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {productImages.length > 1 ? (
+                    <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
+                      {visibleProductImageIndex + 1}/{productImages.length}
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />

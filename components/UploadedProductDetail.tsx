@@ -2,33 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { ProductDetail } from "@/components/ProductDetail";
+import { readUploadedProduct } from "@/lib/hosted-products-store";
 import type { ProductDetailItem } from "@/lib/mock-products";
 
 type UploadedProductDetailProps = {
   id: string;
+  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
 };
 
-export function UploadedProductDetail({ id }: UploadedProductDetailProps) {
+export function UploadedProductDetail({
+  id,
+  returnSource,
+}: UploadedProductDetailProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [product, setProduct] = useState<ProductDetailItem | null>(null);
 
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
-      const storedProduct = window.sessionStorage.getItem(
-        `uploaded-product:${id}`,
-      );
-
-      if (!storedProduct) {
-        setIsLoaded(true);
-        return;
-      }
-
-      try {
-        setProduct(JSON.parse(storedProduct) as ProductDetailItem);
-      } catch {
-        setProduct(null);
-      }
-
+      setProduct(readUploadedProduct(id));
       setIsLoaded(true);
     });
 
@@ -53,5 +44,11 @@ export function UploadedProductDetail({ id }: UploadedProductDetailProps) {
     );
   }
 
-  return <ProductDetail backHref="/" product={product} />;
+  return (
+    <ProductDetail
+      backHref={returnSource ? undefined : "/"}
+      initialReturnSource={returnSource}
+      product={product}
+    />
+  );
 }

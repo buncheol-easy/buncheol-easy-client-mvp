@@ -32,7 +32,20 @@ export default async function ProductDetailPage({
 
   if (!product) {
     if (id.startsWith("uploaded-")) {
-      return <UploadedProductDetail id={id} />;
+      return (
+        <UploadedProductDetail
+          id={id}
+          returnSource={
+            returnSource === "home" ||
+            returnSource === "profile" ||
+            returnSource === "bids" ||
+            returnSource === "favorites" ||
+            returnSource === "upload"
+              ? returnSource
+              : undefined
+          }
+        />
+      );
     }
 
     notFound();
@@ -50,7 +63,8 @@ export default async function ProductDetailPage({
         returnSource === "home" ||
         returnSource === "profile" ||
         returnSource === "bids" ||
-        returnSource === "favorites"
+        returnSource === "favorites" ||
+        returnSource === "upload"
           ? returnSource
           : undefined
       }

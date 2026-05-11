@@ -11,6 +11,10 @@ import {
 import { useRouter } from "next/navigation";
 import { BackIcon, CloseIcon, PlusIcon, SearchIcon } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import {
+  readUploadedProduct,
+  writeUploadedProduct,
+} from "@/lib/hosted-products-store";
 import type { IdolGroup } from "@/lib/mock-idol-directory";
 import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
@@ -40,6 +44,11 @@ type SoftPanelProps = {
   children: ReactNode;
   className?: string;
   isOpen: boolean;
+};
+
+type UploadProductFormProps = {
+  editProductId?: string;
+  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
 };
 
 const shippingOptions = ["GS 편의점 택배", "CU 편의점 택배"];
@@ -172,6 +181,22 @@ function formatDateTimeLabel(value: string) {
   )}:00`;
 }
 
+function toScheduleInputValue(value: string) {
+  const match = value
+    .trim()
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
+
+  if (!match) {
+    return "";
+  }
+
+  const [, year, month, day, hour = "0"] = match;
+
+  return `${year}-${padNumber(Number(month))}-${padNumber(
+    Number(day),
+  )}T${padNumber(Number(hour))}:00`;
+}
+
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -194,12 +219,14 @@ function createUploadedProductId() {
   return `uploaded-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function compressImageDataUrl(dataUrl: string) {
+function compressImageDataUrl(
+  dataUrl: string,
+  { maxSize = 900, quality = 0.66 } = {},
+) {
   return new Promise<string>((resolve, reject) => {
     const image = new Image();
 
     image.addEventListener("load", () => {
-      const maxSize = 1280;
       const scale = Math.min(
         1,
         maxSize / Math.max(image.naturalWidth, image.naturalHeight),
@@ -229,7 +256,7 @@ function compressImageDataUrl(dataUrl: string) {
           reader.readAsDataURL(blob);
         },
         "image/jpeg",
-        0.72,
+        quality,
       );
     });
     image.addEventListener("error", () => {
@@ -329,8 +356,12 @@ function SoftPanel({ children, className = "", isOpen }: SoftPanelProps) {
   );
 }
 
-export function UploadProductForm() {
+export function UploadProductForm({
+  editProductId,
+  returnSource,
+}: UploadProductFormProps) {
   const router = useRouter();
+  const isEditMode = Boolean(editProductId);
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
@@ -369,6 +400,8 @@ export function UploadProductForm() {
   const [shippingPrices, setShippingPrices] = useState<Record<string, string>>(
     {},
   );
+  const [editingProduct, setEditingProduct] =
+    useState<ProductDetailItem | null>(null);
 
   const selectedGroup = useMemo(() => {
     return idolDirectory.find((group) => group.id === selectedGroupId) ?? null;
@@ -436,6 +469,107 @@ export function UploadProductForm() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!editProductId) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const product = readUploadedProduct(editProductId);
+
+      if (!product) {
+        setSubmitError("수정할 분철 정보를 찾을 수 없습니다.");
+        return;
+      }
+
+      const group =
+        idolDirectory.find((group) => group.name === product.era) ??
+        idolDirectory.find((group) => {
+          const memberNames = product.targetMembers ?? [product.member];
+
+          return group.members.some((member) =>
+            memberNames.includes(member.name),
+          );
+        }) ??
+        null;
+      const optionLabels = new Set(
+        product.options.map((option) => option.label),
+      );
+      const targetMemberNames =
+        product.targetMembers ?? product.options.map((option) => option.label);
+      const selectedMembers =
+        group?.members.filter((member) => {
+          return (
+            targetMemberNames.includes(member.name) ||
+            optionLabels.has(member.name)
+          );
+        }) ?? [];
+      const minimumPrices = selectedMembers.reduce<Record<string, string>>(
+        (prices, member) => {
+          const option = product.options.find(
+            (option) => option.label === member.name,
+          );
+
+          prices[member.id] = toNumericInput(
+            option?.startingBid ?? option?.price ?? option?.currentBid ?? "",
+          );
+
+          return prices;
+        },
+        {},
+      );
+      const shippingMethods = product.shippingMethods?.length
+        ? product.shippingMethods
+        : [{ name: product.courier, price: "" }];
+
+      setEditingProduct(product);
+      setTitle(product.title);
+      setSelectedGroupId(group?.id ?? null);
+      setIdolQuery("");
+      setTargetMemberIds(selectedMembers.map((member) => member.id));
+      setExcludedMemberIds(
+        selectedMembers
+          .filter((member) => !optionLabels.has(member.name))
+          .map((member) => member.id),
+      );
+      setMemberMinimumPrices(minimumPrices);
+      setClosingDate(toScheduleInputValue(product.deadline));
+      setShippingDate(toScheduleInputValue(product.shippingDeadline ?? ""));
+      setSelectedShipping(shippingMethods.map((method) => method.name));
+      setShippingPrices(
+        shippingMethods.reduce<Record<string, string>>((prices, method) => {
+          prices[method.name] = toNumericInput(method.price);
+
+          return prices;
+        }, {}),
+      );
+      setDescription(product.description);
+
+      const storedImageUrls = product.imageUrls?.length
+        ? product.imageUrls
+        : product.imageUrl
+          ? [product.imageUrl]
+          : [];
+
+      if (storedImageUrls.length > 0) {
+        const restoredPhotos = storedImageUrls
+          .slice(0, maxPhotos)
+          .map((imageUrl, index) => ({
+            id: `existing-photo-${index}`,
+            name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
+            url: imageUrl,
+          }));
+
+        setPhotos(restoredPhotos);
+        setCoverPhotoId(restoredPhotos[0]?.id ?? null);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [editProductId]);
 
   function showPhotoLimitToast(message: string) {
     setPhotoLimitToast(message);
@@ -780,25 +914,56 @@ export function UploadProductForm() {
 
     setSubmitError("");
 
-    const productId = createUploadedProductId();
+    const productId = editingProduct?.id ?? createUploadedProductId();
     const selectedShippingMethods = selectedShipping.map((name) => ({
       name,
       price: formatWon(parsePriceInput(shippingPrices[name])),
     }));
+    const orderedPhotoUrls = [
+      coverPhoto,
+      ...photos.filter((photo) => photo.id !== coverPhoto.id),
+    ].map((photo) => photo.url);
+    let storedPhotoUrls: string[];
+
+    try {
+      storedPhotoUrls = await Promise.all(
+        orderedPhotoUrls.map((imageUrl) => compressImageDataUrl(imageUrl)),
+      );
+    } catch {
+      setSubmitError(
+        "사진을 임시 저장용으로 압축하지 못했습니다. 사진을 줄인 뒤 다시 시도해 주세요.",
+      );
+      return;
+    }
+
     const firstMember = targetMembers[0];
     const productOptions = targetMembers.map((member) => {
       const minimumPrice = parsePriceInput(
         memberMinimumPrices[member.id] ?? "0",
       );
+      const previousOption = editingProduct?.options.find(
+        (option) => option.label === member.name,
+      );
+      const hasExistingBids =
+        (previousOption?.participantCount ?? 0) > 0 ||
+        (previousOption?.topBids?.some((bid) => bid !== "-") ?? false);
+      const formattedMinimumPrice = formatWon(minimumPrice);
 
       return {
         id: `uploaded-option-${member.id}`,
         label: member.name,
-        price: formatWon(minimumPrice),
-        startingBid: formatWon(minimumPrice),
-        currentBid: formatWon(minimumPrice),
-        participantCount: 0,
-        topBids: ["-", "-", "-"] as [string, string, string],
+        price: formattedMinimumPrice,
+        startingBid: formattedMinimumPrice,
+        currentBid:
+          hasExistingBids && previousOption
+            ? previousOption.currentBid
+            : formattedMinimumPrice,
+        participantCount: previousOption?.participantCount ?? 0,
+        topBids: previousOption?.topBids ?? (["-", "-", "-"] as [
+          string,
+          string,
+          string,
+        ]),
         avatarInitials: member.initials,
         avatarTone: member.tone,
       };
@@ -811,16 +976,18 @@ export function UploadProductForm() {
           ? `${firstMember.name} 외 ${targetMembers.length - 1}명`
           : firstMember.name,
       targetMembers: targetMembers.map((member) => member.name),
-      uploadedAt: formatDateTimeLabel(new Date().toISOString()),
+      uploadedAt:
+        editingProduct?.uploadedAt ?? formatDateTimeLabel(new Date().toISOString()),
       era: selectedGroup.name,
       rating: "0.0",
       reviews: "0",
       badge: "신규",
-      liked: false,
-      tone: "from-zinc-950 via-zinc-700 to-zinc-300",
+      liked: editingProduct?.liked ?? false,
+      tone: editingProduct?.tone ?? "from-zinc-950 via-zinc-700 to-zinc-300",
       courier: selectedShipping[0],
       deadline: formatDateTimeLabel(closingDate) || "일정 미정",
-      imageUrl: coverPhoto.url,
+      imageUrl: storedPhotoUrls[0] ?? coverPhoto.url,
+      imageUrls: storedPhotoUrls,
       purchaseSource: selectedGroup.name,
       shippingDeadline: formatDateTimeLabel(shippingDate) || "판매자 안내",
       shippingMethods: selectedShippingMethods,
@@ -830,27 +997,33 @@ export function UploadProductForm() {
     };
 
     try {
-      window.sessionStorage.setItem(
-        `uploaded-product:${productId}`,
-        JSON.stringify(product),
-      );
+      writeUploadedProduct(product);
     } catch {
       try {
-        const compressedImageUrl = await compressImageDataUrl(coverPhoto.url);
-
-        window.sessionStorage.setItem(
-          `uploaded-product:${productId}`,
-          JSON.stringify({
-            ...product,
-            imageUrl: compressedImageUrl,
-          }),
+        const compressedImageUrls = await Promise.all(
+          orderedPhotoUrls.map((imageUrl) =>
+            compressImageDataUrl(imageUrl, { maxSize: 720, quality: 0.58 }),
+          ),
         );
+
+        writeUploadedProduct({
+          ...product,
+          imageUrl: compressedImageUrls[0] ?? product.imageUrl,
+          imageUrls: compressedImageUrls,
+        });
       } catch {
         setSubmitError(
           "사진을 자동으로 압축했지만 임시 저장에 실패했습니다. 사진을 줄인 뒤 다시 시도해 주세요.",
         );
         return;
       }
+    }
+
+    if (isEditMode) {
+      const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+
+      router.replace(`/products/${productId}${returnSourceQuery}`);
+      return;
     }
 
     router.push(`/products/${productId}?from=upload`);
@@ -866,7 +1039,20 @@ export function UploadProductForm() {
                 <button
                   aria-label="이전 화면"
                   className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
-                  onClick={() => router.replace("/")}
+                  onClick={() => {
+                    if (editProductId) {
+                      const returnSourceQuery = returnSource
+                        ? `?from=${returnSource}`
+                        : "";
+
+                      router.replace(
+                        `/products/${editProductId}${returnSourceQuery}`,
+                      );
+                      return;
+                    }
+
+                    router.replace("/");
+                  }}
                   type="button"
                 >
                   <BackIcon />
@@ -874,10 +1060,10 @@ export function UploadProductForm() {
 
                 <div className="upload-header__copy translate-y-0.5 text-right">
                   <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                    Upload
+                    {isEditMode ? "Edit" : "Upload"}
                   </p>
                   <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
-                    상품 등록
+                    {isEditMode ? "분철 수정" : "상품 등록"}
                   </h1>
                 </div>
               </div>
@@ -1483,7 +1669,7 @@ export function UploadProductForm() {
               onClick={handleSubmit}
               type="button"
             >
-              등록하기
+              {isEditMode ? "수정 완료" : "등록하기"}
             </button>
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">

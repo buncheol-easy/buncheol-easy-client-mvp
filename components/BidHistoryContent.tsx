@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   useEffect,
@@ -21,6 +22,11 @@ import {
   readDeliveryAddressState,
   subscribeDeliveryAddressState,
 } from "@/lib/delivery-address-store";
+import {
+  getInitialHostedProducts,
+  readHostedProducts,
+  subscribeHostedProducts,
+} from "@/lib/hosted-products-store";
 import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
@@ -69,6 +75,27 @@ function parseDeadline(deadline: string) {
   );
 }
 
+function parseHistoryDeadline(deadline: string) {
+  const match = deadline
+    .trim()
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
+
+  if (!match) {
+    return new Date(Number.NaN);
+  }
+
+  const [, year, month, day, hour = "0"] = match;
+
+  return new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour) - kstOffsetHours,
+    ),
+  );
+}
+
 function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   const difference = deadlineDate.getTime() - now.getTime();
 
@@ -106,7 +133,9 @@ function formatPaymentRemainingTime(deadline: string, now: Date) {
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
 
+type BidHistoryMode = "joined" | "hosted";
 type BidHistoryFilter = "all" | "payment" | "active";
+type HostedHistoryFilter = "all" | "active" | "closed";
 
 const shippingFee = 3200;
 const mockBidAmounts = [5400, 6000, 4800, 5800];
@@ -188,8 +217,15 @@ export function BidHistoryContent({
     readDeliveryAddressState,
     getInitialDeliveryAddressState,
   );
+  const hostedProducts = useSyncExternalStore(
+    subscribeHostedProducts,
+    readHostedProducts,
+    getInitialHostedProducts,
+  );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
+  const [mode, setMode] = useState<BidHistoryMode>("joined");
   const [filter, setFilter] = useState<BidHistoryFilter>("all");
+  const [hostedFilter, setHostedFilter] = useState<HostedHistoryFilter>("all");
 
   const selectedPaymentBid =
     bidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
@@ -369,6 +405,30 @@ export function BidHistoryContent({
           parseDeadline(left.deadline).getTime(),
       );
   }, [filter, now]);
+  const hostedRecords = useMemo(() => {
+    return [...hostedProducts]
+      .filter((product) => {
+        const deadlineDate = parseHistoryDeadline(product.deadline);
+        const isClosed =
+          !Number.isNaN(deadlineDate.getTime()) &&
+          deadlineDate.getTime() <= now.getTime();
+
+        if (hostedFilter === "active") {
+          return !isClosed;
+        }
+
+        if (hostedFilter === "closed") {
+          return isClosed;
+        }
+
+        return true;
+      })
+      .sort(
+        (left, right) =>
+          parseHistoryDeadline(right.deadline).getTime() -
+          parseHistoryDeadline(left.deadline).getTime(),
+      );
+  }, [hostedFilter, hostedProducts, now]);
 
   function openPaymentSheet(bidId: string) {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -535,13 +595,41 @@ export function BidHistoryContent({
             History
           </p>
           <h1 className="bid-history-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
-            입찰 기록
+            {mode === "joined" ? "입찰 기록" : "개최 기록"}
           </h1>
         </div>
       </header>
 
       <div className="shrink-0 px-4 pb-4">
-        <div className="grid grid-cols-3 gap-1.5 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
+        <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
+          {(
+            [
+              ["joined", "참여한 분철"],
+              ["hosted", "개최한 분철"],
+            ] as const
+          ).map(([value, label]) => {
+            const isActive = mode === value;
+
+            return (
+              <button
+                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
+                  isActive ? "bg-black text-white" : "text-black/45"
+                }`}
+                key={value}
+                onClick={() => setMode(value)}
+                type="button"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          className={`${
+            mode === "joined" ? "flex" : "hidden"
+          } justify-end gap-2 overflow-x-auto pb-1`}
+        >
           {(
             [
               ["all", "전체"],
@@ -553,11 +641,43 @@ export function BidHistoryContent({
 
             return (
               <button
-                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive ? "bg-black text-white" : "text-black/45"
+                className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${
+                  isActive
+                    ? "border-black bg-black text-white"
+                    : "border-black/10 bg-[#f7f7f7] text-black/45"
                 }`}
                 key={value}
                 onClick={() => setFilter(value)}
+                type="button"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <div
+          className={`${
+            mode === "hosted" ? "flex" : "hidden"
+          } justify-end gap-2 overflow-x-auto pb-1`}
+        >
+          {(
+            [
+              ["all", "전체"],
+              ["active", "진행 중"],
+              ["closed", "마감"],
+            ] as const
+          ).map(([value, label]) => {
+            const isActive = hostedFilter === value;
+
+            return (
+              <button
+                className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${
+                  isActive
+                    ? "border-black bg-black text-white"
+                    : "border-black/10 bg-[#f7f7f7] text-black/45"
+                }`}
+                key={value}
+                onClick={() => setHostedFilter(value)}
                 type="button"
               >
                 {label}
@@ -573,9 +693,10 @@ export function BidHistoryContent({
       >
         <div
           className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}
-          key={filter}
+          key={`${mode}-${filter}-${hostedFilter}`}
         >
-          <div className="space-y-3">
+          {mode === "joined" ? (
+            <div className="space-y-3">
             {records.map((bid) => {
               const isClosed =
                 parseDeadline(bid.deadline).getTime() <= now.getTime();
@@ -701,7 +822,117 @@ export function BidHistoryContent({
                 </article>
               );
             })}
-          </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {hostedRecords.length === 0 ? (
+                <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+                  <p className="text-[14px] font-semibold text-black/70">
+                    표시할 개최 분철이 없습니다.
+                  </p>
+                  <p className="mt-1 text-[13px] font-medium text-black/40">
+                    상품 등록으로 만든 분철이 여기에 쌓여요.
+                  </p>
+                </div>
+              ) : null}
+              {hostedRecords.map((product) => {
+                const deadlineDate = parseHistoryDeadline(product.deadline);
+                const isClosed =
+                  !Number.isNaN(deadlineDate.getTime()) &&
+                  deadlineDate.getTime() <= now.getTime();
+                const participantCount = product.options.reduce(
+                  (total, option) => total + option.participantCount,
+                  0,
+                );
+
+                return (
+                  <Link
+                    className="block rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
+                    href={`/products/${product.id}?from=bids`}
+                    key={product.id}
+                    onClick={rememberBidHistoryProductEntry}
+                  >
+                    <article className="flex items-start gap-3">
+                      <div
+                        className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-[0.9rem] bg-gradient-to-br ${product.tone}`}
+                      >
+                        {product.imageUrl ? (
+                          <Image
+                            alt=""
+                            className="h-full w-full object-cover"
+                            fill
+                            sizes="64px"
+                            src={product.imageUrl}
+                            unoptimized
+                          />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                              {product.title}
+                            </p>
+                            <p className="mt-1 truncate text-[13px] font-medium text-black/45">
+                              {product.member} · {product.era}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
+                              isClosed
+                                ? "bg-[#f1f1f1] text-black/55"
+                                : "bg-black text-white"
+                            }`}
+                          >
+                            {isClosed ? "마감" : "모집중"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                              <p className="text-[11px] font-medium text-black/35">
+                                옵션
+                              </p>
+                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                                {product.options.length}개
+                              </p>
+                            </div>
+                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                              <p className="text-[11px] font-medium text-black/35">
+                                참여
+                              </p>
+                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                                {participantCount}명
+                              </p>
+                            </div>
+                          </div>
+                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                            <p className="text-[11px] font-medium text-black/35">
+                              마감
+                            </p>
+                            <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
+                              {product.deadline}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p
+                          className={`mt-4 text-[12px] font-medium ${
+                            isClosed ? "text-black/35" : "text-black"
+                          }`}
+                        >
+                          {isClosed
+                            ? "마감된 개최 분철이에요."
+                            : "진행 중인 개최 분철이에요."}
+                        </p>
+                      </div>
+                    </article>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       </main>
 

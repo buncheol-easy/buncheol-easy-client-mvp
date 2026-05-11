@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   useEffect,
   useLayoutEffect,
@@ -22,6 +23,11 @@ import {
   subscribeAuthState,
   writeAuthState,
 } from "@/lib/auth-store";
+import {
+  getInitialHostedProducts,
+  readHostedProducts,
+  subscribeHostedProducts,
+} from "@/lib/hosted-products-store";
 import {
   getInitialDeliveryAddressState,
   readDeliveryAddressState,
@@ -67,6 +73,27 @@ function parseDeadline(deadline: string) {
   }
 
   const [, year, month, day, hour] = match;
+
+  return new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour) - kstOffsetHours,
+    ),
+  );
+}
+
+function parseHostedDeadline(deadline: string) {
+  const match = deadline
+    .trim()
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
+
+  if (!match) {
+    return new Date(Number.NaN);
+  }
+
+  const [, year, month, day, hour = "0"] = match;
 
   return new Date(
     Date.UTC(
@@ -196,6 +223,11 @@ export function ProfileContent({
     readAuthState,
     getInitialAuthState,
   );
+  const hostedProducts = useSyncExternalStore(
+    subscribeHostedProducts,
+    readHostedProducts,
+    getInitialHostedProducts,
+  );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [addressSheetMode, setAddressSheetMode] =
     useState<AddressSheetMode>("manage");
@@ -221,6 +253,18 @@ export function ProfileContent({
         return !isClosed || bid.rank === 1;
       }),
     [allBids, now],
+  );
+  const activeHostedProducts = useMemo(
+    () =>
+      hostedProducts.filter((product) => {
+        const deadlineDate = parseHostedDeadline(product.deadline);
+
+        return (
+          Number.isNaN(deadlineDate.getTime()) ||
+          deadlineDate.getTime() > now.getTime()
+        );
+      }),
+    [hostedProducts, now],
   );
 
   const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
@@ -950,6 +994,127 @@ export function ProfileContent({
             </div>
           )}
 
+        </section>
+
+        <section className="mt-6 border-t border-black/10 pt-5">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                진행 중인 개최 분철
+              </h2>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                지금 열려 있는 분철만 빠르게 확인해요.
+              </p>
+            </div>
+            <span className="shrink-0 text-[13px] font-semibold text-black/45">
+              {activeHostedProducts.length}개
+            </span>
+          </div>
+
+          {activeHostedProducts.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              {activeHostedProducts.map((product) => {
+                const deadlineDate = parseHostedDeadline(product.deadline);
+                const isClosed =
+                  !Number.isNaN(deadlineDate.getTime()) &&
+                  deadlineDate.getTime() <= now.getTime();
+                const participantCount = product.options.reduce(
+                  (total, option) => total + option.participantCount,
+                  0,
+                );
+
+                return (
+                  <Link
+                    className="block rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
+                    href={`/products/${product.id}?from=profile`}
+                    key={product.id}
+                    onClick={rememberProfileProductEntry}
+                  >
+                    <article className="flex items-start gap-3">
+                      <div
+                        className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-[0.9rem] bg-gradient-to-br ${product.tone}`}
+                      >
+                        {product.imageUrl ? (
+                          <Image
+                            alt=""
+                            className="h-full w-full object-cover"
+                            fill
+                            sizes="64px"
+                            src={product.imageUrl}
+                            unoptimized
+                          />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                              {product.title}
+                            </p>
+                            <p className="mt-1 truncate text-[13px] font-medium text-black/45">
+                              {product.member} · {product.era}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
+                              isClosed
+                                ? "bg-[#f1f1f1] text-black/55"
+                                : "bg-black text-white"
+                            }`}
+                          >
+                            {isClosed ? "마감" : "모집중"}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                            <p className="text-[11px] font-medium text-black/35">
+                              옵션
+                            </p>
+                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                              {product.options.length}개
+                            </p>
+                          </div>
+                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                            <p className="text-[11px] font-medium text-black/35">
+                              참여
+                            </p>
+                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                              {participantCount}명
+                            </p>
+                          </div>
+                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                            <p className="text-[11px] font-medium text-black/35">
+                              상태
+                            </p>
+                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                              {isClosed ? "정산 대기" : "진행중"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="mt-3 truncate text-[12px] font-medium text-black/40">
+                          마감 {product.deadline}
+                        </p>
+                      </div>
+                    </article>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <Link
+              className="mt-4 block rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] px-4 py-6"
+              href="/upload"
+            >
+              <p className="text-[14px] font-semibold text-black/70">
+                진행 중인 개최 분철이 없습니다.
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-black/40">
+                상품 등록으로 첫 분철을 열어보세요.
+              </p>
+            </Link>
+          )}
         </section>
       </main>
 
