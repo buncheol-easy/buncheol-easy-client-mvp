@@ -29,6 +29,13 @@ import {
   subscribeHostedProducts,
 } from "@/lib/hosted-products-store";
 import {
+  getInitialSettlementAccountState,
+  readSettlementAccountState,
+  subscribeSettlementAccountState,
+  type SettlementAccountState,
+  writeSettlementAccountState,
+} from "@/lib/settlement-account-store";
+import {
   getInitialDeliveryAddressState,
   readDeliveryAddressState,
   subscribeDeliveryAddressState,
@@ -56,6 +63,18 @@ function formatPrice(price: number) {
 const kstOffsetHours = 9;
 const paymentDeadlineDays = 3;
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
+
+function getEmptySettlementAccountState(): SettlementAccountState {
+  return {
+    accountHolder: "",
+    accountNumber: "",
+    bankName: "",
+  };
+}
+
+function sanitizeAccountNumber(value: string) {
+  return value.replace(/[^\d-]/g, "");
+}
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -223,6 +242,11 @@ export function ProfileContent({
     readAuthState,
     getInitialAuthState,
   );
+  const settlementAccount = useSyncExternalStore(
+    subscribeSettlementAccountState,
+    readSettlementAccountState,
+    getInitialSettlementAccountState,
+  );
   const hostedProducts = useSyncExternalStore(
     subscribeHostedProducts,
     readHostedProducts,
@@ -238,6 +262,11 @@ export function ProfileContent({
   const [manageAddressSnapshot, setManageAddressSnapshot] = useState<
     DeliveryAddress[]
   >([]);
+  const [isEditingSettlementAccount, setIsEditingSettlementAccount] =
+    useState(false);
+  const [settlementAccountForm, setSettlementAccountForm] =
+    useState<SettlementAccountState>(() => getEmptySettlementAccountState());
+  const [settlementAccountMessage, setSettlementAccountMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
 
   const allBids = useMemo(
@@ -266,6 +295,14 @@ export function ProfileContent({
       }),
     [hostedProducts, now],
   );
+  const hasSettlementAccount =
+    settlementAccount.bankName.trim().length > 0 &&
+    settlementAccount.accountNumber.trim().length > 0 &&
+    settlementAccount.accountHolder.trim().length > 0;
+  const canSaveSettlementAccount =
+    settlementAccountForm.bankName.trim().length > 0 &&
+    settlementAccountForm.accountNumber.trim().length > 0 &&
+    settlementAccountForm.accountHolder.trim().length > 0;
 
   const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
   const selectedPaymentBid =
@@ -537,6 +574,42 @@ export function ProfileContent({
     );
   }
 
+  function startSettlementAccountEdit() {
+    setSettlementAccountForm(settlementAccount);
+    setSettlementAccountMessage("");
+    setIsEditingSettlementAccount(true);
+  }
+
+  function cancelSettlementAccountEdit() {
+    setSettlementAccountForm(settlementAccount);
+    setSettlementAccountMessage("");
+    setIsEditingSettlementAccount(false);
+  }
+
+  function updateSettlementAccountForm(
+    field: keyof SettlementAccountState,
+    value: string,
+  ) {
+    setSettlementAccountForm((current) => ({
+      ...current,
+      [field]: field === "accountNumber" ? sanitizeAccountNumber(value) : value,
+    }));
+  }
+
+  function saveSettlementAccount() {
+    if (!canSaveSettlementAccount) {
+      return;
+    }
+
+    writeSettlementAccountState({
+      accountHolder: settlementAccountForm.accountHolder.trim(),
+      accountNumber: settlementAccountForm.accountNumber.trim(),
+      bankName: settlementAccountForm.bankName.trim(),
+    });
+    setSettlementAccountMessage("계좌 정보가 저장됐어요.");
+    setIsEditingSettlementAccount(false);
+  }
+
   function openPaymentSheet(bidId: string) {
     if (paymentSheetCloseTimerRef.current !== null) {
       window.clearTimeout(paymentSheetCloseTimerRef.current);
@@ -805,6 +878,129 @@ export function ProfileContent({
               <p className="mt-1 text-[19px] font-semibold">10</p>
             </div>
           </div>
+        </section>
+
+        <section className="mt-5 border-t border-black/10 pt-5">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                정산 계좌
+              </h2>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                개최한 분철 정산금을 받을 계좌를 입력해 주세요.
+              </p>
+            </div>
+            {hasSettlementAccount && !isEditingSettlementAccount ? (
+              <button
+                className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55"
+                onClick={startSettlementAccountEdit}
+                type="button"
+              >
+                수정
+              </button>
+            ) : null}
+          </div>
+
+          {isEditingSettlementAccount || !hasSettlementAccount ? (
+            <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+              <div className="grid gap-3">
+                <label className="block">
+                  <span className="text-[13px] font-semibold text-black/45">
+                    은행
+                  </span>
+                  <input
+                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    onChange={(event) =>
+                      updateSettlementAccountForm(
+                        "bankName",
+                        event.currentTarget.value,
+                      )
+                    }
+                    placeholder="국민은행"
+                    value={settlementAccountForm.bankName}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[13px] font-semibold text-black/45">
+                    계좌번호
+                  </span>
+                  <input
+                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    inputMode="numeric"
+                    onChange={(event) =>
+                      updateSettlementAccountForm(
+                        "accountNumber",
+                        event.currentTarget.value,
+                      )
+                    }
+                    placeholder="000000-00-000000"
+                    value={settlementAccountForm.accountNumber}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[13px] font-semibold text-black/45">
+                    예금주
+                  </span>
+                  <input
+                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    onChange={(event) =>
+                      updateSettlementAccountForm(
+                        "accountHolder",
+                        event.currentTarget.value,
+                      )
+                    }
+                    placeholder="김분철"
+                    value={settlementAccountForm.accountHolder}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex items-center gap-2">
+                {hasSettlementAccount ? (
+                  <button
+                    className="h-11 flex-1 rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
+                    onClick={cancelSettlementAccountEdit}
+                    type="button"
+                  >
+                    취소
+                  </button>
+                ) : null}
+                <button
+                  className="h-11 flex-1 rounded-full bg-black text-[14px] font-semibold text-white disabled:bg-black/20"
+                  disabled={!canSaveSettlementAccount}
+                  onClick={saveSettlementAccount}
+                  type="button"
+                >
+                  저장
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-black/45">
+                    {settlementAccount.bankName}
+                  </p>
+                  <p className="mt-1 break-all text-[17px] font-semibold tracking-[-0.04em]">
+                    {settlementAccount.accountNumber}
+                  </p>
+                  <p className="mt-1 text-[13px] font-medium text-black/45">
+                    예금주 {settlementAccount.accountHolder}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                  저장됨
+                </span>
+              </div>
+            </div>
+          )}
+
+          {settlementAccountMessage ? (
+            <p className="mt-2 text-[13px] font-semibold text-black/45">
+              {settlementAccountMessage}
+            </p>
+          ) : null}
         </section>
 
         <section className="mt-5 border-t border-black/10 pt-5">
