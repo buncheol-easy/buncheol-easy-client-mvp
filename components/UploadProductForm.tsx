@@ -375,6 +375,7 @@ export function UploadProductForm({
   );
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
+  const [purchaseSource, setPurchaseSource] = useState("");
   const [idolQuery, setIdolQuery] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [targetMemberIds, setTargetMemberIds] = useState<string[]>([]);
@@ -445,6 +446,7 @@ export function UploadProductForm({
   const canSubmit =
     photos.length > 0 &&
     title.trim().length > 0 &&
+    purchaseSource.trim().length > 0 &&
     targetMembers.length > 0 &&
     targetMembers.every(
       (member) => memberMinimumPrices[member.id]?.trim().length > 0,
@@ -525,6 +527,7 @@ export function UploadProductForm({
 
       setEditingProduct(product);
       setTitle(product.title);
+      setPurchaseSource(product.purchaseSource ?? "");
       setSelectedGroupId(group?.id ?? null);
       setIdolQuery("");
       setTargetMemberIds(selectedMembers.map((member) => member.id));
@@ -988,7 +991,7 @@ export function UploadProductForm({
       deadline: formatDateTimeLabel(closingDate) || "일정 미정",
       imageUrl: storedPhotoUrls[0] ?? coverPhoto.url,
       imageUrls: storedPhotoUrls,
-      purchaseSource: selectedGroup.name,
+      purchaseSource: purchaseSource.trim(),
       shippingDeadline: formatDateTimeLabel(shippingDate) || "판매자 안내",
       shippingMethods: selectedShippingMethods,
       description:
@@ -1208,6 +1211,20 @@ export function UploadProductForm({
                 onChange={(event) => setTitle(event.currentTarget.value)}
                 placeholder="예: LOVE DIVE 원영 미공포 분철"
                 value={title}
+              />
+            </label>
+
+            <label className="mt-5 block">
+              <span className="text-[13px] font-semibold text-black/45">
+                구매처
+              </span>
+              <input
+                className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                onChange={(event) =>
+                  setPurchaseSource(event.currentTarget.value)
+                }
+                placeholder="위버스샵, 스타쉽 스퀘어, 양도자 구매처 등"
+                value={purchaseSource}
               />
             </label>
 
