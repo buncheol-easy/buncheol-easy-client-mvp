@@ -17,6 +17,12 @@ import {
   type AddressReturnState,
 } from "@/lib/address-return-state";
 import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+  writeAuthState,
+} from "@/lib/auth-store";
+import {
   getInitialDeliveryAddressState,
   readDeliveryAddressState,
   subscribeDeliveryAddressState,
@@ -185,6 +191,11 @@ export function ProfileContent({
     readDeliveryAddressState,
     getInitialDeliveryAddressState,
   );
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [addressSheetMode, setAddressSheetMode] =
     useState<AddressSheetMode>("manage");
@@ -249,6 +260,21 @@ export function ProfileContent({
         ? paymentDeliveryAddress
         : defaultDeliveryAddresses[storeType],
   }));
+  const profileSummaryContent = (
+    <>
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white text-black">
+        <ProfileIcon />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-[20px] font-semibold tracking-[-0.05em]">
+          {authState.isLoggedIn ? "김분철" : "로그인이 필요합니다"}
+        </p>
+        <p className="mt-1 text-[13px] font-medium text-white/55">
+          {authState.isLoggedIn ? "buncheol_easy" : "눌러서 로그인하기"}
+        </p>
+      </div>
+    </>
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -590,6 +616,10 @@ export function ProfileContent({
     );
   }
 
+  function handleLogout() {
+    writeAuthState({ isLoggedIn: false });
+  }
+
   function selectPaymentAddress(addressId: string) {
     setSelectedPaymentAddressId(addressId);
   }
@@ -690,19 +720,28 @@ export function ProfileContent({
         ref={scrollContainerRef}
       >
         <section className="rounded-[1.15rem] bg-black p-4 text-white">
-          <div className="flex items-center gap-3">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white text-black">
-              <ProfileIcon />
+          {authState.isLoggedIn ? (
+            <div className="flex items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                {profileSummaryContent}
+              </div>
+              <button
+                className="h-8 shrink-0 rounded-full bg-white/10 px-3 text-[12px] font-semibold text-white/65"
+                onClick={handleLogout}
+                type="button"
+              >
+                로그아웃
+              </button>
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-[20px] font-semibold tracking-[-0.05em]">
-                김분철
-              </p>
-              <p className="mt-1 text-[13px] font-medium text-white/55">
-                buncheol_easy
-              </p>
-            </div>
-          </div>
+          ) : (
+            <Link
+              aria-label="로그인이 필요합니다. 로그인 화면으로 이동"
+              className="flex items-center gap-3"
+              href="/login?returnTo=/profile"
+            >
+              {profileSummaryContent}
+            </Link>
+          )}
 
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
