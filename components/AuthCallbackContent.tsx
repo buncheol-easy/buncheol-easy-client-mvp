@@ -1,0 +1,68 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  authReturnHrefStorageKey,
+  writeAuthTokens,
+} from "@/lib/auth-store";
+
+type AuthCallbackContentProps = {
+  initialAccessToken?: string;
+  returnHref?: string;
+};
+
+function getSafeReturnHref(value: string | null | undefined) {
+  return value?.startsWith("/") && !value.startsWith("//") ? value : "/profile";
+}
+
+function getHashToken(name: string) {
+  const hashValue = window.location.hash.replace(/^#/, "");
+  const hashParams = new URLSearchParams(hashValue);
+
+  return hashParams.get(name) ?? undefined;
+}
+
+export function AuthCallbackContent({
+  initialAccessToken,
+  returnHref,
+}: AuthCallbackContentProps) {
+  const router = useRouter();
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    const accessToken = initialAccessToken ?? getHashToken("accessToken");
+    const storedReturnHref = window.sessionStorage.getItem(
+      authReturnHrefStorageKey,
+    );
+    const nextReturnHref = getSafeReturnHref(returnHref ?? storedReturnHref);
+
+    window.sessionStorage.removeItem(authReturnHrefStorageKey);
+
+    if (!accessToken) {
+      const errorTimer = window.setTimeout(() => {
+        setErrorMessage("로그인 토큰을 확인하지 못했어요.");
+      }, 0);
+
+      return () => {
+        window.clearTimeout(errorTimer);
+      };
+    }
+
+    writeAuthTokens({ accessToken });
+    router.replace(nextReturnHref);
+  }, [initialAccessToken, returnHref, router]);
+
+  return (
+    <main className="system-chrome-white system-chrome-bottom-black flex h-[100dvh] items-center justify-center bg-white px-6 text-center text-[#111111]">
+      <div>
+        <p className="text-[18px] font-semibold tracking-[-0.05em]">
+          {errorMessage || "로그인 처리 중이에요."}
+        </p>
+        <p className="mt-2 text-[13px] font-medium text-black/45">
+          잠시만 기다려 주세요.
+        </p>
+      </div>
+    </main>
+  );
+}

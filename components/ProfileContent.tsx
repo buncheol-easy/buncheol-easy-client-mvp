@@ -18,11 +18,13 @@ import {
   type AddressReturnState,
 } from "@/lib/address-return-state";
 import {
+  clearAuthCookies,
+  clearAuthState,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
-  writeAuthState,
 } from "@/lib/auth-store";
+import { requestLogout } from "@/lib/auth-api";
 import {
   getInitialHostedProducts,
   readHostedProducts,
@@ -733,8 +735,17 @@ export function ProfileContent({
     );
   }
 
-  function handleLogout() {
-    writeAuthState({ isLoggedIn: false });
+  async function handleLogout() {
+    const accessToken = authState.accessToken;
+
+    try {
+      if (accessToken) {
+        await requestLogout(accessToken);
+      }
+    } finally {
+      clearAuthCookies();
+      clearAuthState();
+    }
   }
 
   function selectPaymentAddress(addressId: string) {

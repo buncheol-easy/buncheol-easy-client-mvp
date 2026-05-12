@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { BackIcon, CheckIcon, ProfileIcon } from "@/components/icons";
-import { writeAuthState } from "@/lib/auth-store";
+import { getKakaoAuthorizationUrl } from "@/lib/auth-api";
+import { authReturnHrefStorageKey } from "@/lib/auth-store";
 
 type LoginContentProps = {
   returnHref?: string;
@@ -29,8 +30,8 @@ export function LoginContent({ returnHref = "/profile" }: LoginContentProps) {
   }
 
   function handleKakaoLogin() {
-    writeAuthState({ isLoggedIn: true });
-    router.replace(returnHref);
+    window.sessionStorage.setItem(authReturnHrefStorageKey, returnHref);
+    window.location.href = getKakaoAuthorizationUrl();
   }
 
   return (

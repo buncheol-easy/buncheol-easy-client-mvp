@@ -1,11 +1,15 @@
 const authStoreKey = "buncheol-auth-state";
 const authStoreEvent = "buncheol-auth-state-change";
+const refreshTokenCookieNames = ["refreshToken", "refresh_token"];
+export const authReturnHrefStorageKey = "buncheol-auth-return-href";
 
 type AuthState = {
+  accessToken: string | null;
   isLoggedIn: boolean;
 };
 
 const initialAuthState: AuthState = {
+  accessToken: null,
   isLoggedIn: false,
 };
 
@@ -42,8 +46,12 @@ export function readAuthState() {
 
   try {
     const parsed = JSON.parse(rawValue) as Partial<AuthState>;
+    const accessToken =
+      typeof parsed.accessToken === "string" ? parsed.accessToken : null;
+
     cachedAuthState = {
-      isLoggedIn: parsed.isLoggedIn === true,
+      accessToken,
+      isLoggedIn: parsed.isLoggedIn === true || Boolean(accessToken),
     };
   } catch {
     cachedAuthState = initialAuthState;
@@ -67,6 +75,29 @@ export function writeAuthState(state: AuthState) {
   }
 
   window.dispatchEvent(new Event(authStoreEvent));
+}
+
+export function clearAuthState() {
+  writeAuthState(initialAuthState);
+}
+
+export function clearAuthCookies() {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  refreshTokenCookieNames.forEach((cookieName) => {
+    document.cookie = `${cookieName}=; Max-Age=0; path=/`;
+  });
+}
+
+export function writeAuthTokens(tokens: {
+  accessToken: string;
+}) {
+  writeAuthState({
+    accessToken: tokens.accessToken,
+    isLoggedIn: true,
+  });
 }
 
 export function subscribeAuthState(onStoreChange: () => void) {
