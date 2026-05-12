@@ -24,7 +24,14 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
-import { requestLogout } from "@/lib/auth-api";
+import {
+  deleteUserProfile,
+  requestLogout,
+  requestUserProfile,
+  updateBankAccount,
+  updateUserProfile,
+  type UserProfile,
+} from "@/lib/auth-api";
 import {
   getInitialHostedProducts,
   readHostedProducts,
@@ -76,6 +83,38 @@ function getEmptySettlementAccountState(): SettlementAccountState {
 
 function sanitizeAccountNumber(value: string) {
   return value.replace(/[^\d-]/g, "");
+}
+
+function sanitizePhoneNumber(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
+function getEmptyUserProfileFormState() {
+  return {
+    nickname: "",
+    phoneNumber: "",
+  };
+}
+
+function getUserProfileFormState(profile: UserProfile | null) {
+  return {
+    nickname: profile?.nickname ?? "",
+    phoneNumber: profile?.phoneNumber ?? "",
+  };
+}
+
+function getSettlementAccountState(profile: UserProfile | null) {
+  const bankAccount = profile?.bankAccount;
+
+  if (!bankAccount) {
+    return getEmptySettlementAccountState();
+  }
+
+  return {
+    accountHolder: bankAccount.holder,
+    accountNumber: bankAccount.account,
+    bankName: bankAccount.bank,
+  };
 }
 
 function getHistoryIndex() {
@@ -207,6 +246,7 @@ type ProfileContentProps = {
 };
 
 type AddressSheetMode = "manage" | "select";
+type UserProfileFormState = ReturnType<typeof getEmptyUserProfileFormState>;
 
 export function ProfileContent({
   skipEnterAnimation = false,
@@ -244,7 +284,7 @@ export function ProfileContent({
     readAuthState,
     getInitialAuthState,
   );
-  const settlementAccount = useSyncExternalStore(
+  const localSettlementAccount = useSyncExternalStore(
     subscribeSettlementAccountState,
     readSettlementAccountState,
     getInitialSettlementAccountState,
@@ -268,7 +308,20 @@ export function ProfileContent({
     useState(false);
   const [settlementAccountForm, setSettlementAccountForm] =
     useState<SettlementAccountState>(() => getEmptySettlementAccountState());
+  const [isSettlementAccountFormDirty, setIsSettlementAccountFormDirty] =
+    useState(false);
   const [settlementAccountMessage, setSettlementAccountMessage] = useState("");
+  const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
+    useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
+  const [userProfileMessage, setUserProfileMessage] = useState("");
+  const [isEditingUserProfile, setIsEditingUserProfile] = useState(false);
+  const [userProfileForm, setUserProfileForm] =
+    useState<UserProfileFormState>(() => getEmptyUserProfileFormState());
+  const [isSavingUserProfile, setIsSavingUserProfile] = useState(false);
+  const [isDeletingUserProfile, setIsDeletingUserProfile] = useState(false);
+  const [deleteUserProfileMessage, setDeleteUserProfileMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
 
   const allBids = useMemo(
@@ -297,14 +350,28 @@ export function ProfileContent({
       }),
     [hostedProducts, now],
   );
+  const settlementAccount = useMemo(
+    () =>
+      authState.isLoggedIn
+        ? getSettlementAccountState(userProfile)
+        : localSettlementAccount,
+    [authState.isLoggedIn, localSettlementAccount, userProfile],
+  );
   const hasSettlementAccount =
     settlementAccount.bankName.trim().length > 0 &&
     settlementAccount.accountNumber.trim().length > 0 &&
     settlementAccount.accountHolder.trim().length > 0;
+  const canSaveUserProfile =
+    /^[가-힣A-Za-z0-9]{1,20}$/.test(userProfileForm.nickname.trim()) &&
+    /^01\d{8,9}$/.test(userProfileForm.phoneNumber.trim());
   const canSaveSettlementAccount =
     settlementAccountForm.bankName.trim().length > 0 &&
+    settlementAccountForm.bankName.trim().length <= 50 &&
     settlementAccountForm.accountNumber.trim().length > 0 &&
-    settlementAccountForm.accountHolder.trim().length > 0;
+    settlementAccountForm.accountNumber.replace(/\D/g, "").length <= 50 &&
+    settlementAccountForm.accountHolder.trim().length > 0 &&
+    settlementAccountForm.accountHolder.trim().length <= 50 &&
+    settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
 
   const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
   const selectedPaymentBid =
@@ -343,6 +410,9 @@ export function ProfileContent({
         ? paymentDeliveryAddress
         : defaultDeliveryAddresses[storeType],
   }));
+  const profileDisplayName = authState.isLoggedIn
+    ? userProfile?.nickname || (isUserProfileLoading ? "회원 정보 확인 중" : "분철 회원")
+    : "로그인이 필요합니다";
   const profileSummaryContent = (
     <>
       <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white text-black">
@@ -350,11 +420,13 @@ export function ProfileContent({
       </div>
       <div className="min-w-0">
         <p className="truncate text-[20px] font-semibold tracking-[-0.05em]">
-          {authState.isLoggedIn ? "김분철" : "로그인이 필요합니다"}
+          {profileDisplayName}
         </p>
-        <p className="mt-1 text-[13px] font-medium text-white/55">
-          {authState.isLoggedIn ? "buncheol_easy" : "눌러서 로그인하기"}
-        </p>
+        {!authState.isLoggedIn ? (
+          <p className="mt-1 text-[13px] font-medium text-white/55">
+            눌러서 로그인하기
+          </p>
+        ) : null}
       </div>
     </>
   );
@@ -376,6 +448,69 @@ export function ProfileContent({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      setUserProfile(null);
+      setUserProfileForm(getEmptyUserProfileFormState());
+      setSettlementAccountForm(getEmptySettlementAccountState());
+      setIsSettlementAccountFormDirty(false);
+      setIsEditingUserProfile(false);
+      setIsEditingSettlementAccount(false);
+      setUserProfileMessage("");
+      setSettlementAccountMessage("");
+      return;
+    }
+
+    let isActive = true;
+
+    setIsUserProfileLoading(true);
+    setUserProfileMessage("");
+
+    requestUserProfile(accessToken)
+      .then((profile) => {
+        if (!isActive) {
+          return;
+        }
+
+        setUserProfile(profile);
+        setUserProfileForm(getUserProfileFormState(profile));
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setUserProfileMessage(
+          error instanceof Error
+            ? error.message
+            : "회원 정보를 불러오지 못했어요.",
+        );
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsUserProfileLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn]);
+
+  useEffect(() => {
+    if (isEditingSettlementAccount || isSettlementAccountFormDirty) {
+      return;
+    }
+
+    setSettlementAccountForm(settlementAccount);
+  }, [
+    isEditingSettlementAccount,
+    isSettlementAccountFormDirty,
+    settlementAccount,
+  ]);
 
   useEffect(() => {
     const rawReturnState = window.sessionStorage.getItem(addressReturnStateKey);
@@ -576,14 +711,73 @@ export function ProfileContent({
     );
   }
 
+  function startUserProfileEdit() {
+    setUserProfileForm(getUserProfileFormState(userProfile));
+    setUserProfileMessage("");
+    setIsEditingUserProfile(true);
+  }
+
+  function cancelUserProfileEdit() {
+    setUserProfileForm(getUserProfileFormState(userProfile));
+    setUserProfileMessage("");
+    setIsEditingUserProfile(false);
+  }
+
+  function updateUserProfileForm(
+    field: keyof UserProfileFormState,
+    value: string,
+  ) {
+    setUserProfileForm((current) => ({
+      ...current,
+      [field]: field === "phoneNumber" ? sanitizePhoneNumber(value) : value,
+    }));
+  }
+
+  async function saveUserProfile() {
+    const accessToken = authState.accessToken;
+
+    if (!accessToken || !canSaveUserProfile || isSavingUserProfile) {
+      return;
+    }
+
+    const nextProfile = {
+      nickname: userProfileForm.nickname.trim(),
+      phoneNumber: userProfileForm.phoneNumber.trim(),
+    };
+
+    setIsSavingUserProfile(true);
+    setUserProfileMessage("");
+
+    try {
+      await updateUserProfile(accessToken, nextProfile);
+      setUserProfile((current) => ({
+        bankAccount: current?.bankAccount ?? null,
+        email: current?.email ?? "",
+        provider: current?.provider ?? "",
+        ...nextProfile,
+      }));
+      setUserProfileForm(nextProfile);
+      setUserProfileMessage("회원 정보가 저장됐어요.");
+      setIsEditingUserProfile(false);
+    } catch (error) {
+      setUserProfileMessage(
+        error instanceof Error ? error.message : "회원 정보를 저장하지 못했어요.",
+      );
+    } finally {
+      setIsSavingUserProfile(false);
+    }
+  }
+
   function startSettlementAccountEdit() {
     setSettlementAccountForm(settlementAccount);
+    setIsSettlementAccountFormDirty(false);
     setSettlementAccountMessage("");
     setIsEditingSettlementAccount(true);
   }
 
   function cancelSettlementAccountEdit() {
     setSettlementAccountForm(settlementAccount);
+    setIsSettlementAccountFormDirty(false);
     setSettlementAccountMessage("");
     setIsEditingSettlementAccount(false);
   }
@@ -592,24 +786,61 @@ export function ProfileContent({
     field: keyof SettlementAccountState,
     value: string,
   ) {
+    setIsSettlementAccountFormDirty(true);
     setSettlementAccountForm((current) => ({
       ...current,
       [field]: field === "accountNumber" ? sanitizeAccountNumber(value) : value,
     }));
   }
 
-  function saveSettlementAccount() {
-    if (!canSaveSettlementAccount) {
+  async function saveSettlementAccount() {
+    const accessToken = authState.accessToken;
+
+    if (!canSaveSettlementAccount || isSavingSettlementAccount) {
       return;
     }
 
-    writeSettlementAccountState({
+    const nextSettlementAccount = {
       accountHolder: settlementAccountForm.accountHolder.trim(),
       accountNumber: settlementAccountForm.accountNumber.trim(),
       bankName: settlementAccountForm.bankName.trim(),
-    });
-    setSettlementAccountMessage("계좌 정보가 저장됐어요.");
-    setIsEditingSettlementAccount(false);
+    };
+
+    setIsSavingSettlementAccount(true);
+    setSettlementAccountMessage("");
+
+    try {
+      if (accessToken) {
+        await updateBankAccount(accessToken, {
+          account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+          bank: nextSettlementAccount.bankName,
+          holder: nextSettlementAccount.accountHolder,
+        });
+        setUserProfile((current) => ({
+          email: current?.email ?? "",
+          nickname: current?.nickname ?? userProfileForm.nickname.trim(),
+          phoneNumber: current?.phoneNumber ?? userProfileForm.phoneNumber.trim(),
+          provider: current?.provider ?? "",
+          bankAccount: {
+            account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+            bank: nextSettlementAccount.bankName,
+            holder: nextSettlementAccount.accountHolder,
+          },
+        }));
+      }
+
+      writeSettlementAccountState(nextSettlementAccount);
+      setSettlementAccountForm(nextSettlementAccount);
+      setIsSettlementAccountFormDirty(false);
+      setSettlementAccountMessage("계좌 정보가 저장됐어요.");
+      setIsEditingSettlementAccount(false);
+    } catch (error) {
+      setSettlementAccountMessage(
+        error instanceof Error ? error.message : "계좌 정보를 저장하지 못했어요.",
+      );
+    } finally {
+      setIsSavingSettlementAccount(false);
+    }
   }
 
   function openPaymentSheet(bidId: string) {
@@ -745,6 +976,35 @@ export function ProfileContent({
     } finally {
       clearAuthCookies();
       clearAuthState();
+    }
+  }
+
+  async function handleDeleteUserProfile() {
+    const accessToken = authState.accessToken;
+
+    if (!accessToken || isDeletingUserProfile) {
+      return;
+    }
+
+    const shouldDelete = window.confirm("회원 탈퇴를 진행할까요?");
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsDeletingUserProfile(true);
+    setDeleteUserProfileMessage("");
+
+    try {
+      await deleteUserProfile(accessToken);
+      clearAuthCookies();
+      clearAuthState();
+    } catch (error) {
+      setDeleteUserProfileMessage(
+        error instanceof Error ? error.message : "회원 탈퇴를 처리하지 못했어요.",
+      );
+    } finally {
+      setIsDeletingUserProfile(false);
     }
   }
 
@@ -912,7 +1172,9 @@ export function ProfileContent({
             ) : null}
           </div>
 
-          {isEditingSettlementAccount || !hasSettlementAccount ? (
+          {isEditingSettlementAccount ||
+          !hasSettlementAccount ||
+          isSettlementAccountFormDirty ? (
             <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
               <div className="grid gap-3">
                 <label className="block">
@@ -921,6 +1183,7 @@ export function ProfileContent({
                   </span>
                   <input
                     className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
                         "bankName",
@@ -938,6 +1201,7 @@ export function ProfileContent({
                   <input
                     className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
                     inputMode="numeric"
+                    maxLength={60}
                     onChange={(event) =>
                       updateSettlementAccountForm(
                         "accountNumber",
@@ -954,6 +1218,7 @@ export function ProfileContent({
                   </span>
                   <input
                     className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
                         "accountHolder",
@@ -967,7 +1232,7 @@ export function ProfileContent({
               </div>
 
               <div className="mt-4 flex items-center gap-2">
-                {hasSettlementAccount ? (
+                {hasSettlementAccount || isSettlementAccountFormDirty ? (
                   <button
                     className="h-11 flex-1 rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
                     onClick={cancelSettlementAccountEdit}
@@ -978,11 +1243,11 @@ export function ProfileContent({
                 ) : null}
                 <button
                   className="h-11 flex-1 rounded-full bg-black text-[14px] font-semibold text-white disabled:bg-black/20"
-                  disabled={!canSaveSettlementAccount}
+                  disabled={!canSaveSettlementAccount || isSavingSettlementAccount}
                   onClick={saveSettlementAccount}
                   type="button"
                 >
-                  저장
+                  {isSavingSettlementAccount ? "저장 중" : "저장"}
                 </button>
               </div>
             </div>
@@ -1323,6 +1588,124 @@ export function ProfileContent({
             </Link>
           )}
         </section>
+
+        {authState.isLoggedIn ? (
+          <section className="mt-6 border-t border-black/10 pt-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/65">
+                  회원정보 수정
+                </h2>
+                <p className="mt-1 truncate text-[13px] font-medium text-black/35">
+                  {userProfile?.phoneNumber ?? "휴대폰 번호 미등록"}
+                </p>
+              </div>
+              {!isEditingUserProfile ? (
+                <button
+                  className="h-9 shrink-0 rounded-full bg-[#f7f7f7] px-3 text-[12px] font-semibold text-black/45 disabled:text-black/20"
+                  disabled={isUserProfileLoading}
+                  onClick={startUserProfileEdit}
+                  type="button"
+                >
+                  수정
+                </button>
+              ) : null}
+            </div>
+
+            {isEditingUserProfile ? (
+              <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+                <div className="grid gap-3">
+                  <label className="block">
+                    <span className="text-[13px] font-semibold text-black/45">
+                      닉네임
+                    </span>
+                    <input
+                      className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                      maxLength={20}
+                      onChange={(event) =>
+                        updateUserProfileForm(
+                          "nickname",
+                          event.currentTarget.value,
+                        )
+                      }
+                      placeholder="에이지"
+                      value={userProfileForm.nickname}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[13px] font-semibold text-black/45">
+                      휴대폰 번호
+                    </span>
+                    <input
+                      className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                      inputMode="numeric"
+                      onChange={(event) =>
+                        updateUserProfileForm(
+                          "phoneNumber",
+                          event.currentTarget.value,
+                        )
+                      }
+                      placeholder="01012345678"
+                      value={userProfileForm.phoneNumber}
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    className="h-11 flex-1 rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
+                    onClick={cancelUserProfileEdit}
+                    type="button"
+                  >
+                    취소
+                  </button>
+                  <button
+                    className="h-11 flex-1 rounded-full bg-black text-[14px] font-semibold text-white disabled:bg-black/20"
+                    disabled={!canSaveUserProfile || isSavingUserProfile}
+                    onClick={saveUserProfile}
+                    type="button"
+                  >
+                    {isSavingUserProfile ? "저장 중" : "저장"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {userProfileMessage ? (
+              <p className="mt-2 text-[13px] font-semibold text-black/45">
+                {userProfileMessage}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
+        {authState.isLoggedIn ? (
+          <section className="mt-6 border-t border-black/10 pt-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/65">
+                  회원 탈퇴
+                </h2>
+                <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/35">
+                  탈퇴하면 현재 계정으로 저장된 회원 정보가 삭제돼요.
+                </p>
+              </div>
+              <button
+                className="h-9 shrink-0 rounded-full bg-[#f7f7f7] px-3 text-[12px] font-semibold text-black/45 disabled:text-black/20"
+                disabled={isDeletingUserProfile}
+                onClick={handleDeleteUserProfile}
+                type="button"
+              >
+                {isDeletingUserProfile ? "처리 중" : "탈퇴"}
+              </button>
+            </div>
+            {deleteUserProfileMessage ? (
+              <p className="mt-2 text-[13px] font-semibold text-black/45">
+                {deleteUserProfileMessage}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
       </main>
 
       {isPaymentSheetOpen && selectedPaymentBid ? (
