@@ -1,7 +1,12 @@
-const defaultApiBaseUrl = "http://13.124.248.60";
+const defaultApiBaseUrl = "https://buncheoleasy.com";
+const legacyApiBaseUrlPattern = /^https?:\/\/13\.124\.248\.60(?:\/v1)?$/;
 
 type AccessTokenResponse = {
   accessToken: string;
+};
+
+export type UserProfileStatus = {
+  isProfileComplete: boolean;
 };
 
 export type UserProfile = {
@@ -27,15 +32,34 @@ export type BankAccountRequest = {
   holder: string;
 };
 
-function getApiBaseUrl() {
-  return (
-    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
-    defaultApiBaseUrl
+function getConfiguredApiBaseUrl() {
+  const configuredApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(
+    /\/+$/,
+    "",
   );
+
+  if (
+    !configuredApiBaseUrl ||
+    legacyApiBaseUrlPattern.test(configuredApiBaseUrl)
+  ) {
+    return defaultApiBaseUrl;
+  }
+
+  return configuredApiBaseUrl;
+}
+
+function getApiRootUrl() {
+  return getConfiguredApiBaseUrl().replace(/\/v1$/, "");
+}
+
+function getVersionedApiBaseUrl() {
+  const baseUrl = getConfiguredApiBaseUrl();
+
+  return baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 }
 
 export function getKakaoAuthorizationUrl() {
-  return `${getApiBaseUrl()}/oauth2/authorization/kakao`;
+  return `${getApiRootUrl()}/oauth2/authorization/kakao`;
 }
 
 function getAuthHeaders(accessToken: string) {
@@ -54,8 +78,78 @@ async function parseErrorMessage(response: Response) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseProfileStatusText(value: string) {
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (
+    normalizedValue === "true" ||
+    normalizedValue === "complete" ||
+    normalizedValue === "completed"
+  ) {
+    return true;
+  }
+
+  if (
+    normalizedValue === "false" ||
+    normalizedValue === "incomplete" ||
+    normalizedValue === "not_completed"
+  ) {
+    return false;
+  }
+
+  return null;
+}
+
+function getProfileCompleteValue(body: unknown): boolean | null {
+  if (typeof body === "boolean") {
+    return body;
+  }
+
+  if (typeof body === "string") {
+    return parseProfileStatusText(body);
+  }
+
+  if (!isRecord(body)) {
+    return null;
+  }
+
+  const profileStatusKeys = [
+    "isProfileComplete",
+    "isProfileCompleted",
+    "profileComplete",
+    "profileCompleted",
+    "profileStatus",
+    "isCompleted",
+    "completed",
+    "complete",
+    "status",
+  ];
+
+  for (const key of profileStatusKeys) {
+    const value = body[key];
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      const parsedValue = parseProfileStatusText(value);
+
+      if (parsedValue !== null) {
+        return parsedValue;
+      }
+    }
+  }
+
+  return getProfileCompleteValue(body.data);
+}
+
 export async function requestLogout(accessToken: string) {
-  const response = await fetch(`${getApiBaseUrl()}/v1/auth/logout`, {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/auth/logout`, {
     credentials: "include",
     headers: getAuthHeaders(accessToken),
     method: "POST",
@@ -67,7 +161,7 @@ export async function requestLogout(accessToken: string) {
 }
 
 export async function requestTokenReissue() {
-  const response = await fetch(`${getApiBaseUrl()}/v1/auth/reissue-token`, {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/auth/reissue-token`, {
     credentials: "include",
     method: "POST",
   });
@@ -79,8 +173,32 @@ export async function requestTokenReissue() {
   return (await response.json()) as AccessTokenResponse;
 }
 
+export async function requestUserProfileStatus(accessToken: string) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/users/me/profile/status`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const body = (await response.json()) as unknown;
+  const isProfileComplete = getProfileCompleteValue(body);
+
+  if (isProfileComplete === null) {
+    throw new Error("프로필 완료 여부를 확인할 수 없어요.");
+  }
+
+  return { isProfileComplete } satisfies UserProfileStatus;
+}
+
 export async function requestUserProfile(accessToken: string) {
-  const response = await fetch(`${getApiBaseUrl()}/v1/users/me`, {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/users/me`, {
     credentials: "include",
     headers: getAuthHeaders(accessToken),
     method: "GET",
@@ -97,7 +215,7 @@ export async function updateUserProfile(
   accessToken: string,
   body: UpdateUserProfileRequest,
 ) {
-  const response = await fetch(`${getApiBaseUrl()}/v1/users/me`, {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/users/me`, {
     body: JSON.stringify(body),
     credentials: "include",
     headers: {
@@ -113,7 +231,7 @@ export async function updateUserProfile(
 }
 
 export async function deleteUserProfile(accessToken: string) {
-  const response = await fetch(`${getApiBaseUrl()}/v1/users/me`, {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/users/me`, {
     credentials: "include",
     headers: getAuthHeaders(accessToken),
     method: "DELETE",
@@ -128,15 +246,18 @@ export async function updateBankAccount(
   accessToken: string,
   body: BankAccountRequest,
 ) {
-  const response = await fetch(`${getApiBaseUrl()}/v1/users/me/bank-account`, {
-    body: JSON.stringify(body),
-    credentials: "include",
-    headers: {
-      ...getAuthHeaders(accessToken),
-      "Content-Type": "application/json",
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/users/me/bank-account`,
+    {
+      body: JSON.stringify(body),
+      credentials: "include",
+      headers: {
+        ...getAuthHeaders(accessToken),
+        "Content-Type": "application/json",
+      },
+      method: "PUT",
     },
-    method: "PUT",
-  });
+  );
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));

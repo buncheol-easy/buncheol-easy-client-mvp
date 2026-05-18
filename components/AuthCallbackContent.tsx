@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  authProfileSetupReturnHrefStorageKey,
   authReturnHrefStorageKey,
   writeAuthTokens,
 } from "@/lib/auth-store";
+import { requestUserProfileStatus } from "@/lib/auth-api";
 
 type AuthCallbackContentProps = {
   initialAccessToken?: string;
@@ -49,8 +51,36 @@ export function AuthCallbackContent({
       };
     }
 
+    let isActive = true;
+
     writeAuthTokens({ accessToken });
-    router.replace(nextReturnHref);
+
+    requestUserProfileStatus(accessToken)
+      .then(({ isProfileComplete }) => {
+        if (!isActive) {
+          return;
+        }
+
+        if (!isProfileComplete) {
+          window.sessionStorage.setItem(
+            authProfileSetupReturnHrefStorageKey,
+            nextReturnHref,
+          );
+          router.replace("/signup/profile");
+          return;
+        }
+
+        router.replace(nextReturnHref);
+      })
+      .catch(() => {
+        if (isActive) {
+          router.replace(nextReturnHref);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
   }, [initialAccessToken, returnHref, router]);
 
   return (

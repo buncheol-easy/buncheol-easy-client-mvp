@@ -2,6 +2,8 @@ const authStoreKey = "buncheol-auth-state";
 const authStoreEvent = "buncheol-auth-state-change";
 const refreshTokenCookieNames = ["refreshToken", "refresh_token"];
 export const authReturnHrefStorageKey = "buncheol-auth-return-href";
+export const authProfileSetupReturnHrefStorageKey =
+  "buncheol-auth-profile-setup-return-href";
 
 type AuthState = {
   accessToken: string | null;
