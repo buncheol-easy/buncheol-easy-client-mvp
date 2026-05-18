@@ -78,6 +78,10 @@ export function writeSettlementAccountState(state: SettlementAccountState) {
   window.dispatchEvent(new Event(settlementAccountStoreEvent));
 }
 
+export function clearSettlementAccountState() {
+  writeSettlementAccountState(initialSettlementAccountState);
+}
+
 export function subscribeSettlementAccountState(onStoreChange: () => void) {
   if (typeof window === "undefined") {
     return () => {};

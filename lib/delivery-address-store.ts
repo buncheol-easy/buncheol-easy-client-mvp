@@ -1,8 +1,6 @@
-import {
-  initialDefaultDeliveryAddressIds,
-  initialDeliveryAddresses,
-  type ConvenienceStoreType,
-  type DeliveryAddress,
+import type {
+  ConvenienceStoreType,
+  DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
 
 const deliveryAddressStoreKey = "buncheol-delivery-addresses";
@@ -13,9 +11,16 @@ export type StoredDeliveryAddressState = {
   defaultAddressIds: Record<ConvenienceStoreType, string | null>;
 };
 
+type SyncedDeliveryAddress = DeliveryAddress & {
+  isDefault?: boolean;
+};
+
 const initialDeliveryAddressState: StoredDeliveryAddressState = {
-  addresses: initialDeliveryAddresses,
-  defaultAddressIds: initialDefaultDeliveryAddressIds,
+  addresses: [],
+  defaultAddressIds: {
+    cu: null,
+    gs25: null,
+  },
 };
 
 let cachedRawValue: string | null = null;
@@ -87,6 +92,62 @@ export function writeDeliveryAddressState(state: StoredDeliveryAddressState) {
   }
 
   window.dispatchEvent(new Event(deliveryAddressStoreEvent));
+}
+
+export function clearDeliveryAddressState() {
+  writeDeliveryAddressState(initialDeliveryAddressState);
+}
+
+export function getDeliveryAddressStateFromSyncedAddresses(
+  addresses: SyncedDeliveryAddress[],
+): StoredDeliveryAddressState {
+  const normalizedAddresses = addresses.map((address) => ({
+    id: address.id,
+    storeType: address.storeType,
+    alias: address.alias,
+    branchName: address.branchName,
+    address: address.address,
+  }));
+  const defaultAddressIds: StoredDeliveryAddressState["defaultAddressIds"] = {
+    gs25: null,
+    cu: null,
+  };
+
+  addresses.forEach((address) => {
+    if (address.isDefault) {
+      defaultAddressIds[address.storeType] = address.id;
+    }
+  });
+
+  normalizedAddresses.forEach((address) => {
+    defaultAddressIds[address.storeType] ??= address.id;
+  });
+
+  return {
+    addresses: normalizedAddresses,
+    defaultAddressIds,
+  };
+}
+
+export function getDeliveryAddressStateWithDefaultAddress(
+  state: StoredDeliveryAddressState,
+  addressId: string,
+): StoredDeliveryAddressState {
+  const selectedAddress = state.addresses.find(
+    (address) => address.id === addressId,
+  );
+
+  if (!selectedAddress) {
+    return state;
+  }
+
+  return {
+    addresses: state.addresses,
+    defaultAddressIds: {
+      ...state.defaultAddressIds,
+      [selectedAddress.storeType]: selectedAddress.id,
+    },
+  };
 }
 
 export function subscribeDeliveryAddressState(onStoreChange: () => void) {

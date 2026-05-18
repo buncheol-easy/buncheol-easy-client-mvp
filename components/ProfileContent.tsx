@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -25,27 +26,33 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import {
+  deleteShippingAddress,
   deleteUserProfile,
+  requestNicknameDuplicate,
   requestLogout,
+  requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
+  updateShippingAddress,
   updateUserProfile,
   type UserProfile,
 } from "@/lib/auth-api";
 import {
+  clearHostedProducts,
   getInitialHostedProducts,
   readHostedProducts,
   subscribeHostedProducts,
 } from "@/lib/hosted-products-store";
 import {
-  getInitialSettlementAccountState,
-  readSettlementAccountState,
-  subscribeSettlementAccountState,
+  clearSettlementAccountState,
   type SettlementAccountState,
   writeSettlementAccountState,
 } from "@/lib/settlement-account-store";
 import {
+  clearDeliveryAddressState,
   getInitialDeliveryAddressState,
+  getDeliveryAddressStateFromSyncedAddresses,
+  getDeliveryAddressStateWithDefaultAddress,
   readDeliveryAddressState,
   subscribeDeliveryAddressState,
   type StoredDeliveryAddressState,
@@ -270,6 +277,7 @@ export function ProfileContent({
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
+  const addressSyncRequestIdRef = useRef(0);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
@@ -283,11 +291,6 @@ export function ProfileContent({
     subscribeAuthState,
     readAuthState,
     getInitialAuthState,
-  );
-  const localSettlementAccount = useSyncExternalStore(
-    subscribeSettlementAccountState,
-    readSettlementAccountState,
-    getInitialSettlementAccountState,
   );
   const hostedProducts = useSyncExternalStore(
     subscribeHostedProducts,
@@ -326,8 +329,10 @@ export function ProfileContent({
 
   const allBids = useMemo(
     () =>
-      mockBidEntries.filter((bid) => !withdrawnBidIds.includes(bid.id)),
-    [withdrawnBidIds],
+      authState.isLoggedIn
+        ? mockBidEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
+        : [],
+    [authState.isLoggedIn, withdrawnBidIds],
   );
   const activeBids = useMemo(
     () =>
@@ -340,22 +345,24 @@ export function ProfileContent({
   );
   const activeHostedProducts = useMemo(
     () =>
-      hostedProducts.filter((product) => {
-        const deadlineDate = parseHostedDeadline(product.deadline);
+      authState.isLoggedIn
+        ? hostedProducts.filter((product) => {
+            const deadlineDate = parseHostedDeadline(product.deadline);
 
-        return (
-          Number.isNaN(deadlineDate.getTime()) ||
-          deadlineDate.getTime() > now.getTime()
-        );
-      }),
-    [hostedProducts, now],
+            return (
+              Number.isNaN(deadlineDate.getTime()) ||
+              deadlineDate.getTime() > now.getTime()
+            );
+          })
+        : [],
+    [authState.isLoggedIn, hostedProducts, now],
   );
   const settlementAccount = useMemo(
     () =>
       authState.isLoggedIn
         ? getSettlementAccountState(userProfile)
-        : localSettlementAccount,
-    [authState.isLoggedIn, localSettlementAccount, userProfile],
+        : getEmptySettlementAccountState(),
+    [authState.isLoggedIn, userProfile],
   );
   const hasSettlementAccount =
     settlementAccount.bankName.trim().length > 0 &&
@@ -410,6 +417,42 @@ export function ProfileContent({
         ? paymentDeliveryAddress
         : defaultDeliveryAddresses[storeType],
   }));
+  const syncDeliveryAddresses = useCallback(async (
+    accessToken: string,
+    options: { clearBeforeSync?: boolean } = {},
+  ) => {
+    const requestId = addressSyncRequestIdRef.current + 1;
+
+    addressSyncRequestIdRef.current = requestId;
+
+    if (options.clearBeforeSync) {
+      clearDeliveryAddressState();
+    }
+
+    try {
+      const addresses = await requestShippingAddresses(accessToken);
+      const nextState = getDeliveryAddressStateFromSyncedAddresses(addresses);
+      const isLatest = requestId === addressSyncRequestIdRef.current;
+
+      if (isLatest) {
+        writeDeliveryAddressState(nextState);
+      }
+
+      return { isLatest, nextState };
+    } catch (error) {
+      if (
+        options.clearBeforeSync &&
+        requestId === addressSyncRequestIdRef.current
+      ) {
+        clearDeliveryAddressState();
+      }
+
+      throw error;
+    }
+  }, []);
+  const invalidateAddressSyncRequests = useCallback(() => {
+    addressSyncRequestIdRef.current += 1;
+  }, []);
   const profileDisplayName = authState.isLoggedIn
     ? userProfile?.nickname || (isUserProfileLoading ? "회원 정보 확인 중" : "분철 회원")
     : "로그인이 필요합니다";
@@ -499,6 +542,31 @@ export function ProfileContent({
       isActive = false;
     };
   }, [authState.accessToken, authState.isLoggedIn]);
+
+  useEffect(() => {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      invalidateAddressSyncRequests();
+      clearDeliveryAddressState();
+      return;
+    }
+
+    syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
+      .then(() => {
+        // The sync helper commits only if this is still the newest request.
+      })
+      .catch(() => {});
+
+    return () => {
+      invalidateAddressSyncRequests();
+    };
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    invalidateAddressSyncRequests,
+    syncDeliveryAddresses,
+  ]);
 
   useEffect(() => {
     if (isEditingSettlementAccount || isSettlementAccountFormDirty) {
@@ -749,6 +817,18 @@ export function ProfileContent({
     setUserProfileMessage("");
 
     try {
+      if (nextProfile.nickname !== userProfile?.nickname?.trim()) {
+        const { isDuplicate } = await requestNicknameDuplicate(
+          accessToken,
+          nextProfile.nickname,
+        );
+
+        if (isDuplicate) {
+          setUserProfileMessage("이미 사용 중인 닉네임이에요.");
+          return;
+        }
+      }
+
       await updateUserProfile(accessToken, nextProfile);
       setUserProfile((current) => ({
         bankAccount: current?.bankAccount ?? null,
@@ -796,7 +876,7 @@ export function ProfileContent({
   async function saveSettlementAccount() {
     const accessToken = authState.accessToken;
 
-    if (!canSaveSettlementAccount || isSavingSettlementAccount) {
+    if (!accessToken || !canSaveSettlementAccount || isSavingSettlementAccount) {
       return;
     }
 
@@ -810,24 +890,22 @@ export function ProfileContent({
     setSettlementAccountMessage("");
 
     try {
-      if (accessToken) {
-        await updateBankAccount(accessToken, {
+      await updateBankAccount(accessToken, {
+        account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+        bank: nextSettlementAccount.bankName,
+        holder: nextSettlementAccount.accountHolder,
+      });
+      setUserProfile((current) => ({
+        email: current?.email ?? "",
+        nickname: current?.nickname ?? userProfileForm.nickname.trim(),
+        phoneNumber: current?.phoneNumber ?? userProfileForm.phoneNumber.trim(),
+        provider: current?.provider ?? "",
+        bankAccount: {
           account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
           bank: nextSettlementAccount.bankName,
           holder: nextSettlementAccount.accountHolder,
-        });
-        setUserProfile((current) => ({
-          email: current?.email ?? "",
-          nickname: current?.nickname ?? userProfileForm.nickname.trim(),
-          phoneNumber: current?.phoneNumber ?? userProfileForm.phoneNumber.trim(),
-          provider: current?.provider ?? "",
-          bankAccount: {
-            account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
-            bank: nextSettlementAccount.bankName,
-            holder: nextSettlementAccount.accountHolder,
-          },
-        }));
-      }
+        },
+      }));
 
       writeSettlementAccountState(nextSettlementAccount);
       setSettlementAccountForm(nextSettlementAccount);
@@ -966,6 +1044,27 @@ export function ProfileContent({
     );
   }
 
+  function clearUserSessionState() {
+    invalidateAddressSyncRequests();
+    clearAuthCookies();
+    clearAuthState();
+    clearDeliveryAddressState();
+    clearHostedProducts();
+    clearSettlementAccountState();
+    setSelectedPaymentBidId(null);
+    setSelectedPaymentAddressId(null);
+    setWithdrawnBidIds([]);
+    setManageAddressSnapshot([]);
+    setIsEditingSettlementAccount(false);
+    setIsEditingUserProfile(false);
+    setUserProfile(null);
+    setUserProfileForm(getEmptyUserProfileFormState());
+    setSettlementAccountForm(getEmptySettlementAccountState());
+    setIsSettlementAccountFormDirty(false);
+    window.sessionStorage.removeItem(addressReturnStateKey);
+    window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
+  }
+
   async function handleLogout() {
     const accessToken = authState.accessToken;
 
@@ -974,8 +1073,7 @@ export function ProfileContent({
         await requestLogout(accessToken);
       }
     } finally {
-      clearAuthCookies();
-      clearAuthState();
+      clearUserSessionState();
     }
   }
 
@@ -997,8 +1095,7 @@ export function ProfileContent({
 
     try {
       await deleteUserProfile(accessToken);
-      clearAuthCookies();
-      clearAuthState();
+      clearUserSessionState();
     } catch (error) {
       setDeleteUserProfileMessage(
         error instanceof Error ? error.message : "회원 탈퇴를 처리하지 못했어요.",
@@ -1012,7 +1109,7 @@ export function ProfileContent({
     setSelectedPaymentAddressId(addressId);
   }
 
-  function setAsDefaultAddress(addressId: string) {
+  async function setAsDefaultAddress(addressId: string) {
     const selectedAddress = deliveryAddresses.find(
       (address) => address.id === addressId,
     );
@@ -1021,16 +1118,40 @@ export function ProfileContent({
       return;
     }
 
-    commitDeliveryAddressState({
-      addresses: deliveryAddresses,
-      defaultAddressIds: {
-        ...defaultAddressIds,
-        [selectedAddress.storeType]: addressId,
-      },
-    });
+    const accessToken = authState.accessToken;
+
+    if (authState.isLoggedIn && accessToken) {
+      try {
+        await updateShippingAddress(accessToken, selectedAddress.id, {
+          alias: selectedAddress.alias,
+          branchName: selectedAddress.branchName,
+          isDefault: true,
+          storeType: selectedAddress.storeType,
+        });
+        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
+
+        if (isLatest) {
+          commitDeliveryAddressState(
+            getDeliveryAddressStateWithDefaultAddress(nextState, addressId),
+          );
+        }
+      } catch (error) {
+        setUserProfileMessage(
+          error instanceof Error
+            ? error.message
+            : "기본 배송지를 변경하지 못했어요.",
+        );
+      }
+
+      return;
+    }
+
+    commitDeliveryAddressState(
+      getDeliveryAddressStateWithDefaultAddress(storedAddressState, addressId),
+    );
   }
 
-  function deleteDeliveryAddress(addressId: string) {
+  async function deleteDeliveryAddress(addressId: string) {
     if (deliveryAddresses.length <= 1) {
       return;
     }
@@ -1040,6 +1161,36 @@ export function ProfileContent({
     );
 
     if (!targetAddress) {
+      return;
+    }
+
+    const accessToken = authState.accessToken;
+
+    if (authState.isLoggedIn && accessToken) {
+      try {
+        await deleteShippingAddress(accessToken, addressId);
+        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
+
+        if (isLatest && addressId === selectedPaymentAddressId) {
+          setSelectedPaymentAddressId(nextState.addresses[0]?.id ?? null);
+        }
+
+        if (isLatest && addressSheetMode === "manage") {
+          setManageAddressSnapshot(
+            getPrioritizedDeliveryAddresses(
+              nextState.addresses,
+              nextState.defaultAddressIds,
+            ),
+          );
+        }
+      } catch (error) {
+        setUserProfileMessage(
+          error instanceof Error
+            ? error.message
+            : "배송지를 삭제하지 못했어요.",
+        );
+      }
+
       return;
     }
 
@@ -1146,7 +1297,9 @@ export function ProfileContent({
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
               <p className="text-[11px] font-medium text-white/45">찜</p>
-              <p className="mt-1 text-[19px] font-semibold">10</p>
+              <p className="mt-1 text-[19px] font-semibold">
+                {authState.isLoggedIn ? 10 : 0}
+              </p>
             </div>
           </div>
         </section>
@@ -1172,7 +1325,13 @@ export function ProfileContent({
             ) : null}
           </div>
 
-          {isEditingSettlementAccount ||
+          {!authState.isLoggedIn ? (
+            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+              <p className="text-[14px] font-medium text-black/45">
+                로그인 후 이용할 수 있어요.
+              </p>
+            </div>
+          ) : isEditingSettlementAccount ||
           !hasSettlementAccount ||
           isSettlementAccountFormDirty ? (
             <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
@@ -1286,7 +1445,11 @@ export function ProfileContent({
             </h2>
             <Link
               className="text-[13px] font-semibold text-black/45"
-              href="/profile/addresses"
+              href={
+                authState.isLoggedIn
+                  ? "/profile/addresses"
+                  : "/login?returnTo=/profile/addresses"
+              }
             >
               배송지 관리
             </Link>
@@ -1308,7 +1471,9 @@ export function ProfileContent({
                       {convenienceStoreTypeLabels[storeType]}
                     </span>
                     <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                      {address?.branchName ?? "등록된 배송지가 없어요"}
+                      {!authState.isLoggedIn
+                        ? "로그인 후 이용할 수 있어요"
+                        : address?.branchName ?? "등록된 배송지가 없어요"}
                     </p>
                   </div>
                 </div>
@@ -1461,7 +1626,9 @@ export function ProfileContent({
           ) : (
             <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
-                참여 중인 입찰이 없습니다.
+                {authState.isLoggedIn
+                  ? "참여 중인 입찰이 없습니다."
+                  : "로그인 후 이용할 수 있어요."}
               </p>
             </div>
           )}
@@ -1574,7 +1741,7 @@ export function ProfileContent({
                 );
               })}
             </div>
-          ) : (
+          ) : authState.isLoggedIn ? (
             <Link
               className="mt-4 block rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] px-4 py-6"
               href="/upload"
@@ -1586,6 +1753,12 @@ export function ProfileContent({
                 상품 등록으로 첫 분철을 열어보세요.
               </p>
             </Link>
+          ) : (
+            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+              <p className="text-[14px] font-medium text-black/45">
+                로그인 후 이용할 수 있어요.
+              </p>
+            </div>
           )}
         </section>
 

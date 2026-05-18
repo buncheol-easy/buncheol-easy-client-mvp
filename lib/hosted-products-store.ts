@@ -166,6 +166,31 @@ export function writeUploadedProduct(product: ProductDetailItem) {
   notifyHostedProductsChanged();
 }
 
+export function clearHostedProducts() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const productIds = [
+    ...readHostedProductIds(),
+    ...readUploadedProductIdsFromStorage(),
+  ].filter((productId, index, productIds) => {
+    return productIds.indexOf(productId) === index;
+  });
+
+  removeUploadedProducts(productIds);
+
+  try {
+    window.sessionStorage.removeItem(hostedProductIdsKey);
+  } catch {
+    // The in-memory cache is still reset below.
+  }
+
+  cachedHostedProductsFingerprint = "";
+  cachedHostedProducts = initialHostedProducts;
+  notifyHostedProductsChanged();
+}
+
 export function subscribeHostedProducts(onStoreChange: () => void) {
   window.addEventListener(hostedProductsChangeEventName, onStoreChange);
   window.addEventListener("focus", onStoreChange);

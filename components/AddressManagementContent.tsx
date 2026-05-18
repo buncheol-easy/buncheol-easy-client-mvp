@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -11,6 +12,20 @@ import {
 import { BackIcon, CloseIcon } from "@/components/icons";
 import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
+  createShippingAddress,
+  deleteShippingAddress,
+  requestShippingAddresses,
+  updateShippingAddress,
+} from "@/lib/auth-api";
+import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
+import {
+  clearDeliveryAddressState,
+  getDeliveryAddressStateFromSyncedAddresses,
+  getDeliveryAddressStateWithDefaultAddress,
   getInitialDeliveryAddressState,
   readDeliveryAddressState,
   subscribeDeliveryAddressState,
@@ -46,18 +61,68 @@ export function AddressManagementContent({
     readDeliveryAddressState,
     getInitialDeliveryAddressState,
   );
-  const addressIdSeedRef = useRef(0);
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
+  const addressSyncRequestIdRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isAddressListLoading, setIsAddressListLoading] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [deletingAddressIds, setDeletingAddressIds] = useState<string[]>([]);
+  const [addressMessage, setAddressMessage] = useState("");
   const [newAddressStoreType, setNewAddressStoreType] =
     useState<ConvenienceStoreType>("gs25");
   const [newAddressAlias, setNewAddressAlias] = useState("");
   const [newAddressBranchName, setNewAddressBranchName] = useState("");
   const { addresses: deliveryAddresses, defaultAddressIds } = addressState;
+  const canManageAddresses =
+    authState.isLoggedIn && Boolean(authState.accessToken);
   const visibleAddresses = useMemo(
-    () => getPrioritizedDeliveryAddresses(deliveryAddresses, defaultAddressIds),
-    [defaultAddressIds, deliveryAddresses],
+    () =>
+      canManageAddresses
+        ? getPrioritizedDeliveryAddresses(deliveryAddresses, defaultAddressIds)
+        : [],
+    [canManageAddresses, defaultAddressIds, deliveryAddresses],
   );
+  const syncDeliveryAddresses = useCallback(async (
+    accessToken: string,
+    options: { clearBeforeSync?: boolean } = {},
+  ) => {
+    const requestId = addressSyncRequestIdRef.current + 1;
+
+    addressSyncRequestIdRef.current = requestId;
+
+    if (options.clearBeforeSync) {
+      clearDeliveryAddressState();
+    }
+
+    try {
+      const addresses = await requestShippingAddresses(accessToken);
+      const nextState = getDeliveryAddressStateFromSyncedAddresses(addresses);
+      const isLatest = requestId === addressSyncRequestIdRef.current;
+
+      if (isLatest) {
+        writeDeliveryAddressState(nextState);
+      }
+
+      return { isLatest, nextState };
+    } catch (error) {
+      if (
+        options.clearBeforeSync &&
+        requestId === addressSyncRequestIdRef.current
+      ) {
+        clearDeliveryAddressState();
+      }
+
+      throw error;
+    }
+  }, []);
+  const invalidateAddressSyncRequests = useCallback(() => {
+    addressSyncRequestIdRef.current += 1;
+  }, []);
 
   function resetDraft() {
     setNewAddressStoreType("gs25");
@@ -102,6 +167,54 @@ export function AddressManagementContent({
     };
   }, [openFormOnEntry]);
 
+  useEffect(() => {
+    const accessToken = authState.accessToken;
+
+    if (!canManageAddresses || !accessToken) {
+      invalidateAddressSyncRequests();
+      clearDeliveryAddressState();
+      setIsAddressListLoading(false);
+      setAddressMessage("");
+      return;
+    }
+
+    let isActive = true;
+
+    setIsAddressListLoading(true);
+    setAddressMessage("");
+
+    syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
+      .then(() => {
+        // The sync helper commits only if this is still the newest request.
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setAddressMessage(
+          error instanceof Error
+            ? error.message
+            : "배송지 목록을 불러오지 못했어요.",
+        );
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsAddressListLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+      invalidateAddressSyncRequests();
+    };
+  }, [
+    authState.accessToken,
+    canManageAddresses,
+    invalidateAddressSyncRequests,
+    syncDeliveryAddresses,
+  ]);
+
   function scrollToAddressListBottom() {
     scrollContainerRef.current?.scrollTo({
       top: scrollContainerRef.current.scrollHeight,
@@ -113,54 +226,13 @@ export function AddressManagementContent({
     writeDeliveryAddressState(nextState);
   }
 
-  function createAddressId() {
-    const usedIds = new Set(deliveryAddresses.map((address) => address.id));
-
-    while (usedIds.has(`address-${addressIdSeedRef.current}`)) {
-      addressIdSeedRef.current += 1;
+  function rememberLastAddedAddress(addressId: string) {
+    if (returnHref) {
+      window.sessionStorage.setItem(lastAddedDeliveryAddressIdKey, addressId);
     }
-
-    const nextId = `address-${addressIdSeedRef.current}`;
-    addressIdSeedRef.current += 1;
-
-    return nextId;
   }
 
-  function addDeliveryAddress() {
-    const trimmedBranchName = newAddressBranchName.trim();
-
-    if (!trimmedBranchName) {
-      return;
-    }
-
-    const nextAddress = {
-      id: createAddressId(),
-      storeType: newAddressStoreType,
-      alias: newAddressAlias.trim() || undefined,
-      branchName: trimmedBranchName,
-      address: "",
-    };
-
-    const nextAddresses = [...deliveryAddresses, nextAddress];
-
-    commitAddressState({
-      addresses: nextAddresses,
-      defaultAddressIds: defaultAddressIds[newAddressStoreType]
-        ? defaultAddressIds
-        : {
-            ...defaultAddressIds,
-            [newAddressStoreType]: nextAddress.id,
-          },
-    });
-    closeForm();
-
-    if (returnHref) {
-      window.sessionStorage.setItem(
-        lastAddedDeliveryAddressIdKey,
-        nextAddress.id,
-      );
-    }
-
+  function scrollAddressListAfterChange() {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
         scrollToAddressListBottom();
@@ -169,7 +241,63 @@ export function AddressManagementContent({
     });
   }
 
-  function setAsDefaultAddress(addressId: string) {
+  async function addDeliveryAddress() {
+    const trimmedBranchName = newAddressBranchName.trim();
+
+    if (!trimmedBranchName || isSavingAddress) {
+      return;
+    }
+
+    const addressDraft = {
+      storeType: newAddressStoreType,
+      alias: newAddressAlias.trim() || undefined,
+      branchName: trimmedBranchName,
+      address: "",
+    };
+    const accessToken = authState.accessToken;
+
+    setAddressMessage("");
+
+    if (!canManageAddresses || !accessToken) {
+      setAddressMessage("배송지는 로그인 후 이용할 수 있어요.");
+      return;
+    }
+
+    setIsSavingAddress(true);
+
+    try {
+      const previousAddressIds = new Set(
+        deliveryAddresses.map((address) => address.id),
+      );
+
+      await createShippingAddress(accessToken, {
+        ...addressDraft,
+        isDefault: !defaultAddressIds[newAddressStoreType],
+      });
+
+      const { nextState } = await syncDeliveryAddresses(accessToken);
+      const addedAddress =
+        nextState.addresses.find(
+          (address) => !previousAddressIds.has(address.id),
+        ) ?? null;
+
+      closeForm();
+
+      if (addedAddress) {
+        rememberLastAddedAddress(addedAddress.id);
+      }
+
+      scrollAddressListAfterChange();
+    } catch (error) {
+      setAddressMessage(
+        error instanceof Error ? error.message : "배송지를 등록하지 못했어요.",
+      );
+    } finally {
+      setIsSavingAddress(false);
+    }
+  }
+
+  async function setAsDefaultAddress(addressId: string) {
     const selectedAddress = deliveryAddresses.find(
       (address) => address.id === addressId,
     );
@@ -178,16 +306,42 @@ export function AddressManagementContent({
       return;
     }
 
-    commitAddressState({
-      addresses: deliveryAddresses,
-      defaultAddressIds: {
-        ...defaultAddressIds,
-        [selectedAddress.storeType]: addressId,
-      },
-    });
+    const accessToken = authState.accessToken;
+
+    setAddressMessage("");
+
+    if (authState.isLoggedIn && accessToken) {
+      try {
+        await updateShippingAddress(accessToken, selectedAddress.id, {
+          alias: selectedAddress.alias,
+          branchName: selectedAddress.branchName,
+          isDefault: true,
+          storeType: selectedAddress.storeType,
+        });
+        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
+
+        if (isLatest) {
+          commitAddressState(
+            getDeliveryAddressStateWithDefaultAddress(nextState, addressId),
+          );
+        }
+      } catch (error) {
+        setAddressMessage(
+          error instanceof Error
+            ? error.message
+            : "기본 배송지를 변경하지 못했어요.",
+        );
+      }
+
+      return;
+    }
+
+    commitAddressState(
+      getDeliveryAddressStateWithDefaultAddress(addressState, addressId),
+    );
   }
 
-  function deleteDeliveryAddress(addressId: string) {
+  async function deleteDeliveryAddress(addressId: string) {
     if (deliveryAddresses.length <= 1) {
       return;
     }
@@ -197,6 +351,31 @@ export function AddressManagementContent({
     );
 
     if (!targetAddress) {
+      return;
+    }
+
+    const accessToken = authState.accessToken;
+
+    setAddressMessage("");
+
+    if (authState.isLoggedIn && accessToken) {
+      setDeletingAddressIds((current) => [...current, addressId]);
+
+      try {
+        await deleteShippingAddress(accessToken, addressId);
+        await syncDeliveryAddresses(accessToken);
+      } catch (error) {
+        setAddressMessage(
+          error instanceof Error
+            ? error.message
+            : "배송지를 삭제하지 못했어요.",
+        );
+      } finally {
+        setDeletingAddressIds((current) =>
+          current.filter((currentAddressId) => currentAddressId !== addressId),
+        );
+      }
+
       return;
     }
 
@@ -258,7 +437,19 @@ export function AddressManagementContent({
         ref={scrollContainerRef}
       >
         <section className="border-t border-black/10 pt-5">
+          {isAddressListLoading || addressMessage ? (
+            <p className="mb-3 text-[13px] font-semibold text-black/45">
+              {addressMessage || "배송지를 불러오는 중이에요."}
+            </p>
+          ) : null}
           <div className="grid gap-2">
+            {!canManageAddresses ? (
+              <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+                <p className="text-[14px] font-medium text-black/45">
+                  배송지는 로그인 후 이용할 수 있어요.
+                </p>
+              </div>
+            ) : null}
             {visibleAddresses.map((address) => {
               const isDefault =
                 address.id === defaultAddressIds[address.storeType];
@@ -312,6 +503,7 @@ export function AddressManagementContent({
                         <button
                           aria-label={`${getConvenienceStoreLabel(address.storeType)} ${address.branchName} 배송지 삭제`}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10"
+                          disabled={deletingAddressIds.includes(address.id)}
                           onClick={() => deleteDeliveryAddress(address.id)}
                           type="button"
                         >
@@ -324,7 +516,8 @@ export function AddressManagementContent({
               );
             })}
 
-            {isFormOpen ? (
+            {canManageAddresses ? (
+              isFormOpen ? (
               <div
                 className="idol-selection-enter rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-[#f7f7f7] px-5 pb-4 pt-5"
                 key="address-form"
@@ -354,9 +547,6 @@ export function AddressManagementContent({
                         onMouseDown={(event) => {
                           event.preventDefault();
                         }}
-                        onTouchStart={(event) => {
-                          event.preventDefault();
-                        }}
                         disabled={!isFormOpen}
                         onClick={() => setNewAddressStoreType(storeType)}
                         type="button"
@@ -383,14 +573,18 @@ export function AddressManagementContent({
                   />
                   <button
                     className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-semibold text-white disabled:bg-black/20"
-                    disabled={!isFormOpen || !newAddressBranchName.trim()}
+                    disabled={
+                      !isFormOpen ||
+                      !newAddressBranchName.trim() ||
+                      isSavingAddress
+                    }
                     onClick={addDeliveryAddress}
                     type="button"
                   >
-                    배송지 추가
+                    {isSavingAddress ? "저장 중" : "배송지 추가"}
                   </button>
                 </div>
-            ) : (
+              ) : (
               <div
                 className="idol-selection-enter"
                 key="address-add-button"
@@ -403,7 +597,8 @@ export function AddressManagementContent({
                   + 새 배송지 추가
                 </button>
               </div>
-            )}
+              )
+            ) : null}
           </div>
         </section>
       </div>

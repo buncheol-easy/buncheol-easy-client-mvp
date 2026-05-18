@@ -23,6 +23,11 @@ import {
   subscribeDeliveryAddressState,
 } from "@/lib/delivery-address-store";
 import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
+import {
   getInitialHostedProducts,
   readHostedProducts,
   subscribeHostedProducts,
@@ -222,6 +227,11 @@ export function BidHistoryContent({
     readHostedProducts,
     getInitialHostedProducts,
   );
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [mode, setMode] = useState<BidHistoryMode>("joined");
   const [filter, setFilter] = useState<BidHistoryFilter>("all");
@@ -385,6 +395,10 @@ export function BidHistoryContent({
   }
 
   const records = useMemo(() => {
+    if (!authState.isLoggedIn) {
+      return [];
+    }
+
     return [...bidRecords]
       .filter((bid) => {
         const isClosed = parseDeadline(bid.deadline).getTime() <= now.getTime();
@@ -404,8 +418,12 @@ export function BidHistoryContent({
           parseDeadline(right.deadline).getTime() -
           parseDeadline(left.deadline).getTime(),
       );
-  }, [filter, now]);
+  }, [authState.isLoggedIn, filter, now]);
   const hostedRecords = useMemo(() => {
+    if (!authState.isLoggedIn) {
+      return [];
+    }
+
     return [...hostedProducts]
       .filter((product) => {
         const deadlineDate = parseHistoryDeadline(product.deadline);
@@ -428,7 +446,7 @@ export function BidHistoryContent({
           parseHistoryDeadline(right.deadline).getTime() -
           parseHistoryDeadline(left.deadline).getTime(),
       );
-  }, [hostedFilter, hostedProducts, now]);
+  }, [authState.isLoggedIn, hostedFilter, hostedProducts, now]);
 
   function openPaymentSheet(bidId: string) {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -697,6 +715,20 @@ export function BidHistoryContent({
         >
           {mode === "joined" ? (
             <div className="space-y-3">
+            {records.length === 0 ? (
+              <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+                <p className="text-[14px] font-semibold text-black/70">
+                  {authState.isLoggedIn
+                    ? "표시할 참여 분철이 없습니다."
+                    : "로그인 후 이용할 수 있어요."}
+                </p>
+                {authState.isLoggedIn ? (
+                  <p className="mt-1 text-[13px] font-medium text-black/40">
+                    참여한 분철이 여기에 쌓여요.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {records.map((bid) => {
               const isClosed =
                 parseDeadline(bid.deadline).getTime() <= now.getTime();
@@ -828,11 +860,15 @@ export function BidHistoryContent({
               {hostedRecords.length === 0 ? (
                 <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
                   <p className="text-[14px] font-semibold text-black/70">
-                    표시할 개최 분철이 없습니다.
+                    {authState.isLoggedIn
+                      ? "표시할 개최 분철이 없습니다."
+                      : "로그인 후 이용할 수 있어요."}
                   </p>
-                  <p className="mt-1 text-[13px] font-medium text-black/40">
-                    상품 등록으로 만든 분철이 여기에 쌓여요.
-                  </p>
+                  {authState.isLoggedIn ? (
+                    <p className="mt-1 text-[13px] font-medium text-black/40">
+                      상품 등록으로 만든 분철이 여기에 쌓여요.
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               {hostedRecords.map((product) => {

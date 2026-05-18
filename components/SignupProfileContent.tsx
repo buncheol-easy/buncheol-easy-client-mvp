@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { ProfileIcon } from "@/components/icons";
-import { updateUserProfile } from "@/lib/auth-api";
+import { requestNicknameDuplicate, updateUserProfile } from "@/lib/auth-api";
 import {
   authProfileSetupReturnHrefStorageKey,
   getInitialAuthState,
@@ -61,6 +61,16 @@ export function SignupProfileContent() {
     setMessage("");
 
     try {
+      const { isDuplicate } = await requestNicknameDuplicate(
+        accessToken,
+        nickname.trim(),
+      );
+
+      if (isDuplicate) {
+        setMessage("이미 사용 중인 닉네임이에요.");
+        return;
+      }
+
       await updateUserProfile(accessToken, {
         nickname: nickname.trim(),
         phoneNumber: phoneNumber.trim(),
