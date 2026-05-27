@@ -70,7 +70,7 @@ function getHistoryIndex() {
 function parseDeadline(deadline: string) {
   const match = deadline
     .trim()
-    .match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})\s+(\d{1,2})(?::00)?$/);
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2}))?/);
 
   if (!match) {
     return new Date(Number.NaN);
@@ -195,15 +195,20 @@ function isRecruitingStatus(status: string | undefined) {
 }
 
 function isBidRecordClosed(bid: BidRecord, now: Date) {
-  if (bid.buncheolStatus) {
+  if (bid.buncheolStatus && !isRecruitingStatus(bid.buncheolStatus)) {
     return !isRecruitingStatus(bid.buncheolStatus);
   }
 
-  return parseDeadline(bid.deadline).getTime() <= now.getTime();
+  const deadlineDate = parseDeadline(bid.deadline);
+
+  return (
+    !Number.isNaN(deadlineDate.getTime()) &&
+    deadlineDate.getTime() <= now.getTime()
+  );
 }
 
 function isHostedProductClosed(product: ProductDetailItem, now: Date) {
-  if (product.status) {
+  if (product.status && !isRecruitingStatus(product.status)) {
     return !isRecruitingStatus(product.status);
   }
 
@@ -234,7 +239,7 @@ function formatApiDateTime(value: string) {
     parts.map((part) => [part.type, part.value]),
   );
 
-  return `${partMap.year}.${partMap.month}.${partMap.day} ${partMap.hour}`;
+  return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
 }
 
 function getToneFromId(id: string) {
@@ -283,6 +288,7 @@ function getHostedProductFromBuncheol(
     buncheolId: buncheol.id,
     title: buncheol.title,
     member: `${buncheol.memberSlotCount}개 옵션`,
+    optionCount: buncheol.memberSlotCount,
     targetMembers: buncheol.memberNames,
     uploadedAt: formatApiDateTime(buncheol.createdAt),
     era: buncheol.groupName,
@@ -1188,6 +1194,10 @@ export function BidHistoryContent({
               ) : null}
               {hostedRecords.map((product) => {
                 const isClosed = isHostedProductClosed(product, now);
+                const optionCount =
+                  product.optionCount ??
+                  product.targetMembers?.length ??
+                  product.options.length;
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,
@@ -1246,7 +1256,7 @@ export function BidHistoryContent({
                                 옵션
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {product.options.length}개
+                                {optionCount}개
                               </p>
                             </div>
                             <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
@@ -1280,8 +1290,16 @@ export function BidHistoryContent({
                       </div>
                     </div>
                     </Link>
-                    {product.isApiProduct ? (
-                      <div className="mt-4 flex justify-end border-t border-black/10 pt-3">
+                    <div className="mt-4 flex justify-end gap-2 border-t border-black/10 pt-3">
+                      {product.isApiProduct ? (
+                      <Link
+                        className="inline-flex h-9 items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold tracking-[-0.04em] text-white"
+                        href={`/products/${product.buncheolId ?? product.id}/manage`}
+                      >
+                        관리하기
+                      </Link>
+                      ) : null}
+                      {product.isApiProduct ? (
                         <button
                           className="h-9 rounded-full border border-black/10 px-4 text-[13px] font-semibold tracking-[-0.04em] text-black/55 disabled:text-black/25"
                           disabled={
@@ -1293,8 +1311,8 @@ export function BidHistoryContent({
                         >
                           삭제
                         </button>
-                      </div>
-                    ) : null}
+                      ) : null}
+                    </div>
                   </article>
                 );
               })}

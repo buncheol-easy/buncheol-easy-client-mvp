@@ -27,6 +27,7 @@ import {
 } from "@/lib/auth-store";
 import {
   cancelBuncheolParticipation,
+  deleteBuncheol,
   deleteShippingAddress,
   deleteUserProfile,
   requestNicknameDuplicate,
@@ -138,7 +139,7 @@ function getHistoryIndex() {
 function parseDeadline(deadline: string) {
   const match = deadline
     .trim()
-    .match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})\s+(\d{1,2})(?::00)?$/);
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2}))?/);
 
   if (!match) {
     return new Date(Number.NaN);
@@ -267,16 +268,21 @@ function isDeletedProductStatus(status: string | undefined) {
 }
 
 function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
-  if (bid.buncheolStatus) {
+  if (bid.buncheolStatus && !isRecruitingStatus(bid.buncheolStatus)) {
     return !isRecruitingStatus(bid.buncheolStatus);
   }
 
-  return parseDeadline(bid.deadline).getTime() <= now.getTime();
+  const deadlineDate = parseDeadline(bid.deadline);
+
+  return (
+    !Number.isNaN(deadlineDate.getTime()) &&
+    deadlineDate.getTime() <= now.getTime()
+  );
 }
 
 function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
-  if (product.status) {
-    return isRecruitingStatus(product.status);
+  if (product.status && !isRecruitingStatus(product.status)) {
+    return false;
   }
 
   const deadlineDate = parseHostedDeadline(product.deadline);
@@ -306,7 +312,7 @@ function formatApiDateTime(value: string) {
     parts.map((part) => [part.type, part.value]),
   );
 
-  return `${partMap.year}.${partMap.month}.${partMap.day} ${partMap.hour}`;
+  return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
 }
 
 function getToneFromId(id: string) {
@@ -353,6 +359,7 @@ function getHostedProductFromBuncheol(
     buncheolId: buncheol.id,
     title: buncheol.title,
     member: `${buncheol.memberSlotCount}개 옵션`,
+    optionCount: buncheol.memberSlotCount,
     targetMembers: buncheol.memberNames,
     uploadedAt: formatApiDateTime(buncheol.createdAt),
     era: buncheol.groupName,
@@ -465,6 +472,10 @@ export function ProfileContent({
   );
   const [apiHostedProducts, setApiHostedProducts] = useState<
     ProductDetailItem[] | null
+  >(null);
+  const [hostedProductMessage, setHostedProductMessage] = useState("");
+  const [deletingHostedProductId, setDeletingHostedProductId] = useState<
+    string | null
   >(null);
 
   const allBids = useMemo(
@@ -640,6 +651,7 @@ export function ProfileContent({
     if (!authState.isLoggedIn || !accessToken) {
       setApiBidEntries([]);
       setApiHostedProducts([]);
+      setHostedProductMessage("");
       return;
     }
 
@@ -663,6 +675,7 @@ export function ProfileContent({
       .then((buncheols) => {
         if (isActive) {
           setApiHostedProducts(buncheols.map(getHostedProductFromBuncheol));
+          setHostedProductMessage("");
         }
       })
       .catch(() => {
@@ -1217,6 +1230,41 @@ export function ProfileContent({
       PRODUCT_PROFILE_ENTRY_INDEX_KEY,
       String(historyIndex + 1),
     );
+  }
+
+  async function handleDeleteHostedProduct(product: ProductDetailItem) {
+    const accessToken = authState.accessToken;
+    const buncheolId = product.buncheolId ?? product.id;
+
+    if (!authState.isLoggedIn || !accessToken || deletingHostedProductId) {
+      return;
+    }
+
+    if (!window.confirm("이 분철을 삭제할까요?")) {
+      return;
+    }
+
+    setDeletingHostedProductId(buncheolId);
+
+    try {
+      await deleteBuncheol(accessToken, buncheolId);
+      setApiHostedProducts((current) =>
+        current
+          ? current.filter(
+              (item) => (item.buncheolId ?? item.id) !== buncheolId,
+            )
+          : current,
+      );
+      setHostedProductMessage("");
+    } catch (error: unknown) {
+      setHostedProductMessage(
+        error instanceof Error
+          ? error.message
+          : "분철을 삭제하지 못했어요.",
+      );
+    } finally {
+      setDeletingHostedProductId(null);
+    }
   }
 
   function commitDeliveryAddressState(nextState: StoredDeliveryAddressState) {
@@ -1863,23 +1911,36 @@ export function ProfileContent({
             </span>
           </div>
 
+          {hostedProductMessage ? (
+            <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55">
+              {hostedProductMessage}
+            </p>
+          ) : null}
+
           {activeHostedProducts.length > 0 ? (
             <div className="mt-4 space-y-3">
               {activeHostedProducts.map((product) => {
                 const isClosed = !isProfileHostedProductActive(product, now);
+                const optionCount =
+                  product.optionCount ??
+                  product.targetMembers?.length ??
+                  product.options.length;
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,
                 );
 
                 return (
-                  <Link
-                    className="block rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
-                    href={`/products/${product.id}?from=profile`}
+                  <div
+                    className="rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
                     key={product.id}
-                    onClick={rememberProfileProductEntry}
                   >
-                    <article className="flex items-start gap-3">
+                    <Link
+                      className="block"
+                      href={`/products/${product.id}?from=profile`}
+                      onClick={rememberProfileProductEntry}
+                    >
+                      <article className="flex items-start gap-3">
                       <div
                         className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-[0.9rem] bg-gradient-to-br ${product.tone}`}
                       >
@@ -1921,7 +1982,7 @@ export function ProfileContent({
                               옵션
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {product.options.length}개
+                              {optionCount}개
                             </p>
                           </div>
                           <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
@@ -1946,8 +2007,32 @@ export function ProfileContent({
                           마감 {product.deadline}
                         </p>
                       </div>
-                    </article>
-                  </Link>
+                      </article>
+                    </Link>
+                    <div className="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4">
+                      {product.isApiProduct ? (
+                      <Link
+                        className="inline-flex h-9 items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold tracking-[-0.04em] text-white"
+                        href={`/products/${product.buncheolId ?? product.id}/manage`}
+                      >
+                        관리하기
+                      </Link>
+                      ) : null}
+                      {product.isApiProduct ? (
+                        <button
+                          className="h-9 rounded-full border border-black/10 px-4 text-[13px] font-semibold tracking-[-0.04em] text-black/55 disabled:text-black/25"
+                          disabled={
+                            deletingHostedProductId ===
+                            (product.buncheolId ?? product.id)
+                          }
+                          onClick={() => void handleDeleteHostedProduct(product)}
+                          type="button"
+                        >
+                          삭제
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 );
               })}
             </div>

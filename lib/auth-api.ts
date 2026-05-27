@@ -1276,7 +1276,7 @@ function formatKoreaDateTime(value: string | undefined) {
     parts.map((part) => [part.type, part.value]),
   );
 
-  return `${partMap.year}.${partMap.month}.${partMap.day} ${partMap.hour}`;
+  return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
 }
 
 function formatWonAmount(amount: number) {
@@ -1726,24 +1726,6 @@ export async function deleteBuncheol(
       credentials: "include",
       headers: getAuthHeaders(accessToken),
       method: "DELETE",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
-
-export async function advanceBuncheolStatus(
-  accessToken: string,
-  buncheolId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/status`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
     },
   );
 

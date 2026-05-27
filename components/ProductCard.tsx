@@ -20,6 +20,7 @@ export type ProductCardItem = {
   productId?: string;
   title: string;
   member: string;
+  optionCount?: number;
   targetMembers?: string[];
   uploadedAt?: string;
   era: string;
