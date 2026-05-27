@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type PointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -27,6 +28,25 @@ import {
   SearchExperience,
 } from "@/components/SearchExperience";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import {
+  cancelBuncheolParticipation,
+  participateBuncheol,
+  requestShippingAddresses,
+} from "@/lib/auth-api";
+import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import {
+  getDeliveryAddressStateFromSyncedAddresses,
+  getInitialDeliveryAddressState,
+  readDeliveryAddressState,
+  subscribeDeliveryAddressState,
+  writeDeliveryAddressState,
+  type StoredDeliveryAddressState,
+} from "@/lib/delivery-address-store";
+import {
+  getAvailableConvenienceStoreTypes,
+  getDefaultDeliveryAddressesByType,
+  getPrioritizedDeliveryAddresses,
+} from "@/lib/mock-delivery-addresses";
 
 type ProductDetailProps = {
   product: ProductDetailItem;
@@ -138,6 +158,36 @@ function getProductImageUrls(product: ProductDetailItem) {
   );
 }
 
+function getBidDeliveryAddress(
+  state: StoredDeliveryAddressState,
+  product: ProductDetailItem,
+) {
+  const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
+    state.addresses,
+    state.defaultAddressIds,
+  );
+  const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
+    state.addresses,
+    state.defaultAddressIds,
+  );
+  const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
+    product.shippingMethods,
+    product.courier,
+  );
+
+  return (
+    availableShippingStoreTypes
+      .map((storeType) => defaultDeliveryAddresses[storeType])
+      .find((address) => address !== null) ??
+    prioritizedDeliveryAddresses.find((address) =>
+      availableShippingStoreTypes.length > 0
+        ? availableShippingStoreTypes.includes(address.storeType)
+        : true,
+    ) ??
+    null
+  );
+}
+
 export function ProductDetail({
   backHref,
   product,
@@ -145,6 +195,16 @@ export function ProductDetail({
   initialReturnQuery,
 }: ProductDetailProps) {
   const router = useRouter();
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    readAuthState,
+  );
+  const deliveryAddressState = useSyncExternalStore(
+    subscribeDeliveryAddressState,
+    readDeliveryAddressState,
+    getInitialDeliveryAddressState,
+  );
   const didNavigateBack = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
@@ -159,7 +219,19 @@ export function ProductDetail({
     product.options,
   );
   const [bidAmounts, setBidAmounts] = useState<Record<string, string>>({});
-  const [myBids, setMyBids] = useState<Record<string, number>>({});
+  const [myBids, setMyBids] = useState<Record<string, number>>(() =>
+    product.options.reduce<Record<string, number>>((bids, option) => {
+      if (typeof option.myBidAmount === "number" && option.myBidAmount > 0) {
+        bids[option.id] = option.myBidAmount;
+      }
+
+      return bids;
+    }, {}),
+  );
+  const [isBidSubmitPending, setIsBidSubmitPending] = useState(false);
+  const [withdrawingOptionId, setWithdrawingOptionId] = useState<string | null>(
+    null,
+  );
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -222,6 +294,10 @@ export function ProductDetail({
   const shippingMethods = product.shippingMethods ?? [
     { name: product.courier, price: "판매자 안내" },
   ];
+  const bidDeliveryAddress = getBidDeliveryAddress(
+    deliveryAddressState,
+    product,
+  );
   const targetTags = getTargetTags(product);
   const productImages = getProductImageUrls(product);
   const visibleProductImageIndex = Math.min(
@@ -231,7 +307,9 @@ export function ProductDetail({
   const productImageTrackOffset = `calc(-${
     visibleProductImageIndex * 100
   }% + ${productImageDragOffset}px)`;
-  const canEditProduct = product.id.startsWith("uploaded-");
+  const canEditProduct =
+    product.id.startsWith("uploaded-") || product.isHostedByMe;
+  const buncheolId = product.buncheolId ?? product.id;
 
   function buildTopBids(
     option: ProductOption,
@@ -290,11 +368,41 @@ export function ProductDetail({
     }));
   }
 
-  function withdrawBid(optionId: string) {
+  async function withdrawBid(optionId: string) {
     const withdrawnBid = myBids[optionId];
 
-    if (!withdrawnBid) {
+    if (!withdrawnBid || withdrawingOptionId) {
       return;
+    }
+
+    const option = auctionOptions.find((option) => option.id === optionId);
+    const participationId = option?.myParticipationId;
+
+    if (product.isApiProduct) {
+      const accessToken = authState.accessToken;
+
+      if (!authState.isLoggedIn || !accessToken) {
+        const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
+        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        return;
+      }
+
+      if (!participationId) {
+        window.alert("입찰 철회 정보를 확인하지 못했어요.");
+        return;
+      }
+
+      setWithdrawingOptionId(optionId);
+
+      try {
+        await cancelBuncheolParticipation(accessToken, participationId);
+      } catch (error: unknown) {
+        window.alert(
+          error instanceof Error ? error.message : "입찰을 철회하지 못했어요.",
+        );
+        setWithdrawingOptionId(null);
+        return;
+      }
     }
 
     setAuctionOptions((currentOptions) =>
@@ -311,6 +419,8 @@ export function ProductDetail({
         return {
           ...option,
           currentBid,
+          myBidAmount: undefined,
+          myParticipationId: undefined,
           participantCount: Math.max(0, option.participantCount - 1),
           topBids,
         };
@@ -328,12 +438,29 @@ export function ProductDetail({
 
       return nextAmounts;
     });
+    setWithdrawingOptionId(null);
   }
 
-  function handleSubmitBids() {
+  function applySubmittedBidState(
+    participationResults: Map<
+      string,
+      { bidAmount: number; participationId: string }
+    >,
+    onlyParticipationResults = false,
+  ) {
+    function shouldApplyOption(optionId: string) {
+      return !onlyParticipationResults || participationResults.has(optionId);
+    }
+
     setAuctionOptions((currentOptions) =>
       currentOptions.map((option) => {
-        const bidAmount = Number(bidAmounts[option.id] ?? 0);
+        if (!shouldApplyOption(option.id)) {
+          return option;
+        }
+
+        const apiResult = participationResults.get(option.id);
+        const bidAmount =
+          apiResult?.bidAmount ?? Number(bidAmounts[option.id] ?? 0);
 
         if (bidAmount <= priceToNumber(getBidBaseline(option))) {
           return option;
@@ -348,6 +475,9 @@ export function ProductDetail({
             previousBidAmount > 0
               ? option.participantCount
               : option.participantCount + 1,
+          myBidAmount: bidAmount,
+          myParticipationId:
+            apiResult?.participationId ?? option.myParticipationId,
           topBids: buildTopBids(option, bidAmount, previousBidAmount),
         };
       }),
@@ -356,7 +486,13 @@ export function ProductDetail({
       const nextBids = { ...current };
 
       auctionOptions.forEach((option) => {
-        const bidAmount = Number(bidAmounts[option.id] ?? 0);
+        if (!shouldApplyOption(option.id)) {
+          return;
+        }
+
+        const apiResult = participationResults.get(option.id);
+        const bidAmount =
+          apiResult?.bidAmount ?? Number(bidAmounts[option.id] ?? 0);
 
         if (bidAmount > priceToNumber(getBidBaseline(option))) {
           nextBids[option.id] = bidAmount;
@@ -365,7 +501,118 @@ export function ProductDetail({
 
       return nextBids;
     });
-    setBidAmounts({});
+    setBidAmounts((current) => {
+      if (!onlyParticipationResults) {
+        return {};
+      }
+
+      const nextAmounts = { ...current };
+
+      participationResults.forEach((_, optionId) => {
+        delete nextAmounts[optionId];
+      });
+
+      return nextAmounts;
+    });
+  }
+
+  async function handleSubmitBids() {
+    if (isBidSubmitPending) {
+      return;
+    }
+
+    const submittedBids = auctionOptions
+      .map((option) => ({
+        bidAmount: Number(bidAmounts[option.id] ?? 0),
+        option,
+      }))
+      .filter(
+        ({ bidAmount, option }) =>
+          bidAmount > priceToNumber(getBidBaseline(option)),
+      );
+
+    if (submittedBids.length === 0) {
+      return;
+    }
+
+    const participationResults = new Map<
+      string,
+      { bidAmount: number; participationId: string }
+    >();
+
+    if (product.isApiProduct) {
+      setIsBidSubmitPending(true);
+
+      const accessToken = authState.accessToken;
+
+      if (!authState.isLoggedIn || !accessToken) {
+        const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
+        setIsBidSubmitPending(false);
+        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        return;
+      }
+
+      let nextBidDeliveryAddress = bidDeliveryAddress;
+
+      if (!nextBidDeliveryAddress) {
+        try {
+          const addresses = await requestShippingAddresses(accessToken);
+          const nextAddressState =
+            getDeliveryAddressStateFromSyncedAddresses(addresses);
+
+          writeDeliveryAddressState(nextAddressState);
+          nextBidDeliveryAddress = getBidDeliveryAddress(
+            nextAddressState,
+            product,
+          );
+        } catch {
+          nextBidDeliveryAddress = null;
+        }
+      }
+
+      const shippingAddressId = Number(nextBidDeliveryAddress?.id);
+
+      if (!Number.isFinite(shippingAddressId)) {
+        window.alert("입찰하려면 배송지를 먼저 등록해 주세요.");
+        setIsBidSubmitPending(false);
+        router.push("/profile/addresses?openAdd=1");
+        return;
+      }
+
+      try {
+        for (const { bidAmount, option } of submittedBids) {
+          const buncheolMemberId = Number(option.buncheolMemberId ?? option.id);
+
+          if (!Number.isFinite(buncheolMemberId)) {
+            throw new Error("입찰할 멤버 정보를 확인하지 못했어요.");
+          }
+
+          const result = await participateBuncheol(accessToken, buncheolId, {
+            bidAmount,
+            buncheolMemberId,
+            shippingAddressId,
+          });
+
+          participationResults.set(option.id, {
+            bidAmount: result.bidAmount,
+            participationId: result.participationId,
+          });
+        }
+      } catch (error: unknown) {
+        if (participationResults.size > 0) {
+          applySubmittedBidState(participationResults, true);
+        }
+
+        window.alert(
+          error instanceof Error ? error.message : "입찰을 등록하지 못했어요.",
+        );
+        setIsBidSubmitPending(false);
+        return;
+      }
+    }
+
+    applySubmittedBidState(participationResults);
+    setIsBidSubmitPending(false);
     closeSheet();
   }
 
@@ -940,8 +1187,9 @@ export function ProductDetail({
                           </p>
                           <button
                             type="button"
-                            className="mt-2 text-[13px] font-semibold text-black/45"
-                            onClick={() => withdrawBid(option.id)}
+                            className="mt-2 text-[13px] font-semibold text-black/45 disabled:text-black/25"
+                            disabled={withdrawingOptionId === option.id}
+                            onClick={() => void withdrawBid(option.id)}
                           >
                             철회
                           </button>
@@ -1179,8 +1427,8 @@ export function ProductDetail({
               <button
                 type="button"
                 className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
-                disabled={activeBidCount === 0}
-                onClick={handleSubmitBids}
+                disabled={activeBidCount === 0 || isBidSubmitPending}
+                onClick={() => void handleSubmitBids()}
               >
                 입찰가 등록하기
               </button>

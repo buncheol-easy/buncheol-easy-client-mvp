@@ -1,5 +1,6 @@
 export type IdolMember = {
   id: string;
+  imageUrl?: string;
   name: string;
   initials: string;
   tone: string;

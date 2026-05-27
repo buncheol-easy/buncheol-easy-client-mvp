@@ -1,11 +1,18 @@
-import { PlusIcon, ProfileIcon } from "@/components/icons";
+"use client";
+
+import { useState } from "react";
+import { CheckIcon, HeartIcon, PlusIcon, ProfileIcon } from "@/components/icons";
 
 export type ArtistRailItem = {
+  apiId?: string;
+  favorited?: boolean;
   id: string;
+  imageUrl?: string;
   name: string;
   group?: string;
   initials: string;
   tone: string;
+  type?: "group" | "member";
 };
 
 type ArtistRailLeadingItem = {
@@ -18,20 +25,190 @@ type ArtistRailLeadingItem = {
 type ArtistRailProps = {
   items: ArtistRailItem[];
   leadingItem?: ArtistRailLeadingItem;
+  onFavoriteToggle?: (item: ArtistRailItem) => void;
+  onItemClick?: (item: ArtistRailItem) => void;
+  onLeadingClick?: () => void;
+  pinFirstItem?: boolean;
   selectedId?: string;
 };
+
+function getContrastingColor(image: HTMLImageElement) {
+  const canvas = document.createElement("canvas");
+  const size = 24;
+  canvas.width = size;
+  canvas.height = size;
+
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+
+  if (!context) {
+    return null;
+  }
+
+  context.drawImage(image, 0, 0, size, size);
+
+  const { data } = context.getImageData(0, 0, size, size);
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let count = 0;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3];
+
+    if (alpha < 24) {
+      continue;
+    }
+
+    red += data[index];
+    green += data[index + 1];
+    blue += data[index + 2];
+    count += 1;
+  }
+
+  if (count === 0) {
+    return null;
+  }
+
+  const averageRed = Math.round(red / count);
+  const averageGreen = Math.round(green / count);
+  const averageBlue = Math.round(blue / count);
+
+  return `rgb(${255 - averageRed}, ${255 - averageGreen}, ${255 - averageBlue})`;
+}
+
+function getProxiedImageUrl(imageUrl: string) {
+  try {
+    const url = new URL(imageUrl);
+
+    if (
+      url.hostname === "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com" &&
+      url.pathname.startsWith("/idol-groups/")
+    ) {
+      return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
+
+export function ArtistImage({
+  imageUrl,
+  name,
+  roundedClassName = "rounded-[1.1rem]",
+}: {
+  imageUrl: string;
+  name: string;
+  roundedClassName?: string;
+}) {
+  const [backgroundColor, setBackgroundColor] = useState("#f1f1f1");
+  const displayImageUrl = getProxiedImageUrl(imageUrl);
+
+  return (
+    <>
+      <span
+        className={`absolute inset-0 ${roundedClassName}`}
+        style={{ backgroundColor }}
+      />
+      <img
+        alt={name}
+        className="relative h-full w-full object-contain p-2 [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.9))_drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]"
+        crossOrigin="anonymous"
+        onLoad={(event) => {
+          try {
+            const color = getContrastingColor(event.currentTarget);
+
+            if (color) {
+              setBackgroundColor(color);
+            }
+          } catch {
+            setBackgroundColor("#f1f1f1");
+          }
+        }}
+        src={displayImageUrl}
+      />
+    </>
+  );
+}
 
 export function ArtistRail({
   items,
   leadingItem,
+  onFavoriteToggle,
+  onItemClick,
+  onLeadingClick,
+  pinFirstItem = false,
   selectedId,
 }: ArtistRailProps) {
+  const pinnedItem = pinFirstItem ? items[0] : null;
+  const scrollItems = pinnedItem ? items.slice(1) : items;
+
+  function renderItem(item: ArtistRailItem) {
+    const isSelected = item.id === selectedId;
+
+    return (
+      <div key={item.id} className="min-w-[65px]">
+        <div className="relative">
+          <button
+            className="w-[65px] text-left"
+            onClick={() => onItemClick?.(item)}
+            type="button"
+          >
+            <div
+              className={`relative flex h-[65px] w-[65px] items-center justify-center overflow-hidden rounded-[1.1rem] border bg-[#f1f1f1] text-[22px] font-semibold tracking-[-0.06em] text-black ${
+                isSelected ? "border-black/10" : "border-black/8"
+              }`}
+            >
+              {item.imageUrl ? (
+                <ArtistImage imageUrl={item.imageUrl} name={item.name} />
+              ) : (
+                <span
+                  className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${item.tone}`}
+                >
+                  {item.initials}
+                </span>
+              )}
+            </div>
+          </button>
+          {onFavoriteToggle && item.type !== "member" ? (
+            <button
+              className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-black shadow-[0_4px_12px_rgba(0,0,0,0.12)]"
+              onClick={() => onFavoriteToggle(item)}
+              type="button"
+              aria-label={item.favorited ? "최애 그룹 삭제" : "최애 그룹 등록"}
+            >
+              <HeartIcon filled={item.favorited === true} />
+            </button>
+          ) : null}
+          {isSelected ? (
+            <span className="absolute -bottom-1 -right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black text-white shadow-[0_5px_14px_rgba(0,0,0,0.22)] ring-2 ring-white">
+              <CheckIcon />
+            </span>
+          ) : null}
+        </div>
+        <button
+          className="w-[65px] text-left"
+          onClick={() => onItemClick?.(item)}
+          type="button"
+        >
+          <p className="mt-2 text-[13px] font-medium tracking-[-0.03em]">
+            {item.name}
+          </p>
+          {item.group ? (
+            <p className="text-[12px] text-black/45">{item.group}</p>
+          ) : null}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-start gap-3">
       {leadingItem ? (
         <>
           <div className="flex-shrink-0">
-            <button className="min-w-[65px]">
+            <button className="min-w-[65px]" onClick={onLeadingClick} type="button">
               <div
                 className={`flex aspect-square items-center justify-center rounded-[1.25rem] border text-black/35 ${
                   leadingItem.active
@@ -67,30 +244,15 @@ export function ArtistRail({
         </>
       ) : null}
 
-      <div className="flex gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {items.map((item) => {
-          const isSelected = item.id === selectedId;
+      {pinnedItem ? (
+        <>
+          <div className="flex-shrink-0">{renderItem(pinnedItem)}</div>
+          <div className="my-2 w-px self-stretch bg-black/10" />
+        </>
+      ) : null}
 
-          return (
-            <button key={item.id} className="min-w-[65px] text-left">
-              <div
-                className={`flex aspect-square items-center justify-center rounded-[1.1rem] border bg-gradient-to-br ${item.tone} text-[22px] font-semibold tracking-[-0.06em] text-black ${
-                  isSelected
-                    ? "border-black ring-2 ring-black"
-                    : "border-black/8"
-                }`}
-              >
-                {item.initials}
-              </div>
-              <p className="mt-2 text-[13px] font-medium tracking-[-0.03em]">
-                {item.name}
-              </p>
-              {item.group ? (
-                <p className="text-[12px] text-black/45">{item.group}</p>
-              ) : null}
-            </button>
-          );
-        })}
+      <div className="flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {scrollItems.map(renderItem)}
       </div>
     </div>
   );

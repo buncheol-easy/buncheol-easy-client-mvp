@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { ApiProductDetail } from "@/components/ApiProductDetail";
 import { ProductDetail } from "@/components/ProductDetail";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
 import { whiteChromeViewport } from "@/lib/system-chrome";
@@ -48,7 +48,21 @@ export default async function ProductDetailPage({
       );
     }
 
-    notFound();
+    return (
+      <ApiProductDetail
+        id={id}
+        returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
+        returnSource={
+          returnSource === "home" ||
+          returnSource === "profile" ||
+          returnSource === "bids" ||
+          returnSource === "favorites" ||
+          returnSource === "upload"
+            ? returnSource
+            : undefined
+        }
+      />
+    );
   }
 
   return (

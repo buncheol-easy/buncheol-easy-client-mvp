@@ -5,6 +5,7 @@ export const viewport = blackChromeViewport;
 
 type SearchPageProps = {
   searchParams: Promise<{
+    from?: string | string[];
     q?: string | string[];
   }>;
 };
@@ -14,7 +15,12 @@ function normalizeQuery(query: string | string[] | undefined) {
 }
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
-  const { q } = await searchParams;
+  const { from, q } = await searchParams;
 
-  return <SearchExperience query={normalizeQuery(q)} />;
+  return (
+    <SearchExperience
+      query={normalizeQuery(q)}
+      relatedSearch={normalizeQuery(from) === "related"}
+    />
+  );
 }

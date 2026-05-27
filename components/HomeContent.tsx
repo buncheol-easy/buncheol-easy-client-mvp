@@ -1,9 +1,31 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type UIEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type UIEvent,
+} from "react";
+import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
-import { ArtistRail } from "@/components/ArtistRail";
+import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
+import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
+import {
+  addFavoriteGroup,
+  removeFavoriteGroup,
+  requestBuncheols,
+  requestFavoriteGroups,
+  toProductCardItem,
+} from "@/lib/auth-api";
+import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
+import { toArtistRailItem } from "@/lib/group-presenters";
 import { favoriteIdols, homeListings } from "@/lib/mock-home-search";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
@@ -39,6 +61,7 @@ function getStoredHomeScrollTop() {
 }
 
 export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
+  const router = useRouter();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const isRestoringReturnScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
@@ -47,6 +70,17 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
+  const [apiListings, setApiListings] = useState<ProductCardItem[] | null>(null);
+  const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
+  const [listingMessage, setListingMessage] = useState("");
+  const [groupMessage, setGroupMessage] = useState("");
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
+  const listings = apiListings ?? homeListings;
+  const favoriteGroups = apiGroups ?? favoriteIdols;
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -141,6 +175,122 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     };
   }, [skipEnterAnimation]);
 
+  useEffect(() => {
+    const accessToken = authState.isLoggedIn
+      ? authState.accessToken ?? undefined
+      : undefined;
+
+    let isActive = true;
+
+    requestBuncheols(accessToken, { sort: "LATEST" })
+      .then((items) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiListings(items.map(toProductCardItem));
+        setListingMessage("");
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiListings([]);
+        setListingMessage(
+          error instanceof Error
+            ? error.message
+            : "분철 목록을 불러오지 못했어요.",
+        );
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn]);
+
+  useEffect(() => {
+    const accessToken = authState.isLoggedIn
+      ? authState.accessToken ?? undefined
+      : undefined;
+    let isActive = true;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      setApiGroups([]);
+      setGroupMessage("");
+      return;
+    }
+
+    const groupRequest = requestFavoriteGroups(accessToken);
+
+    groupRequest
+      .then((groups) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiGroups(groups.map(toArtistRailItem));
+        setGroupMessage("");
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiGroups([]);
+        setGroupMessage(
+          error instanceof Error
+            ? error.message
+            : "그룹 정보를 불러오지 못했어요.",
+        );
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn]);
+
+  function openGroupSearch(groupName?: string) {
+    router.push(groupName ? `/search?q=${encodeURIComponent(groupName)}` : "/search");
+  }
+
+  async function handleFavoriteGroupToggle(item: ArtistRailItem) {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      router.push("/login?returnTo=/");
+      return;
+    }
+
+    const favoriteGroupId = item.apiId ?? item.id;
+    const nextFavorited = item.favorited !== true;
+    setApiGroups((current) =>
+      current?.map((group) =>
+        group.id === item.id ? { ...group, favorited: nextFavorited } : group,
+      ) ?? current,
+    );
+
+    try {
+      if (nextFavorited) {
+        await addFavoriteGroup(accessToken, favoriteGroupId);
+      } else {
+        await removeFavoriteGroup(accessToken, favoriteGroupId);
+      }
+      setGroupMessage("");
+    } catch (error) {
+      setApiGroups((current) =>
+        current?.map((group) =>
+          group.id === item.id ? { ...group, favorited: !nextFavorited } : group,
+        ) ?? current,
+      );
+      setGroupMessage(
+        error instanceof Error
+          ? error.message
+          : "최애 그룹을 변경하지 못했어요.",
+      );
+    }
+  }
+
   function resumeHeaderScrollReaction() {
     isRestoringReturnScrollRef.current = false;
   }
@@ -214,9 +364,20 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
         <section className="px-4">
           <ArtistRail
-            items={favoriteIdols}
+            items={favoriteGroups}
             leadingItem={{ label: "최애 추가", icon: "plus" }}
+            onFavoriteToggle={handleFavoriteGroupToggle}
+            onItemClick={(item) => openGroupSearch(item.name)}
+            onLeadingClick={() => openGroupSearch()}
           />
+
+          {groupMessage ? (
+            <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+              <p className="text-[13px] font-semibold text-black/45">
+                {groupMessage}
+              </p>
+            </div>
+          ) : null}
 
           <div className="border-t border-black/10 pt-5">
             <div className="mb-4 flex items-center justify-between">
@@ -230,7 +391,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               </button>
             </div>
 
-            <ProductGrid items={homeListings} />
+            {listingMessage ? (
+              <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+                <p className="text-[13px] font-semibold text-black/45">
+                  {listingMessage}
+                </p>
+              </div>
+            ) : null}
+            <ProductGrid items={listings} />
           </div>
         </section>
       </div>

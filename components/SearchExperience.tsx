@@ -1,14 +1,44 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState, type UIEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type UIEvent,
+} from "react";
 import { useRouter } from "next/navigation";
-import { ArtistRail } from "@/components/ArtistRail";
+import {
+  ArtistImage,
+  ArtistRail,
+  type ArtistRailItem,
+} from "@/components/ArtistRail";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HomeContent } from "@/components/HomeContent";
 import { CloseIcon } from "@/components/icons";
+import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { SearchHeader } from "@/components/SearchHeader";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import {
+  addFavoriteGroup,
+  removeFavoriteGroup,
+  requestBuncheols,
+  requestGroupMembers,
+  requestGroups,
+  toProductCardItem,
+} from "@/lib/auth-api";
+import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
+import {
+  normalizeGroupSearchText,
+  rankGroupSearchResults,
+  toArtistRailItem,
+  toMemberRailItem,
+} from "@/lib/group-presenters";
 import {
   popularArtists,
   recentSearches,
@@ -18,6 +48,7 @@ import {
 
 type SearchExperienceProps = {
   query?: string;
+  relatedSearch?: boolean;
   skipEnterAnimation?: boolean;
 };
 
@@ -27,6 +58,7 @@ export const SEARCH_SKIP_ENTER_KEY = "buncheol-search-skip-enter";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
+const MEMBER_SEARCH_GROUP_LOOKUP_LIMIT = 8;
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -95,6 +127,7 @@ function takeShouldSkipSearchEnter() {
 
 export function SearchExperience({
   query,
+  relatedSearch = false,
   skipEnterAnimation = false,
 }: SearchExperienceProps) {
   const router = useRouter();
@@ -111,8 +144,41 @@ export function SearchExperience({
     useState(false);
   const [previousKeyword, setPreviousKeyword] = useState<string | null>(null);
   const [isResultHeaderHidden, setIsResultHeaderHidden] = useState(false);
+  const [apiResultItems, setApiResultItems] = useState<ProductCardItem[] | null>(
+    null,
+  );
+  const [apiResultGroups, setApiResultGroups] = useState<ArtistRailItem[] | null>(
+    null,
+  );
+  const [apiPopularGroups, setApiPopularGroups] = useState<
+    ArtistRailItem[] | null
+  >(null);
+  const [resultMessage, setResultMessage] = useState("");
+  const [groupMessage, setGroupMessage] = useState("");
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
   const keyword = query?.trim();
   const hasResults = Boolean(keyword);
+  const resultItems = apiResultItems ?? searchResultItems;
+  const resultFilters = apiResultGroups ?? searchResultArtists;
+  const normalizedKeyword = keyword ? normalizeGroupSearchText(keyword) : "";
+  const selectedRelatedItemId =
+    resultFilters.find(
+      (item) => normalizeGroupSearchText(item.name) === normalizedKeyword,
+    )?.id ?? null;
+  const fallbackPopularGroupItems: ArtistRailItem[] = popularArtists.map(
+    (artist) => ({
+      id: String(artist.rank),
+      name: artist.name,
+      group: artist.group,
+      initials: artist.initials,
+      tone: artist.tone,
+    }),
+  );
+  const popularGroupItems = apiPopularGroups ?? fallbackPopularGroupItems;
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -167,6 +233,205 @@ export function SearchExperience({
       writeSearchQueryStack([...stack, keyword]);
     }
   }, [isRestoringPreviousResult, keyword]);
+
+  useEffect(() => {
+    const accessToken = authState.isLoggedIn
+      ? authState.accessToken ?? undefined
+      : undefined;
+
+    if (!keyword) {
+      setApiResultItems(null);
+      setResultMessage("");
+      return;
+    }
+
+    let isActive = true;
+
+    requestBuncheols(accessToken, { keyword, sort: "LATEST" })
+      .then((items) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiResultItems(items.map(toProductCardItem));
+        setResultMessage("");
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiResultItems([]);
+        setResultMessage(
+          error instanceof Error
+            ? error.message
+            : "검색 결과를 불러오지 못했어요.",
+        );
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn, keyword, relatedSearch]);
+
+  useEffect(() => {
+    const accessToken = authState.isLoggedIn
+      ? authState.accessToken ?? undefined
+      : undefined;
+    let isActive = true;
+
+    requestGroups(keyword ?? "", accessToken)
+      .then(async (groups) => {
+        if (!isActive) {
+          return;
+        }
+
+        const searchKeyword = keyword ?? "";
+        const allGroups = searchKeyword
+          ? await requestGroups("", accessToken).catch(() => [])
+          : [];
+
+        if (!isActive) {
+          return;
+        }
+
+        const candidateGroups = searchKeyword
+          ? [...groups, ...allGroups].filter(
+              (group, index, allGroups) =>
+                allGroups.findIndex((candidate) => candidate.id === group.id) ===
+                index,
+            )
+          : groups;
+        const rankedGroups = searchKeyword
+          ? rankGroupSearchResults(candidateGroups, searchKeyword, 3)
+          : candidateGroups.slice(0, 5);
+        const rankedGroupIds = new Set(rankedGroups.map((group) => group.id));
+        const normalizedKeyword = normalizeGroupSearchText(searchKeyword);
+        const memberGroups = searchKeyword
+          ? [...rankedGroups, ...groups, ...candidateGroups]
+              .filter(
+                (group, index, allGroups) =>
+                  allGroups.findIndex(
+                    (candidate) => candidate.id === group.id,
+                  ) === index,
+              )
+              .slice(0, MEMBER_SEARCH_GROUP_LOOKUP_LIMIT)
+          : [];
+        const memberMatches = (
+          await Promise.all(
+            memberGroups.map(async (group) => {
+              try {
+                const members = await requestGroupMembers(group.id);
+                const isRankedGroup = rankedGroupIds.has(group.id);
+                const matchedMembers = members
+                  .filter((member) =>
+                    normalizeGroupSearchText(member.name).includes(
+                      normalizedKeyword,
+                    ),
+                  )
+                  .slice(0, 3);
+                const relatedMembers = matchedMembers.length > 0 || isRankedGroup
+                  ? members
+                      .filter(
+                        (member) =>
+                          !matchedMembers.some(
+                            (matchedMember) => matchedMember.id === member.id,
+                          ),
+                      )
+                      .slice(0, 5)
+                  : [];
+
+                return {
+                  allMembers: members,
+                  group,
+                  matchedMembers,
+                  relatedMembers,
+                };
+              } catch {
+                return {
+                  allMembers: [],
+                  group,
+                  matchedMembers: [],
+                  relatedMembers: [],
+                };
+              }
+            }),
+          )
+        ).filter(
+          (match) =>
+            match.matchedMembers.length > 0 || rankedGroupIds.has(match.group.id),
+        );
+        const primaryMemberMatch = memberMatches[0];
+        const matchedMemberItems = relatedSearch
+          ? []
+          : (primaryMemberMatch?.matchedMembers ?? [])
+              .slice(0, 1)
+              .map((member) =>
+                toMemberRailItem(member, primaryMemberMatch?.group.name),
+              );
+        const relatedMemberItems = (
+          relatedSearch
+            ? primaryMemberMatch?.allMembers
+            : primaryMemberMatch?.relatedMembers
+        ?? [])
+          .slice(0, relatedSearch ? 6 : 5)
+          .map((member) =>
+            toMemberRailItem(member, primaryMemberMatch?.group.name),
+          );
+        const memberGroupItems = memberMatches
+          .map(({ group }) => group)
+          .filter(
+            (group, index, allGroups) =>
+              allGroups.findIndex((candidate) => candidate.id === group.id) ===
+              index,
+          )
+          .filter(
+            (group) =>
+              !rankedGroups.some((rankedGroup) => rankedGroup.id === group.id),
+          )
+          .slice(0, 2)
+          .map(toArtistRailItem);
+        const groupItems = rankedGroups.map(toArtistRailItem);
+
+        if (!isActive) {
+          return;
+        }
+
+        if (searchKeyword) {
+          setApiResultGroups([
+            ...groupItems,
+            ...memberGroupItems,
+            ...matchedMemberItems,
+            ...relatedMemberItems,
+          ].slice(0, 8));
+        } else {
+          setApiPopularGroups(groupItems);
+        }
+
+        setGroupMessage("");
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        if (keyword) {
+          setApiResultGroups([]);
+        } else {
+          setApiPopularGroups([]);
+        }
+
+        setGroupMessage(
+          error instanceof Error
+            ? error.message
+            : "그룹 정보를 불러오지 못했어요.",
+        );
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn, keyword]);
 
   function closeSearch() {
     const searchEntryHistoryIndex = sessionStorage.getItem(
@@ -230,7 +495,7 @@ export function SearchExperience({
     setIsClearingSearch(true);
   }
 
-  function handleSearch(nextQuery: string) {
+  function handleSearch(nextQuery: string, source?: "related") {
     if (!nextQuery) {
       if (hasResults) {
         isOpeningSearchSheetRef.current = true;
@@ -247,7 +512,9 @@ export function SearchExperience({
 
     isOpeningSearchSheetRef.current = false;
     setIsClearingSearch(false);
-    const nextHref = `/search?q=${encodeURIComponent(nextQuery)}`;
+    const nextHref = `/search?q=${encodeURIComponent(nextQuery)}${
+      source === "related" ? "&from=related" : ""
+    }`;
 
     if (hasResults) {
       router.push(nextHref);
@@ -255,6 +522,65 @@ export function SearchExperience({
     }
 
     router.replace(nextHref);
+  }
+
+  function openRelatedSearch(item: ArtistRailItem) {
+    if (
+      keyword &&
+      normalizeGroupSearchText(item.name) === normalizeGroupSearchText(keyword)
+    ) {
+      return;
+    }
+
+    handleSearch(item.name, "related");
+  }
+
+  async function handleFavoriteGroupToggle(item: ArtistRailItem) {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      const returnHref = `/search${keyword ? `?q=${encodeURIComponent(keyword)}` : ""}`;
+      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      return;
+    }
+
+    if (item.type === "member") {
+      return;
+    }
+
+    const favoriteGroupId = item.apiId ?? item.id;
+    const nextFavorited = item.favorited !== true;
+    const updateGroups = (groups: ArtistRailItem[] | null) =>
+      groups?.map((group) =>
+        group.id === item.id ? { ...group, favorited: nextFavorited } : group,
+      ) ?? groups;
+
+    setApiResultGroups(updateGroups);
+    setApiPopularGroups(updateGroups);
+
+    try {
+      if (nextFavorited) {
+        await addFavoriteGroup(accessToken, favoriteGroupId);
+      } else {
+        await removeFavoriteGroup(accessToken, favoriteGroupId);
+      }
+      setGroupMessage("");
+    } catch (error) {
+      const rollbackGroups = (groups: ArtistRailItem[] | null) =>
+        groups?.map((group) =>
+          group.id === item.id
+            ? { ...group, favorited: !nextFavorited }
+            : group,
+        ) ?? groups;
+
+      setApiResultGroups(rollbackGroups);
+      setApiPopularGroups(rollbackGroups);
+      setGroupMessage(
+        error instanceof Error
+          ? error.message
+          : "최애 그룹을 변경하지 못했어요.",
+      );
+    }
   }
 
   function handleResultScroll(event: UIEvent<HTMLDivElement>) {
@@ -389,8 +715,11 @@ export function SearchExperience({
                 <>
                   <section className="-mx-1">
                     <ArtistRail
-                      items={searchResultArtists}
-                      leadingItem={{ label: "전체", icon: "all", active: true }}
+                      items={resultFilters}
+                      onFavoriteToggle={handleFavoriteGroupToggle}
+                      onItemClick={openRelatedSearch}
+                      pinFirstItem
+                      selectedId={selectedRelatedItemId ?? undefined}
                     />
                   </section>
 
@@ -400,11 +729,25 @@ export function SearchExperience({
                         검색 결과
                       </h2>
                       <span className="text-[13px] font-medium text-black/45">
-                        {searchResultItems.length}개
+                        {resultItems.length}개
                       </span>
                     </div>
 
-                    <ProductGrid items={searchResultItems} />
+                    {resultMessage ? (
+                      <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+                        <p className="text-[13px] font-semibold text-black/45">
+                          {resultMessage}
+                        </p>
+                      </div>
+                    ) : null}
+                    {groupMessage ? (
+                      <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+                        <p className="text-[13px] font-semibold text-black/45">
+                          {groupMessage}
+                        </p>
+                      </div>
+                    ) : null}
+                    <ProductGrid items={resultItems} />
                   </section>
                 </>
               ) : (
@@ -433,20 +776,28 @@ export function SearchExperience({
                       인기 아티스트
                     </h2>
                     <div className="mt-5 border-y border-black/20">
-                      {popularArtists.map((artist) => (
+                      {popularGroupItems.map((artist, index) => (
                         <button
-                          key={artist.rank}
+                          key={artist.id}
                           className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
                           onClick={() => handleSearch(artist.name)}
                           type="button"
                         >
                           <span className="text-[21px] font-medium tracking-[-0.04em]">
-                            {artist.rank}
+                            {index + 1}
                           </span>
                           <span
-                            className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
+                            className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
                           >
-                            {artist.initials}
+                            {artist.imageUrl ? (
+                              <ArtistImage
+                                imageUrl={artist.imageUrl}
+                                name={artist.name}
+                                roundedClassName="rounded-full"
+                              />
+                            ) : (
+                              artist.initials
+                            )}
                           </span>
                           <span>
                             <span className="block text-[24px] font-medium tracking-[-0.05em]">
@@ -509,20 +860,28 @@ export function SearchExperience({
                   인기 아티스트
                 </h2>
                 <div className="mt-5 border-y border-black/20">
-                  {popularArtists.map((artist) => (
+                  {popularGroupItems.map((artist, index) => (
                     <button
-                      key={artist.rank}
+                      key={artist.id}
                       className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
                       onClick={() => handleSearch(artist.name)}
                       type="button"
                     >
                       <span className="text-[21px] font-medium tracking-[-0.04em]">
-                        {artist.rank}
+                        {index + 1}
                       </span>
                       <span
-                        className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
+                        className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
                       >
-                        {artist.initials}
+                        {artist.imageUrl ? (
+                          <ArtistImage
+                            imageUrl={artist.imageUrl}
+                            name={artist.name}
+                            roundedClassName="rounded-full"
+                          />
+                        ) : (
+                          artist.initials
+                        )}
                       </span>
                       <span>
                         <span className="block text-[24px] font-medium tracking-[-0.05em]">
@@ -548,8 +907,11 @@ export function SearchExperience({
       <>
         <section className="-mx-1">
           <ArtistRail
-            items={searchResultArtists}
-            leadingItem={{ label: "전체", icon: "all", active: true }}
+            items={resultFilters}
+            onFavoriteToggle={handleFavoriteGroupToggle}
+            onItemClick={openRelatedSearch}
+            pinFirstItem
+            selectedId={selectedRelatedItemId ?? undefined}
           />
         </section>
 
@@ -559,11 +921,11 @@ export function SearchExperience({
               검색 결과
             </h2>
             <span className="text-[13px] font-medium text-black/45">
-              {searchResultItems.length}개
+              {resultItems.length}개
             </span>
           </div>
 
-          <ProductGrid items={searchResultItems} />
+          <ProductGrid items={resultItems} />
         </section>
       </>
     );

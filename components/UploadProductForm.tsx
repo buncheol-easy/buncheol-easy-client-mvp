@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +16,21 @@ import {
   readUploadedProduct,
   writeUploadedProduct,
 } from "@/lib/hosted-products-store";
+import {
+  createBuncheol,
+  requestBuncheolDetail,
+  requestGroupMembers,
+  requestGroups,
+  requestMyHostedBuncheols,
+  toProductDetailItem,
+  updateBuncheol,
+} from "@/lib/auth-api";
+import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
+import { rankGroupSearchResults } from "@/lib/group-presenters";
 import type { IdolGroup } from "@/lib/mock-idol-directory";
 import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
@@ -74,6 +90,40 @@ function toNumericInput(value: string) {
 
 function formatWon(value: number) {
   return `${value.toLocaleString("ko-KR")}원`;
+}
+
+function getInitials(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function getMemberTone(seed: string) {
+  const tones = [
+    "from-zinc-950 via-zinc-600 to-zinc-200",
+    "from-neutral-200 via-white to-zinc-500",
+    "from-zinc-300 via-zinc-50 to-neutral-500",
+    "from-black via-zinc-700 to-stone-300",
+  ];
+  const hash = [...seed].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+
+  return tones[hash % tones.length];
+}
+
+function getStoreShippingFee(
+  selectedShipping: string[],
+  shippingPrices: Record<string, string>,
+  store: "CU" | "GS",
+) {
+  const shippingName = selectedShipping.find((name) =>
+    name.toUpperCase().includes(store),
+  );
+
+  return shippingName ? parsePriceInput(shippingPrices[shippingName] ?? "") : 0;
 }
 
 function getDaysInMonth(year: number, month: number) {
@@ -208,6 +258,15 @@ function fileToDataUrl(file: File) {
       reject(reader.error);
     });
     reader.readAsDataURL(file);
+  });
+}
+
+async function dataUrlToFile(dataUrl: string, fileName: string) {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+
+  return new File([blob], fileName, {
+    type: blob.type || "image/jpeg",
   });
 }
 
@@ -362,6 +421,10 @@ export function UploadProductForm({
 }: UploadProductFormProps) {
   const router = useRouter();
   const isEditMode = Boolean(editProductId);
+  const isApiEditMode =
+    isEditMode &&
+    Boolean(editProductId) &&
+    !editProductId?.startsWith("uploaded-");
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
@@ -403,10 +466,22 @@ export function UploadProductForm({
   );
   const [editingProduct, setEditingProduct] =
     useState<ProductDetailItem | null>(null);
+  const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
+  const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
+  const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
 
   const selectedGroup = useMemo(() => {
-    return idolDirectory.find((group) => group.id === selectedGroupId) ?? null;
-  }, [selectedGroupId]);
+    return (
+      [...remoteGroups, ...idolDirectory].find(
+        (group) => group.id === selectedGroupId,
+      ) ?? null
+    );
+  }, [remoteGroups, selectedGroupId]);
 
   const monthOptions = useMemo(
     () => Array.from({ length: 12 }, (_, index) => index + 1),
@@ -420,7 +495,17 @@ export function UploadProductForm({
       return [];
     }
 
-    return idolDirectory.filter((group) => {
+    const remoteResults = rankGroupSearchResults(remoteGroups, idolQuery, 3);
+
+    if (
+      remoteResults.length > 0 ||
+      isGroupSearchLoading ||
+      !didGroupSearchFail
+    ) {
+      return remoteResults;
+    }
+
+    const localResults = idolDirectory.filter((group) => {
       const searchable = [
         group.name,
         group.label,
@@ -432,7 +517,12 @@ export function UploadProductForm({
 
       return searchable.includes(query);
     });
-  }, [idolQuery]);
+    const uniqueResults = localResults.filter(
+      (group, index, groups) =>
+        groups.findIndex((candidate) => candidate.id === group.id) === index,
+    );
+    return rankGroupSearchResults(uniqueResults, idolQuery, 3);
+  }, [didGroupSearchFail, idolQuery, isGroupSearchLoading, remoteGroups]);
 
   const allTargetMembers =
     selectedGroup?.members.filter((member) =>
@@ -443,18 +533,19 @@ export function UploadProductForm({
   );
   const coverPhoto =
     photos.find((photo) => photo.id === coverPhotoId) ?? photos[0] ?? null;
-  const canSubmit =
-    photos.length > 0 &&
-    title.trim().length > 0 &&
-    purchaseSource.trim().length > 0 &&
-    targetMembers.length > 0 &&
-    targetMembers.every(
-      (member) => memberMinimumPrices[member.id]?.trim().length > 0,
-    ) &&
-    selectedShipping.length > 0 &&
-    selectedShipping.every(
-      (option) => shippingPrices[option]?.trim().length > 0,
-    );
+  const canSubmit = isApiEditMode
+    ? photos.length > 0 && title.trim().length > 0
+    : photos.length > 0 &&
+      title.trim().length > 0 &&
+      purchaseSource.trim().length > 0 &&
+      targetMembers.length > 0 &&
+      targetMembers.every(
+        (member) => memberMinimumPrices[member.id]?.trim().length > 0,
+      ) &&
+      selectedShipping.length > 0 &&
+      selectedShipping.every(
+        (option) => shippingPrices[option]?.trim().length > 0,
+      );
 
   useEffect(() => {
     return () => {
@@ -473,6 +564,70 @@ export function UploadProductForm({
   }, []);
 
   useEffect(() => {
+    const query = idolQuery.trim();
+
+    if (!query) {
+      setIsGroupSearchLoading(false);
+      setDidGroupSearchFail(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsGroupSearchLoading(true);
+    setDidGroupSearchFail(false);
+
+    requestGroups(query)
+      .then(async (groups) => {
+        const nextGroups = await Promise.all(
+          rankGroupSearchResults(groups, query, 3).map(async (group) => {
+            const members = await requestGroupMembers(group.id);
+
+            return {
+              id: group.id,
+              name: group.name,
+              label: group.name,
+              aliases: [group.name],
+              members: members.map((member) => ({
+                id: member.id,
+                imageUrl: member.imageUrl,
+                name: member.name,
+                initials: getInitials(member.name),
+                tone: getMemberTone(member.id),
+              })),
+            } satisfies IdolGroup;
+          }),
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        setRemoteGroups((current) => {
+          const mergedGroups = [...nextGroups, ...current];
+
+          return mergedGroups.filter(
+            (group, index, groups) =>
+              groups.findIndex((candidate) => candidate.id === group.id) ===
+              index,
+          );
+        });
+        setIsGroupSearchLoading(false);
+        setDidGroupSearchFail(false);
+      })
+      .catch(() => {
+        if (isActive) {
+          setRemoteGroups((current) => current);
+          setIsGroupSearchLoading(false);
+          setDidGroupSearchFail(true);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [idolQuery]);
+
+  useEffect(() => {
     if (!editProductId) {
       return;
     }
@@ -481,6 +636,97 @@ export function UploadProductForm({
       const product = readUploadedProduct(editProductId);
 
       if (!product) {
+        const accessToken = authState.accessToken;
+
+        if (accessToken && !editProductId.startsWith("uploaded-")) {
+          requestBuncheolDetail(accessToken, editProductId)
+            .then((detail) => {
+              const apiProduct = toProductDetailItem(detail);
+              const apiGroup: IdolGroup = {
+                id: `api-edit-${editProductId}`,
+                name: apiProduct.era,
+                label: apiProduct.era,
+                aliases: [apiProduct.era],
+                members: apiProduct.options.map((option) => ({
+                  id: option.buncheolMemberId ?? option.id,
+                  imageUrl: option.imageUrl,
+                  name: option.label,
+                  initials: getInitials(option.label),
+                  tone: getMemberTone(option.id),
+                })),
+              };
+
+              setRemoteGroups((current) => [apiGroup, ...current]);
+              setEditingProduct(apiProduct);
+              setTitle(apiProduct.title);
+              setPurchaseSource(apiProduct.purchaseSource ?? "");
+              setSelectedGroupId(apiGroup.id);
+              setIdolQuery("");
+              setTargetMemberIds(apiGroup.members.map((member) => member.id));
+              setExcludedMemberIds([]);
+              setMemberMinimumPrices(
+                apiGroup.members.reduce<Record<string, string>>(
+                  (prices, member) => {
+                    const option = apiProduct.options.find(
+                      (option) => option.label === member.name,
+                    );
+
+                    prices[member.id] = toNumericInput(
+                      option?.startingBid ??
+                        option?.price ??
+                        option?.currentBid ??
+                        "",
+                    );
+
+                    return prices;
+                  },
+                  {},
+                ),
+              );
+              setClosingDate(toScheduleInputValue(apiProduct.deadline));
+              setShippingDate(
+                toScheduleInputValue(apiProduct.shippingDeadline ?? ""),
+              );
+              setSelectedShipping(
+                apiProduct.shippingMethods?.map((method) => method.name) ?? [],
+              );
+              setShippingPrices(
+                (apiProduct.shippingMethods ?? []).reduce<
+                  Record<string, string>
+                >((prices, method) => {
+                  prices[method.name] = toNumericInput(method.price);
+
+                  return prices;
+                }, {}),
+              );
+              setDescription(apiProduct.description);
+
+              const restoredPhotos = (apiProduct.imageUrls?.length
+                ? apiProduct.imageUrls
+                : apiProduct.imageUrl
+                  ? [apiProduct.imageUrl]
+                  : []
+              )
+                .slice(0, maxPhotos)
+                .map((imageUrl, index) => ({
+                  id: `existing-photo-${index}`,
+                  name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
+                  url: imageUrl,
+                }));
+
+              setPhotos(restoredPhotos);
+              setCoverPhotoId(restoredPhotos[0]?.id ?? null);
+            })
+            .catch((error: unknown) => {
+              setSubmitError(
+                error instanceof Error
+                  ? error.message
+                  : "수정할 분철 정보를 찾을 수 없습니다.",
+              );
+            });
+          return;
+        }
+
         setSubmitError("수정할 분철 정보를 찾을 수 없습니다.");
         return;
       }
@@ -572,7 +818,7 @@ export function UploadProductForm({
     return () => {
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [editProductId]);
+  }, [authState.accessToken, editProductId]);
 
   function showPhotoLimitToast(message: string) {
     setPhotoLimitToast(message);
@@ -928,15 +1174,19 @@ export function UploadProductForm({
     ].map((photo) => photo.url);
     let storedPhotoUrls: string[];
 
-    try {
-      storedPhotoUrls = await Promise.all(
-        orderedPhotoUrls.map((imageUrl) => compressImageDataUrl(imageUrl)),
-      );
-    } catch {
-      setSubmitError(
-        "사진을 임시 저장용으로 압축하지 못했습니다. 사진을 줄인 뒤 다시 시도해 주세요.",
-      );
-      return;
+    if (isApiEditMode) {
+      storedPhotoUrls = orderedPhotoUrls;
+    } else {
+      try {
+        storedPhotoUrls = await Promise.all(
+          orderedPhotoUrls.map((imageUrl) => compressImageDataUrl(imageUrl)),
+        );
+      } catch {
+        setSubmitError(
+          "사진을 임시 저장용으로 압축하지 못했습니다. 사진을 줄인 뒤 다시 시도해 주세요.",
+        );
+        return;
+      }
     }
 
     const firstMember = targetMembers[0];
@@ -969,6 +1219,7 @@ export function UploadProductForm({
         ]),
         avatarInitials: member.initials,
         avatarTone: member.tone,
+        imageUrl: member.imageUrl,
       };
     }) as [ProductOption, ...ProductOption[]];
     const product: ProductDetailItem = {
@@ -998,6 +1249,115 @@ export function UploadProductForm({
         description.trim() || "판매자가 아직 상품 설명을 작성하지 않았습니다.",
       options: productOptions,
     };
+    const accessToken = authState.accessToken;
+    const apiGroupId = Number(selectedGroup.id);
+    const apiMembers = targetMembers.map((member) => ({
+      bidMinPrice: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
+      memberId: Number(member.id),
+    }));
+    const canUseBuncheolApi =
+      authState.isLoggedIn &&
+      Boolean(accessToken) &&
+      (isApiEditMode ||
+        (Number.isFinite(apiGroupId) &&
+          apiMembers.every(
+            (member) =>
+              Number.isFinite(member.memberId) && member.bidMinPrice > 0,
+          )));
+
+    if (canUseBuncheolApi && accessToken) {
+      const deadlineDate = new Date(closingDate);
+
+      if (Number.isNaN(deadlineDate.getTime())) {
+        setSubmitError("마감 기한을 다시 확인해 주세요.");
+        return;
+      }
+
+      let imageFiles: File[];
+
+      try {
+        const uploadablePhotoUrls = isApiEditMode
+          ? storedPhotoUrls.filter(
+              (imageUrl) =>
+                imageUrl.startsWith("data:") || imageUrl.startsWith("blob:"),
+            )
+          : storedPhotoUrls;
+
+        imageFiles = await Promise.all(
+          uploadablePhotoUrls.map((imageUrl, index) =>
+            dataUrlToFile(imageUrl, `buncheol-${index + 1}.jpg`),
+          ),
+        );
+      } catch {
+        setSubmitError("사진 파일을 업로드 형식으로 변환하지 못했어요.");
+        return;
+      }
+
+      try {
+        if (isApiEditMode) {
+          await updateBuncheol(
+            accessToken,
+            productId,
+            {
+              description: product.description,
+              keepImageIds: undefined,
+              title: product.title,
+            },
+            imageFiles,
+          );
+
+          const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+          router.replace(`/products/${productId}${returnSourceQuery}`);
+          return;
+        }
+
+        if (!isEditMode) {
+          const createdBuncheolId = await createBuncheol(
+            accessToken,
+            {
+              buncheolMembers: apiMembers,
+              cuShippingFee:
+                getStoreShippingFee(selectedShipping, shippingPrices, "CU") ||
+                undefined,
+              deadline: deadlineDate.toISOString(),
+              description: product.description,
+              groupId: apiGroupId,
+              gs25ShippingFee:
+                getStoreShippingFee(selectedShipping, shippingPrices, "GS") ||
+                undefined,
+              purchaseSite: purchaseSource.trim(),
+              title: title.trim(),
+            },
+            imageFiles,
+          );
+          let nextProductId = createdBuncheolId;
+
+          if (!nextProductId) {
+            const hostedProducts = await requestMyHostedBuncheols(accessToken);
+            nextProductId =
+              hostedProducts.find((hostedProduct) => {
+                return (
+                  hostedProduct.title === title.trim() &&
+                  hostedProduct.groupName === selectedGroup.name
+                );
+              })?.id ?? "";
+          }
+
+          if (nextProductId) {
+            router.push(`/products/${nextProductId}?from=upload`);
+            return;
+          }
+
+          router.push("/profile/bids");
+          return;
+        }
+      } catch (error) {
+        setSubmitError(
+          error instanceof Error ? error.message : "분철 저장에 실패했어요.",
+        );
+        return;
+      }
+    }
 
     try {
       writeUploadedProduct(product);
@@ -1219,7 +1579,8 @@ export function UploadProductForm({
                 구매처
               </span>
               <input
-                className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/45"
+                disabled={isApiEditMode}
                 onChange={(event) =>
                   setPurchaseSource(event.currentTarget.value)
                 }
@@ -1247,7 +1608,8 @@ export function UploadProductForm({
                       </span>
                     </span>
                     <button
-                      className="shrink-0 rounded-full bg-[#f7f7f7] px-4 py-2 text-[13px] font-semibold text-black/60 ring-1 ring-black/10"
+                      className="shrink-0 rounded-full bg-[#f7f7f7] px-4 py-2 text-[13px] font-semibold text-black/60 ring-1 ring-black/10 disabled:text-black/25"
+                      disabled={isApiEditMode}
                       onClick={clearSelectedGroup}
                       type="button"
                     >
@@ -1290,9 +1652,17 @@ export function UploadProductForm({
                                 }`}
                               >
                                 <div
-                                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${member.tone} text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
+                                  className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${member.tone} text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
                                 >
-                                  {member.initials}
+                                  {member.imageUrl ? (
+                                    <img
+                                      alt={member.name}
+                                      className="h-full w-full object-cover"
+                                      src={member.imageUrl}
+                                    />
+                                  ) : (
+                                    member.initials
+                                  )}
                                 </div>
                                 <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                                   {member.name}
@@ -1301,7 +1671,7 @@ export function UploadProductForm({
                                   <input
                                     aria-label={`${member.name} 최소 가격`}
                                     className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
-                                    disabled={isExcluded}
+                                    disabled={isExcluded || isApiEditMode}
                                     inputMode="numeric"
                                     onChange={(event) =>
                                       updateMemberMinimumPrice(
@@ -1323,11 +1693,12 @@ export function UploadProductForm({
                                       ? `${member.name} 다시 포함`
                                       : `${member.name} 제외`
                                   }
-                                  className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 ${
+                                  className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 disabled:text-black/20 ${
                                     isExcluded
                                       ? "w-8 text-black"
                                       : "w-8 text-black/55"
                                   }`}
+                                  disabled={isApiEditMode}
                                   onClick={() =>
                                     toggleMemberExclusion(member.id)
                                   }
@@ -1419,10 +1790,7 @@ export function UploadProductForm({
                     <div className="mt-3 overflow-hidden rounded-[0.9rem] border border-black/10">
                       {idolResults.length > 0 ? (
                         idolResults.map((group) => {
-                          const memberPreview = group.members
-                            .map((member) => member.name)
-                            .slice(0, 4)
-                            .join(", ");
+                          const memberPreview = `총 ${group.members.length}명`;
 
                           return (
                             <button
@@ -1467,11 +1835,12 @@ export function UploadProductForm({
                   return (
                     <div key={option}>
                       <button
-                        className={`flex min-h-12 w-full items-center justify-between rounded-[0.8rem] px-4 text-left ${
+                        className={`flex min-h-12 w-full items-center justify-between rounded-[0.8rem] px-4 text-left disabled:opacity-60 ${
                           isSelected
                             ? "bg-black text-white"
                             : "bg-[#f7f7f7] text-black"
                         }`}
+                        disabled={isApiEditMode}
                         onClick={() => toggleShipping(option)}
                         type="button"
                       >
@@ -1497,7 +1866,8 @@ export function UploadProductForm({
                           <div className="mt-2 flex h-13 items-center rounded-[0.85rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
                             <input
                               aria-label={`${option} 배송비`}
-                              className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
+                              className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
+                              disabled={isApiEditMode}
                               inputMode="numeric"
                               onChange={(event) =>
                                 updateShippingPrice(
@@ -1591,11 +1961,12 @@ export function UploadProductForm({
                         {label}
                       </span>
                       <button
-                        className={`mt-2 flex h-14 w-full items-center justify-between rounded-[0.9rem] border px-4 text-left outline-none ${
+                        className={`mt-2 flex h-14 w-full items-center justify-between rounded-[0.9rem] border px-4 text-left outline-none disabled:bg-[#f7f7f7] disabled:text-black/45 ${
                           isActive
                             ? "border-black bg-white"
                             : "border-black/10 bg-white"
                         }`}
+                        disabled={isApiEditMode}
                         onClick={() =>
                           toggleScheduleField(field, isActive)
                         }
