@@ -1,9 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ProductDetail } from "@/components/ProductDetail";
+import type { ProductCardItem } from "@/components/ProductCard";
 import {
   requestBuncheolDetail,
+  requestMyHostedBuncheols,
   toProductDetailItem,
 } from "@/lib/auth-api";
 import {
@@ -11,16 +13,57 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { readPublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import type { ProductDetailItem } from "@/lib/mock-products";
 
 type ApiProductDetailProps = {
   id: string;
+  isHostedView?: boolean;
   returnQuery?: string;
   returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
 };
 
+function toPublicPreviewProduct(
+  item: ProductCardItem,
+  requiresLogin: boolean,
+): ProductDetailItem {
+  const productId = item.productId ?? item.id;
+  const optionLabel = item.member || item.targetMembers?.[0] || "옵션";
+  const lockedLabel = requiresLogin ? "로그인 후 확인" : "확인 필요";
+
+  return {
+    ...item,
+    id: productId,
+    productId,
+    buncheolId: productId,
+    courier: lockedLabel,
+    description: requiresLogin
+      ? "로그인 후 입찰과 상세 정보를 확인할 수 있어요."
+      : "목록에 공개된 분철 정보를 표시하고 있어요.",
+    isApiProduct: true,
+    isBidUnavailable: false,
+    isPublicPreview: requiresLogin,
+    options: [
+      {
+        currentBid: item.price ?? "-",
+        id: `${productId}-public-preview`,
+        label: optionLabel,
+        participantCount: Number(item.reviews) || 0,
+        price: item.price ?? "-",
+        startingBid: item.price ?? "-",
+        topBids: ["-", "-", "-"],
+      },
+    ],
+    purchaseSource: lockedLabel,
+    shippingDeadline: lockedLabel,
+    shippingMethods: [{ name: lockedLabel, price: "-" }],
+    status: requiresLogin ? "PUBLIC_PREVIEW" : "RECRUITING",
+  };
+}
+
 export function ApiProductDetail({
   id,
+  isHostedView = false,
   returnQuery,
   returnSource,
 }: ApiProductDetailProps) {
@@ -33,6 +76,12 @@ export function ApiProductDetail({
   const [message, setMessage] = useState("분철 정보를 불러오고 있습니다.");
 
   useEffect(() => {
+    const requiresLogin = !authState.isLoggedIn;
+    const accessToken = authState.isLoggedIn
+      ? authState.accessToken ?? undefined
+      : undefined;
+    const publicCard = readPublicBuncheolCard(id);
+
     if (!id) {
       const frame = window.requestAnimationFrame(() => {
         setProduct(null);
@@ -44,9 +93,6 @@ export function ApiProductDetail({
       };
     }
 
-    const accessToken = authState.isLoggedIn
-      ? authState.accessToken ?? undefined
-      : undefined;
     let isActive = true;
 
     const loadingFrame = window.requestAnimationFrame(() => {
@@ -56,16 +102,48 @@ export function ApiProductDetail({
     });
 
     requestBuncheolDetail(accessToken, id)
-      .then((detail) => {
+      .then(async (detail) => {
         if (!isActive) {
           return;
         }
 
-        setProduct(toProductDetailItem(detail));
+        const detailProduct = toProductDetailItem(detail);
+        const detailHostedByMe = detailProduct.isHostedByMe === true;
+        let isHostedByMe = detailHostedByMe;
+        const shouldVerifyHostedOwnership =
+          !isHostedByMe &&
+          Boolean(accessToken) &&
+          (isHostedView || detailProduct.isHostedByMe === undefined);
+
+        if (shouldVerifyHostedOwnership && accessToken) {
+          try {
+            const hostedBuncheols = await requestMyHostedBuncheols(accessToken);
+            isHostedByMe = hostedBuncheols.some(
+              (buncheol) => String(buncheol.id) === String(id),
+            );
+          } catch {
+            isHostedByMe = detailHostedByMe;
+          }
+        }
+
+        if (!isActive) {
+          return;
+        }
+
+        setProduct({
+          ...detailProduct,
+          isHostedByMe,
+        });
         setMessage("");
       })
       .catch((error: unknown) => {
         if (!isActive) {
+          return;
+        }
+
+        if (publicCard) {
+          setProduct(toPublicPreviewProduct(publicCard, requiresLogin));
+          setMessage("");
           return;
         }
 
@@ -81,12 +159,14 @@ export function ApiProductDetail({
       isActive = false;
       window.cancelAnimationFrame(loadingFrame);
     };
-  }, [authState.accessToken, authState.isLoggedIn, id]);
+  }, [authState.accessToken, authState.isLoggedIn, id, isHostedView]);
 
   if (!product) {
     return (
       <main className="system-chrome-white system-chrome-bottom-white flex h-[100dvh] items-center justify-center bg-white px-6 text-center">
-        <p className="text-[15px] font-semibold text-black/45">{message}</p>
+        <div>
+          <p className="text-[15px] font-semibold text-black/45">{message}</p>
+        </div>
       </main>
     );
   }

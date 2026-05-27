@@ -1,12 +1,29 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
+import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
+import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
 import { favoriteIdols } from "@/lib/mock-home-search";
 import { productDetails } from "@/lib/mock-products";
 
 type FavoriteFilter = "all" | "favoriteArtist";
 type FavoriteSort = "deadline" | "recent";
+type FavoriteProductCardItem = ProductCardItem & {
+  favoritedOrder: number;
+};
 
 type FavoritesContentProps = {
   skipEnterAnimation?: boolean;
@@ -17,7 +34,7 @@ const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 
 // Deadline strings are entered as Korea-local cutoff times.
 const kstOffsetHours = 9;
-const favoriteProducts = productDetails
+const favoriteProducts: FavoriteProductCardItem[] = productDetails
   .filter((product) => product.liked)
   .map((product, index) => ({
     ...product,
@@ -58,6 +75,22 @@ function isClosed(deadline: string, now: Date) {
   return deadlineDate.getTime() <= now.getTime();
 }
 
+function isClosedByStatus(status: string | undefined) {
+  return Boolean(status && status !== "RECRUITING");
+}
+
+function isDeletedProductStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "DELETED";
+}
+
+function shouldHideClosedProduct(product: ProductCardItem, now: Date) {
+  if (product.status) {
+    return isClosedByStatus(product.status);
+  }
+
+  return isClosed(product.deadline, now);
+}
+
 function takeShouldSkipFavoritesEnter() {
   if (typeof window === "undefined") {
     return false;
@@ -82,6 +115,15 @@ export function FavoritesContent({
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [hideClosed, setHideClosed] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [apiFavoriteProducts, setApiFavoriteProducts] = useState<
+    FavoriteProductCardItem[] | null
+  >(null);
+  const [favoriteMessage, setFavoriteMessage] = useState("");
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -91,9 +133,78 @@ export function FavoritesContent({
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      const frame = window.requestAnimationFrame(() => {
+        setApiFavoriteProducts([]);
+        setFavoriteMessage("");
+      });
+
+      return () => {
+        window.cancelAnimationFrame(frame);
+      };
+    }
+
+    let isActive = true;
+
+    requestBookmarkedBuncheols(accessToken, {
+      hideClosed,
+      onlyFavoriteGroups: filter === "favoriteArtist",
+      sort: sort === "deadline" ? "DEADLINE" : "LATEST",
+    })
+      .then((items) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiFavoriteProducts(
+          items.map((item, index) => ({
+            ...toProductCardItem(item),
+            favoritedOrder: items.length - index,
+          })),
+        );
+        setFavoriteMessage("");
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiFavoriteProducts([]);
+        setFavoriteMessage(
+          error instanceof Error
+            ? error.message
+            : "찜한 분철을 불러오지 못했어요.",
+        );
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    filter,
+    hideClosed,
+    sort,
+  ]);
+
   const filteredProducts = useMemo(() => {
-    return favoriteProducts
+    const sourceProducts =
+      apiFavoriteProducts ?? (authState.isLoggedIn ? [] : favoriteProducts);
+
+    return sourceProducts
       .filter((product) => {
+        if (isDeletedProductStatus(product.status)) {
+          return false;
+        }
+
+        if (apiFavoriteProducts) {
+          return !hideClosed || !shouldHideClosedProduct(product, now);
+        }
+
         if (
           filter === "favoriteArtist" &&
           !(product.targetMembers ?? [product.member]).some((member) =>
@@ -103,7 +214,7 @@ export function FavoritesContent({
           return false;
         }
 
-        if (hideClosed && isClosed(product.deadline, now)) {
+        if (hideClosed && shouldHideClosedProduct(product, now)) {
           return false;
         }
 
@@ -119,7 +230,7 @@ export function FavoritesContent({
           parseDeadline(right.deadline).getTime()
         );
       });
-  }, [filter, hideClosed, now, sort]);
+  }, [apiFavoriteProducts, authState.isLoggedIn, filter, hideClosed, now, sort]);
 
   useLayoutEffect(() => {
     const storedScrollTop = window.sessionStorage.getItem(
@@ -255,12 +366,21 @@ export function FavoritesContent({
           className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}
           key={`${filter}-${hideClosed}-${sort}`}
         >
+          {favoriteMessage ? (
+            <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+              <p className="text-[13px] font-semibold text-black/45">
+                {favoriteMessage}
+              </p>
+            </div>
+          ) : null}
           {filteredProducts.length > 0 ? (
             <ProductGrid items={filteredProducts} />
           ) : (
             <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
-                조건에 맞는 찜 상품이 없습니다.
+                {authState.isLoggedIn
+                  ? "조건에 맞는 찜 상품이 없습니다."
+                  : "로그인 후 이용할 수 있어요."}
               </p>
             </div>
           )}

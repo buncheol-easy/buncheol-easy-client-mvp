@@ -7,6 +7,8 @@ import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
 const defaultApiBaseUrl = "https://buncheoleasy.com";
 const legacyApiBaseUrlPattern = /^https?:\/\/13\.124\.248\.60(?:\/v1)?$/;
+const thumbnailDetailFetchConcurrency = 4;
+const thumbnailDetailFetchLimit = 24;
 
 type AccessTokenResponse = {
   accessToken: string;
@@ -125,6 +127,7 @@ export type BuncheolSummary = {
   deadline: string;
   groupName: string;
   id: string;
+  isHostedByMe?: boolean;
   memberNames: string[];
   memberSlotCount?: number;
   status: BuncheolStatus;
@@ -136,12 +139,18 @@ export type BuncheolMember = {
   bidMinPrice: number;
   currentBidAmount: number;
   id: string;
+  imageUrl?: string;
   memberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
   name: string;
   participantCount: number;
   topBidAmounts: number[];
+};
+
+export type BuncheolShippingOption = {
+  fee: number;
+  method: string;
 };
 
 export type BuncheolDetail = BuncheolSummary & {
@@ -152,6 +161,7 @@ export type BuncheolDetail = BuncheolSummary & {
   isHostedByMe?: boolean;
   members: BuncheolMember[];
   purchaseSite?: string;
+  shippingOptions: BuncheolShippingOption[];
 };
 
 export type MyParticipation = {
@@ -299,6 +309,52 @@ function getNumberValue(body: Record<string, unknown>, keys: string[]) {
 
       if (Number.isFinite(parsedValue)) {
         return parsedValue;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getDeepNumberValue(
+  body: Record<string, unknown>,
+  keys: string[],
+  visited = new Set<unknown>(),
+): number | null {
+  const directValue = getNumberValue(body, keys);
+
+  if (directValue !== null) {
+    return directValue;
+  }
+
+  if (visited.has(body)) {
+    return null;
+  }
+
+  visited.add(body);
+
+  for (const value of Object.values(body)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (!isRecord(item)) {
+          continue;
+        }
+
+        const nestedValue = getDeepNumberValue(item, keys, visited);
+
+        if (nestedValue !== null) {
+          return nestedValue;
+        }
+      }
+
+      continue;
+    }
+
+    if (isRecord(value)) {
+      const nestedValue = getDeepNumberValue(value, keys, visited);
+
+      if (nestedValue !== null) {
+        return nestedValue;
       }
     }
   }
@@ -852,6 +908,28 @@ function getBuncheolList(body: unknown) {
   return candidates.find(Array.isArray) ?? [];
 }
 
+function getBuncheolListPageInfo(body: unknown) {
+  const data = getNestedData(body);
+
+  if (!isRecord(data)) {
+    return {
+      hasNext: false,
+      nextCursor: null,
+    };
+  }
+
+  const nextCursor =
+    getOptionalStringValue(data, ["nextCursor", "cursor"]) ?? null;
+  const hasNext =
+    getBooleanValue(data, ["hasNext", "hasMore", "next"]) ??
+    Boolean(nextCursor);
+
+  return {
+    hasNext,
+    nextCursor,
+  };
+}
+
 function getImageUrl(value: unknown) {
   if (typeof value === "string") {
     return value;
@@ -910,6 +988,7 @@ function getBuncheolSummaryFromRecord(
     "memberName",
     "representativeMemberName",
   ]);
+  const imageUrls = getImageUrls(record);
 
   return {
     id,
@@ -920,14 +999,13 @@ function getBuncheolSummaryFromRecord(
     status:
       getOptionalStringValue(record, ["status", "buncheolStatus"]) ??
       "RECRUITING",
+    isHostedByMe:
+      getBooleanValue(record, ["isHostedByMe", "hostedByMe", "owner"]) ??
+      undefined,
     deadline:
       getOptionalStringValue(record, ["deadline", "buncheolDeadline"]) ??
       "",
-    thumbnailUrl: getOptionalStringValue(record, [
-      "thumbnailUrl",
-      "thumbnail",
-      "imageUrl",
-    ]),
+    thumbnailUrl: imageUrls[0],
     memberNames:
       memberNames.length > 0
         ? memberNames
@@ -969,15 +1047,33 @@ function getBuncheolMemberFromRecord(
   }
 
   const bidMinPrice =
-    getNumberValue(record, [
+    getDeepNumberValue(record, [
       "bidMinPrice",
       "bidMinimumPrice",
+      "baseAmount",
+      "basePrice",
+      "bidFloor",
+      "bidFloorAmount",
+      "bidPrice",
+      "initialBid",
+      "initialBidAmount",
+      "initialPrice",
+      "minBid",
       "minBidAmount",
+      "minBidPrice",
+      "minimumBid",
+      "minimumBidAmount",
+      "minimumBidPrice",
+      "minimumPrice",
+      "minPrice",
+      "requiredBidAmount",
       "startingBid",
       "startingBidAmount",
+      "startPrice",
+      "price",
     ]) ?? 0;
   const currentBidAmount =
-    getNumberValue(record, [
+    getDeepNumberValue(record, [
       "currentBidAmount",
       "highestBidAmount",
       "maxBidAmount",
@@ -999,6 +1095,13 @@ function getBuncheolMemberFromRecord(
     currentBidAmount,
     topBidAmounts,
     memberId: getOptionalStringValue(record, ["memberId"]),
+    imageUrl: getOptionalStringValue(record, [
+      "memberImage",
+      "memberImageUrl",
+      "image",
+      "imageUrl",
+      "profileImageUrl",
+    ]),
     myBidAmount: getOptionalNumberValue(record, [
       "myBidAmount",
       "myParticipationBidAmount",
@@ -1012,8 +1115,33 @@ function getBuncheolMemberFromRecord(
         "participantCount",
         "participationCount",
         "activeParticipationCount",
+        "activeParticipantCount",
       ]) ?? 0,
   };
+}
+
+function getBuncheolShippingOptionFromRecord(
+  record: Record<string, unknown>,
+): BuncheolShippingOption | null {
+  const method = getStringValue(record, [
+    "method",
+    "shippingMethod",
+    "deliveryMethod",
+    "type",
+  ]).trim();
+  const fee = getNumberValue(record, [
+    "fee",
+    "shippingFee",
+    "deliveryFee",
+    "price",
+    "amount",
+  ]);
+
+  if (!method || fee === null) {
+    return null;
+  }
+
+  return { fee, method };
 }
 
 function getBuncheolDetailFromBody(body: unknown) {
@@ -1037,19 +1165,64 @@ function getBuncheolDetailFromBody(body: unknown) {
   ])
     .map(getBuncheolMemberFromRecord)
     .filter((member): member is BuncheolMember => member !== null);
+  const shippingOptions = getRecordListValue(data, [
+    "shippingOptions",
+    "shippingMethods",
+    "deliveryOptions",
+    "deliveryMethods",
+  ])
+    .map(getBuncheolShippingOptionFromRecord)
+    .filter(
+      (option): option is BuncheolShippingOption => option !== null,
+    );
+  const shippingFeeRecord = [
+    data.shippingFees,
+    data.shippingFee,
+    data.deliveryFees,
+    data.deliveryFee,
+    data.shipping,
+  ]
+    .map(getNestedData)
+    .find(isRecord);
 
   return {
     ...summary,
-    cuShippingFee: getOptionalNumberValue(data, [
-      "cuShippingFee",
-      "cuHalfShippingFee",
-    ]),
+    cuShippingFee:
+      getOptionalNumberValue(data, [
+        "cuShippingFee",
+        "cuHalfShippingFee",
+        "cuDeliveryFee",
+        "cuFee",
+      ]) ??
+      (shippingFeeRecord
+        ? getOptionalNumberValue(shippingFeeRecord, [
+            "cuShippingFee",
+            "cuHalfShippingFee",
+            "cuDeliveryFee",
+            "cuFee",
+            "cu",
+          ])
+        : undefined),
     description: getOptionalStringValue(data, ["description", "content"]),
-    gs25ShippingFee: getOptionalNumberValue(data, [
-      "gs25ShippingFee",
-      "gsShippingFee",
-      "gsHalfShippingFee",
-    ]),
+    gs25ShippingFee:
+      getOptionalNumberValue(data, [
+        "gs25ShippingFee",
+        "gsShippingFee",
+        "gsHalfShippingFee",
+        "gs25DeliveryFee",
+        "gs25Fee",
+      ]) ??
+      (shippingFeeRecord
+        ? getOptionalNumberValue(shippingFeeRecord, [
+            "gs25ShippingFee",
+            "gsShippingFee",
+            "gsHalfShippingFee",
+            "gs25DeliveryFee",
+            "gs25Fee",
+            "gs25",
+            "gs",
+          ])
+        : undefined),
     imageUrls: getImageUrls(data),
     isHostedByMe:
       getBooleanValue(data, ["isHostedByMe", "hostedByMe", "owner"]) ??
@@ -1060,6 +1233,7 @@ function getBuncheolDetailFromBody(body: unknown) {
       "purchaseSource",
       "source",
     ]),
+    shippingOptions,
   } satisfies BuncheolDetail;
 }
 
@@ -1134,6 +1308,10 @@ function getStatusBadge(status: string) {
   return statusLabels[status] ?? status;
 }
 
+function isDeletedBuncheolStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "DELETED";
+}
+
 function getToneFromId(id: string) {
   const tones = [
     "from-black via-zinc-800 to-zinc-500",
@@ -1148,13 +1326,34 @@ function getToneFromId(id: string) {
   return tones[hash % tones.length];
 }
 
+function getShippingMethodLabel(method: string) {
+  const normalizedMethod = method.toUpperCase();
+
+  if (normalizedMethod.includes("GS25") || normalizedMethod.includes("GS")) {
+    return "GS25 반값택배";
+  }
+
+  if (normalizedMethod.includes("CU")) {
+    return "CU 알뜰택배";
+  }
+
+  return method;
+}
+
 function getShippingMethodsFromDetail(detail: BuncheolDetail) {
+  if (detail.shippingOptions.length > 0) {
+    return detail.shippingOptions.map((option) => ({
+      name: getShippingMethodLabel(option.method),
+      price: formatWonAmount(option.fee),
+    }));
+  }
+
   return [
     detail.gs25ShippingFee
-      ? { name: "GS 편의점 택배", price: formatWonAmount(detail.gs25ShippingFee) }
+      ? { name: "GS25 반값택배", price: formatWonAmount(detail.gs25ShippingFee) }
       : null,
     detail.cuShippingFee
-      ? { name: "CU 편의점 택배", price: formatWonAmount(detail.cuShippingFee) }
+      ? { name: "CU 알뜰택배", price: formatWonAmount(detail.cuShippingFee) }
       : null,
   ].filter(
     (method): method is { name: string; price: string } => method !== null,
@@ -1175,7 +1374,10 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     rating: "0.0",
     reviews: String(summary.activeParticipationCount ?? 0),
     badge: getStatusBadge(summary.status),
+    imageUrl: summary.thumbnailUrl,
+    isHostedByMe: summary.isHostedByMe,
     liked: summary.bookmarked,
+    status: summary.status,
     tone: getToneFromId(summary.id),
   };
 }
@@ -1223,6 +1425,7 @@ export function toProductDetailItem(
       id: member.id,
       buncheolMemberId: member.id,
       currentBid: formattedBaseline,
+      imageUrl: member.imageUrl,
       label: member.name,
       myBidAmount: member.myBidAmount,
       myParticipationId: member.myParticipationId,
@@ -1254,14 +1457,74 @@ export function toProductDetailItem(
     member: getMemberLabel(memberNames),
     options,
     purchaseSource: detail.purchaseSite ?? "공식 판매처",
-    shippingDeadline: "마감 후 판매자 안내",
-    shippingMethods:
-      shippingMethods.length > 0
-        ? shippingMethods
-        : [{ name: "판매자 안내", price: "확인 필요" }],
+    shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
     status: detail.status,
     targetMembers: memberNames,
   };
+}
+
+async function enrichBuncheolSummariesWithThumbnails<T extends BuncheolSummary>(
+  accessToken: string | undefined,
+  summaries: T[],
+) {
+  if (summaries.every((summary) => summary.thumbnailUrl)) {
+    return summaries;
+  }
+
+  const enrichedSummaries = [...summaries];
+  const missingThumbnailIndexes = summaries
+    .map((summary, index) => (summary.thumbnailUrl ? null : index))
+    .filter((index): index is number => index !== null)
+    .slice(0, thumbnailDetailFetchLimit);
+
+  for (
+    let index = 0;
+    index < missingThumbnailIndexes.length;
+    index += thumbnailDetailFetchConcurrency
+  ) {
+    const batchIndexes = missingThumbnailIndexes.slice(
+      index,
+      index + thumbnailDetailFetchConcurrency,
+    );
+    const batchSummaries = await Promise.all(
+      batchIndexes.map(async (summaryIndex) => {
+        const summary = summaries[summaryIndex];
+
+        try {
+          const url = `${getVersionedApiBaseUrl()}/buncheols/${summary.id}`;
+          let response = await fetch(url, {
+            credentials: "omit",
+            headers: getAuthHeaders(accessToken),
+            method: "GET",
+          });
+
+          if (response.status === 401 && accessToken) {
+            response = await fetch(url, {
+              credentials: "omit",
+              method: "GET",
+            });
+          }
+
+          if (!response.ok) {
+            return summary;
+          }
+
+          const detail = getBuncheolDetailFromBody(await readJsonBody(response));
+          const thumbnailUrl = detail?.imageUrls[0];
+
+          return thumbnailUrl ? { ...summary, thumbnailUrl } : summary;
+        } catch {
+          return summary;
+        }
+      }),
+    );
+
+    batchSummaries.forEach((summary, batchIndex) => {
+      enrichedSummaries[batchIndexes[batchIndex]] = summary;
+    });
+  }
+
+  return enrichedSummaries;
 }
 
 export async function requestBuncheols(
@@ -1290,10 +1553,67 @@ export async function requestBuncheols(
 
   const body = await readJsonBody(response);
 
-  return getBuncheolList(body)
+  const summaries = getBuncheolList(body)
     .filter(isRecord)
     .map(getBuncheolSummaryFromRecord)
     .filter((item): item is BuncheolSummary => item !== null);
+
+  return enrichBuncheolSummariesWithThumbnails(accessToken, summaries);
+}
+
+export async function requestAllBuncheols(
+  accessToken?: string,
+  params: BuncheolListParams = {},
+) {
+  const allSummaries: BuncheolSummary[] = [];
+  let cursor = params.cursor;
+  let pageCount = 0;
+
+  while (pageCount < 20) {
+    const pageParams: BuncheolListParams = {
+      ...params,
+      cursor,
+      size: params.size ?? 50,
+    };
+    const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
+      pageParams,
+    )}`;
+    let response = await fetch(url, {
+      credentials: "omit",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    });
+
+    if (response.status === 401 && accessToken) {
+      response = await fetch(url, {
+        credentials: "omit",
+        method: "GET",
+      });
+    }
+
+    if (!response.ok) {
+      throw new Error(await parseErrorMessage(response));
+    }
+
+    const body = await readJsonBody(response);
+    const pageSummaries = getBuncheolList(body)
+      .filter(isRecord)
+      .map(getBuncheolSummaryFromRecord)
+      .filter((item): item is BuncheolSummary => item !== null);
+
+    allSummaries.push(...pageSummaries);
+
+    const pageInfo = getBuncheolListPageInfo(body);
+
+    if (!pageInfo.hasNext || !pageInfo.nextCursor) {
+      break;
+    }
+
+    cursor = pageInfo.nextCursor;
+    pageCount += 1;
+  }
+
+  return enrichBuncheolSummariesWithThumbnails(accessToken, allSummaries);
 }
 
 export async function requestBuncheolDetail(
@@ -1443,17 +1763,10 @@ export async function participateBuncheol(
     headers: getJsonHeaders(accessToken),
     method: "POST",
   };
-  let response = await fetch(
-    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/participations/checkout`,
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/participations`,
     requestInit,
   );
-
-  if (response.status === 404 || response.status === 405) {
-    response = await fetch(
-      `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/participations`,
-      requestInit,
-    );
-  }
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -1566,7 +1879,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
     throw new Error(await parseErrorMessage(response));
   }
 
-  return getBuncheolList(await readJsonBody(response))
+  const buncheols = getBuncheolList(await readJsonBody(response))
     .filter(isRecord)
     .map((record): MyHostedBuncheol | null => {
       const summary = getBuncheolSummaryFromRecord(record);
@@ -1591,6 +1904,11 @@ export async function requestMyHostedBuncheols(accessToken: string) {
     .filter(
       (buncheol): buncheol is MyHostedBuncheol => buncheol !== null,
     );
+
+  return enrichBuncheolSummariesWithThumbnails(
+    accessToken,
+    buncheols.filter((buncheol) => !isDeletedBuncheolStatus(buncheol.status)),
+  );
 }
 
 export async function requestBookmarkedBuncheols(
@@ -1615,7 +1933,7 @@ export async function requestBookmarkedBuncheols(
     throw new Error(await parseErrorMessage(response));
   }
 
-  return getBuncheolList(await readJsonBody(response))
+  const summaries = getBuncheolList(await readJsonBody(response))
     .filter(isRecord)
     .reduce<BuncheolSummary[]>((summaries, record) => {
       const summary = getBuncheolSummaryFromRecord(record);
@@ -1626,6 +1944,11 @@ export async function requestBookmarkedBuncheols(
 
       return summaries;
     }, []);
+
+  return enrichBuncheolSummariesWithThumbnails(
+    accessToken,
+    summaries.filter((summary) => !isDeletedBuncheolStatus(summary.status)),
+  );
 }
 
 export async function addBuncheolBookmark(

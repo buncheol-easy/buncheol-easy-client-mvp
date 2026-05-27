@@ -28,6 +28,14 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import {
+  cancelBuncheolParticipation,
+  deleteBuncheol,
+  requestMyHostedBuncheols,
+  requestMyParticipations,
+  type MyHostedBuncheol,
+  type MyParticipation,
+} from "@/lib/auth-api";
+import {
   getInitialHostedProducts,
   readHostedProducts,
   subscribeHostedProducts,
@@ -38,7 +46,7 @@ import {
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
 } from "@/lib/mock-delivery-addresses";
-import { productDetails } from "@/lib/mock-products";
+import { productDetails, type ProductDetailItem } from "@/lib/mock-products";
 
 function priceToNumber(price: string) {
   return Number(price.replace(/[^0-9]/g, ""));
@@ -177,6 +185,132 @@ const bidRecords = productDetails.slice(0, 4).map((product, index) => {
   };
 });
 
+type BidRecord = (typeof bidRecords)[number] & {
+  buncheolStatus?: string;
+  participationStatus?: string;
+};
+
+function isRecruitingStatus(status: string | undefined) {
+  return !status || status === "RECRUITING";
+}
+
+function isBidRecordClosed(bid: BidRecord, now: Date) {
+  if (bid.buncheolStatus) {
+    return !isRecruitingStatus(bid.buncheolStatus);
+  }
+
+  return parseDeadline(bid.deadline).getTime() <= now.getTime();
+}
+
+function isHostedProductClosed(product: ProductDetailItem, now: Date) {
+  if (product.status) {
+    return !isRecruitingStatus(product.status);
+  }
+
+  const deadlineDate = parseHistoryDeadline(product.deadline);
+
+  return (
+    !Number.isNaN(deadlineDate.getTime()) &&
+    deadlineDate.getTime() <= now.getTime()
+  );
+}
+
+function formatApiDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+
+  return `${partMap.year}.${partMap.month}.${partMap.day} ${partMap.hour}`;
+}
+
+function getToneFromId(id: string) {
+  const tones = [
+    "from-black via-zinc-800 to-zinc-500",
+    "from-zinc-700 via-zinc-500 to-zinc-100",
+    "from-zinc-900 via-zinc-700 to-zinc-300",
+    "from-zinc-300 via-zinc-100 to-neutral-400",
+  ];
+  const hash = [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+
+  return tones[hash % tones.length];
+}
+
+function getBidRecordFromParticipation(
+  participation: MyParticipation,
+): BidRecord {
+  const rank =
+    participation.closedRank ??
+    (participation.participationStatus === "AWAITING_PAYMENT" ? 1 : 0);
+
+  return {
+    id: participation.participationId,
+    amount: participation.bidAmount,
+    deadline: formatApiDateTime(participation.buncheolDeadline),
+    member: `${participation.buncheolMemberCount}개 옵션`,
+    optionLabel: participation.memberName,
+    participantCount: 0,
+    paidAt:
+      participation.participationStatus === "CONFIRMED" ? "결제 완료" : null,
+    buncheolStatus: participation.buncheolStatus,
+    productId: participation.buncheolId,
+    participationStatus: participation.participationStatus,
+    rank: rank > 0 ? rank : 0,
+    submittedAt: "",
+    title: participation.buncheolTitle,
+    tone: getToneFromId(participation.buncheolId),
+  };
+}
+
+function getHostedProductFromBuncheol(
+  buncheol: MyHostedBuncheol,
+): ProductDetailItem {
+  return {
+    id: buncheol.id,
+    buncheolId: buncheol.id,
+    title: buncheol.title,
+    member: `${buncheol.memberSlotCount}개 옵션`,
+    targetMembers: buncheol.memberNames,
+    uploadedAt: formatApiDateTime(buncheol.createdAt),
+    era: buncheol.groupName,
+    rating: "0.0",
+    reviews: String(buncheol.activeParticipationCount),
+    badge: buncheol.status === "RECRUITING" ? "모집중" : "마감",
+    liked: buncheol.bookmarked,
+    tone: getToneFromId(buncheol.id),
+    courier: "배송 방법 확인 필요",
+    deadline: formatApiDateTime(buncheol.deadline),
+    description: "",
+    imageUrl: buncheol.thumbnailUrl,
+    imageUrls: buncheol.thumbnailUrl ? [buncheol.thumbnailUrl] : [],
+    isApiProduct: true,
+    options: [
+      {
+        id: `${buncheol.id}-participants`,
+        label: "참여",
+        price: "-",
+        currentBid: "-",
+        participantCount: buncheol.activeParticipationCount,
+      },
+    ],
+    purchaseSource: "",
+    status: buncheol.status,
+  };
+}
+
 type BidHistoryContentProps = {
   skipEnterAnimation?: boolean;
 };
@@ -236,9 +370,20 @@ export function BidHistoryContent({
   const [mode, setMode] = useState<BidHistoryMode>("joined");
   const [filter, setFilter] = useState<BidHistoryFilter>("all");
   const [hostedFilter, setHostedFilter] = useState<HostedHistoryFilter>("all");
+  const [apiBidRecords, setApiBidRecords] = useState<BidRecord[] | null>(null);
+  const [apiHostedProducts, setApiHostedProducts] = useState<
+    ProductDetailItem[] | null
+  >(null);
+  const [deletingHostedProductId, setDeletingHostedProductId] = useState<
+    string | null
+  >(null);
+  const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
+  const [historyMessage, setHistoryMessage] = useState("");
+  const [hostedMessage, setHostedMessage] = useState("");
 
+  const paymentBidRecords = apiBidRecords ?? bidRecords;
   const selectedPaymentBid =
-    bidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+    paymentBidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
   const selectedPaymentProduct = selectedPaymentBid
     ? productDetails.find((product) => product.id === selectedPaymentBid.productId) ??
       null
@@ -255,9 +400,12 @@ export function BidHistoryContent({
     selectedPaymentProduct?.shippingMethods,
     selectedPaymentProduct?.courier,
   );
-  const eligiblePaymentAddresses = prioritizedDeliveryAddresses.filter((address) =>
-    availablePaymentStoreTypes.includes(address.storeType),
-  );
+  const eligiblePaymentAddresses =
+    availablePaymentStoreTypes.length > 0
+      ? prioritizedDeliveryAddresses.filter((address) =>
+          availablePaymentStoreTypes.includes(address.storeType),
+        )
+      : prioritizedDeliveryAddresses;
   const selectedEligiblePaymentAddress =
     eligiblePaymentAddresses.find(
       (address) => address.id === selectedPaymentAddressId,
@@ -293,6 +441,73 @@ export function BidHistoryContent({
   }, []);
 
   useEffect(() => {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      const frame = window.requestAnimationFrame(() => {
+        setApiBidRecords([]);
+        setApiHostedProducts([]);
+        setHistoryMessage("");
+        setHostedMessage("");
+      });
+
+      return () => {
+        window.cancelAnimationFrame(frame);
+      };
+    }
+
+    let isActive = true;
+
+    requestMyParticipations(accessToken)
+      .then((participations) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiBidRecords(participations.map(getBidRecordFromParticipation));
+        setHistoryMessage("");
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiBidRecords([]);
+        setHistoryMessage(
+          error instanceof Error
+            ? error.message
+            : "참여한 분철을 불러오지 못했어요.",
+        );
+      });
+
+    requestMyHostedBuncheols(accessToken)
+      .then((buncheols) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiHostedProducts(buncheols.map(getHostedProductFromBuncheol));
+        setHostedMessage("");
+      })
+      .catch((error: unknown) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiHostedProducts([]);
+        setHostedMessage(
+          error instanceof Error
+            ? error.message
+            : "개최한 분철을 불러오지 못했어요.",
+        );
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn]);
+
+  useEffect(() => {
     const rawReturnState = window.sessionStorage.getItem(addressReturnStateKey);
 
     if (!rawReturnState) {
@@ -319,7 +534,7 @@ export function BidHistoryContent({
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
 
     const returnBid = returnState.bidId
-      ? bidRecords.find((bid) => bid.id === returnState.bidId)
+      ? paymentBidRecords.find((bid) => bid.id === returnState.bidId)
       : null;
 
     if (!returnBid) {
@@ -333,10 +548,16 @@ export function BidHistoryContent({
       returnProduct?.shippingMethods,
       returnProduct?.courier,
     );
-    const returnEligibleAddresses = getPrioritizedDeliveryAddresses(
+    const returnPrioritizedAddresses = getPrioritizedDeliveryAddresses(
       deliveryAddresses,
       defaultAddressIds,
-    ).filter((address) => returnAvailableStoreTypes.includes(address.storeType));
+    );
+    const returnEligibleAddresses =
+      returnAvailableStoreTypes.length > 0
+        ? returnPrioritizedAddresses.filter((address) =>
+            returnAvailableStoreTypes.includes(address.storeType),
+          )
+        : returnPrioritizedAddresses;
     const restoredAddressId = lastAddedAddressId ?? returnState.addressId;
     const restoredPaymentAddressId =
       restoredAddressId &&
@@ -371,7 +592,7 @@ export function BidHistoryContent({
       isRestoreActive = false;
       window.clearTimeout(restoreTimer);
     };
-  }, [defaultAddressIds, deliveryAddresses]);
+  }, [defaultAddressIds, deliveryAddresses, paymentBidRecords]);
 
   function finishPaymentSheetClose() {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -399,12 +620,17 @@ export function BidHistoryContent({
       return [];
     }
 
-    return [...bidRecords]
+    const sourceRecords: BidRecord[] = apiBidRecords ?? bidRecords;
+
+    return [...sourceRecords]
       .filter((bid) => {
-        const isClosed = parseDeadline(bid.deadline).getTime() <= now.getTime();
+        const isClosed = isBidRecordClosed(bid, now);
 
         if (filter === "payment") {
-          return isClosed && bid.rank === 1 && !bid.paidAt;
+          return (
+            bid.participationStatus === "AWAITING_PAYMENT" ||
+            (isClosed && bid.rank === 1 && !bid.paidAt)
+          );
         }
 
         if (filter === "active") {
@@ -418,18 +644,17 @@ export function BidHistoryContent({
           parseDeadline(right.deadline).getTime() -
           parseDeadline(left.deadline).getTime(),
       );
-  }, [authState.isLoggedIn, filter, now]);
+  }, [apiBidRecords, authState.isLoggedIn, filter, now]);
   const hostedRecords = useMemo(() => {
     if (!authState.isLoggedIn) {
       return [];
     }
 
-    return [...hostedProducts]
+    const sourceProducts = apiHostedProducts ?? hostedProducts;
+
+    return [...sourceProducts]
       .filter((product) => {
-        const deadlineDate = parseHistoryDeadline(product.deadline);
-        const isClosed =
-          !Number.isNaN(deadlineDate.getTime()) &&
-          deadlineDate.getTime() <= now.getTime();
+        const isClosed = isHostedProductClosed(product, now);
 
         if (hostedFilter === "active") {
           return !isClosed;
@@ -446,7 +671,13 @@ export function BidHistoryContent({
           parseHistoryDeadline(right.deadline).getTime() -
           parseHistoryDeadline(left.deadline).getTime(),
       );
-  }, [authState.isLoggedIn, hostedFilter, hostedProducts, now]);
+  }, [
+    apiHostedProducts,
+    authState.isLoggedIn,
+    hostedFilter,
+    hostedProducts,
+    now,
+  ]);
 
   function openPaymentSheet(bidId: string) {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -454,7 +685,7 @@ export function BidHistoryContent({
       paymentSheetCloseTimerRef.current = null;
     }
 
-    const selectedBid = bidRecords.find((bid) => bid.id === bidId) ?? null;
+    const selectedBid = paymentBidRecords.find((bid) => bid.id === bidId) ?? null;
     const selectedProduct = selectedBid
       ? productDetails.find((product) => product.id === selectedBid.productId) ??
         null
@@ -468,13 +699,15 @@ export function BidHistoryContent({
       defaultAddressIds,
     );
     const fallbackAddress =
-      allowedStoreTypes
-        .map((storeType) => nextDefaultAddresses[storeType])
-        .find((address) => address !== null) ??
-      prioritizedDeliveryAddresses.find((address) =>
-        allowedStoreTypes.includes(address.storeType),
-      ) ??
-      null;
+      allowedStoreTypes.length > 0
+        ? allowedStoreTypes
+            .map((storeType) => nextDefaultAddresses[storeType])
+            .find((address) => address !== null) ??
+          prioritizedDeliveryAddresses.find((address) =>
+            allowedStoreTypes.includes(address.storeType),
+          ) ??
+          null
+        : prioritizedDeliveryAddresses[0] ?? null;
 
     setSelectedPaymentBidId(bidId);
     setSelectedPaymentAddressId((current) =>
@@ -583,6 +816,65 @@ export function BidHistoryContent({
       PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
       String(historyIndex + 1),
     );
+  }
+
+  async function handleWithdrawBid(bidId: string) {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken || withdrawingBidId) {
+      return;
+    }
+
+    setWithdrawingBidId(bidId);
+
+    try {
+      await cancelBuncheolParticipation(accessToken, bidId);
+      setApiBidRecords((current) =>
+        current ? current.filter((bid) => bid.id !== bidId) : current,
+      );
+      setHistoryMessage("");
+    } catch (error: unknown) {
+      setHistoryMessage(
+        error instanceof Error ? error.message : "입찰을 철회하지 못했어요.",
+      );
+    } finally {
+      setWithdrawingBidId(null);
+    }
+  }
+
+  async function handleDeleteHostedProduct(product: ProductDetailItem) {
+    const accessToken = authState.accessToken;
+    const buncheolId = product.buncheolId ?? product.id;
+
+    if (!authState.isLoggedIn || !accessToken || deletingHostedProductId) {
+      return;
+    }
+
+    if (!window.confirm("이 분철을 삭제할까요?")) {
+      return;
+    }
+
+    setDeletingHostedProductId(buncheolId);
+
+    try {
+      await deleteBuncheol(accessToken, buncheolId);
+      setApiHostedProducts((current) =>
+        current
+          ? current.filter(
+              (item) => (item.buncheolId ?? item.id) !== buncheolId,
+            )
+          : current,
+      );
+      setHostedMessage("");
+    } catch (error: unknown) {
+      setHostedMessage(
+        error instanceof Error
+          ? error.message
+          : "분철을 삭제하지 못했어요.",
+      );
+    } finally {
+      setDeletingHostedProductId(null);
+    }
   }
 
   useLayoutEffect(() => {
@@ -715,6 +1007,13 @@ export function BidHistoryContent({
         >
           {mode === "joined" ? (
             <div className="space-y-3">
+            {historyMessage ? (
+              <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                <p className="text-[14px] font-semibold text-black/45">
+                  {historyMessage}
+                </p>
+              </div>
+            ) : null}
             {records.length === 0 ? (
               <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
                 <p className="text-[14px] font-semibold text-black/70">
@@ -730,8 +1029,8 @@ export function BidHistoryContent({
               </div>
             ) : null}
             {records.map((bid) => {
-              const isClosed =
-                parseDeadline(bid.deadline).getTime() <= now.getTime();
+              const isClosed = isBidRecordClosed(bid, now);
+              const isWithdrawPending = withdrawingBidId === bid.id;
               const paymentRemainingTime = formatPaymentRemainingTime(
                 bid.deadline,
                 now,
@@ -847,6 +1146,15 @@ export function BidHistoryContent({
                           >
                             결제
                           </button>
+                        ) : !isClosed ? (
+                          <button
+                            className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55 disabled:text-black/25"
+                            disabled={isWithdrawPending}
+                            onClick={() => void handleWithdrawBid(bid.id)}
+                            type="button"
+                          >
+                            {isWithdrawPending ? "철회 중" : "철회"}
+                          </button>
                         ) : null}
                       </div>
                     </div>
@@ -857,6 +1165,13 @@ export function BidHistoryContent({
             </div>
           ) : (
             <div className="space-y-3">
+              {hostedMessage ? (
+                <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                  <p className="text-[14px] font-semibold text-black/45">
+                    {hostedMessage}
+                  </p>
+                </div>
+              ) : null}
               {hostedRecords.length === 0 ? (
                 <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
                   <p className="text-[14px] font-semibold text-black/70">
@@ -872,23 +1187,23 @@ export function BidHistoryContent({
                 </div>
               ) : null}
               {hostedRecords.map((product) => {
-                const deadlineDate = parseHistoryDeadline(product.deadline);
-                const isClosed =
-                  !Number.isNaN(deadlineDate.getTime()) &&
-                  deadlineDate.getTime() <= now.getTime();
+                const isClosed = isHostedProductClosed(product, now);
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,
                 );
 
                 return (
-                  <Link
-                    className="block rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
-                    href={`/products/${product.id}?from=bids`}
+                  <article
+                    className="rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
                     key={product.id}
-                    onClick={rememberBidHistoryProductEntry}
                   >
-                    <article className="flex items-start gap-3">
+                    <Link
+                      className="block"
+                      href={`/products/${product.id}?from=bids&hosted=true`}
+                      onClick={rememberBidHistoryProductEntry}
+                    >
+                    <div className="flex items-start gap-3">
                       <div
                         className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-[0.9rem] bg-gradient-to-br ${product.tone}`}
                       >
@@ -963,8 +1278,24 @@ export function BidHistoryContent({
                             : "진행 중인 개최 분철이에요."}
                         </p>
                       </div>
-                    </article>
-                  </Link>
+                    </div>
+                    </Link>
+                    {product.isApiProduct ? (
+                      <div className="mt-4 flex justify-end border-t border-black/10 pt-3">
+                        <button
+                          className="h-9 rounded-full border border-black/10 px-4 text-[13px] font-semibold tracking-[-0.04em] text-black/55 disabled:text-black/25"
+                          disabled={
+                            deletingHostedProductId ===
+                            (product.buncheolId ?? product.id)
+                          }
+                          onClick={() => handleDeleteHostedProduct(product)}
+                          type="button"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ) : null}
+                  </article>
                 );
               })}
             </div>

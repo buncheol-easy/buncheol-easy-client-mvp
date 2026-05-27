@@ -11,6 +11,27 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
+import {
+  addBuncheolBookmark,
+  cancelBuncheolParticipation,
+  deleteBuncheol,
+  participateBuncheol,
+  removeBuncheolBookmark,
+  requestShippingAddresses,
+} from "@/lib/auth-api";
+import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import {
+  getDeliveryAddressStateFromSyncedAddresses,
+  getInitialDeliveryAddressState,
+  readDeliveryAddressState,
+  subscribeDeliveryAddressState,
+  writeDeliveryAddressState,
+} from "@/lib/delivery-address-store";
+import {
+  getAvailableConvenienceStoreTypes,
+  getDefaultDeliveryAddressesByType,
+  getPrioritizedDeliveryAddresses,
+} from "@/lib/mock-delivery-addresses";
 import { BackIcon, CloseIcon, HeartIcon } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import {
@@ -28,25 +49,6 @@ import {
   SearchExperience,
 } from "@/components/SearchExperience";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
-import {
-  cancelBuncheolParticipation,
-  participateBuncheol,
-  requestShippingAddresses,
-} from "@/lib/auth-api";
-import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
-import {
-  getDeliveryAddressStateFromSyncedAddresses,
-  getInitialDeliveryAddressState,
-  readDeliveryAddressState,
-  subscribeDeliveryAddressState,
-  writeDeliveryAddressState,
-  type StoredDeliveryAddressState,
-} from "@/lib/delivery-address-store";
-import {
-  getAvailableConvenienceStoreTypes,
-  getDefaultDeliveryAddressesByType,
-  getPrioritizedDeliveryAddresses,
-} from "@/lib/mock-delivery-addresses";
 
 type ProductDetailProps = {
   product: ProductDetailItem;
@@ -61,6 +63,7 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
+const kstOffsetHours = 9;
 
 type ProductHistoryState = {
   idx?: unknown;
@@ -85,6 +88,27 @@ function ProductEditIcon() {
         strokeLinejoin="round"
       />
       <path d="m14.5 7.5 2 2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProductDeleteIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M6 7h12" strokeLinecap="round" />
+      <path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7" />
+      <path
+        d="M8 10v7.2A2.8 2.8 0 0 0 10.8 20h2.4A2.8 2.8 0 0 0 16 17.2V10"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -119,6 +143,29 @@ function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
 }
 
+function parseKoreaDateTime(value: string) {
+  const match = value
+    .trim()
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
+
+  if (match) {
+    const [, year, month, day, hour = "0"] = match;
+
+    return new Date(
+      Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour) - kstOffsetHours,
+      ),
+    );
+  }
+
+  const isoDate = new Date(value);
+
+  return Number.isNaN(isoDate.getTime()) ? new Date(Number.NaN) : isoDate;
+}
+
 function getTopBids(option: ProductOption) {
   return option.topBids ?? [option.currentBid, "-", "-"];
 }
@@ -142,6 +189,15 @@ function getBidBaseline(option: ProductOption) {
   return hasOptionBids(option) ? option.currentBid : getStartingBid(option);
 }
 
+function isDeadlineClosed(deadline: string) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  return (
+    !Number.isNaN(deadlineDate.getTime()) &&
+    deadlineDate.getTime() <= Date.now()
+  );
+}
+
 function getTargetTags(product: ProductDetailItem) {
   const tags = product.targetMembers ?? [product.member];
 
@@ -155,36 +211,6 @@ function getProductImageUrls(product: ProductDetailItem) {
     (imageUrl, index, imageUrls): imageUrl is string => {
       return Boolean(imageUrl) && imageUrls.indexOf(imageUrl) === index;
     },
-  );
-}
-
-function getBidDeliveryAddress(
-  state: StoredDeliveryAddressState,
-  product: ProductDetailItem,
-) {
-  const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
-    state.addresses,
-    state.defaultAddressIds,
-  );
-  const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
-    state.addresses,
-    state.defaultAddressIds,
-  );
-  const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
-    product.shippingMethods,
-    product.courier,
-  );
-
-  return (
-    availableShippingStoreTypes
-      .map((storeType) => defaultDeliveryAddresses[storeType])
-      .find((address) => address !== null) ??
-    prioritizedDeliveryAddresses.find((address) =>
-      availableShippingStoreTypes.length > 0
-        ? availableShippingStoreTypes.includes(address.storeType)
-        : true,
-    ) ??
-    null
   );
 }
 
@@ -228,6 +254,9 @@ export function ProductDetail({
       return bids;
     }, {}),
   );
+  const [isLiked, setIsLiked] = useState(product.liked === true);
+  const [isBookmarkPending, setIsBookmarkPending] = useState(false);
+  const [isDeletePending, setIsDeletePending] = useState(false);
   const [isBidSubmitPending, setIsBidSubmitPending] = useState(false);
   const [withdrawingOptionId, setWithdrawingOptionId] = useState<string | null>(
     null,
@@ -291,13 +320,41 @@ export function ProductDetail({
     return leftHasBid ? -1 : 1;
   });
 
-  const shippingMethods = product.shippingMethods ?? [
-    { name: product.courier, price: "판매자 안내" },
-  ];
-  const bidDeliveryAddress = getBidDeliveryAddress(
-    deliveryAddressState,
-    product,
+  const shippingMethods =
+    product.shippingMethods ??
+    (product.isApiProduct
+      ? []
+      : [{ name: product.courier, price: "판매자 안내" }]);
+  const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
+    product.shippingMethods,
+    product.courier,
   );
+  function getBidDeliveryAddressFromState(
+    addressState: typeof deliveryAddressState,
+  ) {
+    const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
+      addressState.addresses,
+      addressState.defaultAddressIds,
+    );
+    const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
+      addressState.addresses,
+      addressState.defaultAddressIds,
+    );
+
+    return (
+      availableShippingStoreTypes
+        .map((storeType) => defaultDeliveryAddresses[storeType])
+        .find((address) => address !== null) ??
+      prioritizedDeliveryAddresses.find((address) =>
+        availableShippingStoreTypes.length > 0
+          ? availableShippingStoreTypes.includes(address.storeType)
+          : true,
+      ) ??
+      null
+    );
+  }
+  const bidDeliveryAddress =
+    getBidDeliveryAddressFromState(deliveryAddressState);
   const targetTags = getTargetTags(product);
   const productImages = getProductImageUrls(product);
   const visibleProductImageIndex = Math.min(
@@ -307,9 +364,22 @@ export function ProductDetail({
   const productImageTrackOffset = `calc(-${
     visibleProductImageIndex * 100
   }% + ${productImageDragOffset}px)`;
+  const isPublicPreview = product.isPublicPreview === true;
+  const isBidUnavailable = product.isBidUnavailable === true;
+  const isDeadlinePassed = isDeadlineClosed(product.deadline);
+  const buncheolId = product.buncheolId ?? product.id;
   const canEditProduct =
     product.id.startsWith("uploaded-") || product.isHostedByMe;
-  const buncheolId = product.buncheolId ?? product.id;
+  const canDeleteProduct = product.isApiProduct && product.isHostedByMe;
+  const canBidProduct =
+    !isPublicPreview &&
+    !isBidUnavailable &&
+    !isDeadlinePassed &&
+    (!product.status || product.status === "RECRUITING");
+
+  useEffect(() => {
+    setIsLiked(product.liked === true);
+  }, [product.id, product.liked]);
 
   function buildTopBids(
     option: ProductOption,
@@ -377,10 +447,9 @@ export function ProductDetail({
 
     const option = auctionOptions.find((option) => option.id === optionId);
     const participationId = option?.myParticipationId;
+    const accessToken = authState.accessToken;
 
     if (product.isApiProduct) {
-      const accessToken = authState.accessToken;
-
       if (!authState.isLoggedIn || !accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
         router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
@@ -419,8 +488,6 @@ export function ProductDetail({
         return {
           ...option,
           currentBid,
-          myBidAmount: undefined,
-          myParticipationId: undefined,
           participantCount: Math.max(0, option.participantCount - 1),
           topBids,
         };
@@ -448,13 +515,9 @@ export function ProductDetail({
     >,
     onlyParticipationResults = false,
   ) {
-    function shouldApplyOption(optionId: string) {
-      return !onlyParticipationResults || participationResults.has(optionId);
-    }
-
     setAuctionOptions((currentOptions) =>
       currentOptions.map((option) => {
-        if (!shouldApplyOption(option.id)) {
+        if (onlyParticipationResults && !participationResults.has(option.id)) {
           return option;
         }
 
@@ -475,21 +538,20 @@ export function ProductDetail({
             previousBidAmount > 0
               ? option.participantCount
               : option.participantCount + 1,
+          topBids: buildTopBids(option, bidAmount, previousBidAmount),
           myBidAmount: bidAmount,
           myParticipationId:
             apiResult?.participationId ?? option.myParticipationId,
-          topBids: buildTopBids(option, bidAmount, previousBidAmount),
         };
       }),
     );
     setMyBids((current) => {
       const nextBids = { ...current };
+      const optionsToApply = onlyParticipationResults
+        ? auctionOptions.filter((option) => participationResults.has(option.id))
+        : auctionOptions;
 
-      auctionOptions.forEach((option) => {
-        if (!shouldApplyOption(option.id)) {
-          return;
-        }
-
+      optionsToApply.forEach((option) => {
         const apiResult = participationResults.get(option.id);
         const bidAmount =
           apiResult?.bidAmount ?? Number(bidAmounts[option.id] ?? 0);
@@ -521,6 +583,15 @@ export function ProductDetail({
       return;
     }
 
+    if (!canBidProduct) {
+      window.alert(
+        isDeadlinePassed
+          ? "입찰 기한이 지나 참여할 수 없어요."
+          : "지금은 입찰할 수 없는 분철이에요.",
+      );
+      return;
+    }
+
     const submittedBids = auctionOptions
       .map((option) => ({
         bidAmount: Number(bidAmounts[option.id] ?? 0),
@@ -541,16 +612,15 @@ export function ProductDetail({
     >();
 
     if (product.isApiProduct) {
-      setIsBidSubmitPending(true);
-
       const accessToken = authState.accessToken;
 
       if (!authState.isLoggedIn || !accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
-        setIsBidSubmitPending(false);
         router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
         return;
       }
+
+      setIsBidSubmitPending(true);
 
       let nextBidDeliveryAddress = bidDeliveryAddress;
 
@@ -561,10 +631,8 @@ export function ProductDetail({
             getDeliveryAddressStateFromSyncedAddresses(addresses);
 
           writeDeliveryAddressState(nextAddressState);
-          nextBidDeliveryAddress = getBidDeliveryAddress(
-            nextAddressState,
-            product,
-          );
+          nextBidDeliveryAddress =
+            getBidDeliveryAddressFromState(nextAddressState);
         } catch {
           nextBidDeliveryAddress = null;
         }
@@ -809,6 +877,70 @@ export function ProductDetail({
     );
   }
 
+  async function handleBookmarkClick() {
+    const accessToken = authState.accessToken;
+    const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      return;
+    }
+
+    if (isBookmarkPending) {
+      return;
+    }
+
+    const nextLiked = !isLiked;
+    setIsLiked(nextLiked);
+    setIsBookmarkPending(true);
+
+    try {
+      if (nextLiked) {
+        await addBuncheolBookmark(accessToken, buncheolId);
+      } else {
+        await removeBuncheolBookmark(accessToken, buncheolId);
+      }
+    } catch {
+      setIsLiked(!nextLiked);
+    } finally {
+      setIsBookmarkPending(false);
+    }
+  }
+
+  async function handleDeleteProduct() {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken || isDeletePending) {
+      return;
+    }
+
+    if (!window.confirm("이 분철을 삭제할까요?")) {
+      return;
+    }
+
+    setIsDeletePending(true);
+
+    try {
+      await deleteBuncheol(accessToken, buncheolId);
+
+      if (initialReturnSource === "bids") {
+        window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
+        router.replace("/profile/bids");
+        return;
+      }
+
+      router.replace("/");
+    } catch (error: unknown) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "분철을 삭제하지 못했어요.",
+      );
+    } finally {
+      setIsDeletePending(false);
+    }
+  }
+
   function startProductImageSwipe(event: PointerEvent<HTMLDivElement>) {
     if (productImages.length <= 1) {
       return;
@@ -873,6 +1005,10 @@ export function ProductDetail({
   }
 
   function openSheet() {
+    if (!canBidProduct) {
+      return;
+    }
+
     if (sheetCloseFallbackTimerRef.current !== null) {
       window.clearTimeout(sheetCloseFallbackTimerRef.current);
       sheetCloseFallbackTimerRef.current = null;
@@ -885,6 +1021,25 @@ export function ProductDetail({
       sheetEnterAnimationFrameRef.current = null;
       setIsSheetEntered(true);
     });
+  }
+
+  function handleBidButtonClick() {
+    if (isPublicPreview) {
+      const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
+
+      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      return;
+    }
+
+    if (isBidUnavailable) {
+      return;
+    }
+
+    if (!canBidProduct) {
+      return;
+    }
+
+    openSheet();
   }
 
   function finishCloseSheet() {
@@ -1008,13 +1163,28 @@ export function ProductDetail({
                 <ProductEditIcon />
               </button>
             ) : null}
+            {canDeleteProduct ? (
+              <button
+                type="button"
+                className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black disabled:text-black/25"
+                onClick={handleDeleteProduct}
+                aria-label="분철 삭제"
+                disabled={isDeletePending}
+              >
+                <ProductDeleteIcon />
+              </button>
+            ) : null}
+            {!canEditProduct ? (
             <button
               type="button"
               className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black"
-              aria-label="찜하기"
+              aria-label={isLiked ? "찜 해제" : "찜하기"}
+              disabled={isBookmarkPending}
+              onClick={handleBookmarkClick}
             >
-              <HeartIcon filled={product.liked} />
+              <HeartIcon filled={isLiked} />
             </button>
+            ) : null}
           </div>
         </header>
 
@@ -1100,20 +1270,27 @@ export function ProductDetail({
                   {product.purchaseSource ?? "공식 판매처"}
                 </p>
               </div>
-              <div className="rounded-[0.9rem] border border-black/10 px-4 py-3">
+              <div
+                className={`rounded-[0.9rem] border border-black/10 px-4 py-3 ${
+                  product.shippingDeadline ? "" : "col-span-2"
+                }`}
+              >
                 <p className="text-[12px] font-medium text-black/45">입찰 기한</p>
                 <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                   {product.deadline}
                 </p>
               </div>
-              <div className="rounded-[0.9rem] border border-black/10 px-4 py-3">
-                <p className="text-[12px] font-medium text-black/45">발송 기한</p>
-                <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                  {product.shippingDeadline ?? "마감 후 7일 이내"}
-                </p>
-              </div>
+              {product.shippingDeadline ? (
+                <div className="rounded-[0.9rem] border border-black/10 px-4 py-3">
+                  <p className="text-[12px] font-medium text-black/45">발송 기한</p>
+                  <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
+                    {product.shippingDeadline}
+                  </p>
+                </div>
+              ) : null}
             </div>
 
+            {shippingMethods.length > 0 ? (
             <div className="mt-7 border-t border-black/10 pt-6">
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 배송 방법
@@ -1134,6 +1311,7 @@ export function ProductDetail({
                 ))}
               </div>
             </div>
+            ) : null}
 
             <div className="mt-8 border-t border-black/10 pt-6">
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
@@ -1187,7 +1365,7 @@ export function ProductDetail({
                           </p>
                           <button
                             type="button"
-                            className="mt-2 text-[13px] font-semibold text-black/45 disabled:text-black/25"
+                            className="mt-2 text-[13px] font-semibold text-black/45 disabled:text-black/20"
                             disabled={withdrawingOptionId === option.id}
                             onClick={() => void withdrawBid(option.id)}
                           >
@@ -1274,10 +1452,17 @@ export function ProductDetail({
         <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
           <button
             type="button"
-            className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white"
-            onClick={openSheet}
+            className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+            disabled={isBidUnavailable || (!isPublicPreview && !canBidProduct)}
+            onClick={handleBidButtonClick}
           >
-            입찰하기
+            {isPublicPreview
+              ? "로그인 후 입찰하기"
+              : isBidUnavailable
+                ? "입찰하기"
+              : canBidProduct
+                ? "입찰하기"
+                : "마감된 분철이에요"}
           </button>
         </div>
 
@@ -1430,7 +1615,7 @@ export function ProductDetail({
                 disabled={activeBidCount === 0 || isBidSubmitPending}
                 onClick={() => void handleSubmitBids()}
               >
-                입찰가 등록하기
+                {isBidSubmitPending ? "입찰 등록 중" : "입찰가 등록하기"}
               </button>
             </section>
           </div>

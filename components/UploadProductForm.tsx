@@ -67,7 +67,7 @@ type UploadProductFormProps = {
   returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
 };
 
-const shippingOptions = ["GS 편의점 택배", "CU 편의점 택배"];
+const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
@@ -124,6 +124,20 @@ function getStoreShippingFee(
   );
 
   return shippingName ? parsePriceInput(shippingPrices[shippingName] ?? "") : 0;
+}
+
+function getUploadShippingOptionName(name: string) {
+  const upperName = name.toUpperCase();
+
+  if (upperName.includes("GS25") || upperName.includes("GS")) {
+    return shippingOptions[0];
+  }
+
+  if (upperName.includes("CU")) {
+    return shippingOptions[1];
+  }
+
+  return name;
 }
 
 function getDaysInMonth(year: number, month: number) {
@@ -325,6 +339,10 @@ function compressImageDataUrl(
   });
 }
 
+function canExportImageThroughCanvas(imageUrl: string) {
+  return imageUrl.startsWith("data:") || imageUrl.startsWith("blob:");
+}
+
 function ScheduleWheel({
   field,
   formatter = String,
@@ -421,10 +439,6 @@ export function UploadProductForm({
 }: UploadProductFormProps) {
   const router = useRouter();
   const isEditMode = Boolean(editProductId);
-  const isApiEditMode =
-    isEditMode &&
-    Boolean(editProductId) &&
-    !editProductId?.startsWith("uploaded-");
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
@@ -466,6 +480,7 @@ export function UploadProductForm({
   );
   const [editingProduct, setEditingProduct] =
     useState<ProductDetailItem | null>(null);
+  const [isApiEditLoading, setIsApiEditLoading] = useState(false);
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
@@ -533,6 +548,8 @@ export function UploadProductForm({
   );
   const coverPhoto =
     photos.find((photo) => photo.id === coverPhotoId) ?? photos[0] ?? null;
+  const isApiEditMode =
+    Boolean(editProductId) && !String(editProductId).startsWith("uploaded-");
   const canSubmit = isApiEditMode
     ? photos.length > 0 && title.trim().length > 0
     : photos.length > 0 &&
@@ -540,11 +557,11 @@ export function UploadProductForm({
       purchaseSource.trim().length > 0 &&
       targetMembers.length > 0 &&
       targetMembers.every(
-        (member) => memberMinimumPrices[member.id]?.trim().length > 0,
+        (member) => parsePriceInput(memberMinimumPrices[member.id] ?? "") > 0,
       ) &&
       selectedShipping.length > 0 &&
       selectedShipping.every(
-        (option) => shippingPrices[option]?.trim().length > 0,
+        (option) => parsePriceInput(shippingPrices[option] ?? "") > 0,
       );
 
   useEffect(() => {
@@ -638,7 +655,15 @@ export function UploadProductForm({
       if (!product) {
         const accessToken = authState.accessToken;
 
-        if (accessToken && !editProductId.startsWith("uploaded-")) {
+        if (!editProductId.startsWith("uploaded-")) {
+          if (!accessToken) {
+            setIsApiEditLoading(false);
+            setSubmitError("로그인 후 수정할 수 있어요.");
+            return;
+          }
+
+          setIsApiEditLoading(true);
+          setSubmitError("");
           requestBuncheolDetail(accessToken, editProductId)
             .then((detail) => {
               const apiProduct = toProductDetailItem(detail);
@@ -688,13 +713,16 @@ export function UploadProductForm({
                 toScheduleInputValue(apiProduct.shippingDeadline ?? ""),
               );
               setSelectedShipping(
-                apiProduct.shippingMethods?.map((method) => method.name) ?? [],
+                apiProduct.shippingMethods?.map((method) =>
+                  getUploadShippingOptionName(method.name),
+                ) ?? [],
               );
               setShippingPrices(
                 (apiProduct.shippingMethods ?? []).reduce<
                   Record<string, string>
                 >((prices, method) => {
-                  prices[method.name] = toNumericInput(method.price);
+                  prices[getUploadShippingOptionName(method.name)] =
+                    toNumericInput(method.price);
 
                   return prices;
                 }, {}),
@@ -723,6 +751,9 @@ export function UploadProductForm({
                   ? error.message
                   : "수정할 분철 정보를 찾을 수 없습니다.",
               );
+            })
+            .finally(() => {
+              setIsApiEditLoading(false);
             });
           return;
         }
@@ -785,10 +816,14 @@ export function UploadProductForm({
       setMemberMinimumPrices(minimumPrices);
       setClosingDate(toScheduleInputValue(product.deadline));
       setShippingDate(toScheduleInputValue(product.shippingDeadline ?? ""));
-      setSelectedShipping(shippingMethods.map((method) => method.name));
+      setSelectedShipping(
+        shippingMethods.map((method) => getUploadShippingOptionName(method.name)),
+      );
       setShippingPrices(
         shippingMethods.reduce<Record<string, string>>((prices, method) => {
-          prices[method.name] = toNumericInput(method.price);
+          prices[getUploadShippingOptionName(method.name)] = toNumericInput(
+            method.price,
+          );
 
           return prices;
         }, {}),
@@ -1168,25 +1203,35 @@ export function UploadProductForm({
       name,
       price: formatWon(parsePriceInput(shippingPrices[name])),
     }));
-    const orderedPhotoUrls = [
+    const orderedPhotos = [
       coverPhoto,
       ...photos.filter((photo) => photo.id !== coverPhoto.id),
-    ].map((photo) => photo.url);
+    ];
+    const orderedPhotoUrls = orderedPhotos.map((photo) => photo.url);
+    const accessToken = authState.accessToken;
+    const apiGroupId = Number(selectedGroup.id);
+    const apiMembers = targetMembers.map((member) => ({
+      bidMinPrice: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
+      memberId: Number(member.id),
+    }));
+    const isApiEditMode = isEditMode && !productId.startsWith("uploaded-");
     let storedPhotoUrls: string[];
 
-    if (isApiEditMode) {
-      storedPhotoUrls = orderedPhotoUrls;
-    } else {
-      try {
-        storedPhotoUrls = await Promise.all(
-          orderedPhotoUrls.map((imageUrl) => compressImageDataUrl(imageUrl)),
-        );
-      } catch {
-        setSubmitError(
-          "사진을 임시 저장용으로 압축하지 못했습니다. 사진을 줄인 뒤 다시 시도해 주세요.",
-        );
-        return;
-      }
+    try {
+      storedPhotoUrls = await Promise.all(
+        orderedPhotoUrls.map((imageUrl) => {
+          if (isApiEditMode && !canExportImageThroughCanvas(imageUrl)) {
+            return Promise.resolve(imageUrl);
+          }
+
+          return compressImageDataUrl(imageUrl);
+        }),
+      );
+    } catch {
+      setSubmitError(
+        "사진을 임시 저장용으로 압축하지 못했습니다. 사진을 줄인 뒤 다시 시도해 주세요.",
+      );
+      return;
     }
 
     const firstMember = targetMembers[0];
@@ -1249,12 +1294,6 @@ export function UploadProductForm({
         description.trim() || "판매자가 아직 상품 설명을 작성하지 않았습니다.",
       options: productOptions,
     };
-    const accessToken = authState.accessToken;
-    const apiGroupId = Number(selectedGroup.id);
-    const apiMembers = targetMembers.map((member) => ({
-      bidMinPrice: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
-      memberId: Number(member.id),
-    }));
     const canUseBuncheolApi =
       authState.isLoggedIn &&
       Boolean(accessToken) &&
@@ -1264,6 +1303,16 @@ export function UploadProductForm({
             (member) =>
               Number.isFinite(member.memberId) && member.bidMinPrice > 0,
           )));
+
+    if (
+      !isApiEditMode &&
+      authState.isLoggedIn &&
+      accessToken &&
+      !canUseBuncheolApi
+    ) {
+      setSubmitError("최소 입찰가를 1원 이상으로 입력해 주세요.");
+      return;
+    }
 
     if (canUseBuncheolApi && accessToken) {
       const deadlineDate = new Date(closingDate);
@@ -1278,8 +1327,7 @@ export function UploadProductForm({
       try {
         const uploadablePhotoUrls = isApiEditMode
           ? storedPhotoUrls.filter(
-              (imageUrl) =>
-                imageUrl.startsWith("data:") || imageUrl.startsWith("blob:"),
+              (imageUrl) => canExportImageThroughCanvas(imageUrl),
             )
           : storedPhotoUrls;
 
@@ -1390,6 +1438,339 @@ export function UploadProductForm({
     }
 
     router.push(`/products/${productId}?from=upload`);
+  }
+
+  const apiEditIsWaiting =
+    isApiEditMode && (isApiEditLoading || (!editingProduct && !submitError));
+  const apiEditShippingRows = selectedShipping.map((option) => {
+    const price = shippingPrices[option] ?? "";
+
+    return {
+      label: option,
+      priceLabel: price.trim()
+        ? formatWon(parsePriceInput(price))
+        : "배송비 정보 없음",
+    };
+  });
+  const apiEditMemberRows = allTargetMembers.map((member) => {
+    const price = memberMinimumPrices[member.id] ?? "";
+
+    return {
+      ...member,
+      priceLabel: price.trim()
+        ? formatWon(parsePriceInput(price))
+        : "가격 정보 없음",
+    };
+  });
+
+  if (isApiEditMode) {
+    return (
+      <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+        <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
+            <div className="absolute inset-0 flex flex-col bg-white">
+              <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
+                <div className="upload-header__inner flex h-10 items-center justify-between">
+                  <button
+                    aria-label="이전 화면"
+                    className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
+                    onClick={() => {
+                      if (editProductId) {
+                        const returnSourceQuery = returnSource
+                          ? `?from=${returnSource}`
+                          : "";
+
+                        router.replace(
+                          `/products/${editProductId}${returnSourceQuery}`,
+                        );
+                        return;
+                      }
+
+                      router.replace("/");
+                    }}
+                    type="button"
+                  >
+                    <BackIcon />
+                  </button>
+
+                  <div className="upload-header__copy translate-y-0.5 text-right">
+                    <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
+                      Edit
+                    </p>
+                    <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
+                      분철 수정
+                    </h1>
+                  </div>
+                </div>
+              </header>
+
+              <form
+                className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-6"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleSubmit();
+                }}
+              >
+                {apiEditIsWaiting ? (
+                  <div className="flex min-h-[52vh] flex-col items-center justify-center px-6 text-center">
+                    <p className="text-[18px] font-semibold tracking-[-0.05em]">
+                      수정할 분철을 불러오는 중이에요
+                    </p>
+                    <p className="mt-2 text-[13px] font-semibold text-black/40">
+                      기존 값을 채운 뒤 수정 가능한 항목만 열어둘게요.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <section className="px-4 pt-4">
+                      <label className="relative z-0 flex aspect-square cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
+                        {coverPhoto ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            alt=""
+                            className="h-full w-full object-cover"
+                            src={coverPhoto.url}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-[15px] font-semibold text-white/70">
+                            사진 추가
+                          </div>
+                        )}
+
+                        <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+                          <PlusIcon />
+                        </span>
+                        {photoLimitToast ? (
+                          <p
+                            aria-live="polite"
+                            className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                            role="status"
+                          >
+                            {photoLimitToast}
+                          </p>
+                        ) : null}
+                        <input
+                          accept="image/*"
+                          className="sr-only"
+                          multiple
+                          onChange={(event) => {
+                            void addPhotos(event.currentTarget.files);
+                            event.currentTarget.value = "";
+                          }}
+                          type="file"
+                        />
+                      </label>
+
+                      <div className="relative z-10 mt-3 grid grid-cols-5 gap-2">
+                        {photos.map((photo) => {
+                          const isCover = photo.id === coverPhoto?.id;
+
+                          return (
+                            <div
+                              className="relative"
+                              key={photo.id}
+                            >
+                              <button
+                                aria-label={`${photo.name} 대표 사진으로 설정`}
+                                className="relative aspect-square w-full overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]"
+                                onClick={() => setCoverPhotoId(photo.id)}
+                                type="button"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  alt={photo.name}
+                                  className="h-full w-full object-cover"
+                                  src={photo.url}
+                                />
+                                {isCover ? (
+                                  <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
+                                ) : null}
+                              </button>
+                              <button
+                                aria-label="사진 삭제"
+                                className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white shadow-[0_6px_14px_rgba(0,0,0,0.22)]"
+                                onClick={() => removePhoto(photo.id)}
+                                type="button"
+                              >
+                                <CloseIcon />
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {photos.length < maxPhotos ? (
+                          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-black/15 bg-[#f7f7f7] text-black/25">
+                            <PlusIcon />
+                            <span className="mt-1 text-[11px] font-semibold text-black/35">
+                              ({photos.length}/{maxPhotos})
+                            </span>
+                            <input
+                              accept="image/*"
+                              className="sr-only"
+                              multiple
+                              onChange={(event) => {
+                                void addPhotos(event.currentTarget.files);
+                                event.currentTarget.value = "";
+                              }}
+                              type="file"
+                            />
+                          </label>
+                        ) : null}
+                      </div>
+                    </section>
+
+                    <section className="px-5 pt-6">
+                      <label className="block">
+                        <span className="text-[13px] font-semibold text-black/45">
+                          제목
+                        </span>
+                        <input
+                          className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                          onChange={(event) =>
+                            setTitle(event.currentTarget.value)
+                          }
+                          placeholder="분철 제목"
+                          value={title}
+                        />
+                      </label>
+
+                      <div className="mt-7">
+                        <p className="text-[20px] font-semibold tracking-[-0.06em]">
+                          잠긴 정보
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
+                            <p className="text-[12px] font-semibold text-black/35">
+                              구매처
+                            </p>
+                            <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
+                              {purchaseSource || "-"}
+                            </p>
+                          </div>
+                          <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
+                            <p className="text-[12px] font-semibold text-black/35">
+                              아이돌 그룹
+                            </p>
+                            <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
+                              {selectedGroup?.name ?? editingProduct?.era ?? "-"}
+                            </p>
+                          </div>
+                          <div className="col-span-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
+                            <p className="text-[12px] font-semibold text-black/35">
+                              입찰 기한
+                            </p>
+                            <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
+                              {formatDateTimeLabel(closingDate) || "-"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-7">
+                        <p className="text-[20px] font-semibold tracking-[-0.06em]">
+                          배송 방법
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {apiEditShippingRows.length > 0 ? (
+                            apiEditShippingRows.map((option) => (
+                              <div
+                                className="flex items-center justify-between rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4"
+                                key={option.label}
+                              >
+                                <span className="text-[15px] font-semibold tracking-[-0.04em]">
+                                  {option.label}
+                                </span>
+                                <span className="text-[15px] font-semibold text-black/55">
+                                  {option.priceLabel}
+                                </span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4 text-[15px] font-semibold text-black/45">
+                              배송 정보 없음
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-7">
+                        <p className="text-[20px] font-semibold tracking-[-0.06em]">
+                          대상 멤버
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {apiEditMemberRows.map((member) => (
+                            <div
+                              className="flex items-center gap-3 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3"
+                              key={member.id}
+                            >
+                              <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-zinc-950 via-zinc-600 to-zinc-200">
+                                {member.imageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    alt=""
+                                    className="h-full w-full object-cover"
+                                    src={member.imageUrl}
+                                  />
+                                ) : (
+                                  <span className="flex h-full w-full items-center justify-center text-[12px] font-semibold text-white">
+                                    {member.initials}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[16px] font-semibold tracking-[-0.05em]">
+                                  {member.name}
+                                </p>
+                                <p className="mt-0.5 text-[12px] font-semibold text-black/35">
+                                  최소 입찰가
+                                </p>
+                              </div>
+                              <p className="shrink-0 text-[14px] font-semibold text-black/55">
+                                {member.priceLabel}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <label className="mt-7 block">
+                        <span className="text-[13px] font-semibold text-black/45">
+                          설명
+                        </span>
+                        <textarea
+                          className="mt-2 min-h-[150px] w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-4 text-[15px] font-semibold leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                          onChange={(event) =>
+                            setDescription(event.currentTarget.value)
+                          }
+                          placeholder="분철 설명"
+                          value={description}
+                        />
+                      </label>
+
+                      {submitError ? (
+                        <p className="mt-4 rounded-[0.9rem] bg-red-50 px-4 py-3 text-[13px] font-semibold text-red-600">
+                          {submitError}
+                        </p>
+                      ) : null}
+
+                      <button
+                        className="mt-6 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.05em] text-white disabled:bg-black/20 disabled:text-white"
+                        disabled={!canSubmit}
+                        type="submit"
+                      >
+                        수정 완료
+                      </button>
+                    </section>
+                  </>
+                )}
+              </form>
+            </div>
+          </div>
+
+          <BottomNavigator />
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -1579,7 +1960,7 @@ export function UploadProductForm({
                 구매처
               </span>
               <input
-                className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/45"
+                className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/55"
                 disabled={isApiEditMode}
                 onChange={(event) =>
                   setPurchaseSource(event.currentTarget.value)
@@ -1608,7 +1989,7 @@ export function UploadProductForm({
                       </span>
                     </span>
                     <button
-                      className="shrink-0 rounded-full bg-[#f7f7f7] px-4 py-2 text-[13px] font-semibold text-black/60 ring-1 ring-black/10 disabled:text-black/25"
+                      className="shrink-0 rounded-full bg-[#f7f7f7] px-4 py-2 text-[13px] font-semibold text-black/60 ring-1 ring-black/10"
                       disabled={isApiEditMode}
                       onClick={clearSelectedGroup}
                       type="button"
@@ -1671,7 +2052,7 @@ export function UploadProductForm({
                                   <input
                                     aria-label={`${member.name} 최소 가격`}
                                     className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
-                                    disabled={isExcluded || isApiEditMode}
+                                    disabled={isApiEditMode || isExcluded}
                                     inputMode="numeric"
                                     onChange={(event) =>
                                       updateMemberMinimumPrice(
@@ -1693,7 +2074,7 @@ export function UploadProductForm({
                                       ? `${member.name} 다시 포함`
                                       : `${member.name} 제외`
                                   }
-                                  className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 disabled:text-black/20 ${
+                                  className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 ${
                                     isExcluded
                                       ? "w-8 text-black"
                                       : "w-8 text-black/55"
@@ -1777,6 +2158,7 @@ export function UploadProductForm({
                   <label className="mt-3 flex h-14 items-center gap-3 rounded-[0.9rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
                     <input
                       className="min-w-0 flex-1 bg-transparent text-[16px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/30"
+                      disabled={isApiEditMode}
                       onChange={(event) =>
                         setIdolQuery(event.currentTarget.value)
                       }
@@ -1795,6 +2177,7 @@ export function UploadProductForm({
                           return (
                             <button
                               className="flex w-full items-center justify-between gap-4 border-b border-black/10 bg-white px-4 py-3 text-left last:border-b-0"
+                              disabled={isApiEditMode}
                               key={group.id}
                               onClick={() => selectGroup(group)}
                               type="button"
@@ -1835,7 +2218,7 @@ export function UploadProductForm({
                   return (
                     <div key={option}>
                       <button
-                        className={`flex min-h-12 w-full items-center justify-between rounded-[0.8rem] px-4 text-left disabled:opacity-60 ${
+                        className={`flex min-h-12 w-full items-center justify-between rounded-[0.8rem] px-4 text-left ${
                           isSelected
                             ? "bg-black text-white"
                             : "bg-[#f7f7f7] text-black"
@@ -1866,7 +2249,7 @@ export function UploadProductForm({
                           <div className="mt-2 flex h-13 items-center rounded-[0.85rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
                             <input
                               aria-label={`${option} 배송비`}
-                              className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
+                              className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/55"
                               disabled={isApiEditMode}
                               inputMode="numeric"
                               onChange={(event) =>
@@ -1961,7 +2344,7 @@ export function UploadProductForm({
                         {label}
                       </span>
                       <button
-                        className={`mt-2 flex h-14 w-full items-center justify-between rounded-[0.9rem] border px-4 text-left outline-none disabled:bg-[#f7f7f7] disabled:text-black/45 ${
+                        className={`mt-2 flex h-14 w-full items-center justify-between rounded-[0.9rem] border px-4 text-left outline-none ${
                           isActive
                             ? "border-black bg-white"
                             : "border-black/10 bg-white"

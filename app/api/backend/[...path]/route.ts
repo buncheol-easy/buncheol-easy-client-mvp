@@ -18,12 +18,27 @@ function getBackendApiRootUrl() {
 }
 
 function getForwardHeaders(request: Request) {
-  const headers = new Headers(request.headers);
+  const headers = new Headers();
+  const authorization = request.headers.get("authorization");
+  const accept = request.headers.get("accept");
+  const contentType = request.headers.get("content-type");
+  const cookie = request.headers.get("cookie");
 
-  headers.delete("host");
-  headers.delete("connection");
-  headers.delete("content-length");
-  headers.delete("accept-encoding");
+  if (authorization) {
+    headers.set("authorization", authorization);
+  }
+
+  if (accept) {
+    headers.set("accept", accept);
+  }
+
+  if (contentType) {
+    headers.set("content-type", contentType);
+  }
+
+  if (cookie) {
+    headers.set("cookie", cookie);
+  }
 
   return headers;
 }
@@ -46,7 +61,12 @@ async function proxyBackendRequest(
     redirect: "manual",
   };
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  const hasRequestBody =
+    request.method !== "GET" &&
+    request.method !== "HEAD" &&
+    request.body !== null;
+
+  if (hasRequestBody) {
     init.body = await request.arrayBuffer();
   }
 

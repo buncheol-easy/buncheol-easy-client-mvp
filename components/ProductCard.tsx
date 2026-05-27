@@ -1,8 +1,15 @@
 "use client";
 
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { HeartIcon } from "@/components/icons";
+import {
+  addBuncheolBookmark,
+  removeBuncheolBookmark,
+} from "@/lib/auth-api";
+import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
@@ -22,7 +29,10 @@ export type ProductCardItem = {
   reviews: string;
   badge: string;
   tone: string;
+  imageUrl?: string;
+  isHostedByMe?: boolean;
   liked?: boolean;
+  status?: string;
 };
 
 type ProductCardProps = {
@@ -145,10 +155,22 @@ function isRecentlyUploaded(uploadedAt?: string) {
 
 export function ProductCard({ item }: ProductCardProps) {
   const router = useRouter();
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    readAuthState,
+  );
+  const [isLiked, setIsLiked] = useState(item.liked === true);
+  const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
   const deadlineBadge = getDeadlineBadge(item.deadline);
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
+  const shouldShowBookmarkButton = item.isHostedByMe !== true;
+
+  useEffect(() => {
+    setIsLiked(item.liked === true);
+  }, [item.id, item.liked]);
 
   function isPlainPrimaryClick(event: React.MouseEvent<HTMLAnchorElement>) {
     return (
@@ -195,12 +217,48 @@ export function ProductCard({ item }: ProductCardProps) {
     window.sessionStorage.setItem(storageKey, String(scrollContainer.scrollTop));
   }
 
+  async function handleBookmarkClick(
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isBookmarkPending) {
+      return;
+    }
+
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      router.push("/login?returnTo=/favorites");
+      return;
+    }
+
+    const nextLiked = !isLiked;
+    setIsLiked(nextLiked);
+    setIsBookmarkPending(true);
+
+    try {
+      if (nextLiked) {
+        await addBuncheolBookmark(accessToken, productId);
+      } else {
+        await removeBuncheolBookmark(accessToken, productId);
+      }
+    } catch {
+      setIsLiked(!nextLiked);
+    } finally {
+      setIsBookmarkPending(false);
+    }
+  }
+
   return (
     <Link
       href={`/products/${productId}`}
       className="block space-y-3"
       prefetch={false}
       onClick={(event) => {
+        writePublicBuncheolCard(item);
+
         const pathname = window.location.pathname;
 
         if (pathname === "/search") {
@@ -233,7 +291,16 @@ export function ProductCard({ item }: ProductCardProps) {
       <div
         className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br ${item.tone}`}
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
+        {item.imageUrl ? (
+          <img
+            src={item.imageUrl}
+            alt={item.title}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
+        )}
         {isNewProduct ? (
           <div className="absolute left-3 top-3 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
             신규
@@ -249,13 +316,19 @@ export function ProductCard({ item }: ProductCardProps) {
             </p>
           ) : null}
         </div>
-        <span
-          className={`absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 ${
-            item.liked ? "bg-black text-white" : "bg-white/95 text-black/45"
-          }`}
-        >
-          <HeartIcon filled={item.liked} />
-        </span>
+        {shouldShowBookmarkButton ? (
+          <button
+            type="button"
+            aria-label={isLiked ? "찜 해제" : "찜하기"}
+            className={`absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 ${
+              isLiked ? "bg-black text-white" : "bg-white/95 text-black/45"
+            } disabled:opacity-60`}
+            disabled={isBookmarkPending}
+            onClick={handleBookmarkClick}
+          >
+            <HeartIcon filled={isLiked} />
+          </button>
+        ) : null}
       </div>
 
       <div>

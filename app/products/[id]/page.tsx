@@ -12,6 +12,7 @@ type ProductDetailPageProps = {
   }>;
   searchParams: Promise<{
     from?: string | string[];
+    hosted?: string | string[];
     q?: string | string[];
   }>;
 };
@@ -25,8 +26,9 @@ export default async function ProductDetailPage({
   searchParams,
 }: ProductDetailPageProps) {
   const { id } = await params;
-  const { from, q } = await searchParams;
+  const { from, hosted, q } = await searchParams;
   const returnSource = getFirstSearchParam(from);
+  const isHostedView = getFirstSearchParam(hosted) === "true";
   const returnQuery = getFirstSearchParam(q);
   const product = getProductById(id);
 
@@ -51,6 +53,7 @@ export default async function ProductDetailPage({
     return (
       <ApiProductDetail
         id={id}
+        isHostedView={isHostedView}
         returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
         returnSource={
           returnSource === "home" ||

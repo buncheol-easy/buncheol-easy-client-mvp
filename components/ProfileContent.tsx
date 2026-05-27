@@ -26,15 +26,20 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import {
+  cancelBuncheolParticipation,
   deleteShippingAddress,
   deleteUserProfile,
   requestNicknameDuplicate,
   requestLogout,
+  requestMyHostedBuncheols,
+  requestMyParticipations,
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
   updateShippingAddress,
   updateUserProfile,
+  type MyHostedBuncheol,
+  type MyParticipation,
   type UserProfile,
 } from "@/lib/auth-api";
 import {
@@ -66,7 +71,7 @@ import {
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
-import { productDetails } from "@/lib/mock-products";
+import { productDetails, type ProductDetailItem } from "@/lib/mock-products";
 
 function priceToNumber(price: string) {
   return Number(price.replace(/[^0-9]/g, ""));
@@ -248,6 +253,134 @@ const mockBidEntries = productDetails.slice(0, 4).map((product, index) => {
   };
 });
 
+type ProfileBidEntry = (typeof mockBidEntries)[number] & {
+  buncheolStatus?: string;
+  participationStatus?: string;
+};
+
+function isRecruitingStatus(status: string | undefined) {
+  return !status || status === "RECRUITING";
+}
+
+function isDeletedProductStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "DELETED";
+}
+
+function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
+  if (bid.buncheolStatus) {
+    return !isRecruitingStatus(bid.buncheolStatus);
+  }
+
+  return parseDeadline(bid.deadline).getTime() <= now.getTime();
+}
+
+function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
+  if (product.status) {
+    return isRecruitingStatus(product.status);
+  }
+
+  const deadlineDate = parseHostedDeadline(product.deadline);
+
+  return (
+    Number.isNaN(deadlineDate.getTime()) ||
+    deadlineDate.getTime() > now.getTime()
+  );
+}
+
+function formatApiDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+
+  return `${partMap.year}.${partMap.month}.${partMap.day} ${partMap.hour}`;
+}
+
+function getToneFromId(id: string) {
+  const tones = [
+    "from-black via-zinc-800 to-zinc-500",
+    "from-zinc-700 via-zinc-500 to-zinc-100",
+    "from-zinc-900 via-zinc-700 to-zinc-300",
+    "from-zinc-300 via-zinc-100 to-neutral-400",
+  ];
+  const hash = [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+
+  return tones[hash % tones.length];
+}
+
+function getProfileBidEntryFromParticipation(
+  participation: MyParticipation,
+): ProfileBidEntry {
+  const rank =
+    participation.closedRank ??
+    (participation.participationStatus === "AWAITING_PAYMENT" ? 1 : 0);
+
+  return {
+    id: participation.participationId,
+    amount: participation.bidAmount,
+    deadline: formatApiDateTime(participation.buncheolDeadline),
+    member: `${participation.buncheolMemberCount}개 옵션`,
+    optionLabel: participation.memberName,
+    participantCount: 0,
+    buncheolStatus: participation.buncheolStatus,
+    productId: participation.buncheolId,
+    participationStatus: participation.participationStatus,
+    rank: rank > 0 ? rank : 0,
+    submittedAt: "",
+    title: participation.buncheolTitle,
+    tone: getToneFromId(participation.buncheolId),
+  };
+}
+
+function getHostedProductFromBuncheol(
+  buncheol: MyHostedBuncheol,
+): ProductDetailItem {
+  return {
+    id: buncheol.id,
+    buncheolId: buncheol.id,
+    title: buncheol.title,
+    member: `${buncheol.memberSlotCount}개 옵션`,
+    targetMembers: buncheol.memberNames,
+    uploadedAt: formatApiDateTime(buncheol.createdAt),
+    era: buncheol.groupName,
+    rating: "0.0",
+    reviews: String(buncheol.activeParticipationCount),
+    badge: buncheol.status === "RECRUITING" ? "모집중" : "마감",
+    liked: buncheol.bookmarked,
+    tone: getToneFromId(buncheol.id),
+    courier: "배송 방법 확인 필요",
+    deadline: formatApiDateTime(buncheol.deadline),
+    description: "",
+    imageUrl: buncheol.thumbnailUrl,
+    imageUrls: buncheol.thumbnailUrl ? [buncheol.thumbnailUrl] : [],
+    isApiProduct: true,
+    options: [
+      {
+        id: `${buncheol.id}-participants`,
+        label: "참여",
+        price: "-",
+        currentBid: "-",
+        participantCount: buncheol.activeParticipationCount,
+      },
+    ],
+    purchaseSource: "",
+    status: buncheol.status,
+  };
+}
+
 type ProfileContentProps = {
   skipEnterAnimation?: boolean;
 };
@@ -271,6 +404,7 @@ export function ProfileContent({
     return shouldSkip;
   });
   const [withdrawnBidIds, setWithdrawnBidIds] = useState<string[]>([]);
+  const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
@@ -326,18 +460,27 @@ export function ProfileContent({
   const [isDeletingUserProfile, setIsDeletingUserProfile] = useState(false);
   const [deleteUserProfileMessage, setDeleteUserProfileMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
+  const [apiBidEntries, setApiBidEntries] = useState<ProfileBidEntry[] | null>(
+    null,
+  );
+  const [apiHostedProducts, setApiHostedProducts] = useState<
+    ProductDetailItem[] | null
+  >(null);
 
   const allBids = useMemo(
-    () =>
-      authState.isLoggedIn
-        ? mockBidEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
-        : [],
-    [authState.isLoggedIn, withdrawnBidIds],
+    () => {
+      const sourceEntries: ProfileBidEntry[] = apiBidEntries ?? mockBidEntries;
+
+      return authState.isLoggedIn
+        ? sourceEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
+        : [];
+    },
+    [apiBidEntries, authState.isLoggedIn, withdrawnBidIds],
   );
   const activeBids = useMemo(
     () =>
       allBids.filter((bid) => {
-        const isClosed = parseDeadline(bid.deadline).getTime() <= now.getTime();
+        const isClosed = isProfileBidClosed(bid, now);
 
         return !isClosed || bid.rank === 1;
       }),
@@ -346,16 +489,12 @@ export function ProfileContent({
   const activeHostedProducts = useMemo(
     () =>
       authState.isLoggedIn
-        ? hostedProducts.filter((product) => {
-            const deadlineDate = parseHostedDeadline(product.deadline);
-
-            return (
-              Number.isNaN(deadlineDate.getTime()) ||
-              deadlineDate.getTime() > now.getTime()
-            );
-          })
+        ? (apiHostedProducts ?? hostedProducts).filter((product) =>
+            !isDeletedProductStatus(product.status) &&
+            isProfileHostedProductActive(product, now),
+          )
         : [],
-    [authState.isLoggedIn, hostedProducts, now],
+    [apiHostedProducts, authState.isLoggedIn, hostedProducts, now],
   );
   const settlementAccount = useMemo(
     () =>
@@ -399,9 +538,12 @@ export function ProfileContent({
     selectedPaymentProduct?.shippingMethods,
     selectedPaymentProduct?.courier,
   );
-  const eligiblePaymentAddresses = prioritizedDeliveryAddresses.filter(
-    (address) => availablePaymentStoreTypes.includes(address.storeType),
-  );
+  const eligiblePaymentAddresses =
+    availablePaymentStoreTypes.length > 0
+      ? prioritizedDeliveryAddresses.filter((address) =>
+          availablePaymentStoreTypes.includes(address.storeType),
+        )
+      : prioritizedDeliveryAddresses;
   const selectedEligiblePaymentAddress =
     eligiblePaymentAddresses.find(
       (address) => address.id === selectedPaymentAddressId,
@@ -491,6 +633,48 @@ export function ProfileContent({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      setApiBidEntries([]);
+      setApiHostedProducts([]);
+      return;
+    }
+
+    let isActive = true;
+
+    requestMyParticipations(accessToken)
+      .then((participations) => {
+        if (isActive) {
+          setApiBidEntries(
+            participations.map(getProfileBidEntryFromParticipation),
+          );
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setApiBidEntries([]);
+        }
+      });
+
+    requestMyHostedBuncheols(accessToken)
+      .then((buncheols) => {
+        if (isActive) {
+          setApiHostedProducts(buncheols.map(getHostedProductFromBuncheol));
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setApiHostedProducts([]);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn]);
 
   useEffect(() => {
     const accessToken = authState.accessToken;
@@ -748,10 +932,31 @@ export function ProfileContent({
     setIsAddressSheetClosing(false);
   }
 
-  function withdrawBid(bidId: string) {
-    setWithdrawnBidIds((current) =>
-      current.includes(bidId) ? current : [...current, bidId],
-    );
+  async function withdrawBid(bidId: string) {
+    const accessToken = authState.accessToken;
+
+    if (!authState.isLoggedIn || !accessToken || withdrawingBidId) {
+      return;
+    }
+
+    setWithdrawingBidId(bidId);
+
+    try {
+      await cancelBuncheolParticipation(accessToken, bidId);
+      setWithdrawnBidIds((current) =>
+        current.includes(bidId) ? current : [...current, bidId],
+      );
+      setApiBidEntries((current) =>
+        current ? current.filter((bid) => bid.id !== bidId) : current,
+      );
+      setUserProfileMessage("");
+    } catch (error: unknown) {
+      setUserProfileMessage(
+        error instanceof Error ? error.message : "입찰을 철회하지 못했어요.",
+      );
+    } finally {
+      setWithdrawingBidId(null);
+    }
   }
 
   function rememberScrollPosition() {
@@ -941,21 +1146,29 @@ export function ProfileContent({
       defaultAddressIds,
     );
     const fallbackAddress =
-      allowedStoreTypes
-        .map((storeType) => nextDefaultAddresses[storeType])
-        .find((address) => address !== null) ??
-      prioritizedDeliveryAddresses.find((address) =>
-        allowedStoreTypes.includes(address.storeType),
-      ) ??
-      null;
+      allowedStoreTypes.length > 0
+        ? allowedStoreTypes
+            .map((storeType) => nextDefaultAddresses[storeType])
+            .find((address) => address !== null) ??
+          prioritizedDeliveryAddresses.find((address) =>
+            allowedStoreTypes.includes(address.storeType),
+          ) ??
+          null
+        : prioritizedDeliveryAddresses[0] ?? null;
 
     setSelectedPaymentBidId(bidId);
     setSelectedPaymentAddressId((current) =>
       current &&
-      prioritizedDeliveryAddresses.some(
-        (address) =>
-          address.id === current && allowedStoreTypes.includes(address.storeType),
-      )
+      prioritizedDeliveryAddresses.some((address) => {
+        if (address.id !== current) {
+          return false;
+        }
+
+        return (
+          allowedStoreTypes.length === 0 ||
+          allowedStoreTypes.includes(address.storeType)
+        );
+      })
         ? current
         : fallbackAddress?.id ?? null,
     );
@@ -1500,8 +1713,7 @@ export function ProfileContent({
           {activeBids.length > 0 ? (
             <div className="mt-4 space-y-3">
               {activeBids.map((bid) => {
-                const isClosed =
-                  parseDeadline(bid.deadline).getTime() <= now.getTime();
+                const isClosed = isProfileBidClosed(bid, now);
                 const remainingTime = formatRemainingTime(bid.deadline, now);
                 const paymentRemainingTime = formatPaymentRemainingTime(
                   bid.deadline,
@@ -1601,8 +1813,9 @@ export function ProfileContent({
                           </div>
                           {!isClosed ? (
                             <button
-                              className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55"
-                              onClick={() => withdrawBid(bid.id)}
+                              className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55 disabled:text-black/25"
+                              disabled={withdrawingBidId === bid.id}
+                              onClick={() => void withdrawBid(bid.id)}
                               type="button"
                             >
                               철회
@@ -1653,10 +1866,7 @@ export function ProfileContent({
           {activeHostedProducts.length > 0 ? (
             <div className="mt-4 space-y-3">
               {activeHostedProducts.map((product) => {
-                const deadlineDate = parseHostedDeadline(product.deadline);
-                const isClosed =
-                  !Number.isNaN(deadlineDate.getTime()) &&
-                  deadlineDate.getTime() <= now.getTime();
+                const isClosed = !isProfileHostedProductActive(product, now);
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,

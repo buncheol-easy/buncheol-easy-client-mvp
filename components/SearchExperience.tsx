@@ -162,8 +162,10 @@ export function SearchExperience({
   );
   const keyword = query?.trim();
   const hasResults = Boolean(keyword);
-  const resultItems = apiResultItems ?? searchResultItems;
-  const resultFilters = apiResultGroups ?? searchResultArtists;
+  const resultItems = hasResults ? (apiResultItems ?? []) : searchResultItems;
+  const resultFilters = hasResults
+    ? (apiResultGroups ?? [])
+    : searchResultArtists;
   const normalizedKeyword = keyword ? normalizeGroupSearchText(keyword) : "";
   const selectedRelatedItemId =
     resultFilters.find(
@@ -238,99 +240,63 @@ export function SearchExperience({
     const accessToken = authState.isLoggedIn
       ? authState.accessToken ?? undefined
       : undefined;
+    let isActive = true;
 
-    if (!keyword) {
-      setApiResultItems(null);
+    if (keyword) {
+      setApiResultItems([]);
+      setApiResultGroups([]);
       setResultMessage("");
-      return;
+      setGroupMessage("");
     }
 
-    let isActive = true;
+    const loadSearchData = async () => {
+      const searchKeyword = keyword ?? "";
+      const groups = await requestGroups(searchKeyword, accessToken);
 
-    requestBuncheols(accessToken, { keyword, sort: "LATEST" })
-      .then((items) => {
-        if (!isActive) {
-          return;
-        }
+      if (!searchKeyword) {
+        return {
+          groupItems: groups.slice(0, 5).map(toArtistRailItem),
+          productItems: null,
+        };
+      }
 
-        setApiResultItems(items.map(toProductCardItem));
-        setResultMessage("");
-      })
-      .catch((error: unknown) => {
-        if (!isActive) {
-          return;
-        }
-
-        setApiResultItems([]);
-        setResultMessage(
-          error instanceof Error
-            ? error.message
-            : "검색 결과를 불러오지 못했어요.",
-        );
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.accessToken, authState.isLoggedIn, keyword, relatedSearch]);
-
-  useEffect(() => {
-    const accessToken = authState.isLoggedIn
-      ? authState.accessToken ?? undefined
-      : undefined;
-    let isActive = true;
-
-    requestGroups(keyword ?? "", accessToken)
-      .then(async (groups) => {
-        if (!isActive) {
-          return;
-        }
-
-        const searchKeyword = keyword ?? "";
-        const allGroups = searchKeyword
-          ? await requestGroups("", accessToken).catch(() => [])
-          : [];
-
-        if (!isActive) {
-          return;
-        }
-
-        const candidateGroups = searchKeyword
-          ? [...groups, ...allGroups].filter(
-              (group, index, allGroups) =>
-                allGroups.findIndex((candidate) => candidate.id === group.id) ===
-                index,
-            )
-          : groups;
-        const rankedGroups = searchKeyword
-          ? rankGroupSearchResults(candidateGroups, searchKeyword, 3)
-          : candidateGroups.slice(0, 5);
-        const rankedGroupIds = new Set(rankedGroups.map((group) => group.id));
-        const normalizedKeyword = normalizeGroupSearchText(searchKeyword);
-        const memberGroups = searchKeyword
-          ? [...rankedGroups, ...groups, ...candidateGroups]
-              .filter(
-                (group, index, allGroups) =>
-                  allGroups.findIndex(
-                    (candidate) => candidate.id === group.id,
-                  ) === index,
-              )
-              .slice(0, MEMBER_SEARCH_GROUP_LOOKUP_LIMIT)
-          : [];
-        const memberMatches = (
-          await Promise.all(
-            memberGroups.map(async (group) => {
-              try {
-                const members = await requestGroupMembers(group.id);
-                const isRankedGroup = rankedGroupIds.has(group.id);
-                const matchedMembers = members
-                  .filter((member) =>
-                    normalizeGroupSearchText(member.name).includes(
-                      normalizedKeyword,
-                    ),
-                  )
-                  .slice(0, 3);
-                const relatedMembers = matchedMembers.length > 0 || isRankedGroup
+      const candidateGroups =
+        groups.length > 0
+          ? groups
+          : await requestGroups("", accessToken).catch(() => []);
+      const rankedGroups = rankGroupSearchResults(
+        candidateGroups,
+        searchKeyword,
+        3,
+      );
+      const rankedGroupIds = new Set(rankedGroups.map((group) => group.id));
+      const normalizedKeyword = normalizeGroupSearchText(searchKeyword);
+      const memberGroups = [
+        ...rankedGroups,
+        ...groups,
+        ...candidateGroups,
+      ]
+        .filter(
+          (group, index, groups) =>
+            groups.findIndex((candidate) => candidate.id === group.id) ===
+            index,
+        )
+        .slice(0, MEMBER_SEARCH_GROUP_LOOKUP_LIMIT);
+      const memberMatches = (
+        await Promise.all(
+          memberGroups.map(async (group) => {
+            try {
+              const members = await requestGroupMembers(group.id);
+              const isRankedGroup = rankedGroupIds.has(group.id);
+              const matchedMembers = members
+                .filter((member) =>
+                  normalizeGroupSearchText(member.name).includes(
+                    normalizedKeyword,
+                  ),
+                )
+                .slice(0, 3);
+              const relatedMembers =
+                matchedMembers.length > 0 || isRankedGroup
                   ? members
                       .filter(
                         (member) =>
@@ -341,69 +307,99 @@ export function SearchExperience({
                       .slice(0, 5)
                   : [];
 
-                return {
-                  allMembers: members,
-                  group,
-                  matchedMembers,
-                  relatedMembers,
-                };
-              } catch {
-                return {
-                  allMembers: [],
-                  group,
-                  matchedMembers: [],
-                  relatedMembers: [],
-                };
-              }
-            }),
-          )
-        ).filter(
-          (match) =>
-            match.matchedMembers.length > 0 || rankedGroupIds.has(match.group.id),
+              return {
+                allMembers: members,
+                group,
+                matchedMembers,
+                relatedMembers,
+              };
+            } catch {
+              return {
+                allMembers: [],
+                group,
+                matchedMembers: [],
+                relatedMembers: [],
+              };
+            }
+          }),
+        )
+      ).filter(
+        (match) =>
+          match.matchedMembers.length > 0 || rankedGroupIds.has(match.group.id),
+      );
+      const primaryMemberMatch = memberMatches[0];
+      const matchedMemberItems = relatedSearch
+        ? []
+        : (primaryMemberMatch?.matchedMembers ?? [])
+            .slice(0, 1)
+            .map((member) =>
+              toMemberRailItem(member, primaryMemberMatch?.group.name),
+            );
+      const relatedMemberItems = (
+        relatedSearch
+          ? primaryMemberMatch?.allMembers
+          : primaryMemberMatch?.relatedMembers
+      ?? [])
+        .slice(0, relatedSearch ? 6 : 5)
+        .map((member) =>
+          toMemberRailItem(member, primaryMemberMatch?.group.name),
         );
-        const primaryMemberMatch = memberMatches[0];
-        const matchedMemberItems = relatedSearch
-          ? []
-          : (primaryMemberMatch?.matchedMembers ?? [])
-              .slice(0, 1)
-              .map((member) =>
-                toMemberRailItem(member, primaryMemberMatch?.group.name),
-              );
-        const relatedMemberItems = (
-          relatedSearch
-            ? primaryMemberMatch?.allMembers
-            : primaryMemberMatch?.relatedMembers
-        ?? [])
-          .slice(0, relatedSearch ? 6 : 5)
-          .map((member) =>
-            toMemberRailItem(member, primaryMemberMatch?.group.name),
-          );
-        const memberGroupItems = memberMatches
-          .map(({ group }) => group)
-          .filter(
-            (group, index, allGroups) =>
-              allGroups.findIndex((candidate) => candidate.id === group.id) ===
-              index,
-          )
-          .filter(
-            (group) =>
-              !rankedGroups.some((rankedGroup) => rankedGroup.id === group.id),
-          )
-          .slice(0, 2)
-          .map(toArtistRailItem);
-        const groupItems = rankedGroups.map(toArtistRailItem);
+      const memberGroupItems = memberMatches
+        .map(({ group }) => group)
+        .filter(
+          (group, index, allGroups) =>
+            allGroups.findIndex((candidate) => candidate.id === group.id) ===
+            index,
+        )
+        .filter(
+          (group) =>
+            !rankedGroups.some((rankedGroup) => rankedGroup.id === group.id),
+        )
+        .slice(0, 2)
+        .map(toArtistRailItem);
+      const groupItems = rankedGroups.map(toArtistRailItem);
+      const matchedMemberIds = memberMatches
+        .flatMap((match) => match.matchedMembers)
+        .map((member) => member.id)
+        .filter((memberId, index, memberIds) => memberIds.indexOf(memberId) === index)
+        .slice(0, 6);
+      const [keywordItems, ...relatedItemGroups] = await Promise.all([
+        requestBuncheols(accessToken, { keyword: searchKeyword, size: 50 }),
+        ...rankedGroups.map((group) =>
+          requestBuncheols(accessToken, { groupId: group.id, size: 50 }).catch(
+            () => [],
+          ),
+        ),
+        ...matchedMemberIds.map((memberId) =>
+          requestBuncheols(accessToken, { memberId, size: 50 }).catch(() => []),
+        ),
+      ]);
+      const productItems = [...keywordItems, ...relatedItemGroups.flat()].filter(
+        (item, index, items) =>
+          items.findIndex((candidate) => candidate.id === item.id) === index,
+      );
 
+      return {
+        groupItems: [
+          ...groupItems,
+          ...memberGroupItems,
+          ...matchedMemberItems,
+          ...relatedMemberItems,
+        ].slice(0, 8),
+        productItems,
+      };
+    };
+
+    loadSearchData()
+      .then(({ groupItems, productItems }) => {
         if (!isActive) {
           return;
         }
 
-        if (searchKeyword) {
-          setApiResultGroups([
-            ...groupItems,
-            ...memberGroupItems,
-            ...matchedMemberItems,
-            ...relatedMemberItems,
-          ].slice(0, 8));
+        if (keyword) {
+          setApiResultGroups(groupItems);
+          setApiResultItems((productItems ?? []).map(toProductCardItem));
+          setResultMessage("");
         } else {
           setApiPopularGroups(groupItems);
         }
@@ -417,6 +413,7 @@ export function SearchExperience({
 
         if (keyword) {
           setApiResultGroups([]);
+          setApiResultItems([]);
         } else {
           setApiPopularGroups([]);
         }
@@ -431,7 +428,7 @@ export function SearchExperience({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn, keyword]);
+  }, [authState.accessToken, authState.isLoggedIn, keyword, relatedSearch]);
 
   function closeSearch() {
     const searchEntryHistoryIndex = sessionStorage.getItem(

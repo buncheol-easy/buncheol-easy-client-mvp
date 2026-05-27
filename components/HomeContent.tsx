@@ -16,14 +16,17 @@ import { ProductGrid } from "@/components/ProductGrid";
 import {
   addFavoriteGroup,
   removeFavoriteGroup,
-  requestBuncheols,
+  requestAllBuncheols,
   requestFavoriteGroups,
+  requestTokenReissue,
   toProductCardItem,
 } from "@/lib/auth-api";
 import {
+  clearAuthState,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
+  writeAuthTokens,
 } from "@/lib/auth-store";
 import { toArtistRailItem } from "@/lib/group-presenters";
 import { favoriteIdols, homeListings } from "@/lib/mock-home-search";
@@ -37,6 +40,32 @@ const SCROLL_EDGE_GUARD = 16;
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
 };
+
+function isJwtExpired(token: string) {
+  const [, payload] = token.split(".");
+
+  if (!payload) {
+    return false;
+  }
+
+  try {
+    const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedPayload = normalizedPayload.padEnd(
+      Math.ceil(normalizedPayload.length / 4) * 4,
+      "=",
+    );
+    const parsed = JSON.parse(window.atob(paddedPayload)) as {
+      exp?: unknown;
+    };
+
+    return (
+      typeof parsed.exp === "number" &&
+      parsed.exp * 1000 <= Date.now() + 30_000
+    );
+  } catch {
+    return false;
+  }
+}
 
 function takeShouldSkipHomeEnter() {
   if (typeof window === "undefined") {
@@ -182,7 +211,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     let isActive = true;
 
-    requestBuncheols(accessToken, { sort: "LATEST" })
+    requestAllBuncheols(accessToken)
       .then((items) => {
         if (!isActive) {
           return;
@@ -210,20 +239,31 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, [authState.accessToken, authState.isLoggedIn]);
 
   useEffect(() => {
-    const accessToken = authState.isLoggedIn
-      ? authState.accessToken ?? undefined
-      : undefined;
     let isActive = true;
 
-    if (!authState.isLoggedIn || !accessToken) {
+    if (!authState.isLoggedIn || !authState.accessToken) {
       setApiGroups([]);
       setGroupMessage("");
       return;
     }
 
-    const groupRequest = requestFavoriteGroups(accessToken);
+    const groupRequest = async () => {
+      let accessToken = authState.accessToken;
 
-    groupRequest
+      if (!accessToken) {
+        return [];
+      }
+
+      if (isJwtExpired(accessToken)) {
+        const reissuedToken = await requestTokenReissue();
+        accessToken = reissuedToken.accessToken;
+        writeAuthTokens({ accessToken });
+      }
+
+      return requestFavoriteGroups(accessToken);
+    };
+
+    groupRequest()
       .then((groups) => {
         if (!isActive) {
           return;
@@ -234,6 +274,15 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       })
       .catch((error: unknown) => {
         if (!isActive) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "";
+
+        if (message.includes("401") || message.includes("Unauthorized")) {
+          clearAuthState();
+          setApiGroups([]);
+          setGroupMessage("");
           return;
         }
 
