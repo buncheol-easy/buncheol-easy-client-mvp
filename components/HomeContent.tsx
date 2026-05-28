@@ -300,7 +300,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, [authState.accessToken, authState.isLoggedIn]);
 
   function openGroupSearch(groupName?: string) {
-    router.push(groupName ? `/search?q=${encodeURIComponent(groupName)}` : "/search");
+    router.push(groupName ? `/search?q=${encodeURIComponent(groupName)}` : "/artists");
   }
 
   async function handleFavoriteGroupToggle(item: ArtistRailItem) {

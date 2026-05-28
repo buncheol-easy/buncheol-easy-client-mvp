@@ -2084,9 +2084,15 @@ export async function addFavoriteGroup(accessToken: string, groupId: string) {
     },
   );
 
-  if (!response.ok && response.status !== 409) {
+  if (response.status === 409) {
+    return { alreadyExists: true };
+  }
+
+  if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
+
+  return { alreadyExists: false };
 }
 
 export async function removeFavoriteGroup(
