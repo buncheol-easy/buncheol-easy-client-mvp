@@ -259,6 +259,60 @@ body.is-pwa-standalone {
   will-change: opacity, transform;
 }
 
+@keyframes intro-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1deg);
+  }
+
+  50% {
+    transform: translate3d(0, -8px, 0) rotate(1.5deg);
+  }
+}
+
+@keyframes intro-spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes intro-pulse {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 0.34;
+    transform: scale(1.04);
+  }
+}
+
+.intro-float {
+  animation: intro-float 5.8s ease-in-out infinite;
+}
+
+.intro-spin-slow {
+  animation: intro-spin-slow 18s linear infinite;
+}
+
+.intro-pulse {
+  animation: intro-pulse 7.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-float,
+  .intro-spin-slow,
+  .intro-pulse {
+    animation: none;
+  }
+}
+
 @media (display-mode: standalone) {
   body > main {
     height: var(--app-viewport-height);
