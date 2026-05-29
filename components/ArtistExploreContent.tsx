@@ -15,7 +15,6 @@ import {
   removeFavoriteGroup,
   requestFavoriteGroups,
   requestGroups,
-  requestTokenReissue,
   type ApiGroup,
 } from "@/lib/auth-api";
 import {
@@ -23,8 +22,8 @@ import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
-  writeAuthTokens,
 } from "@/lib/auth-store";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   getGroupTone,
   getInitials,
@@ -36,32 +35,6 @@ type ArtistGroup = ApiGroup & {
 };
 
 const FAVORITE_GROUP_LIMIT = 5;
-
-function isJwtExpired(token: string) {
-  const [, payload] = token.split(".");
-
-  if (!payload) {
-    return false;
-  }
-
-  try {
-    const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const paddedPayload = normalizedPayload.padEnd(
-      Math.ceil(normalizedPayload.length / 4) * 4,
-      "=",
-    );
-    const parsed = JSON.parse(window.atob(paddedPayload)) as {
-      exp?: unknown;
-    };
-
-    return (
-      typeof parsed.exp === "number" &&
-      parsed.exp * 1000 <= Date.now() + 30_000
-    );
-  } catch {
-    return false;
-  }
-}
 
 function getFavoriteId(group: ArtistGroup) {
   return group.id;
@@ -152,18 +125,13 @@ export function ArtistExploreContent() {
 
   useEffect(() => {
     let isActive = true;
-    let accessToken = authState.isLoggedIn
-      ? authState.accessToken ?? undefined
-      : undefined;
 
     async function loadGroups() {
-      if (authState.isLoggedIn && accessToken && isJwtExpired(accessToken)) {
-        const reissuedToken = await requestTokenReissue();
-        accessToken = reissuedToken.accessToken;
-        writeAuthTokens({ accessToken });
-      }
+      const accessToken = authState.isLoggedIn
+        ? await getFreshAccessToken()
+        : null;
 
-      const allGroups = await requestGroups("", accessToken);
+      const allGroups = await requestGroups("", accessToken ?? undefined);
 
       if (!authState.isLoggedIn || !accessToken) {
         return {
@@ -237,9 +205,14 @@ export function ArtistExploreContent() {
   }, [authState.accessToken, authState.isLoggedIn]);
 
   async function handleFavoriteToggle(group: ArtistGroup) {
-    const accessToken = authState.accessToken;
+    if (!authState.isLoggedIn) {
+      router.push("/login?returnTo=/artists");
+      return;
+    }
 
-    if (!authState.isLoggedIn || !accessToken) {
+    const accessToken = await getFreshAccessToken();
+
+    if (!accessToken) {
       router.push("/login?returnTo=/artists");
       return;
     }

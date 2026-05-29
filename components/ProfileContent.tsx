@@ -25,6 +25,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   cancelBuncheolParticipation,
   deleteBuncheol,
@@ -646,9 +647,7 @@ export function ProfileContent({
   }, []);
 
   useEffect(() => {
-    const accessToken = authState.accessToken;
-
-    if (!authState.isLoggedIn || !accessToken) {
+    if (!authState.isLoggedIn || !authState.accessToken) {
       setApiBidEntries([]);
       setApiHostedProducts([]);
       setHostedProductMessage("");
@@ -657,32 +656,44 @@ export function ProfileContent({
 
     let isActive = true;
 
-    requestMyParticipations(accessToken)
-      .then((participations) => {
-        if (isActive) {
-          setApiBidEntries(
-            participations.map(getProfileBidEntryFromParticipation),
-          );
-        }
-      })
-      .catch(() => {
-        if (isActive) {
-          setApiBidEntries([]);
-        }
-      });
+    async function loadApiProfileLists() {
+      const accessToken = await getFreshAccessToken();
 
-    requestMyHostedBuncheols(accessToken)
-      .then((buncheols) => {
-        if (isActive) {
-          setApiHostedProducts(buncheols.map(getHostedProductFromBuncheol));
-          setHostedProductMessage("");
-        }
-      })
-      .catch(() => {
-        if (isActive) {
-          setApiHostedProducts([]);
-        }
-      });
+      if (!accessToken) {
+        return;
+      }
+
+      const [participations, buncheols] = await Promise.allSettled([
+        requestMyParticipations(accessToken),
+        requestMyHostedBuncheols(accessToken),
+      ]);
+
+      if (!isActive) {
+        return;
+      }
+
+      if (participations.status === "fulfilled") {
+        setApiBidEntries(
+          participations.value.map(getProfileBidEntryFromParticipation),
+        );
+      } else {
+        setApiBidEntries([]);
+      }
+
+      if (buncheols.status === "fulfilled") {
+        setApiHostedProducts(buncheols.value.map(getHostedProductFromBuncheol));
+        setHostedProductMessage("");
+      } else {
+        setApiHostedProducts([]);
+      }
+    }
+
+    loadApiProfileLists().catch(() => {
+      if (isActive) {
+        setApiBidEntries([]);
+        setApiHostedProducts([]);
+      }
+    });
 
     return () => {
       isActive = false;
@@ -690,9 +701,7 @@ export function ProfileContent({
   }, [authState.accessToken, authState.isLoggedIn]);
 
   useEffect(() => {
-    const accessToken = authState.accessToken;
-
-    if (!authState.isLoggedIn || !accessToken) {
+    if (!authState.isLoggedIn || !authState.accessToken) {
       setUserProfile(null);
       setUserProfileForm(getEmptyUserProfileFormState());
       setSettlementAccountForm(getEmptySettlementAccountState());
@@ -709,9 +718,16 @@ export function ProfileContent({
     setIsUserProfileLoading(true);
     setUserProfileMessage("");
 
-    requestUserProfile(accessToken)
+    getFreshAccessToken()
+      .then((accessToken) =>
+        accessToken ? requestUserProfile(accessToken) : null,
+      )
       .then((profile) => {
         if (!isActive) {
+          return;
+        }
+
+        if (!profile) {
           return;
         }
 
@@ -741,15 +757,18 @@ export function ProfileContent({
   }, [authState.accessToken, authState.isLoggedIn]);
 
   useEffect(() => {
-    const accessToken = authState.accessToken;
-
-    if (!authState.isLoggedIn || !accessToken) {
+    if (!authState.isLoggedIn || !authState.accessToken) {
       invalidateAddressSyncRequests();
       clearDeliveryAddressState();
       return;
     }
 
-    syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
+    getFreshAccessToken()
+      .then((accessToken) =>
+        accessToken
+          ? syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
+          : null,
+      )
       .then(() => {
         // The sync helper commits only if this is still the newest request.
       })
@@ -946,15 +965,19 @@ export function ProfileContent({
   }
 
   async function withdrawBid(bidId: string) {
-    const accessToken = authState.accessToken;
-
-    if (!authState.isLoggedIn || !accessToken || withdrawingBidId) {
+    if (!authState.isLoggedIn || withdrawingBidId) {
       return;
     }
 
     setWithdrawingBidId(bidId);
 
     try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
       await cancelBuncheolParticipation(accessToken, bidId);
       setWithdrawnBidIds((current) =>
         current.includes(bidId) ? current : [...current, bidId],
@@ -1020,9 +1043,7 @@ export function ProfileContent({
   }
 
   async function saveUserProfile() {
-    const accessToken = authState.accessToken;
-
-    if (!accessToken || !canSaveUserProfile || isSavingUserProfile) {
+    if (!authState.isLoggedIn || !canSaveUserProfile || isSavingUserProfile) {
       return;
     }
 
@@ -1035,6 +1056,12 @@ export function ProfileContent({
     setUserProfileMessage("");
 
     try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
       if (nextProfile.nickname !== userProfile?.nickname?.trim()) {
         const { isDuplicate } = await requestNicknameDuplicate(
           accessToken,
@@ -1092,9 +1119,11 @@ export function ProfileContent({
   }
 
   async function saveSettlementAccount() {
-    const accessToken = authState.accessToken;
-
-    if (!accessToken || !canSaveSettlementAccount || isSavingSettlementAccount) {
+    if (
+      !authState.isLoggedIn ||
+      !canSaveSettlementAccount ||
+      isSavingSettlementAccount
+    ) {
       return;
     }
 
@@ -1108,6 +1137,12 @@ export function ProfileContent({
     setSettlementAccountMessage("");
 
     try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
       await updateBankAccount(accessToken, {
         account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
         bank: nextSettlementAccount.bankName,
@@ -1233,10 +1268,9 @@ export function ProfileContent({
   }
 
   async function handleDeleteHostedProduct(product: ProductDetailItem) {
-    const accessToken = authState.accessToken;
     const buncheolId = product.buncheolId ?? product.id;
 
-    if (!authState.isLoggedIn || !accessToken || deletingHostedProductId) {
+    if (!authState.isLoggedIn || deletingHostedProductId) {
       return;
     }
 
@@ -1247,6 +1281,12 @@ export function ProfileContent({
     setDeletingHostedProductId(buncheolId);
 
     try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
       await deleteBuncheol(accessToken, buncheolId);
       setApiHostedProducts((current) =>
         current
@@ -1339,9 +1379,7 @@ export function ProfileContent({
   }
 
   async function handleDeleteUserProfile() {
-    const accessToken = authState.accessToken;
-
-    if (!accessToken || isDeletingUserProfile) {
+    if (!authState.isLoggedIn || isDeletingUserProfile) {
       return;
     }
 
@@ -1355,6 +1393,12 @@ export function ProfileContent({
     setDeleteUserProfileMessage("");
 
     try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
       await deleteUserProfile(accessToken);
       clearUserSessionState();
     } catch (error) {
@@ -1379,10 +1423,14 @@ export function ProfileContent({
       return;
     }
 
-    const accessToken = authState.accessToken;
-
-    if (authState.isLoggedIn && accessToken) {
+    if (authState.isLoggedIn) {
       try {
+        const accessToken = await getFreshAccessToken();
+
+        if (!accessToken) {
+          return;
+        }
+
         await updateShippingAddress(accessToken, selectedAddress.id, {
           alias: selectedAddress.alias,
           branchName: selectedAddress.branchName,
@@ -1425,10 +1473,14 @@ export function ProfileContent({
       return;
     }
 
-    const accessToken = authState.accessToken;
-
-    if (authState.isLoggedIn && accessToken) {
+    if (authState.isLoggedIn) {
       try {
+        const accessToken = await getFreshAccessToken();
+
+        if (!accessToken) {
+          return;
+        }
+
         await deleteShippingAddress(accessToken, addressId);
         const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
 

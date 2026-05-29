@@ -14,6 +14,16 @@ type AccessTokenResponse = {
   accessToken: string;
 };
 
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 export type UserProfileStatus = {
   isProfileComplete: boolean;
 };
@@ -635,7 +645,7 @@ export async function requestTokenReissue() {
   });
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   return (await response.json()) as AccessTokenResponse;

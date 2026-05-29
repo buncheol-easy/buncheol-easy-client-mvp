@@ -18,7 +18,6 @@ import {
   removeFavoriteGroup,
   requestAllBuncheols,
   requestFavoriteGroups,
-  requestTokenReissue,
   toProductCardItem,
 } from "@/lib/auth-api";
 import {
@@ -26,8 +25,8 @@ import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
-  writeAuthTokens,
 } from "@/lib/auth-store";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import { toArtistRailItem } from "@/lib/group-presenters";
 import { favoriteIdols, homeListings } from "@/lib/mock-home-search";
 
@@ -40,32 +39,6 @@ const SCROLL_EDGE_GUARD = 16;
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
 };
-
-function isJwtExpired(token: string) {
-  const [, payload] = token.split(".");
-
-  if (!payload) {
-    return false;
-  }
-
-  try {
-    const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const paddedPayload = normalizedPayload.padEnd(
-      Math.ceil(normalizedPayload.length / 4) * 4,
-      "=",
-    );
-    const parsed = JSON.parse(window.atob(paddedPayload)) as {
-      exp?: unknown;
-    };
-
-    return (
-      typeof parsed.exp === "number" &&
-      parsed.exp * 1000 <= Date.now() + 30_000
-    );
-  } catch {
-    return false;
-  }
-}
 
 function takeShouldSkipHomeEnter() {
   if (typeof window === "undefined") {
@@ -205,13 +178,21 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, [skipEnterAnimation]);
 
   useEffect(() => {
-    const accessToken = authState.isLoggedIn
-      ? authState.accessToken ?? undefined
-      : undefined;
-
     let isActive = true;
 
-    requestAllBuncheols(accessToken)
+    async function loadListings() {
+      let accessToken: string | null = null;
+
+      try {
+        accessToken = authState.isLoggedIn ? await getFreshAccessToken() : null;
+      } catch {
+        accessToken = null;
+      }
+
+      return requestAllBuncheols(accessToken ?? undefined);
+    }
+
+    loadListings()
       .then((items) => {
         if (!isActive) {
           return;
@@ -242,22 +223,25 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     let isActive = true;
 
     if (!authState.isLoggedIn || !authState.accessToken) {
-      setApiGroups([]);
-      setGroupMessage("");
-      return;
+      Promise.resolve().then(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiGroups([]);
+        setGroupMessage("");
+      });
+
+      return () => {
+        isActive = false;
+      };
     }
 
     const groupRequest = async () => {
-      let accessToken = authState.accessToken;
+      const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         return [];
-      }
-
-      if (isJwtExpired(accessToken)) {
-        const reissuedToken = await requestTokenReissue();
-        accessToken = reissuedToken.accessToken;
-        writeAuthTokens({ accessToken });
       }
 
       return requestFavoriteGroups(accessToken);
@@ -304,9 +288,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }
 
   async function handleFavoriteGroupToggle(item: ArtistRailItem) {
-    const accessToken = authState.accessToken;
+    if (!authState.isLoggedIn) {
+      router.push("/login?returnTo=/");
+      return;
+    }
 
-    if (!authState.isLoggedIn || !accessToken) {
+    const accessToken = await getFreshAccessToken();
+
+    if (!accessToken) {
       router.push("/login?returnTo=/");
       return;
     }
