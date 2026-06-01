@@ -30,27 +30,20 @@ import {
 import {
   cancelBuncheolParticipation,
   deleteBuncheol,
+  requestBuncheolDetail,
   requestMyHostedBuncheols,
   requestMyParticipations,
+  toProductDetailItem,
   type MyHostedBuncheol,
   type MyParticipation,
 } from "@/lib/auth-api";
-import {
-  getInitialHostedProducts,
-  readHostedProducts,
-  subscribeHostedProducts,
-} from "@/lib/hosted-products-store";
 import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
 } from "@/lib/mock-delivery-addresses";
-import { productDetails, type ProductDetailItem } from "@/lib/mock-products";
-
-function priceToNumber(price: string) {
-  return Number(price.replace(/[^0-9]/g, ""));
-}
+import type { ProductDetailItem } from "@/lib/mock-products";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -60,6 +53,7 @@ const kstOffsetHours = 9;
 const paymentDeadlineDays = 3;
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
+const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -149,43 +143,82 @@ function formatPaymentRemainingTime(deadline: string, now: Date) {
 type BidHistoryMode = "joined" | "hosted";
 type BidHistoryFilter = "all" | "payment" | "active";
 type HostedHistoryFilter = "all" | "active" | "closed";
+type BidHistoryViewState = {
+  filter?: BidHistoryFilter;
+  hostedFilter?: HostedHistoryFilter;
+  mode?: BidHistoryMode;
+};
+
+const bidHistoryModes: BidHistoryMode[] = ["joined", "hosted"];
+const bidHistoryFilters: BidHistoryFilter[] = ["all", "payment", "active"];
+const hostedHistoryFilters: HostedHistoryFilter[] = [
+  "all",
+  "active",
+  "closed",
+];
+
+function isBidHistoryMode(value: unknown): value is BidHistoryMode {
+  return bidHistoryModes.includes(value as BidHistoryMode);
+}
+
+function isBidHistoryFilter(value: unknown): value is BidHistoryFilter {
+  return bidHistoryFilters.includes(value as BidHistoryFilter);
+}
+
+function isHostedHistoryFilter(value: unknown): value is HostedHistoryFilter {
+  return hostedHistoryFilters.includes(value as HostedHistoryFilter);
+}
+
+function readStoredBidHistoryViewState(keepStoredState: boolean) {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const rawViewState = window.sessionStorage.getItem(
+    BID_HISTORY_VIEW_STATE_KEY,
+  );
+
+  if (!rawViewState) {
+    return {};
+  }
+
+  if (!keepStoredState) {
+    window.sessionStorage.removeItem(BID_HISTORY_VIEW_STATE_KEY);
+  }
+
+  try {
+    const viewState = JSON.parse(rawViewState) as BidHistoryViewState;
+
+    return {
+      filter: isBidHistoryFilter(viewState.filter)
+        ? viewState.filter
+        : undefined,
+      hostedFilter: isHostedHistoryFilter(viewState.hostedFilter)
+        ? viewState.hostedFilter
+        : undefined,
+      mode: isBidHistoryMode(viewState.mode) ? viewState.mode : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 const shippingFee = 3200;
-const mockBidAmounts = [5400, 6000, 4800, 5800];
-const mockClosedDeadlines = [
-  "2026.04.26 23",
-  "2026.05.05 21",
-  "2026.04.25 21",
-  "2026.04.26 20",
-];
-const bidRecords = productDetails.slice(0, 4).map((product, index) => {
-  const option = product.options[0];
-  const amount = mockBidAmounts[index] ?? priceToNumber(option.currentBid) + 200;
-  const topBids = option.topBids ?? [option.currentBid];
-  const rank =
-    topBids
-      .map((bid) => priceToNumber(bid))
-      .filter((bid) => bid > amount).length + 1;
-
-  return {
-    id: `${product.id}-${option.id}`,
-    amount,
-    deadline: mockClosedDeadlines[index] ?? product.deadline,
-    member: product.member,
-    optionLabel: option.label,
-    participantCount: option.participantCount,
-    paidAt: rank === 1 && index === 3 ? "2026.04.27 09:20" : null,
-    productId: product.id,
-    rank,
-    submittedAt: ["오늘 20:12", "오늘 18:40", "어제 23:08", "어제 19:22"][
-      index
-    ],
-    title: product.title,
-    tone: product.tone,
-  };
-});
-
-type BidRecord = (typeof bidRecords)[number] & {
+type BidRecord = {
+  amount: number;
+  deadline: string;
+  id: string;
+  member: string;
+  optionLabel: string;
+  paidAt: string | null;
+  participantCount: number;
+  productId: string;
+  rank: number;
+  courier?: string;
+  shippingMethods?: ProductDetailItem["shippingMethods"];
+  submittedAt: string;
+  title: string;
+  tone: string;
   buncheolStatus?: string;
   participationStatus?: string;
 };
@@ -280,6 +313,26 @@ function getBidRecordFromParticipation(
   };
 }
 
+async function getBidRecordWithShippingData(
+  accessToken: string,
+  participation: MyParticipation,
+): Promise<BidRecord> {
+  const bidRecord = getBidRecordFromParticipation(participation);
+
+  try {
+    const detail = await requestBuncheolDetail(accessToken, bidRecord.productId);
+    const product = toProductDetailItem(detail);
+
+    return {
+      ...bidRecord,
+      courier: product.courier,
+      shippingMethods: product.shippingMethods,
+    };
+  } catch {
+    return bidRecord;
+  }
+}
+
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
 ): ProductDetailItem {
@@ -335,6 +388,37 @@ function takeShouldSkipBidHistoryEnter() {
   return shouldSkip;
 }
 
+function BidHistoryListSkeleton({ count = 2 }: { count?: number }) {
+  return (
+    <div aria-label="입찰 기록을 불러오는 중" className="space-y-3" role="status">
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          className="rounded-[1rem] border border-black/10 px-4 py-4"
+          key={`bid-history-skeleton-${index}`}
+        >
+          <div className="flex items-start gap-3">
+            <div className="h-14 w-14 shrink-0 animate-pulse rounded-[0.85rem] bg-black/8" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="h-4 w-3/4 animate-pulse rounded-full bg-black/8" />
+                  <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-black/8" />
+                </div>
+                <div className="h-7 w-12 shrink-0 animate-pulse rounded-full bg-black/8" />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+              </div>
+              <div className="mt-2 h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function BidHistoryContent({
   skipEnterAnimation = false,
 }: BidHistoryContentProps) {
@@ -362,20 +446,24 @@ export function BidHistoryContent({
     readDeliveryAddressState,
     getInitialDeliveryAddressState,
   );
-  const hostedProducts = useSyncExternalStore(
-    subscribeHostedProducts,
-    readHostedProducts,
-    getInitialHostedProducts,
-  );
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
     getInitialAuthState,
   );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
-  const [mode, setMode] = useState<BidHistoryMode>("joined");
-  const [filter, setFilter] = useState<BidHistoryFilter>("all");
-  const [hostedFilter, setHostedFilter] = useState<HostedHistoryFilter>("all");
+  const [initialViewState] = useState(() =>
+    readStoredBidHistoryViewState(skipEnterAnimation),
+  );
+  const [mode, setMode] = useState<BidHistoryMode>(
+    initialViewState.mode ?? "joined",
+  );
+  const [filter, setFilter] = useState<BidHistoryFilter>(
+    initialViewState.filter ?? "all",
+  );
+  const [hostedFilter, setHostedFilter] = useState<HostedHistoryFilter>(
+    initialViewState.hostedFilter ?? "all",
+  );
   const [apiBidRecords, setApiBidRecords] = useState<BidRecord[] | null>(null);
   const [apiHostedProducts, setApiHostedProducts] = useState<
     ProductDetailItem[] | null
@@ -386,14 +474,13 @@ export function BidHistoryContent({
   const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
   const [historyMessage, setHistoryMessage] = useState("");
   const [hostedMessage, setHostedMessage] = useState("");
+  const isBidRecordsLoading = authState.isLoggedIn && apiBidRecords === null;
+  const isHostedProductsLoading =
+    authState.isLoggedIn && apiHostedProducts === null;
 
-  const paymentBidRecords = apiBidRecords ?? bidRecords;
+  const paymentBidRecords = useMemo(() => apiBidRecords ?? [], [apiBidRecords]);
   const selectedPaymentBid =
     paymentBidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
-  const selectedPaymentProduct = selectedPaymentBid
-    ? productDetails.find((product) => product.id === selectedPaymentBid.productId) ??
-      null
-    : null;
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
@@ -403,8 +490,8 @@ export function BidHistoryContent({
     defaultAddressIds,
   );
   const availablePaymentStoreTypes = getAvailableConvenienceStoreTypes(
-    selectedPaymentProduct?.shippingMethods,
-    selectedPaymentProduct?.courier,
+    selectedPaymentBid?.shippingMethods,
+    selectedPaymentBid?.courier,
   );
   const eligiblePaymentAddresses =
     availablePaymentStoreTypes.length > 0
@@ -470,8 +557,18 @@ export function BidHistoryContent({
           return;
         }
 
-        setApiBidRecords(participations.map(getBidRecordFromParticipation));
-        setHistoryMessage("");
+        Promise.all(
+          participations.map((participation) =>
+            getBidRecordWithShippingData(accessToken, participation),
+          ),
+        ).then((bidRecords) => {
+          if (!isActive) {
+            return;
+          }
+
+          setApiBidRecords(bidRecords);
+          setHistoryMessage("");
+        });
       })
       .catch((error: unknown) => {
         if (!isActive) {
@@ -547,12 +644,9 @@ export function BidHistoryContent({
       return;
     }
 
-    const returnProduct =
-      productDetails.find((product) => product.id === returnBid.productId) ??
-      null;
     const returnAvailableStoreTypes = getAvailableConvenienceStoreTypes(
-      returnProduct?.shippingMethods,
-      returnProduct?.courier,
+      returnBid.shippingMethods,
+      returnBid.courier,
     );
     const returnPrioritizedAddresses = getPrioritizedDeliveryAddresses(
       deliveryAddresses,
@@ -626,7 +720,7 @@ export function BidHistoryContent({
       return [];
     }
 
-    const sourceRecords: BidRecord[] = apiBidRecords ?? bidRecords;
+    const sourceRecords: BidRecord[] = apiBidRecords ?? [];
 
     return [...sourceRecords]
       .filter((bid) => {
@@ -656,7 +750,7 @@ export function BidHistoryContent({
       return [];
     }
 
-    const sourceProducts = apiHostedProducts ?? hostedProducts;
+    const sourceProducts = apiHostedProducts ?? [];
 
     return [...sourceProducts]
       .filter((product) => {
@@ -681,7 +775,6 @@ export function BidHistoryContent({
     apiHostedProducts,
     authState.isLoggedIn,
     hostedFilter,
-    hostedProducts,
     now,
   ]);
 
@@ -691,14 +784,11 @@ export function BidHistoryContent({
       paymentSheetCloseTimerRef.current = null;
     }
 
-    const selectedBid = paymentBidRecords.find((bid) => bid.id === bidId) ?? null;
-    const selectedProduct = selectedBid
-      ? productDetails.find((product) => product.id === selectedBid.productId) ??
-        null
-      : null;
+    const selectedBid =
+      paymentBidRecords.find((bid) => bid.id === bidId) ?? null;
     const allowedStoreTypes = getAvailableConvenienceStoreTypes(
-      selectedProduct?.shippingMethods,
-      selectedProduct?.courier,
+      selectedBid?.shippingMethods,
+      selectedBid?.courier,
     );
     const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
       deliveryAddresses,
@@ -720,7 +810,9 @@ export function BidHistoryContent({
       current &&
       prioritizedDeliveryAddresses.some(
         (address) =>
-          address.id === current && allowedStoreTypes.includes(address.storeType),
+          address.id === current &&
+          (allowedStoreTypes.length === 0 ||
+            allowedStoreTypes.includes(address.storeType)),
       )
         ? current
         : fallbackAddress?.id ?? null,
@@ -754,6 +846,13 @@ export function BidHistoryContent({
     window.sessionStorage.setItem(
       BID_HISTORY_SCROLL_TOP_KEY,
       String(scrollContainerRef.current.scrollTop),
+    );
+  }
+
+  function rememberBidHistoryViewState() {
+    window.sessionStorage.setItem(
+      BID_HISTORY_VIEW_STATE_KEY,
+      JSON.stringify({ filter, hostedFilter, mode }),
     );
   }
 
@@ -810,6 +909,7 @@ export function BidHistoryContent({
     }
 
     rememberScrollPosition();
+    rememberBidHistoryViewState();
 
     const historyIndex = getHistoryIndex();
 
@@ -822,6 +922,21 @@ export function BidHistoryContent({
       PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
       String(historyIndex + 1),
     );
+  }
+
+  function rememberBidHistoryManageEntry(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    rememberScrollPosition();
+    rememberBidHistoryViewState();
   }
 
   async function handleWithdrawBid(bidId: string) {
@@ -892,12 +1007,37 @@ export function BidHistoryContent({
       return;
     }
 
-    scrollContainerRef.current.scrollTop = Number(storedScrollTop);
-
-    if (!skipEnterAnimation) {
-      window.sessionStorage.removeItem(BID_HISTORY_SCROLL_TOP_KEY);
+    if (mode === "joined" && isBidRecordsLoading) {
+      return;
     }
-  }, [skipEnterAnimation]);
+
+    if (mode === "hosted" && isHostedProductsLoading) {
+      return;
+    }
+
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (!scrollContainerRef.current) {
+        return;
+      }
+
+      scrollContainerRef.current.scrollTop = Number(storedScrollTop);
+
+      if (!skipEnterAnimation) {
+        window.sessionStorage.removeItem(BID_HISTORY_SCROLL_TOP_KEY);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(restoreFrame);
+    };
+  }, [
+    isBidRecordsLoading,
+    isHostedProductsLoading,
+    mode,
+    records.length,
+    hostedRecords.length,
+    skipEnterAnimation,
+  ]);
 
   return (
     <div
@@ -1020,7 +1160,9 @@ export function BidHistoryContent({
                 </p>
               </div>
             ) : null}
-            {records.length === 0 ? (
+            {isBidRecordsLoading ? (
+              <BidHistoryListSkeleton />
+            ) : records.length === 0 ? (
               <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
                 <p className="text-[14px] font-semibold text-black/70">
                   {authState.isLoggedIn
@@ -1034,7 +1176,7 @@ export function BidHistoryContent({
                 ) : null}
               </div>
             ) : null}
-            {records.map((bid) => {
+            {!isBidRecordsLoading && records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
               const isWithdrawPending = withdrawingBidId === bid.id;
               const paymentRemainingTime = formatPaymentRemainingTime(
@@ -1125,7 +1267,7 @@ export function BidHistoryContent({
                           {isClosed ? (
                             bid.paidAt ? (
                               <>
-                                <p>결제가 완료됐어요</p>
+                                <p>결제가 완료되었어요</p>
                                 <p className="mt-0.5 text-black/45">
                                   결제일 {bid.paidAt}
                                 </p>
@@ -1178,7 +1320,9 @@ export function BidHistoryContent({
                   </p>
                 </div>
               ) : null}
-              {hostedRecords.length === 0 ? (
+              {isHostedProductsLoading ? (
+                <BidHistoryListSkeleton />
+              ) : hostedRecords.length === 0 ? (
                 <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
                   <p className="text-[14px] font-semibold text-black/70">
                     {authState.isLoggedIn
@@ -1192,7 +1336,7 @@ export function BidHistoryContent({
                   ) : null}
                 </div>
               ) : null}
-              {hostedRecords.map((product) => {
+              {!isHostedProductsLoading && hostedRecords.map((product) => {
                 const isClosed = isHostedProductClosed(product, now);
                 const optionCount =
                   product.optionCount ??
@@ -1295,6 +1439,7 @@ export function BidHistoryContent({
                       <Link
                         className="inline-flex h-9 items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold tracking-[-0.04em] text-white"
                         href={`/products/${product.buncheolId ?? product.id}/manage`}
+                        onClick={rememberBidHistoryManageEntry}
                       >
                         관리하기
                       </Link>

@@ -8,11 +8,18 @@ import { boardPosts, type BoardCategory } from "@/lib/board-posts";
 
 type BoardFilter = BoardCategory | "all";
 
+type BoardContentProps = {
+  onBack?: () => void;
+  skipEnterAnimation?: boolean;
+};
+
 const categoryLabels: Record<BoardFilter, string> = {
   all: "전체",
   alert: "알림",
   notice: "공지",
 };
+
+export const BOARD_SKIP_ENTER_KEY = "skip-board-enter-animation";
 
 function getCategoryTone(category: BoardCategory) {
   return category === "notice"
@@ -26,8 +33,26 @@ function getHistoryIndex() {
   return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
-export function BoardContent() {
+function takeShouldSkipBoardEnter() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const shouldSkip =
+    window.sessionStorage.getItem(BOARD_SKIP_ENTER_KEY) === "true";
+  window.sessionStorage.removeItem(BOARD_SKIP_ENTER_KEY);
+
+  return shouldSkip;
+}
+
+export function BoardContent({
+  onBack,
+  skipEnterAnimation = false,
+}: BoardContentProps) {
   const router = useRouter();
+  const [shouldSkipEnterAnimation] = useState(
+    () => skipEnterAnimation || takeShouldSkipBoardEnter(),
+  );
   const [category, setCategory] = useState<BoardFilter>("all");
   const filteredItems = useMemo(() => {
     if (category === "all") {
@@ -45,6 +70,11 @@ export function BoardContent() {
             aria-label="이전 화면"
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white"
             onClick={() => {
+              if (onBack) {
+                onBack();
+                return;
+              }
+
               const historyIndex = getHistoryIndex();
 
               if (historyIndex !== null && historyIndex > 0) {
@@ -92,14 +122,14 @@ export function BoardContent() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <section className="tab-content-enter">
+        <section className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}>
           <div className="rounded-[1.15rem] border border-black/10 bg-white">
             {filteredItems.map((item, index) => (
               <Link
                 className={`flex min-h-[4.75rem] items-center gap-3 px-4 py-3 ${
                   index === 0 ? "" : "border-t border-black/10"
                 }`}
-                href={`/board/${item.id}`}
+                href={`/board/${item.id}?from=board`}
                 key={item.id}
               >
                 <div className="min-w-0 flex-1">

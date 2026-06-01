@@ -381,6 +381,52 @@ function getDeepNumberValue(
   return null;
 }
 
+function getDeepStringValue(
+  body: Record<string, unknown>,
+  keys: string[],
+  visited = new Set<unknown>(),
+): string {
+  const directValue = getStringValue(body, keys).trim();
+
+  if (directValue) {
+    return directValue;
+  }
+
+  if (visited.has(body)) {
+    return "";
+  }
+
+  visited.add(body);
+
+  for (const value of Object.values(body)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (!isRecord(item)) {
+          continue;
+        }
+
+        const nestedValue = getDeepStringValue(item, keys, visited);
+
+        if (nestedValue) {
+          return nestedValue;
+        }
+      }
+
+      continue;
+    }
+
+    if (isRecord(value)) {
+      const nestedValue = getDeepStringValue(value, keys, visited);
+
+      if (nestedValue) {
+        return nestedValue;
+      }
+    }
+  }
+
+  return "";
+}
+
 function getOptionalNumberValue(
   body: Record<string, unknown>,
   keys: string[],
@@ -392,6 +438,15 @@ function getOptionalNumberValue(
 
 function getOptionalStringValue(body: Record<string, unknown>, keys: string[]) {
   const value = getStringValue(body, keys).trim();
+
+  return value.length > 0 ? value : undefined;
+}
+
+function getOptionalDeepStringValue(
+  body: Record<string, unknown>,
+  keys: string[],
+) {
+  const value = getDeepStringValue(body, keys).trim();
 
   return value.length > 0 ? value : undefined;
 }
@@ -1114,7 +1169,7 @@ function getBuncheolMemberFromRecord(
     currentBidAmount,
     topBidAmounts,
     memberId: getOptionalStringValue(record, ["memberId"]),
-    imageUrl: getOptionalStringValue(record, [
+    imageUrl: getOptionalDeepStringValue(record, [
       "memberImage",
       "memberImageUrl",
       "image",

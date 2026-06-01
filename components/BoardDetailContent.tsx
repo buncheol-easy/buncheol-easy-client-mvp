@@ -23,13 +23,19 @@ function getHistoryIndex() {
 }
 
 type BoardDetailContentProps = {
+  onBack?: () => void;
   post: BoardPost;
 };
 
-export function BoardDetailContent({ post }: BoardDetailContentProps) {
+export function BoardDetailContent({ onBack, post }: BoardDetailContentProps) {
   const router = useRouter();
 
   function handleBack() {
+    if (onBack) {
+      onBack();
+      return;
+    }
+
     const historyIndex = getHistoryIndex();
 
     if (historyIndex !== null && historyIndex > 0) {

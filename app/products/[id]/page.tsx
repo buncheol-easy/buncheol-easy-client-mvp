@@ -1,8 +1,6 @@
 import { ApiProductDetail } from "@/components/ApiProductDetail";
-import { ProductDetail } from "@/components/ProductDetail";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
 import { whiteChromeViewport } from "@/lib/system-chrome";
-import { getProductById } from "@/lib/mock-products";
 
 export const viewport = whiteChromeViewport;
 
@@ -30,31 +28,11 @@ export default async function ProductDetailPage({
   const returnSource = getFirstSearchParam(from);
   const isHostedView = getFirstSearchParam(hosted) === "true";
   const returnQuery = getFirstSearchParam(q);
-  const product = getProductById(id);
 
-  if (!product) {
-    if (id.startsWith("uploaded-")) {
-      return (
-        <UploadedProductDetail
-          id={id}
-          returnSource={
-            returnSource === "home" ||
-            returnSource === "profile" ||
-            returnSource === "bids" ||
-            returnSource === "favorites" ||
-            returnSource === "upload"
-              ? returnSource
-              : undefined
-          }
-        />
-      );
-    }
-
+  if (id.startsWith("uploaded-")) {
     return (
-      <ApiProductDetail
+      <UploadedProductDetail
         id={id}
-        isHostedView={isHostedView}
-        returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
         returnSource={
           returnSource === "home" ||
           returnSource === "profile" ||
@@ -69,14 +47,11 @@ export default async function ProductDetailPage({
   }
 
   return (
-    <ProductDetail
-      backHref={
-        returnSource === "upload"
-          ? "/"
-            : undefined
-      }
-      product={product}
-      initialReturnSource={
+    <ApiProductDetail
+      id={id}
+      isHostedView={isHostedView}
+      returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
+      returnSource={
         returnSource === "home" ||
         returnSource === "profile" ||
         returnSource === "bids" ||
@@ -84,9 +59,6 @@ export default async function ProductDetailPage({
         returnSource === "upload"
           ? returnSource
           : undefined
-      }
-      initialReturnQuery={
-        returnSource === "search" ? returnQuery ?? "" : undefined
       }
     />
   );

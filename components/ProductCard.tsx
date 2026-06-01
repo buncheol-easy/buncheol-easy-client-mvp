@@ -293,6 +293,7 @@ export function ProductCard({ item }: ProductCardProps) {
         className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br ${item.tone}`}
       >
         {item.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={item.imageUrl}
             alt={item.title}

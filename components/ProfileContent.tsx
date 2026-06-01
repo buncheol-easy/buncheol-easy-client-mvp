@@ -13,7 +13,7 @@ import {
 } from "react";
 import type { MouseEvent } from "react";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { BellIcon, CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
+import { CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
@@ -32,6 +32,7 @@ import {
   deleteBuncheol,
   deleteShippingAddress,
   deleteUserProfile,
+  requestBuncheolDetail,
   requestNicknameDuplicate,
   requestLogout,
   requestMyHostedBuncheols,
@@ -41,18 +42,17 @@ import {
   updateBankAccount,
   updateShippingAddress,
   updateUserProfile,
+  toProductDetailItem,
   type MyHostedBuncheol,
   type MyParticipation,
   type UserProfile,
 } from "@/lib/auth-api";
-import {
-  clearHostedProducts,
-  getInitialHostedProducts,
-  readHostedProducts,
-  subscribeHostedProducts,
-} from "@/lib/hosted-products-store";
+import { clearHostedProducts } from "@/lib/hosted-products-store";
 import {
   clearSettlementAccountState,
+  getInitialSettlementAccountState,
+  readSettlementAccountState,
+  subscribeSettlementAccountState,
   type SettlementAccountState,
   writeSettlementAccountState,
 } from "@/lib/settlement-account-store";
@@ -74,11 +74,7 @@ import {
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
-import { productDetails, type ProductDetailItem } from "@/lib/mock-products";
-
-function priceToNumber(price: string) {
-  return Number(price.replace(/[^0-9]/g, ""));
-}
+import type { ProductDetailItem } from "@/lib/mock-products";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -86,6 +82,7 @@ function formatPrice(price: number) {
 
 const kstOffsetHours = 9;
 const paymentDeadlineDays = 3;
+const settlementAccountPanelExitMs = 180;
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 
 function getEmptySettlementAccountState(): SettlementAccountState {
@@ -221,45 +218,60 @@ function formatPaymentRemainingTime(deadline: string, now: Date) {
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
 
-const mockBidAmounts = [5400, 6000, 4800, 5800];
-const mockClosedDeadlines = [
-  "2026.04.26 23",
-  "2026.05.05 21",
-  "2026.04.25 21",
-  "2026.04.26 20",
-];
 const shippingFee = 3200;
 
-const mockBidEntries = productDetails.slice(0, 4).map((product, index) => {
-  const option = product.options[0];
-  const amount = mockBidAmounts[index] ?? priceToNumber(option.currentBid) + 200;
-  const topBids = option.topBids ?? [option.currentBid];
-  const rank =
-    topBids
-      .map((bid) => priceToNumber(bid))
-      .filter((bid) => bid > amount).length + 1;
-
-  return {
-    id: `${product.id}-${option.id}`,
-    amount,
-    deadline: mockClosedDeadlines[index] ?? product.deadline,
-    member: product.member,
-    optionLabel: option.label,
-    participantCount: option.participantCount,
-    productId: product.id,
-    rank,
-    submittedAt: ["오늘 20:12", "오늘 18:40", "어제 23:08", "어제 19:22"][
-      index
-    ],
-    title: product.title,
-    tone: product.tone,
-  };
-});
-
-type ProfileBidEntry = (typeof mockBidEntries)[number] & {
+type ProfileBidEntry = {
+  amount: number;
   buncheolStatus?: string;
+  deadline: string;
+  id: string;
+  member: string;
+  optionLabel: string;
+  participantCount: number;
   participationStatus?: string;
+  productId: string;
+  rank: number;
+  courier?: string;
+  shippingMethods?: ProductDetailItem["shippingMethods"];
+  submittedAt: string;
+  title: string;
+  tone: string;
 };
+
+function ProfileListSkeleton({ count = 2 }: { count?: number }) {
+  return (
+    <div
+      aria-label="마이페이지 목록을 불러오는 중"
+      className="mt-4 space-y-3"
+      role="status"
+    >
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          className="rounded-[1rem] border border-black/10 px-4 py-4"
+          key={`profile-list-skeleton-${index}`}
+        >
+          <div className="flex items-start gap-3">
+            <div className="h-14 w-14 shrink-0 animate-pulse rounded-[0.85rem] bg-black/8" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="h-4 w-3/4 animate-pulse rounded-full bg-black/8" />
+                  <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-black/8" />
+                </div>
+                <div className="h-7 w-12 shrink-0 animate-pulse rounded-full bg-black/8" />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+              </div>
+              <div className="mt-2 h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function isRecruitingStatus(status: string | undefined) {
   return !status || status === "RECRUITING";
@@ -353,6 +365,26 @@ function getProfileBidEntryFromParticipation(
   };
 }
 
+async function getProfileBidEntryWithShippingData(
+  accessToken: string,
+  participation: MyParticipation,
+): Promise<ProfileBidEntry> {
+  const bidEntry = getProfileBidEntryFromParticipation(participation);
+
+  try {
+    const detail = await requestBuncheolDetail(accessToken, bidEntry.productId);
+    const product = toProductDetailItem(detail);
+
+    return {
+      ...bidEntry,
+      courier: product.courier,
+      shippingMethods: product.shippingMethods,
+    };
+  } catch {
+    return bidEntry;
+  }
+}
+
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
 ): ProductDetailItem {
@@ -394,6 +426,8 @@ type ProfileContentProps = {
   skipEnterAnimation?: boolean;
 };
 
+export const PROFILE_SKIP_ENTER_KEY = "skip-profile-enter-animation";
+
 type AddressSheetMode = "manage" | "select";
 type UserProfileFormState = ReturnType<typeof getEmptyUserProfileFormState>;
 
@@ -407,8 +441,8 @@ export function ProfileContent({
     }
 
     const shouldSkip =
-      window.sessionStorage.getItem("skip-profile-enter-animation") === "true";
-    window.sessionStorage.removeItem("skip-profile-enter-animation");
+      window.sessionStorage.getItem(PROFILE_SKIP_ENTER_KEY) === "true";
+    window.sessionStorage.removeItem(PROFILE_SKIP_ENTER_KEY);
 
     return shouldSkip;
   });
@@ -435,10 +469,10 @@ export function ProfileContent({
     readAuthState,
     getInitialAuthState,
   );
-  const hostedProducts = useSyncExternalStore(
-    subscribeHostedProducts,
-    readHostedProducts,
-    getInitialHostedProducts,
+  const storedSettlementAccount = useSyncExternalStore(
+    subscribeSettlementAccountState,
+    readSettlementAccountState,
+    getInitialSettlementAccountState,
   );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [addressSheetMode, setAddressSheetMode] =
@@ -446,11 +480,14 @@ export function ProfileContent({
   const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
   const [isAddressSheetEntered, setIsAddressSheetEntered] = useState(false);
   const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
+  const [isDefaultAddressLoading, setIsDefaultAddressLoading] = useState(false);
   const addressSheetCloseTimerRef = useRef<number | null>(null);
   const [manageAddressSnapshot, setManageAddressSnapshot] = useState<
     DeliveryAddress[]
   >([]);
   const [isEditingSettlementAccount, setIsEditingSettlementAccount] =
+    useState(false);
+  const [isSettlementAccountPanelExiting, setIsSettlementAccountPanelExiting] =
     useState(false);
   const [settlementAccountForm, setSettlementAccountForm] =
     useState<SettlementAccountState>(() => getEmptySettlementAccountState());
@@ -459,6 +496,7 @@ export function ProfileContent({
   const [settlementAccountMessage, setSettlementAccountMessage] = useState("");
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
+  const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [userProfileMessage, setUserProfileMessage] = useState("");
@@ -480,14 +518,14 @@ export function ProfileContent({
     string | null
   >(null);
 
+  const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
+  const isHostedProductsLoading =
+    authState.isLoggedIn && apiHostedProducts === null;
   const allBids = useMemo(
-    () => {
-      const sourceEntries: ProfileBidEntry[] = apiBidEntries ?? mockBidEntries;
-
-      return authState.isLoggedIn
-        ? sourceEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
-        : [];
-    },
+    () =>
+      authState.isLoggedIn && apiBidEntries
+        ? apiBidEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
+        : [],
     [apiBidEntries, authState.isLoggedIn, withdrawnBidIds],
   );
   const activeBids = useMemo(
@@ -501,20 +539,31 @@ export function ProfileContent({
   );
   const activeHostedProducts = useMemo(
     () =>
-      authState.isLoggedIn
-        ? (apiHostedProducts ?? hostedProducts).filter((product) =>
+      authState.isLoggedIn && apiHostedProducts
+        ? apiHostedProducts.filter((product) =>
             !isDeletedProductStatus(product.status) &&
             isProfileHostedProductActive(product, now),
           )
         : [],
-    [apiHostedProducts, authState.isLoggedIn, hostedProducts, now],
+    [apiHostedProducts, authState.isLoggedIn, now],
   );
   const settlementAccount = useMemo(
-    () =>
-      authState.isLoggedIn
-        ? getSettlementAccountState(userProfile)
-        : getEmptySettlementAccountState(),
-    [authState.isLoggedIn, userProfile],
+    () => {
+      if (!authState.isLoggedIn) {
+        return getEmptySettlementAccountState();
+      }
+
+      const profileSettlementAccount = getSettlementAccountState(userProfile);
+      const hasProfileSettlementAccount =
+        profileSettlementAccount.bankName.trim().length > 0 &&
+        profileSettlementAccount.accountNumber.trim().length > 0 &&
+        profileSettlementAccount.accountHolder.trim().length > 0;
+
+      return hasProfileSettlementAccount
+        ? profileSettlementAccount
+        : storedSettlementAccount;
+    },
+    [authState.isLoggedIn, storedSettlementAccount, userProfile],
   );
   const hasSettlementAccount =
     settlementAccount.bankName.trim().length > 0 &&
@@ -535,10 +584,6 @@ export function ProfileContent({
   const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
   const selectedPaymentBid =
     activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
-  const selectedPaymentProduct = selectedPaymentBid
-    ? productDetails.find((product) => product.id === selectedPaymentBid.productId) ??
-      null
-    : null;
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
@@ -548,8 +593,8 @@ export function ProfileContent({
     defaultAddressIds,
   );
   const availablePaymentStoreTypes = getAvailableConvenienceStoreTypes(
-    selectedPaymentProduct?.shippingMethods,
-    selectedPaymentProduct?.courier,
+    selectedPaymentBid?.shippingMethods,
+    selectedPaymentBid?.courier,
   );
   const eligiblePaymentAddresses =
     availablePaymentStoreTypes.length > 0
@@ -644,6 +689,10 @@ export function ProfileContent({
       if (addressSheetCloseTimerRef.current !== null) {
         window.clearTimeout(addressSheetCloseTimerRef.current);
       }
+
+      if (settlementAccountPanelCloseTimerRef.current !== null) {
+        window.clearTimeout(settlementAccountPanelCloseTimerRef.current);
+      }
     };
   }, []);
 
@@ -657,10 +706,19 @@ export function ProfileContent({
 
     let isActive = true;
 
+    setApiBidEntries(null);
+    setApiHostedProducts(null);
+    setHostedProductMessage("");
+
     async function loadApiProfileLists() {
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        if (isActive) {
+          setApiBidEntries([]);
+          setApiHostedProducts([]);
+        }
+
         return;
       }
 
@@ -674,9 +732,17 @@ export function ProfileContent({
       }
 
       if (participations.status === "fulfilled") {
-        setApiBidEntries(
-          participations.value.map(getProfileBidEntryFromParticipation),
+        const bidEntries = await Promise.all(
+          participations.value.map((participation) =>
+            getProfileBidEntryWithShippingData(accessToken, participation),
+          ),
         );
+
+        if (!isActive) {
+          return;
+        }
+
+        setApiBidEntries(bidEntries);
       } else {
         setApiBidEntries([]);
       }
@@ -734,6 +800,15 @@ export function ProfileContent({
 
         setUserProfile(profile);
         setUserProfileForm(getUserProfileFormState(profile));
+        const profileSettlementAccount = getSettlementAccountState(profile);
+        const hasProfileSettlementAccount =
+          profileSettlementAccount.bankName.trim().length > 0 &&
+          profileSettlementAccount.accountNumber.trim().length > 0 &&
+          profileSettlementAccount.accountHolder.trim().length > 0;
+
+        if (hasProfileSettlementAccount) {
+          writeSettlementAccountState(profileSettlementAccount);
+        }
       })
       .catch((error: unknown) => {
         if (!isActive) {
@@ -761,8 +836,13 @@ export function ProfileContent({
     if (!authState.isLoggedIn || !authState.accessToken) {
       invalidateAddressSyncRequests();
       clearDeliveryAddressState();
+      setIsDefaultAddressLoading(false);
       return;
     }
+
+    let isActive = true;
+
+    setIsDefaultAddressLoading(true);
 
     getFreshAccessToken()
       .then((accessToken) =>
@@ -773,9 +853,15 @@ export function ProfileContent({
       .then(() => {
         // The sync helper commits only if this is still the newest request.
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (isActive) {
+          setIsDefaultAddressLoading(false);
+        }
+      });
 
     return () => {
+      isActive = false;
       invalidateAddressSyncRequests();
     };
   }, [
@@ -831,17 +917,20 @@ export function ProfileContent({
       return;
     }
 
-    const returnProduct =
-      productDetails.find((product) => product.id === returnBid.productId) ??
-      null;
     const returnAvailableStoreTypes = getAvailableConvenienceStoreTypes(
-      returnProduct?.shippingMethods,
-      returnProduct?.courier,
+      returnBid.shippingMethods,
+      returnBid.courier,
     );
-    const returnEligibleAddresses = getPrioritizedDeliveryAddresses(
+    const returnPrioritizedAddresses = getPrioritizedDeliveryAddresses(
       deliveryAddresses,
       defaultAddressIds,
-    ).filter((address) => returnAvailableStoreTypes.includes(address.storeType));
+    );
+    const returnEligibleAddresses =
+      returnAvailableStoreTypes.length > 0
+        ? returnPrioritizedAddresses.filter((address) =>
+            returnAvailableStoreTypes.includes(address.storeType),
+          )
+        : returnPrioritizedAddresses;
     const restoredAddressId = lastAddedAddressId ?? returnState.addressId;
     const restoredPaymentAddressId =
       restoredAddressId &&
@@ -1095,17 +1184,43 @@ export function ProfileContent({
   }
 
   function startSettlementAccountEdit() {
+    if (settlementAccountPanelCloseTimerRef.current !== null) {
+      window.clearTimeout(settlementAccountPanelCloseTimerRef.current);
+      settlementAccountPanelCloseTimerRef.current = null;
+    }
+
     setSettlementAccountForm(settlementAccount);
     setIsSettlementAccountFormDirty(false);
+    setIsSettlementAccountPanelExiting(false);
     setSettlementAccountMessage("");
     setIsEditingSettlementAccount(true);
   }
 
-  function cancelSettlementAccountEdit() {
-    setSettlementAccountForm(settlementAccount);
+  function closeSettlementAccountPanel({
+    message = "",
+    nextForm = settlementAccount,
+  }: {
+    message?: string;
+    nextForm?: SettlementAccountState;
+  } = {}) {
+    if (settlementAccountPanelCloseTimerRef.current !== null) {
+      window.clearTimeout(settlementAccountPanelCloseTimerRef.current);
+    }
+
+    setIsSettlementAccountPanelExiting(true);
+    setSettlementAccountForm(nextForm);
     setIsSettlementAccountFormDirty(false);
-    setSettlementAccountMessage("");
-    setIsEditingSettlementAccount(false);
+    setSettlementAccountMessage(message);
+
+    settlementAccountPanelCloseTimerRef.current = window.setTimeout(() => {
+      setIsEditingSettlementAccount(false);
+      setIsSettlementAccountPanelExiting(false);
+      settlementAccountPanelCloseTimerRef.current = null;
+    }, settlementAccountPanelExitMs);
+  }
+
+  function cancelSettlementAccountEdit() {
+    closeSettlementAccountPanel();
   }
 
   function updateSettlementAccountForm(
@@ -1162,10 +1277,10 @@ export function ProfileContent({
       }));
 
       writeSettlementAccountState(nextSettlementAccount);
-      setSettlementAccountForm(nextSettlementAccount);
-      setIsSettlementAccountFormDirty(false);
-      setSettlementAccountMessage("계좌 정보가 저장됐어요.");
-      setIsEditingSettlementAccount(false);
+      closeSettlementAccountPanel({
+        message: "계좌 정보가 저장됐어요.",
+        nextForm: nextSettlementAccount,
+      });
     } catch (error) {
       setSettlementAccountMessage(
         error instanceof Error ? error.message : "계좌 정보를 저장하지 못했어요.",
@@ -1182,13 +1297,9 @@ export function ProfileContent({
     }
 
     const selectedBid = activeBids.find((bid) => bid.id === bidId) ?? null;
-    const selectedProduct = selectedBid
-      ? productDetails.find((product) => product.id === selectedBid.productId) ??
-        null
-      : null;
     const allowedStoreTypes = getAvailableConvenienceStoreTypes(
-      selectedProduct?.shippingMethods,
-      selectedProduct?.courier,
+      selectedBid?.shippingMethods,
+      selectedBid?.courier,
     );
     const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
       deliveryAddresses,
@@ -1266,6 +1377,20 @@ export function ProfileContent({
       PRODUCT_PROFILE_ENTRY_INDEX_KEY,
       String(historyIndex + 1),
     );
+  }
+
+  function rememberProfilePanelEntry(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    rememberScrollPosition();
   }
 
   async function handleDeleteHostedProduct(product: ProductDetailItem) {
@@ -1600,46 +1725,30 @@ export function ProfileContent({
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
               <p className="text-[11px] font-medium text-white/45">참여중</p>
               <p className="mt-1 text-[19px] font-semibold">
-                {activeBids.length}
+                {isBidEntriesLoading ? (
+                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
+                ) : (
+                  activeBids.length
+                )}
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
               <p className="text-[11px] font-medium text-white/45">1등</p>
               <p className="mt-1 text-[19px] font-semibold">
-                {highestRankCount}
+                {isBidEntriesLoading ? (
+                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
+                ) : (
+                  highestRankCount
+                )}
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
               <p className="text-[11px] font-medium text-white/45">찜</p>
               <p className="mt-1 text-[19px] font-semibold">
-                {authState.isLoggedIn ? 10 : 0}
+                {0}
               </p>
             </div>
           </div>
-        </section>
-
-        <section className="mt-4">
-          <Link
-            className="flex h-14 items-center justify-between rounded-[0.95rem] bg-[#f7f7f7] px-4 text-black"
-            href="/board"
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white">
-                <BellIcon />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[15px] font-semibold tracking-[-0.04em]">
-                  소식함
-                </span>
-                <span className="mt-0.5 block truncate text-[12px] font-medium text-black/45">
-                  공지와 알림을 한 번에 확인해요
-                </span>
-              </span>
-            </span>
-            <span className="shrink-0 text-[20px] font-semibold text-black/25">
-              ›
-            </span>
-          </Link>
         </section>
 
         <section className="mt-5 border-t border-black/10 pt-5">
@@ -1652,13 +1761,15 @@ export function ProfileContent({
                 개최한 분철 정산금을 받을 계좌를 입력해 주세요.
               </p>
             </div>
-            {hasSettlementAccount && !isEditingSettlementAccount ? (
+            {authState.isLoggedIn &&
+            !isEditingSettlementAccount &&
+            !isSettlementAccountPanelExiting ? (
               <button
                 className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55"
                 onClick={startSettlementAccountEdit}
                 type="button"
               >
-                수정
+                {hasSettlementAccount ? "수정" : "등록"}
               </button>
             ) : null}
           </div>
@@ -1669,10 +1780,14 @@ export function ProfileContent({
                 로그인 후 이용할 수 있어요.
               </p>
             </div>
-          ) : isEditingSettlementAccount ||
-          !hasSettlementAccount ||
-          isSettlementAccountFormDirty ? (
-            <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+          ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
+            <div
+              className={`mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4 ${
+                isSettlementAccountPanelExiting
+                  ? "settlement-account-panel-exit"
+                  : "settlement-account-panel-enter"
+              }`}
+            >
               <div className="grid gap-3">
                 <label className="block">
                   <span className="text-[13px] font-semibold text-black/45">
@@ -1729,9 +1844,12 @@ export function ProfileContent({
               </div>
 
               <div className="mt-4 flex items-center gap-2">
-                {hasSettlementAccount || isSettlementAccountFormDirty ? (
+                {hasSettlementAccount ||
+                isSettlementAccountFormDirty ||
+                isEditingSettlementAccount ? (
                   <button
                     className="h-11 flex-1 rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
+                    disabled={isSettlementAccountPanelExiting}
                     onClick={cancelSettlementAccountEdit}
                     type="button"
                   >
@@ -1740,7 +1858,11 @@ export function ProfileContent({
                 ) : null}
                 <button
                   className="h-11 flex-1 rounded-full bg-black text-[14px] font-semibold text-white disabled:bg-black/20"
-                  disabled={!canSaveSettlementAccount || isSavingSettlementAccount}
+                  disabled={
+                    !canSaveSettlementAccount ||
+                    isSavingSettlementAccount ||
+                    isSettlementAccountPanelExiting
+                  }
                   onClick={saveSettlementAccount}
                   type="button"
                 >
@@ -1748,7 +1870,7 @@ export function ProfileContent({
                 </button>
               </div>
             </div>
-          ) : (
+          ) : hasSettlementAccount ? (
             <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1767,6 +1889,24 @@ export function ProfileContent({
                 </span>
               </div>
             </div>
+          ) : (
+            <button
+              className="mt-4 flex w-full items-center justify-between rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5 text-left"
+              onClick={startSettlementAccountEdit}
+              type="button"
+            >
+              <span>
+                <span className="block text-[14px] font-semibold text-black/70">
+                  정산 계좌를 등록해 주세요.
+                </span>
+                <span className="mt-1 block text-[13px] font-medium text-black/40">
+                  등록하면 개최한 분철 정산금을 받을 수 있어요.
+                </span>
+              </span>
+              <span className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/55">
+                등록
+              </span>
+            </button>
           )}
 
           {settlementAccountMessage ? (
@@ -1788,6 +1928,7 @@ export function ProfileContent({
                   ? "/profile/addresses"
                   : "/login?returnTo=/profile/addresses"
               }
+              onClick={rememberProfilePanelEntry}
             >
               배송지 관리
             </Link>
@@ -1809,9 +1950,13 @@ export function ProfileContent({
                       {convenienceStoreTypeLabels[storeType]}
                     </span>
                     <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                      {!authState.isLoggedIn
-                        ? "로그인 후 이용할 수 있어요"
-                        : address?.branchName ?? "등록된 배송지가 없어요"}
+                      {!authState.isLoggedIn ? (
+                        "로그인 후 이용할 수 있어요"
+                      ) : isDefaultAddressLoading ? (
+                        <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
+                      ) : (
+                        address?.branchName ?? "등록된 배송지가 없어요"
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1831,11 +1976,13 @@ export function ProfileContent({
               </p>
             </div>
             <span className="shrink-0 text-[13px] font-semibold text-black/45">
-              {activeBids.length}개
+              {isBidEntriesLoading ? "확인 중" : `${activeBids.length}개`}
             </span>
           </div>
 
-          {activeBids.length > 0 ? (
+          {isBidEntriesLoading ? (
+            <ProfileListSkeleton />
+          ) : activeBids.length > 0 ? (
             <div className="mt-4 space-y-3">
               {activeBids.map((bid) => {
                 const isClosed = isProfileBidClosed(bid, now);
@@ -1984,7 +2131,9 @@ export function ProfileContent({
               </p>
             </div>
             <span className="shrink-0 text-[13px] font-semibold text-black/45">
-              {activeHostedProducts.length}개
+              {isHostedProductsLoading
+                ? "확인 중"
+                : `${activeHostedProducts.length}개`}
             </span>
           </div>
 
@@ -1994,7 +2143,9 @@ export function ProfileContent({
             </p>
           ) : null}
 
-          {activeHostedProducts.length > 0 ? (
+          {isHostedProductsLoading ? (
+            <ProfileListSkeleton />
+          ) : activeHostedProducts.length > 0 ? (
             <div className="mt-4 space-y-3">
               {activeHostedProducts.map((product) => {
                 const isClosed = !isProfileHostedProductActive(product, now);

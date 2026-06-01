@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckIcon, HeartIcon, PlusIcon, ProfileIcon } from "@/components/icons";
 
 export type ArtistRailItem = {
@@ -111,6 +111,7 @@ export function ArtistImage({
         className={`absolute inset-0 ${roundedClassName}`}
         style={{ backgroundColor }}
       />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt={name}
         className="relative h-full w-full object-contain p-2 [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.9))_drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]"
@@ -141,14 +142,70 @@ export function ArtistRail({
   pinFirstItem = false,
   selectedId,
 }: ArtistRailProps) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const selectedItemRef = useRef<HTMLDivElement | null>(null);
   const pinnedItem = pinFirstItem ? items[0] : null;
   const scrollItems = pinnedItem ? items.slice(1) : items;
+  const itemSignature = items.map((item) => item.id).join("|");
+
+  useEffect(() => {
+    if (!selectedId) {
+      return;
+    }
+
+    const scrollContainer = scrollContainerRef.current;
+    const selectedItem = selectedItemRef.current;
+
+    if (
+      !scrollContainer ||
+      !selectedItem ||
+      !scrollContainer.contains(selectedItem)
+    ) {
+      return;
+    }
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const itemRect = selectedItem.getBoundingClientRect();
+    const edgePadding = 12;
+    const isFullyVisible =
+      itemRect.left >= containerRect.left + edgePadding &&
+      itemRect.right <= containerRect.right - edgePadding;
+
+    if (isFullyVisible) {
+      return;
+    }
+
+    const targetScrollLeft =
+      itemRect.left < containerRect.left + edgePadding
+        ? scrollContainer.scrollLeft -
+          (containerRect.left + edgePadding - itemRect.left)
+        : scrollContainer.scrollLeft +
+          (itemRect.right - (containerRect.right - edgePadding));
+    const maxScrollLeft =
+      scrollContainer.scrollWidth - scrollContainer.clientWidth;
+    const nextScrollLeft = Math.min(
+      Math.max(targetScrollLeft, 0),
+      Math.max(maxScrollLeft, 0),
+    );
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    scrollContainer.scrollTo({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      left: nextScrollLeft,
+    });
+  }, [itemSignature, selectedId]);
 
   function renderItem(item: ArtistRailItem) {
     const isSelected = item.id === selectedId;
 
     return (
-      <div key={item.id} className="min-w-[65px]">
+      <div
+        key={item.id}
+        className="w-[65px] shrink-0"
+        ref={isSelected ? selectedItemRef : undefined}
+      >
         <div className="relative">
           <button
             className="w-[65px] text-left"
@@ -251,7 +308,10 @@ export function ArtistRail({
         </>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        className="flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        ref={scrollContainerRef}
+      >
         {scrollItems.map(renderItem)}
       </div>
     </div>

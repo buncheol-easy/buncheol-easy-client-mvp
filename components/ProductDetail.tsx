@@ -43,7 +43,10 @@ import {
   FavoritesContent,
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
-import { ProfileContent } from "@/components/ProfileContent";
+import {
+  PROFILE_SKIP_ENTER_KEY,
+  ProfileContent,
+} from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
   SearchExperience,
@@ -110,6 +113,37 @@ function ProductDeleteIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function OptionAvatar({
+  option,
+  size = "md",
+}: {
+  option: ProductOption;
+  size?: "sm" | "md" | "lg";
+}) {
+  const sizeClassName =
+    size === "lg" ? "h-12 w-12" : size === "sm" ? "h-10 w-10" : "h-11 w-11";
+  const textClassName =
+    size === "lg" ? "text-[13px]" : size === "sm" ? "text-[12px]" : "text-[12px]";
+
+  return (
+    <div
+      className={`relative flex ${sizeClassName} shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${
+        option.avatarTone ?? "from-zinc-100 via-white to-zinc-400"
+      } ${textClassName} font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
+    >
+      {option.imageUrl ? (
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url(${JSON.stringify(option.imageUrl)})` }}
+        />
+      ) : (
+        option.avatarInitials ?? option.label.slice(0, 2)
+      )}
+    </div>
   );
 }
 
@@ -367,13 +401,15 @@ export function ProductDetail({
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
   const isDeadlinePassed = isDeadlineClosed(product.deadline);
+  const isHostedProduct = product.isHostedByMe === true;
   const buncheolId = product.buncheolId ?? product.id;
   const canEditProduct =
-    product.id.startsWith("uploaded-") || product.isHostedByMe;
-  const canDeleteProduct = product.isApiProduct && product.isHostedByMe;
+    product.id.startsWith("uploaded-") || isHostedProduct;
+  const canDeleteProduct = product.isApiProduct && isHostedProduct;
   const canBidProduct =
     !isPublicPreview &&
     !isBidUnavailable &&
+    !isHostedProduct &&
     !isDeadlinePassed &&
     (!product.status || product.status === "RECRUITING");
 
@@ -585,7 +621,9 @@ export function ProductDetail({
 
     if (!canBidProduct) {
       window.alert(
-        isDeadlinePassed
+        isHostedProduct
+          ? "내가 연 분철에는 입찰할 수 없어요."
+          : isDeadlinePassed
           ? "입찰 기한이 지나 참여할 수 없어요."
           : "지금은 입찰할 수 없는 분철이에요.",
       );
@@ -841,9 +879,9 @@ export function ProductDetail({
     }
 
     if (initialReturnSource === "profile") {
-      window.sessionStorage.setItem("skip-profile-enter-animation", "true");
+      window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
     } else {
-      window.sessionStorage.removeItem("skip-profile-enter-animation");
+      window.sessionStorage.removeItem(PROFILE_SKIP_ENTER_KEY);
     }
 
     if (initialReturnSource === "home") {
@@ -1191,7 +1229,7 @@ export function ProductDetail({
         <div className="min-h-0 flex-1 overflow-y-auto pb-32">
           <section className="px-4">
             <div
-              className={`product-detail-media relative aspect-[4/3] overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
+              className={`product-hero-media product-detail-media relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
             >
               {productImages.length > 0 ? (
                 <>
@@ -1270,24 +1308,12 @@ export function ProductDetail({
                   {product.purchaseSource ?? "공식 판매처"}
                 </p>
               </div>
-              <div
-                className={`rounded-[0.9rem] border border-black/10 px-4 py-3 ${
-                  product.shippingDeadline ? "" : "col-span-2"
-                }`}
-              >
+              <div className="col-span-2 rounded-[0.9rem] border border-black/10 px-4 py-3">
                 <p className="text-[12px] font-medium text-black/45">입찰 기한</p>
                 <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                   {product.deadline}
                 </p>
               </div>
-              {product.shippingDeadline ? (
-                <div className="rounded-[0.9rem] border border-black/10 px-4 py-3">
-                  <p className="text-[12px] font-medium text-black/45">발송 기한</p>
-                  <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                    {product.shippingDeadline}
-                  </p>
-                </div>
-              ) : null}
             </div>
 
             {shippingMethods.length > 0 ? (
@@ -1341,14 +1367,7 @@ export function ProductDetail({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
-                          <div
-                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${
-                              option.avatarTone ??
-                              "from-zinc-100 via-white to-zinc-400"
-                            } text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
-                          >
-                            {option.avatarInitials ?? option.label.slice(0, 2)}
-                          </div>
+                          <OptionAvatar option={option} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                               {option.label}
@@ -1397,14 +1416,7 @@ export function ProductDetail({
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${
-                            option.avatarTone ??
-                            "from-zinc-100 via-white to-zinc-400"
-                          } text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
-                        >
-                          {option.avatarInitials ?? option.label.slice(0, 2)}
-                        </div>
+                        <OptionAvatar option={option} size="sm" />
                         <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                           {option.label}
                         </p>
@@ -1460,9 +1472,11 @@ export function ProductDetail({
               ? "로그인 후 입찰하기"
               : isBidUnavailable
                 ? "입찰하기"
+              : isHostedProduct
+                ? "내가 연 분철에는 입찰할 수 없어요"
               : canBidProduct
                 ? "입찰하기"
-                : "마감된 분철이에요"}
+              : "마감된 분철이에요"}
           </button>
         </div>
 
@@ -1527,14 +1541,7 @@ export function ProductDetail({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-3">
-                          <div
-                            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${
-                              option.avatarTone ??
-                              "from-zinc-100 via-white to-zinc-400"
-                            } text-[13px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
-                          >
-                            {option.avatarInitials ?? option.label.slice(0, 2)}
-                          </div>
+                          <OptionAvatar option={option} size="lg" />
 
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">

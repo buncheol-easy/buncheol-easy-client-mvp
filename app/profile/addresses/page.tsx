@@ -1,4 +1,4 @@
-import { AddressManagementContent } from "@/components/AddressManagementContent";
+import { AddressManagementExperience } from "@/components/AddressManagementExperience";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -27,12 +27,10 @@ export default async function AddressManagementPage({
 
   return (
     <main className="system-chrome-white h-[100dvh] overflow-hidden bg-white text-[#111111]">
-      <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
-        <AddressManagementContent
-          openFormOnEntry={openFormOnEntry}
-          returnHref={returnHref}
-        />
-      </div>
+      <AddressManagementExperience
+        openFormOnEntry={openFormOnEntry}
+        returnHref={returnHref}
+      />
     </main>
   );
 }

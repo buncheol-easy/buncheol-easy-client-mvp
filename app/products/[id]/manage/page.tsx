@@ -1,4 +1,4 @@
-import { HostedBuncheolManage } from "@/components/HostedBuncheolManage";
+import { HostedBuncheolManageExperience } from "@/components/HostedBuncheolManageExperience";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -14,5 +14,5 @@ export default async function HostedBuncheolManagePage({
 }: HostedBuncheolManagePageProps) {
   const { id } = await params;
 
-  return <HostedBuncheolManage id={id} />;
+  return <HostedBuncheolManageExperience id={id} />;
 }

@@ -73,7 +73,7 @@ const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const minimumPricePromptExitDelay = 220;
 
-type ScheduleField = "closing" | "shipping";
+type ScheduleField = "closing";
 type SchedulePart = "year" | "month" | "day" | "hour";
 
 function padNumber(value: number) {
@@ -151,7 +151,7 @@ function getYearOptions(minimumYear: number) {
   );
 }
 
-// 마감 기한 및 발송 기한 설정
+// 마감 기한 설정
 function getDefaultScheduleParts() {
   const now = new Date();
   now.setHours(now.getHours() + 1, 0, 0, 0);
@@ -200,23 +200,6 @@ function clampScheduleValue(value: string, minimumValue: string) {
   }
 
   return minimumValue;
-}
-
-function addHours(value: string, hours: number) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  date.setHours(date.getHours() + hours, 0, 0, 0);
-
-  return buildScheduleValue({
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
-    day: date.getDate(),
-    hour: date.getHours(),
-  });
 }
 
 function getNextAvailableScheduleValue() {
@@ -465,7 +448,6 @@ export function UploadProductForm({
   const [isMinimumPricePromptOpen, setIsMinimumPricePromptOpen] =
     useState(false);
   const [closingDate, setClosingDate] = useState("");
-  const [shippingDate, setShippingDate] = useState("");
   const [description, setDescription] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [memberToastMessage, setMemberToastMessage] = useState("");
@@ -582,16 +564,35 @@ export function UploadProductForm({
 
   useEffect(() => {
     const query = idolQuery.trim();
+    let isActive = true;
+    let stateFrame: number | null = null;
 
     if (!query) {
-      setIsGroupSearchLoading(false);
-      setDidGroupSearchFail(false);
-      return;
+      stateFrame = window.requestAnimationFrame(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setIsGroupSearchLoading(false);
+        setDidGroupSearchFail(false);
+      });
+
+      return () => {
+        isActive = false;
+        if (stateFrame !== null) {
+          window.cancelAnimationFrame(stateFrame);
+        }
+      };
     }
 
-    let isActive = true;
-    setIsGroupSearchLoading(true);
-    setDidGroupSearchFail(false);
+    stateFrame = window.requestAnimationFrame(() => {
+      if (!isActive) {
+        return;
+      }
+
+      setIsGroupSearchLoading(true);
+      setDidGroupSearchFail(false);
+    });
 
     requestGroups(query)
       .then(async (groups) => {
@@ -641,6 +642,9 @@ export function UploadProductForm({
 
     return () => {
       isActive = false;
+      if (stateFrame !== null) {
+        window.cancelAnimationFrame(stateFrame);
+      }
     };
   }, [idolQuery]);
 
@@ -709,9 +713,6 @@ export function UploadProductForm({
                 ),
               );
               setClosingDate(toScheduleInputValue(apiProduct.deadline));
-              setShippingDate(
-                toScheduleInputValue(apiProduct.shippingDeadline ?? ""),
-              );
               setSelectedShipping(
                 apiProduct.shippingMethods?.map((method) =>
                   getUploadShippingOptionName(method.name),
@@ -815,7 +816,6 @@ export function UploadProductForm({
       );
       setMemberMinimumPrices(minimumPrices);
       setClosingDate(toScheduleInputValue(product.deadline));
-      setShippingDate(toScheduleInputValue(product.shippingDeadline ?? ""));
       setSelectedShipping(
         shippingMethods.map((method) => getUploadShippingOptionName(method.name)),
       );
@@ -1101,26 +1101,13 @@ export function UploadProductForm({
   }
 
   function getScheduleValue(field: ScheduleField) {
-    return field === "closing" ? closingDate : shippingDate;
+    void field;
+    return closingDate;
   }
 
   function updateScheduleValue(field: ScheduleField, value: string) {
-    if (field === "closing") {
-      setClosingDate(value);
-
-      if (shippingDate && new Date(shippingDate).getTime() <= new Date(value).getTime()) {
-        setShippingDate(addHours(value, 1));
-      }
-
-      return;
-    }
-
-    if (closingDate && new Date(value).getTime() <= new Date(closingDate).getTime()) {
-      setShippingDate(addHours(closingDate, 1));
-      return;
-    }
-
-    setShippingDate(value);
+    void field;
+    setClosingDate(value);
   }
 
   function selectSchedulePart(
@@ -1165,10 +1152,7 @@ export function UploadProductForm({
   }
 
   function getMinimumScheduleValue(field: ScheduleField) {
-    if (field === "shipping" && closingDate) {
-      return addHours(closingDate, 1);
-    }
-
+    void field;
     return getNextAvailableScheduleValue();
   }
 
@@ -1288,7 +1272,6 @@ export function UploadProductForm({
       imageUrl: storedPhotoUrls[0] ?? coverPhoto.url,
       imageUrls: storedPhotoUrls,
       purchaseSource: purchaseSource.trim(),
-      shippingDeadline: formatDateTimeLabel(shippingDate) || "판매자 안내",
       shippingMethods: selectedShippingMethods,
       description:
         description.trim() || "판매자가 아직 상품 설명을 작성하지 않았습니다.",
@@ -1523,7 +1506,7 @@ export function UploadProductForm({
                 ) : (
                   <>
                     <section className="px-4 pt-4">
-                      <label className="relative z-0 flex aspect-square cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
+                      <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
                         {coverPhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -1818,7 +1801,7 @@ export function UploadProductForm({
               onSubmit={(event) => event.preventDefault()}
             >
           <section className="px-4 pt-4">
-            <label className="relative z-0 flex aspect-square cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
+            <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
               {coverPhoto ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -2036,6 +2019,7 @@ export function UploadProductForm({
                                   className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${member.tone} text-[12px] font-semibold tracking-[-0.04em] text-black ring-1 ring-black/10`}
                                 >
                                   {member.imageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                       alt={member.name}
                                       className="h-full w-full object-cover"
@@ -2280,18 +2264,10 @@ export function UploadProductForm({
               </h2>
               <div className="mt-3 grid gap-3">
                 {(
-                  [
-                    ["closing", "마감 기한", closingDate],
-                    ["shipping", "발송 기한", shippingDate],
-                  ] as const
+                  [["closing", "마감 기한", closingDate]] as const
                 ).map(([field, label, value]) => {
                   let scheduleParts = getScheduleParts(value);
-                  const minScheduleValue =
-                    field === "closing"
-                      ? getNextAvailableScheduleValue()
-                      : closingDate
-                        ? addHours(closingDate, 1)
-                        : getNextAvailableScheduleValue();
+                  const minScheduleValue = getNextAvailableScheduleValue();
                   const minScheduleParts = getScheduleParts(minScheduleValue);
                   const isBeforeMinSchedule =
                     minScheduleValue &&
@@ -2428,7 +2404,7 @@ export function UploadProductForm({
                 <textarea
                   className="mt-2 min-h-28 w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-3 text-[15px] leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
                   onChange={(event) => setDescription(event.currentTarget.value)}
-                  placeholder="구성, 하자, 포장 방식, 발송 예정일을 적어주세요."
+                  placeholder="구성, 하자, 포장 방식 등을 적어주세요."
                   value={description}
                 />
               </label>

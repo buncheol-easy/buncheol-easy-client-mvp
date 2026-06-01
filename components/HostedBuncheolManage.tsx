@@ -17,6 +17,7 @@ import {
 
 type HostedBuncheolManageProps = {
   id: string;
+  onBack?: () => void;
 };
 
 type DeliveryState = {
@@ -79,7 +80,10 @@ function getWinnerCount(member: BuncheolMember) {
   return getHighestBidAmount(member) > 0 && member.participantCount > 0 ? 1 : 0;
 }
 
-export function HostedBuncheolManage({ id }: HostedBuncheolManageProps) {
+export function HostedBuncheolManage({
+  id,
+  onBack,
+}: HostedBuncheolManageProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -101,13 +105,14 @@ export function HostedBuncheolManage({ id }: HostedBuncheolManageProps) {
     if (!authState.isLoggedIn || !accessToken) {
       const returnHref = `/products/${encodeURIComponent(id)}/manage`;
       const frame = window.requestAnimationFrame(() => {
-        if (isActive) {
-          router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        if (!isActive) {
+          return;
         }
-      });
 
-      setDetail(null);
-      setMessage("로그인 후 관리할 수 있어요.");
+        setDetail(null);
+        setMessage("로그인 후 관리할 수 있어요.");
+        router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      });
 
       return () => {
         isActive = false;
@@ -208,13 +213,13 @@ export function HostedBuncheolManage({ id }: HostedBuncheolManageProps) {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white"
               aria-label="이전 화면"
-              onClick={() => router.back()}
+              onClick={onBack ?? (() => router.back())}
             >
               <BackIcon />
             </button>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 text-right">
               <p className="text-[12px] font-semibold text-black/35">
                 개최 분철 관리
               </p>
@@ -292,6 +297,7 @@ export function HostedBuncheolManage({ id }: HostedBuncheolManageProps) {
                     <div className="flex items-center gap-3">
                       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-[0.85rem] bg-[#f1f1f1]">
                         {member.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             alt=""
                             className="h-full w-full object-cover"

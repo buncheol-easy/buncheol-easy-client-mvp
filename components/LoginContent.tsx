@@ -6,6 +6,7 @@ import { getKakaoAuthorizationUrl } from "@/lib/auth-api";
 import { authReturnHrefStorageKey } from "@/lib/auth-store";
 
 type LoginContentProps = {
+  onBack?: () => void;
   returnHref?: string;
 };
 
@@ -15,10 +16,18 @@ function getHistoryIndex() {
   return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
-export function LoginContent({ returnHref = "/profile" }: LoginContentProps) {
+export function LoginContent({
+  onBack,
+  returnHref = "/profile",
+}: LoginContentProps) {
   const router = useRouter();
 
   function handleBack() {
+    if (onBack) {
+      onBack();
+      return;
+    }
+
     const historyIndex = getHistoryIndex();
 
     if (historyIndex !== null && historyIndex > 0) {
@@ -35,7 +44,7 @@ export function LoginContent({ returnHref = "/profile" }: LoginContentProps) {
   }
 
   return (
-    <div className="tab-content-enter flex min-h-0 flex-1 flex-col bg-white">
+    <div className="flex min-h-0 flex-1 flex-col bg-white">
       <header className="profile-header shrink-0 px-4 py-3">
         <div className="flex h-10 items-center gap-3">
           <button

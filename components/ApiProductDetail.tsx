@@ -55,7 +55,6 @@ function toPublicPreviewProduct(
       },
     ],
     purchaseSource: lockedLabel,
-    shippingDeadline: lockedLabel,
     shippingMethods: [{ name: lockedLabel, price: "-" }],
     status: requiresLogin ? "PUBLIC_PREVIEW" : "RECRUITING",
   };

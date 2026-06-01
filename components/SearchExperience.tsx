@@ -45,17 +45,16 @@ import {
   toArtistRailItem,
   toMemberRailItem,
 } from "@/lib/group-presenters";
-import {
-  popularArtists,
-  recentSearches,
-  searchResultArtists,
-  searchResultItems,
-} from "@/lib/mock-home-search";
 
 type SearchExperienceProps = {
   query?: string;
   relatedSearch?: boolean;
+  selectedMemberId?: string;
   skipEnterAnimation?: boolean;
+};
+
+type RecentSearchItem = {
+  label: string;
 };
 
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
@@ -146,6 +145,7 @@ function mergeFavoriteGroups<T extends ApiGroup>(
 export function SearchExperience({
   query,
   relatedSearch = false,
+  selectedMemberId,
   skipEnterAnimation = false,
 }: SearchExperienceProps) {
   const router = useRouter();
@@ -172,7 +172,7 @@ export function SearchExperience({
     ArtistRailItem[] | null
   >(null);
   const [apiRecentSearches, setApiRecentSearches] = useState<
-    typeof recentSearches | null
+    RecentSearchItem[] | null
   >(null);
   const [apiRecentSearchesToken, setApiRecentSearchesToken] = useState<
     string | null
@@ -186,33 +186,39 @@ export function SearchExperience({
   );
   const keyword = query?.trim();
   const hasResults = Boolean(keyword);
-  const resultItems = hasResults ? (apiResultItems ?? []) : searchResultItems;
-  const resultFilters = hasResults
-    ? (apiResultGroups ?? [])
-    : searchResultArtists;
+  const isResultLoading =
+    hasResults && (apiResultItems === null || apiResultGroups === null);
+  const resultItems = hasResults ? apiResultItems ?? [] : [];
+  const resultFilters = hasResults ? apiResultGroups ?? [] : [];
   const normalizedKeyword = keyword ? normalizeGroupSearchText(keyword) : "";
-  const selectedRelatedItemId =
-    resultFilters.find(
-      (item) => normalizeGroupSearchText(item.name) === normalizedKeyword,
-    )?.id ?? null;
-  const fallbackPopularGroupItems: ArtistRailItem[] = popularArtists.map(
-    (artist) => ({
-      id: String(artist.rank),
-      name: artist.name,
-      group: artist.group,
-      initials: artist.initials,
-      tone: artist.tone,
-    }),
+  const selectedMemberFilterId = selectedMemberId?.trim();
+  const exactResultFilters = resultFilters.filter(
+    (item) =>
+      item.type === "member" &&
+      normalizeGroupSearchText(item.name) === normalizedKeyword,
   );
-  const popularGroupItems = apiPopularGroups ?? fallbackPopularGroupItems;
+  const isMemberDisambiguation =
+    !selectedMemberFilterId && exactResultFilters.length > 1;
+  const selectedRelatedItemId =
+    selectedMemberFilterId
+      ? `member:${selectedMemberFilterId}`
+      : exactResultFilters.length === 1
+      ? exactResultFilters[0].id
+      : null;
+  const popularGroupItems = apiPopularGroups ?? [];
+  const isPopularGroupsLoading = !hasResults && apiPopularGroups === null;
   const currentRecentSearchToken = authState.isLoggedIn
     ? authState.accessToken ?? null
     : null;
   const recentSearchItems = authState.isLoggedIn
     ? (apiRecentSearchesToken === currentRecentSearchToken
         ? apiRecentSearches
-        : null) ?? recentSearches
-    : recentSearches;
+        : null) ?? []
+    : [];
+  const isRecentSearchesLoading =
+    authState.isLoggedIn &&
+    apiRecentSearches === null &&
+    apiRecentSearchesToken === null;
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -312,14 +318,14 @@ export function SearchExperience({
           return;
         }
 
-        setApiRecentSearches(null);
-        setApiRecentSearchesToken(null);
+        setApiRecentSearches([]);
+        setApiRecentSearchesToken(currentRecentSearchToken);
       });
 
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn]);
+  }, [authState.accessToken, authState.isLoggedIn, currentRecentSearchToken]);
 
   useEffect(() => {
     const accessToken = authState.isLoggedIn
@@ -328,9 +334,11 @@ export function SearchExperience({
     let isActive = true;
 
     if (keyword) {
-      setApiResultItems([]);
-      setApiResultGroups([]);
+      setApiResultItems(null);
       setResultMessage("");
+      setGroupMessage("");
+    } else {
+      setApiPopularGroups(null);
       setGroupMessage("");
     }
 
@@ -448,22 +456,42 @@ export function SearchExperience({
           match.matchedMembers.length > 0 || rankedGroupIds.has(match.group.id),
       );
       const primaryMemberMatch = memberMatches[0];
-      const matchedMemberItems = relatedSearch
-        ? []
-        : (primaryMemberMatch?.matchedMembers ?? [])
-            .slice(0, 1)
-            .map((member) =>
-              toMemberRailItem(member, primaryMemberMatch?.group.name),
-            );
-      const relatedMemberItems = (
-        relatedSearch
-          ? primaryMemberMatch?.allMembers
-          : primaryMemberMatch?.relatedMembers
-      ?? [])
-        .slice(0, relatedSearch ? 6 : 5)
-        .map((member) =>
-          toMemberRailItem(member, primaryMemberMatch?.group.name),
+      const selectedMemberMatch = selectedMemberFilterId
+        ? memberMatches.find((match) =>
+            match.allMembers.some((member) => member.id === selectedMemberFilterId),
+          )
+        : undefined;
+      const matchedMemberEntries = memberMatches
+        .flatMap((match) =>
+          match.matchedMembers.map((member) => ({
+            groupName: match.group.name,
+            member,
+          })),
+        )
+        .filter(
+          (entry, index, entries) =>
+            entries.findIndex(
+              (candidate) => candidate.member.id === entry.member.id,
+            ) === index,
         );
+      const hasMemberCandidates =
+        !selectedMemberFilterId && matchedMemberEntries.length > 1;
+      const memberItems = hasMemberCandidates
+        ? matchedMemberEntries
+            .slice(0, 8)
+            .map((entry) => toMemberRailItem(entry.member, entry.groupName))
+        : (
+            selectedMemberMatch?.allMembers ??
+            primaryMemberMatch?.allMembers ??
+            []
+          )
+            .slice(0, 8)
+            .map((member) =>
+              toMemberRailItem(
+                member,
+                selectedMemberMatch?.group.name ?? primaryMemberMatch?.group.name,
+              ),
+            );
       const memberGroupItems = memberMatches
         .map(({ group }) => group)
         .filter(
@@ -483,29 +511,48 @@ export function SearchExperience({
         .map((member) => member.id)
         .filter((memberId, index, memberIds) => memberIds.indexOf(memberId) === index)
         .slice(0, 6);
-      const [keywordItems, ...relatedItemGroups] = await Promise.all([
-        requestBuncheols(accessToken, { keyword: searchKeyword, size: 50 }),
-        ...rankedGroups.map((group) =>
-          requestBuncheols(accessToken, { groupId: group.id, size: 50 }).catch(
-            () => [],
-          ),
-        ),
-        ...matchedMemberIds.map((memberId) =>
-          requestBuncheols(accessToken, { memberId, size: 50 }).catch(() => []),
-        ),
-      ]);
+      const [keywordItems, ...relatedItemGroups] = await Promise.all(
+        selectedMemberFilterId
+          ? [
+              requestBuncheols(accessToken, {
+                memberId: selectedMemberFilterId,
+                size: 50,
+              }),
+            ]
+          : [
+              requestBuncheols(accessToken, { keyword: searchKeyword, size: 50 }),
+              ...rankedGroups.map((group) =>
+                requestBuncheols(accessToken, {
+                  groupId: group.id,
+                  size: 50,
+                }).catch(() => []),
+              ),
+              ...matchedMemberIds.map((memberId) =>
+                requestBuncheols(accessToken, { memberId, size: 50 }).catch(
+                  () => [],
+                ),
+              ),
+            ],
+      );
       const productItems = [...keywordItems, ...relatedItemGroups.flat()].filter(
         (item, index, items) =>
           items.findIndex((candidate) => candidate.id === item.id) === index,
       );
+      const railItems = selectedMemberMatch
+        ? [
+            toArtistRailItem(selectedMemberMatch.group),
+            ...memberItems,
+          ]
+        : hasMemberCandidates
+        ? memberItems
+        : [
+            ...groupItems,
+            ...memberGroupItems,
+            ...memberItems,
+          ];
 
       return {
-        groupItems: [
-          ...groupItems,
-          ...memberGroupItems,
-          ...matchedMemberItems,
-          ...relatedMemberItems,
-        ].slice(0, 8),
+        groupItems: railItems.slice(0, 8),
         productItems,
       };
     };
@@ -532,7 +579,7 @@ export function SearchExperience({
         }
 
         if (keyword) {
-          setApiResultGroups([]);
+          setApiResultGroups((currentGroups) => currentGroups ?? []);
           setApiResultItems([]);
         } else {
           setApiPopularGroups([]);
@@ -548,7 +595,13 @@ export function SearchExperience({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn, keyword, relatedSearch]);
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    keyword,
+    relatedSearch,
+    selectedMemberFilterId,
+  ]);
 
   function closeSearch() {
     const searchEntryHistoryIndex = sessionStorage.getItem(
@@ -642,6 +695,25 @@ export function SearchExperience({
   }
 
   function openRelatedSearch(item: ArtistRailItem) {
+    if (item.type === "member" && item.apiId) {
+      if (selectedMemberFilterId === item.apiId) {
+        return;
+      }
+
+      const nextQuery = keyword ?? item.name;
+      const nextHref = `/search?q=${encodeURIComponent(
+        nextQuery,
+      )}&memberId=${encodeURIComponent(item.apiId)}&from=related`;
+
+      if (hasResults) {
+        router.push(nextHref);
+        return;
+      }
+
+      router.replace(nextHref);
+      return;
+    }
+
     if (
       keyword &&
       normalizeGroupSearchText(item.name) === normalizeGroupSearchText(keyword)
@@ -732,6 +804,113 @@ export function SearchExperience({
       current === shouldHide ? current : shouldHide,
     );
     lastResultScrollTopRef.current = nextScrollTop;
+  }
+
+  function renderRecentSearchSkeleton() {
+    return (
+      <div aria-label="최근 검색어를 불러오는 중" className="mt-4 flex flex-wrap gap-3" role="status">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <span
+            className="h-10 w-24 animate-pulse rounded-full bg-black/8"
+            key={`recent-search-skeleton-${index}`}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderPopularGroupSkeleton() {
+    return (
+      <div aria-label="인기 아티스트를 불러오는 중" className="mt-5 border-y border-black/10" role="status">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div
+            className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/10 last:border-b-0"
+            key={`popular-group-skeleton-${index}`}
+          >
+            <span className="h-6 w-6 animate-pulse rounded-full bg-black/8" />
+            <span className="h-12 w-12 animate-pulse rounded-full bg-black/8" />
+            <span>
+              <span className="block h-5 w-32 animate-pulse rounded-full bg-black/8" />
+              <span className="mt-2 block h-3 w-20 animate-pulse rounded-full bg-black/8" />
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderSearchRailSkeleton() {
+    return (
+      <div
+        aria-label="검색 필터를 불러오는 중"
+        className="flex gap-4 overflow-hidden pb-4"
+        role="status"
+      >
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div className="min-w-[65px]" key={`search-rail-skeleton-${index}`}>
+            <div className="h-[65px] w-[65px] animate-pulse rounded-[1.1rem] bg-black/8" />
+            <div className="mt-2 h-3 w-12 animate-pulse rounded-full bg-black/8" />
+            <div className="mt-1 h-2.5 w-9 animate-pulse rounded-full bg-black/8" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderResultFilterRail() {
+    if (selectedMemberFilterId && isResultLoading) {
+      return renderSearchRailSkeleton();
+    }
+
+    if (resultFilters.length === 0) {
+      return isResultLoading ? renderSearchRailSkeleton() : null;
+    }
+
+    const rail = (
+      <ArtistRail
+        items={resultFilters}
+        onFavoriteToggle={handleFavoriteGroupToggle}
+        onItemClick={openRelatedSearch}
+        pinFirstItem={!isMemberDisambiguation}
+        selectedId={selectedRelatedItemId ?? undefined}
+      />
+    );
+
+    if (!isMemberDisambiguation || !keyword) {
+      return rail;
+    }
+
+    return (
+      <div className="mx-1 rounded-[1.1rem] bg-[#f7f7f7] px-4 pb-1 pt-4">
+        <p className="text-[14px] font-semibold tracking-[-0.04em]">
+          어떤 {keyword}를 찾고 있어요?
+        </p>
+        <p className="mt-1 text-[12px] font-semibold tracking-[-0.04em] text-black/45">
+          그룹을 보고 한 명을 고르면 해당 멤버 결과만 보여줘요.
+        </p>
+        <div className="mt-4">
+          {rail}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSearchResultSkeleton() {
+    return (
+      <div aria-label="검색 결과를 불러오는 중" className="grid grid-cols-2 gap-3" role="status">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div
+            className="overflow-hidden rounded-[1rem] border border-black/10 bg-white p-3"
+            key={`search-result-skeleton-${index}`}
+          >
+            <div className="aspect-square animate-pulse rounded-[0.85rem] bg-black/8" />
+            <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
+            <div className="mt-2 h-3 w-3/5 animate-pulse rounded-full bg-black/8" />
+            <div className="mt-4 h-8 animate-pulse rounded-full bg-black/8" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -831,13 +1010,7 @@ export function SearchExperience({
               {hasResults ? (
                 <>
                   <section className="-mx-1">
-                    <ArtistRail
-                      items={resultFilters}
-                      onFavoriteToggle={handleFavoriteGroupToggle}
-                      onItemClick={openRelatedSearch}
-                      pinFirstItem
-                      selectedId={selectedRelatedItemId ?? undefined}
-                    />
+                    {renderResultFilterRail()}
                   </section>
 
                   <section className="border-t border-black/10 pt-5">
@@ -846,7 +1019,7 @@ export function SearchExperience({
                         검색 결과
                       </h2>
                       <span className="text-[13px] font-medium text-black/45">
-                        {resultItems.length}개
+                        {isResultLoading ? "" : `${resultItems.length}개`}
                       </span>
                     </div>
 
@@ -864,7 +1037,11 @@ export function SearchExperience({
                         </p>
                       </div>
                     ) : null}
-                    <ProductGrid items={resultItems} />
+                    {isResultLoading ? (
+                      renderSearchResultSkeleton()
+                    ) : (
+                      <ProductGrid items={resultItems} />
+                    )}
                   </section>
                 </>
               ) : (
@@ -873,25 +1050,32 @@ export function SearchExperience({
                     <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
                       최근 검색어
                     </h2>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      {recentSearchItems.map((search) => (
-                        <button
-                          key={search.label}
-                          onClick={() => handleSearch(search.label)}
-                          className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
-                          type="button"
-                        >
-                          <span>{search.label}</span>
-                          <CloseIcon />
-                        </button>
-                      ))}
-                    </div>
+                    {isRecentSearchesLoading ? (
+                      renderRecentSearchSkeleton()
+                    ) : (
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        {recentSearchItems.map((search) => (
+                          <button
+                            key={search.label}
+                            onClick={() => handleSearch(search.label)}
+                            className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
+                            type="button"
+                          >
+                            <span>{search.label}</span>
+                            <CloseIcon />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </section>
 
                   <section className="mt-20">
                     <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
                       인기 아티스트
                     </h2>
+                    {isPopularGroupsLoading ? (
+                      renderPopularGroupSkeleton()
+                    ) : (
                     <div className="mt-5 border-y border-black/20">
                       {popularGroupItems.map((artist, index) => (
                         <button
@@ -927,6 +1111,7 @@ export function SearchExperience({
                         </button>
                       ))}
                     </div>
+                    )}
                   </section>
                 </>
               )}
@@ -957,60 +1142,68 @@ export function SearchExperience({
                 <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
                   최근 검색어
                 </h2>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {recentSearchItems.map((search) => (
-                    <button
-                      key={search.label}
-                      className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
-                      onClick={() => handleSearch(search.label)}
-                      type="button"
-                    >
-                      <span>{search.label}</span>
-                      <CloseIcon />
-                    </button>
-                  ))}
-                </div>
+                {isRecentSearchesLoading ? (
+                  renderRecentSearchSkeleton()
+                ) : (
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    {recentSearchItems.map((search) => (
+                      <button
+                        key={search.label}
+                        className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
+                        onClick={() => handleSearch(search.label)}
+                        type="button"
+                      >
+                        <span>{search.label}</span>
+                        <CloseIcon />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </section>
 
               <section className="mt-20">
                 <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
                   인기 아티스트
                 </h2>
-                <div className="mt-5 border-y border-black/20">
-                  {popularGroupItems.map((artist, index) => (
-                    <button
-                      key={artist.id}
-                      className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
-                      onClick={() => handleSearch(artist.name)}
-                      type="button"
-                    >
-                      <span className="text-[21px] font-medium tracking-[-0.04em]">
-                        {index + 1}
-                      </span>
-                      <span
-                        className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
+                {isPopularGroupsLoading ? (
+                  renderPopularGroupSkeleton()
+                ) : (
+                  <div className="mt-5 border-y border-black/20">
+                    {popularGroupItems.map((artist, index) => (
+                      <button
+                        key={artist.id}
+                        className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/20 text-left last:border-b-0"
+                        onClick={() => handleSearch(artist.name)}
+                        type="button"
                       >
-                        {artist.imageUrl ? (
-                          <ArtistImage
-                            imageUrl={artist.imageUrl}
-                            name={artist.name}
-                            roundedClassName="rounded-full"
-                          />
-                        ) : (
-                          artist.initials
-                        )}
-                      </span>
-                      <span>
-                        <span className="block text-[24px] font-medium tracking-[-0.05em]">
-                          {artist.name}
+                        <span className="text-[21px] font-medium tracking-[-0.04em]">
+                          {index + 1}
                         </span>
-                        <span className="mt-0.5 block text-[12px] font-medium text-black/40">
-                          {artist.group}
+                        <span
+                          className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${artist.tone} text-[13px] font-semibold tracking-[-0.05em] text-black ring-1 ring-black/10`}
+                        >
+                          {artist.imageUrl ? (
+                            <ArtistImage
+                              imageUrl={artist.imageUrl}
+                              name={artist.name}
+                              roundedClassName="rounded-full"
+                            />
+                          ) : (
+                            artist.initials
+                          )}
                         </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                        <span>
+                          <span className="block text-[24px] font-medium tracking-[-0.05em]">
+                            {artist.name}
+                          </span>
+                          <span className="mt-0.5 block text-[12px] font-medium text-black/40">
+                            {artist.group}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </section>
             </div>
           </div>
@@ -1023,27 +1216,21 @@ export function SearchExperience({
     return (
       <>
         <section className="-mx-1">
-          <ArtistRail
-            items={resultFilters}
-            onFavoriteToggle={handleFavoriteGroupToggle}
-            onItemClick={openRelatedSearch}
-            pinFirstItem
-            selectedId={selectedRelatedItemId ?? undefined}
-          />
+          {renderResultFilterRail()}
         </section>
 
         <section className="border-t border-black/10 pt-5">
           <div className="mb-4 flex items-end justify-between">
-            <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-              검색 결과
-            </h2>
-            <span className="text-[13px] font-medium text-black/45">
-              {resultItems.length}개
-            </span>
-          </div>
+          <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+            검색 결과
+          </h2>
+          <span className="text-[13px] font-medium text-black/45">
+              {isResultLoading ? "" : `${resultItems.length}개`}
+          </span>
+        </div>
 
-          <ProductGrid items={resultItems} />
-        </section>
+          {isResultLoading ? renderSearchResultSkeleton() : <ProductGrid items={resultItems} />}
+      </section>
       </>
     );
   }

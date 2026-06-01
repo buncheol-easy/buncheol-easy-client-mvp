@@ -34,6 +34,10 @@ type ArtistGroup = ApiGroup & {
   favorited: boolean;
 };
 
+type ArtistExploreContentProps = {
+  onBack?: () => void;
+};
+
 const FAVORITE_GROUP_LIMIT = 5;
 
 function getFavoriteId(group: ArtistGroup) {
@@ -94,7 +98,7 @@ function ArtistAvatar({
   );
 }
 
-export function ArtistExploreContent() {
+export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -106,6 +110,8 @@ export function ArtistExploreContent() {
   const [message, setMessage] = useState("");
   const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [shouldPreserveExploreOrder, setShouldPreserveExploreOrder] =
+    useState(false);
   const pendingGroupIdsRef = useRef(new Set<string>());
 
   const favoriteGroups = groups.filter((group) => group.favorited);
@@ -113,15 +119,18 @@ export function ArtistExploreContent() {
   const isFavoriteRailVisible = favoriteCount >= FAVORITE_GROUP_LIMIT;
   const visibleGroups = useMemo(() => {
     const trimmedQuery = query.trim();
+    const shouldPinFavorites = !shouldPreserveExploreOrder;
 
     if (!trimmedQuery) {
-      return sortFavoriteGroupsFirst(groups);
+      return shouldPinFavorites ? sortFavoriteGroupsFirst(groups) : groups;
     }
 
-    return sortFavoriteGroupsFirst(
-      rankGroupSearchResults(groups, trimmedQuery, 80),
-    );
-  }, [groups, query]);
+    const rankedGroups = rankGroupSearchResults(groups, trimmedQuery, 80);
+
+    return shouldPinFavorites
+      ? sortFavoriteGroupsFirst(rankedGroups)
+      : rankedGroups;
+  }, [groups, query, shouldPreserveExploreOrder]);
 
   useEffect(() => {
     let isActive = true;
@@ -170,6 +179,7 @@ export function ArtistExploreContent() {
           return;
         }
 
+        setShouldPreserveExploreOrder(false);
         setGroups(result.groups);
         setMessage(result.message);
       })
@@ -184,6 +194,7 @@ export function ArtistExploreContent() {
           clearAuthState();
         }
 
+        setShouldPreserveExploreOrder(false);
         setGroups([]);
         setMessage(
           error instanceof Error
@@ -226,6 +237,7 @@ export function ArtistExploreContent() {
 
     pendingGroupIdsRef.current.add(group.id);
     setPendingGroupId(group.id);
+    setShouldPreserveExploreOrder(true);
     setGroups((current) =>
       current.map((item) =>
         item.id === group.id ? { ...item, favorited: nextFavorited } : item,
@@ -272,18 +284,18 @@ export function ArtistExploreContent() {
           <button
             aria-label="뒤로가기"
             className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white"
-            onClick={() => router.back()}
+            onClick={onBack ?? (() => router.back())}
             type="button"
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-[22px] font-semibold leading-none tracking-[-0.06em]">
+          <div className="min-w-0 flex-1 text-right">
+            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
+              Artists
+            </p>
+            <h1 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
               아티스트
             </h1>
-            <p className="mt-1 text-[12px] font-semibold text-black/40">
-              최애 {favoriteCount}/{FAVORITE_GROUP_LIMIT}
-            </p>
           </div>
         </div>
 
@@ -297,6 +309,9 @@ export function ArtistExploreContent() {
             type="search"
             value={query}
           />
+          <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/55 shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
+            {favoriteCount}/{FAVORITE_GROUP_LIMIT}
+          </span>
         </label>
 
         <div
@@ -311,7 +326,7 @@ export function ArtistExploreContent() {
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-[14px] font-semibold text-white">
               ♥
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold tracking-[-0.03em]">
                 내 최애가 가득 찼어요.
               </p>

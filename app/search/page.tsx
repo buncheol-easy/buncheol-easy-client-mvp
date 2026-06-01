@@ -6,6 +6,7 @@ export const viewport = blackChromeViewport;
 type SearchPageProps = {
   searchParams: Promise<{
     from?: string | string[];
+    memberId?: string | string[];
     q?: string | string[];
   }>;
 };
@@ -15,12 +16,13 @@ function normalizeQuery(query: string | string[] | undefined) {
 }
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
-  const { from, q } = await searchParams;
+  const { from, memberId, q } = await searchParams;
 
   return (
     <SearchExperience
       query={normalizeQuery(q)}
       relatedSearch={normalizeQuery(from) === "related"}
+      selectedMemberId={normalizeQuery(memberId)}
     />
   );
 }

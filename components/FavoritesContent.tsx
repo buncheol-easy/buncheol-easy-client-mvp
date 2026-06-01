@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import type { MouseEvent } from "react";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
@@ -16,13 +17,16 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
-import { favoriteIdols } from "@/lib/mock-home-search";
-import { productDetails } from "@/lib/mock-products";
 
 type FavoriteFilter = "all" | "favoriteArtist";
 type FavoriteSort = "deadline" | "recent";
 type FavoriteProductCardItem = ProductCardItem & {
   favoritedOrder: number;
+};
+type FavoritesViewState = {
+  filter?: FavoriteFilter;
+  hideClosed?: boolean;
+  sort?: FavoriteSort;
 };
 
 type FavoritesContentProps = {
@@ -31,29 +35,21 @@ type FavoritesContentProps = {
 
 export const FAVORITES_SKIP_ENTER_KEY = "skip-favorites-enter-animation";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
+const FAVORITES_VIEW_STATE_KEY = "favorites-view-state";
 
 // Deadline strings are entered as Korea-local cutoff times.
 const kstOffsetHours = 9;
-const favoriteProducts: FavoriteProductCardItem[] = productDetails
-  .filter((product) => product.liked)
-  .map((product, index) => ({
-    ...product,
-    favoritedOrder: index,
-  }));
-const favoriteArtistNames = new Set(
-  favoriteIdols.map((artist) => artist.name),
-);
 
 function parseDeadline(deadline: string) {
   const match = deadline
     .trim()
-    .match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})\s+(\d{1,2})(?::00)?$/);
+    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
 
   if (!match) {
     return new Date(Number.NaN);
   }
 
-  const [, year, month, day, hour] = match;
+  const [, year, month, day, hour = "0"] = match;
 
   return new Date(
     Date.UTC(
@@ -76,19 +72,17 @@ function isClosed(deadline: string, now: Date) {
 }
 
 function isClosedByStatus(status: string | undefined) {
-  return Boolean(status && status !== "RECRUITING");
+  return Boolean(status && status.toUpperCase() !== "RECRUITING");
 }
 
 function isDeletedProductStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "DELETED";
+  const normalizedStatus = status?.toUpperCase();
+
+  return normalizedStatus === "CANCELLED" || normalizedStatus === "DELETED";
 }
 
 function shouldHideClosedProduct(product: ProductCardItem, now: Date) {
-  if (product.status) {
-    return isClosedByStatus(product.status);
-  }
-
-  return isClosed(product.deadline, now);
+  return isClosedByStatus(product.status) || isClosed(product.deadline, now);
 }
 
 function takeShouldSkipFavoritesEnter() {
@@ -103,6 +97,67 @@ function takeShouldSkipFavoritesEnter() {
   return shouldSkip;
 }
 
+function isFavoriteFilter(value: unknown): value is FavoriteFilter {
+  return value === "all" || value === "favoriteArtist";
+}
+
+function isFavoriteSort(value: unknown): value is FavoriteSort {
+  return value === "deadline" || value === "recent";
+}
+
+function readStoredFavoritesViewState(keepStoredState: boolean) {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const rawViewState = window.sessionStorage.getItem(
+    FAVORITES_VIEW_STATE_KEY,
+  );
+
+  if (!rawViewState) {
+    return {};
+  }
+
+  if (!keepStoredState) {
+    window.sessionStorage.removeItem(FAVORITES_VIEW_STATE_KEY);
+  }
+
+  try {
+    const viewState = JSON.parse(rawViewState) as FavoritesViewState;
+
+    return {
+      filter: isFavoriteFilter(viewState.filter)
+        ? viewState.filter
+        : undefined,
+      hideClosed:
+        typeof viewState.hideClosed === "boolean"
+          ? viewState.hideClosed
+          : undefined,
+      sort: isFavoriteSort(viewState.sort) ? viewState.sort : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function FavoriteProductGridSkeleton() {
+  return (
+    <div aria-label="찜한 상품을 불러오는 중" className="grid grid-cols-2 gap-3" role="status">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          className="overflow-hidden rounded-[1rem] border border-black/10 bg-white p-3"
+          key={`favorite-product-skeleton-${index}`}
+        >
+          <div className="aspect-square animate-pulse rounded-[0.85rem] bg-black/8" />
+          <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
+          <div className="mt-2 h-3 w-3/5 animate-pulse rounded-full bg-black/8" />
+          <div className="mt-4 h-8 animate-pulse rounded-full bg-black/8" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function FavoritesContent({
   skipEnterAnimation = false,
 }: FavoritesContentProps) {
@@ -110,10 +165,19 @@ export function FavoritesContent({
   const [shouldSkipEnterAnimation] = useState(
     () => skipEnterAnimation || takeShouldSkipFavoritesEnter(),
   );
-  const [filter, setFilter] = useState<FavoriteFilter>("all");
-  const [sort, setSort] = useState<FavoriteSort>("recent");
+  const [initialViewState] = useState(() =>
+    readStoredFavoritesViewState(shouldSkipEnterAnimation),
+  );
+  const [filter, setFilter] = useState<FavoriteFilter>(
+    initialViewState.filter ?? "all",
+  );
+  const [sort, setSort] = useState<FavoriteSort>(
+    initialViewState.sort ?? "recent",
+  );
   const [isSortOpen, setIsSortOpen] = useState(false);
-  const [hideClosed, setHideClosed] = useState(false);
+  const [hideClosed, setHideClosed] = useState(
+    initialViewState.hideClosed ?? false,
+  );
   const [now, setNow] = useState(() => new Date());
   const [apiFavoriteProducts, setApiFavoriteProducts] = useState<
     FavoriteProductCardItem[] | null
@@ -192,25 +256,11 @@ export function FavoritesContent({
   ]);
 
   const filteredProducts = useMemo(() => {
-    const sourceProducts =
-      apiFavoriteProducts ?? (authState.isLoggedIn ? [] : favoriteProducts);
+    const sourceProducts = apiFavoriteProducts ?? [];
 
     return sourceProducts
       .filter((product) => {
         if (isDeletedProductStatus(product.status)) {
-          return false;
-        }
-
-        if (apiFavoriteProducts) {
-          return !hideClosed || !shouldHideClosedProduct(product, now);
-        }
-
-        if (
-          filter === "favoriteArtist" &&
-          !(product.targetMembers ?? [product.member]).some((member) =>
-            favoriteArtistNames.has(member),
-          )
-        ) {
           return false;
         }
 
@@ -230,7 +280,50 @@ export function FavoritesContent({
           parseDeadline(right.deadline).getTime()
         );
       });
-  }, [apiFavoriteProducts, authState.isLoggedIn, filter, hideClosed, now, sort]);
+  }, [apiFavoriteProducts, hideClosed, now, sort]);
+  const isFavoriteProductsLoading =
+    authState.isLoggedIn && apiFavoriteProducts === null;
+
+  function rememberFavoritesViewState() {
+    window.sessionStorage.setItem(
+      FAVORITES_VIEW_STATE_KEY,
+      JSON.stringify({ filter, hideClosed, sort }),
+    );
+  }
+
+  function rememberFavoritesReturnState(
+    event: MouseEvent<HTMLElement>,
+  ) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    const target = event.target;
+
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    const productLink = target.closest<HTMLAnchorElement>(
+      'a[href^="/products/"]',
+    );
+
+    if (!productLink || !scrollContainerRef.current) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      FAVORITES_SCROLL_TOP_KEY,
+      String(scrollContainerRef.current.scrollTop),
+    );
+    rememberFavoritesViewState();
+  }
 
   useLayoutEffect(() => {
     const storedScrollTop = window.sessionStorage.getItem(
@@ -241,12 +334,26 @@ export function FavoritesContent({
       return;
     }
 
-    scrollContainerRef.current.scrollTop = Number(storedScrollTop);
-
-    if (!skipEnterAnimation) {
-      window.sessionStorage.removeItem(FAVORITES_SCROLL_TOP_KEY);
+    if (isFavoriteProductsLoading) {
+      return;
     }
-  }, [skipEnterAnimation]);
+
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (!scrollContainerRef.current) {
+        return;
+      }
+
+      scrollContainerRef.current.scrollTop = Number(storedScrollTop);
+
+      if (!skipEnterAnimation) {
+        window.sessionStorage.removeItem(FAVORITES_SCROLL_TOP_KEY);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(restoreFrame);
+    };
+  }, [filteredProducts.length, isFavoriteProductsLoading, skipEnterAnimation]);
 
   return (
     <div
@@ -360,6 +467,7 @@ export function FavoritesContent({
       <main
         className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
         data-product-scroll-container="favorites"
+        onClickCapture={rememberFavoritesReturnState}
         ref={scrollContainerRef}
       >
         <div
@@ -373,7 +481,9 @@ export function FavoritesContent({
               </p>
             </div>
           ) : null}
-          {filteredProducts.length > 0 ? (
+          {isFavoriteProductsLoading ? (
+            <FavoriteProductGridSkeleton />
+          ) : filteredProducts.length > 0 ? (
             <ProductGrid items={filteredProducts} />
           ) : (
             <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-6">

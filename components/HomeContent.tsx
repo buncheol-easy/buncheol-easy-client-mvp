@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type UIEvent,
 } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
@@ -28,13 +29,42 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { toArtistRailItem } from "@/lib/group-presenters";
-import { favoriteIdols, homeListings } from "@/lib/mock-home-search";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
+const HOME_BANNER_AUTO_INTERVAL_MS = 4200;
+const HOME_BANNERS = [
+  {
+    href: "/board/transfer-payment?from=home",
+    eyebrow: "Notice",
+    title: "입금 확인 방식이\n계좌이체 기반으로 바뀌어요.",
+    badge: "PAY",
+    caption: "Transfer Guide",
+    gradient:
+      "bg-[linear-gradient(135deg,#171717_0%,#6f6f6f_48%,#f0f0f0_100%)]",
+  },
+  {
+    href: "/board/shipping-method-filter?from=home",
+    eyebrow: "Delivery",
+    title: "상품별 배송 방식에 맞는\n주소만 선택해요.",
+    badge: "CU·GS",
+    caption: "Address Match",
+    gradient:
+      "bg-[linear-gradient(135deg,#111827_0%,#4f46e5_50%,#a7f3d0_100%)]",
+  },
+  {
+    href: "/board/closed-bid-status?from=home",
+    eyebrow: "Bid Alert",
+    title: "마감 후 낙찰 상태를\n빠르게 확인하세요.",
+    badge: "BID",
+    caption: "Winning Status",
+    gradient:
+      "bg-[linear-gradient(135deg,#18181b_0%,#be123c_48%,#fde68a_100%)]",
+  },
+] as const;
 
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
@@ -62,13 +92,61 @@ function getStoredHomeScrollTop() {
   return storedScrollTop === null ? null : Number(storedScrollTop);
 }
 
+function HomeArtistRailSkeleton() {
+  return (
+    <div
+      aria-label="최애 그룹을 불러오는 중"
+      className="flex items-start gap-3"
+      role="status"
+    >
+      <div className="flex-shrink-0">
+        <div className="h-[65px] w-[65px] animate-pulse rounded-[1.25rem] bg-black/8" />
+        <div className="mt-2 h-4 w-[54px] animate-pulse rounded-full bg-black/8" />
+      </div>
+      <div className="my-2 w-px self-stretch bg-black/10" />
+      <div className="flex min-w-0 flex-1 gap-4 overflow-hidden pb-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div className="min-w-[65px]" key={`home-artist-skeleton-${index}`}>
+            <div className="h-[65px] w-[65px] animate-pulse rounded-[1.1rem] bg-black/8" />
+            <div className="mt-2 h-4 w-[52px] animate-pulse rounded-full bg-black/8" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomeProductGridSkeleton() {
+  return (
+    <div
+      aria-label="추천 상품을 불러오는 중"
+      className="grid grid-cols-2 gap-x-4 gap-y-7 pb-6"
+      role="status"
+    >
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div key={`home-product-skeleton-${index}`}>
+          <div className="aspect-square animate-pulse rounded-[1.35rem] bg-black/8" />
+          <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
+          <div className="mt-2 h-3 w-2/3 animate-pulse rounded-full bg-black/8" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const router = useRouter();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const isRestoringReturnScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
-  const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
-    useState(skipEnterAnimation);
+  const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
+  const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] = useState(
+    () =>
+      skipEnterAnimation ||
+      takeShouldSkipHomeEnter() ||
+      getStoredHomeScrollTop() !== null,
+  );
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
@@ -81,8 +159,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     readAuthState,
     getInitialAuthState,
   );
-  const listings = apiListings ?? homeListings;
-  const favoriteGroups = apiGroups ?? favoriteIdols;
+  const isListingLoading = apiListings === null;
+  const isGroupLoading = apiGroups === null;
+  const listings = apiListings ?? [];
+  const favoriteGroups = apiGroups ?? [];
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -119,9 +199,77 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     lastScrollTopRef.current = nextScrollTop;
   }
 
+  function handleBannerScroll(event: UIEvent<HTMLDivElement>) {
+    const { clientWidth, scrollLeft } = event.currentTarget;
+
+    if (clientWidth <= 0) {
+      return;
+    }
+
+    const nextIndex = Math.min(
+      HOME_BANNERS.length - 1,
+      Math.max(0, Math.round(scrollLeft / clientWidth)),
+    );
+
+    setActiveBannerIndex((current) =>
+      current === nextIndex ? current : nextIndex,
+    );
+  }
+
+  function handleBannerDotClick(index: number) {
+    const scrollElement = bannerScrollerRef.current;
+
+    if (!scrollElement) {
+      return;
+    }
+
+    setActiveBannerIndex(index);
+    scrollElement.scrollTo({
+      behavior: "smooth",
+      left: scrollElement.clientWidth * index,
+    });
+  }
+
+  useEffect(() => {
+    if (HOME_BANNERS.length <= 1 || typeof window === "undefined") {
+      return;
+    }
+
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+    if (motionQuery.matches) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      const scrollElement = bannerScrollerRef.current;
+
+      if (!scrollElement) {
+        return;
+      }
+
+      setActiveBannerIndex((currentIndex) => {
+        const nextIndex = (currentIndex + 1) % HOME_BANNERS.length;
+
+        scrollElement.scrollTo({
+          behavior: "smooth",
+          left: scrollElement.clientWidth * nextIndex,
+        });
+
+        return nextIndex;
+      });
+    }, HOME_BANNER_AUTO_INTERVAL_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeBannerIndex]);
+
   useLayoutEffect(() => {
     const storedScrollTop = getStoredHomeScrollTop();
-    const shouldSkip = skipEnterAnimation || takeShouldSkipHomeEnter();
+    const shouldSkip = skipEnterAnimation || shouldSkipEnterAnimation;
     const shouldStartWithHiddenHeader =
       storedScrollTop !== null &&
       storedScrollTop > SCROLL_HIDE_START;
@@ -175,10 +323,18 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         window.clearTimeout(restoreTimer);
       }
     };
-  }, [skipEnterAnimation]);
+  }, [skipEnterAnimation, shouldSkipEnterAnimation]);
 
   useEffect(() => {
     let isActive = true;
+    const resetFrame = window.requestAnimationFrame(() => {
+      if (!isActive) {
+        return;
+      }
+
+      setApiListings(null);
+      setListingMessage("");
+    });
 
     async function loadListings() {
       let accessToken: string | null = null;
@@ -216,14 +372,23 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     return () => {
       isActive = false;
+      window.cancelAnimationFrame(resetFrame);
     };
   }, [authState.accessToken, authState.isLoggedIn]);
 
   useEffect(() => {
     let isActive = true;
+    const resetFrame = window.requestAnimationFrame(() => {
+      if (!isActive) {
+        return;
+      }
+
+      setApiGroups(null);
+      setGroupMessage("");
+    });
 
     if (!authState.isLoggedIn || !authState.accessToken) {
-      Promise.resolve().then(() => {
+      const emptyFrame = window.requestAnimationFrame(() => {
         if (!isActive) {
           return;
         }
@@ -234,6 +399,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
       return () => {
         isActive = false;
+        window.cancelAnimationFrame(resetFrame);
+        window.cancelAnimationFrame(emptyFrame);
       };
     }
 
@@ -280,11 +447,21 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     return () => {
       isActive = false;
+      window.cancelAnimationFrame(resetFrame);
     };
   }, [authState.accessToken, authState.isLoggedIn]);
 
   function openGroupSearch(groupName?: string) {
-    router.push(groupName ? `/search?q=${encodeURIComponent(groupName)}` : "/artists");
+    if (!groupName && scrollContainerRef.current) {
+      window.sessionStorage.setItem(
+        HOME_SCROLL_TOP_KEY,
+        String(scrollContainerRef.current.scrollTop),
+      );
+    }
+
+    router.push(
+      groupName ? `/search?q=${encodeURIComponent(groupName)}` : "/artists",
+    );
   }
 
   async function handleFavoriteGroupToggle(item: ArtistRailItem) {
@@ -360,47 +537,70 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         ref={scrollContainerRef}
       >
         <section className="px-4 pt-4">
-          <div className="grid grid-cols-[1fr_1.15fr] overflow-hidden rounded-[1.35rem] border border-black bg-black">
-            <div className="flex items-center p-5">
-              <div>
-                <p className="text-[14px] uppercase tracking-[0.24em] text-white/45">
-                  For your bias
-                </p>
-                <h2 className="mt-3 text-[22px] font-semibold leading-[1.18] tracking-[-0.06em] text-white">
-                  당신의
-                  <br />
-                  최애를 쉽게.
-                </h2>
-              </div>
-            </div>
-            <div className="relative min-h-[140px] overflow-hidden border-l border-white/10 bg-[linear-gradient(135deg,#1a1a1a_0%,#6c6c6c_48%,#efefef_100%)]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_28%,rgba(255,255,255,0.7),transparent_22%)]" />
-              <div className="absolute bottom-5 left-5 h-[110px] w-[82px] rotate-[-10deg] rounded-[1rem] border border-white/25 bg-black shadow-[0_15px_35px_rgba(0,0,0,0.28)]" />
-              <div className="absolute bottom-6 left-[6.1rem] h-[126px] w-[92px] rotate-[7deg] rounded-[1rem] border border-white/40 bg-white/85 shadow-[0_15px_35px_rgba(0,0,0,0.18)]" />
-              <div className="absolute right-5 top-5 rounded-full bg-black px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-white">
-                PICK
-              </div>
-              <div className="absolute bottom-4 right-4 rounded-2xl border border-black/10 bg-white/90 px-3 py-2 backdrop-blur">
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-black/45">
-                  Bias Match
-                </p>
-                <p className="mt-1 text-[13px] font-semibold tracking-[-0.03em]">
-                  원영 · 유진 · 카리나
-                </p>
-              </div>
-            </div>
+          <div
+            className="flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            onScroll={handleBannerScroll}
+            ref={bannerScrollerRef}
+          >
+            {HOME_BANNERS.map((banner) => (
+              <Link
+                aria-label={`${banner.eyebrow} 공지 상세 보기`}
+                className="grid w-full flex-none snap-center grid-cols-[0.95fr_1.05fr] overflow-hidden rounded-[1.15rem] border border-black bg-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                href={banner.href}
+                key={banner.href}
+              >
+                <div className="flex items-center px-4 py-4">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">
+                      {banner.eyebrow}
+                    </p>
+                    <h2 className="mt-2 whitespace-pre-line text-[17px] font-semibold leading-[1.22] text-white">
+                      {banner.title}
+                    </h2>
+                  </div>
+                </div>
+                <div
+                  className={`relative min-h-[112px] overflow-hidden border-l border-white/10 ${banner.gradient}`}
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_28%,rgba(255,255,255,0.7),transparent_22%)]" />
+                  <div className="absolute bottom-4 left-4 h-[82px] w-[62px] rotate-[-10deg] rounded-[0.85rem] border border-white/25 bg-black shadow-[0_12px_24px_rgba(0,0,0,0.24)]" />
+                  <div className="absolute bottom-4 left-[4.8rem] h-[96px] w-[70px] rotate-[7deg] rounded-[0.85rem] border border-white/40 bg-white/85 shadow-[0_12px_24px_rgba(0,0,0,0.16)]" />
+                  <div className="absolute right-4 top-4 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
+                    {banner.badge}
+                  </div>
+                  <div className="absolute bottom-3 right-3 rounded-xl border border-black/10 bg-white/90 px-2.5 py-2 backdrop-blur">
+                    <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-black/45">
+                      {banner.caption}
+                    </p>
+                    <p className="mt-1 text-[12px] font-semibold tracking-[-0.03em]">
+                      자세히 보기
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
 
-          <div className="flex items-center justify-center gap-2 pt-2 pb-5">
-            <span className="h-2 w-2 rounded-full bg-black" />
-            <span className="h-2 w-2 rounded-full bg-zinc-300" />
-            <span className="h-2 w-2 rounded-full bg-zinc-300" />
-            <span className="h-2 w-2 rounded-full bg-zinc-300" />
-            <span className="h-2 w-2 rounded-full bg-zinc-300" />
+          <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+            {HOME_BANNERS.map((banner, index) => (
+              <button
+                aria-label={`${index + 1}번째 광고판 보기`}
+                className={`h-2 rounded-full transition-all ${
+                  activeBannerIndex === index ? "w-5 bg-black" : "w-2 bg-zinc-300"
+                }`}
+                key={banner.href}
+                onClick={() => handleBannerDotClick(index)}
+                type="button"
+              />
+            ))}
           </div>
+
         </section>
 
         <section className="px-4">
+          {isGroupLoading ? (
+            <HomeArtistRailSkeleton />
+          ) : (
           <ArtistRail
             items={favoriteGroups}
             leadingItem={{ label: "최애 추가", icon: "plus" }}
@@ -408,6 +608,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             onItemClick={(item) => openGroupSearch(item.name)}
             onLeadingClick={() => openGroupSearch()}
           />
+          )}
 
           {groupMessage ? (
             <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
@@ -424,9 +625,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   나를 위한 추천 상품
                 </h3>
               </div>
-              <button className="text-[13px] font-medium text-black/55">
-                전체보기
-              </button>
             </div>
 
             {listingMessage ? (
@@ -436,7 +634,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 </p>
               </div>
             ) : null}
-            <ProductGrid items={listings} />
+            {isListingLoading ? (
+              <HomeProductGridSkeleton />
+            ) : (
+              <ProductGrid items={listings} />
+            )}
           </div>
         </section>
       </div>

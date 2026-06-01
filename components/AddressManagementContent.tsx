@@ -41,6 +41,7 @@ import {
 } from "@/lib/mock-delivery-addresses";
 
 type AddressManagementContentProps = {
+  onBack?: () => void;
   openFormOnEntry?: boolean;
   returnHref?: string | null;
 };
@@ -52,6 +53,7 @@ function getHistoryIndex() {
 }
 
 export function AddressManagementContent({
+  onBack,
   openFormOnEntry = false,
   returnHref = null,
 }: AddressManagementContentProps) {
@@ -399,6 +401,11 @@ export function AddressManagementContent({
   }
 
   function handleBack() {
+    if (onBack) {
+      onBack();
+      return;
+    }
+
     const historyIndex = getHistoryIndex();
 
     if (historyIndex !== null && historyIndex > 0) {
@@ -410,7 +417,7 @@ export function AddressManagementContent({
   }
 
   return (
-    <div className="tab-content-enter flex min-h-0 flex-1 flex-col bg-white">
+    <div className="flex min-h-0 flex-1 flex-col bg-white">
       <header className="profile-header shrink-0 px-4 py-3">
         <div className="flex h-10 items-center gap-3">
           <button

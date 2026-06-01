@@ -1,0 +1,90 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { BottomNavigator } from "@/components/BottomNavigator";
+import { LoginContent } from "@/components/LoginContent";
+import {
+  PROFILE_SKIP_ENTER_KEY,
+  ProfileContent,
+} from "@/components/ProfileContent";
+import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+
+const LOGIN_PANEL_TRANSITION_MS = 240;
+
+type LoginExperienceProps = {
+  returnHref: string;
+};
+
+function getHistoryIndex() {
+  const historyState = window.history.state as { idx?: unknown } | null;
+
+  return typeof historyState?.idx === "number" ? historyState.idx : null;
+}
+
+export function LoginExperience({ returnHref }: LoginExperienceProps) {
+  const router = useRouter();
+  const exitTimerRef = useRef<number | null>(null);
+  const [isEntered, setIsEntered] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+
+  useEffect(() => {
+    const enterFrame = window.requestAnimationFrame(() => {
+      setIsEntered(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(enterFrame);
+
+      if (exitTimerRef.current !== null) {
+        window.clearTimeout(exitTimerRef.current);
+      }
+    };
+  }, []);
+
+  function finishBackNavigation() {
+    const historyIndex = getHistoryIndex();
+
+    if (returnHref === "/profile") {
+      window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
+    }
+
+    if (historyIndex !== null && historyIndex > 0) {
+      router.back();
+      return;
+    }
+
+    router.replace(returnHref);
+  }
+
+  function handleBack() {
+    if (isExiting) {
+      return;
+    }
+
+    setIsExiting(true);
+    setIsEntered(false);
+
+    exitTimerRef.current = window.setTimeout(
+      finishBackNavigation,
+      LOGIN_PANEL_TRANSITION_MS,
+    );
+  }
+
+  return (
+    <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
+      <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+        <ProfileContent skipEnterAnimation />
+        <BottomNavigator activeLabel="Profile" />
+      </SwipeUnderlay>
+
+      <div
+        className={`product-page-panel absolute inset-0 z-10 flex flex-col overflow-hidden bg-white ${
+          isEntered && !isExiting ? "product-page-active" : ""
+        } ${isExiting ? "product-page-exit" : ""}`}
+      >
+        <LoginContent onBack={handleBack} returnHref={returnHref} />
+      </div>
+    </div>
+  );
+}
