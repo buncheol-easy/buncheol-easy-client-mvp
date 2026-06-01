@@ -1,69 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BackIcon, BellIcon } from "@/components/icons";
+import { boardPosts, type BoardCategory } from "@/lib/board-posts";
 
-type BoardCategory = "all" | "notice" | "alert";
+type BoardFilter = BoardCategory | "all";
 
-type BoardItem = {
-  id: number;
-  category: Exclude<BoardCategory, "all">;
-  title: string;
-  date: string;
-  isNew?: boolean;
-  isPinned?: boolean;
-};
-
-const boardItems: BoardItem[] = [
-  {
-    id: 1,
-    category: "notice",
-    title: "입금 확인 방식이 계좌이체 기반으로 변경될 예정이에요",
-    date: "오늘",
-    isNew: true,
-    isPinned: true,
-  },
-  {
-    id: 2,
-    category: "alert",
-    title: "낙찰된 분철은 결제 가능 시간 안에 입금해 주세요",
-    date: "오늘",
-    isNew: true,
-  },
-  {
-    id: 3,
-    category: "notice",
-    title: "편의점 반값택배 배송지는 상품별 지원 택배사만 선택할 수 있어요",
-    date: "5월 31일",
-  },
-  {
-    id: 4,
-    category: "alert",
-    title: "마감된 입찰은 주최자 확인 후 결제 대기 상태로 바뀝니다",
-    date: "5월 30일",
-  },
-  {
-    id: 5,
-    category: "notice",
-    title: "최애 아티스트는 최대 5개까지 등록할 수 있어요",
-    date: "5월 29일",
-  },
-  {
-    id: 6,
-    category: "notice",
-    title: "분철 등록 시 멤버별 옵션과 배송 방법을 다시 확인해 주세요",
-    date: "5월 28일",
-  },
-];
-
-const categoryLabels: Record<BoardCategory, string> = {
+const categoryLabels: Record<BoardFilter, string> = {
   all: "전체",
   alert: "알림",
   notice: "공지",
 };
 
-function getCategoryTone(category: BoardItem["category"]) {
+function getCategoryTone(category: BoardCategory) {
   return category === "notice"
     ? "bg-black text-white"
     : "bg-[#f2f2f2] text-black/55";
@@ -77,13 +28,13 @@ function getHistoryIndex() {
 
 export function BoardContent() {
   const router = useRouter();
-  const [category, setCategory] = useState<BoardCategory>("all");
+  const [category, setCategory] = useState<BoardFilter>("all");
   const filteredItems = useMemo(() => {
     if (category === "all") {
-      return boardItems;
+      return boardPosts;
     }
 
-    return boardItems.filter((item) => item.category === category);
+    return boardPosts.filter((item) => item.category === category);
   }, [category]);
 
   return (
@@ -144,10 +95,11 @@ export function BoardContent() {
         <section className="tab-content-enter">
           <div className="rounded-[1.15rem] border border-black/10 bg-white">
             {filteredItems.map((item, index) => (
-              <article
+              <Link
                 className={`flex min-h-[4.75rem] items-center gap-3 px-4 py-3 ${
                   index === 0 ? "" : "border-t border-black/10"
                 }`}
+                href={`/board/${item.id}`}
                 key={item.id}
               >
                 <div className="min-w-0 flex-1">
@@ -175,7 +127,7 @@ export function BoardContent() {
                 <time className="shrink-0 text-[12px] font-semibold text-black/35">
                   {item.date}
                 </time>
-              </article>
+              </Link>
             ))}
           </div>
         </section>
