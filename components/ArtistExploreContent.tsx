@@ -131,7 +131,7 @@ export function ArtistExploreContent() {
         ? await getFreshAccessToken()
         : null;
 
-      const allGroups = await requestGroups("", accessToken ?? undefined);
+      const allGroups = await requestGroups("");
 
       if (!authState.isLoggedIn || !accessToken) {
         return {

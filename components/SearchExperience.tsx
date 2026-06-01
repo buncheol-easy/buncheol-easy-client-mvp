@@ -24,15 +24,21 @@ import {
   addFavoriteGroup,
   removeFavoriteGroup,
   requestBuncheols,
+  requestFavoriteGroups,
   requestGroupMembers,
   requestGroups,
+  requestGroupsByMemberKeyword,
+  requestPopularGroups,
+  requestRecentSearchKeywords,
   toProductCardItem,
+  type ApiGroup,
 } from "@/lib/auth-api";
 import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   normalizeGroupSearchText,
   rankGroupSearchResults,
@@ -125,6 +131,18 @@ function takeShouldSkipSearchEnter() {
   return shouldSkip;
 }
 
+function mergeFavoriteGroups<T extends ApiGroup>(
+  groups: T[],
+  favorites: ApiGroup[],
+) {
+  const favoriteIds = new Set(favorites.map((group) => group.id));
+
+  return groups.map((group) => ({
+    ...group,
+    favorited: group.favorited === true || favoriteIds.has(group.id),
+  }));
+}
+
 export function SearchExperience({
   query,
   relatedSearch = false,
@@ -152,6 +170,12 @@ export function SearchExperience({
   );
   const [apiPopularGroups, setApiPopularGroups] = useState<
     ArtistRailItem[] | null
+  >(null);
+  const [apiRecentSearches, setApiRecentSearches] = useState<
+    typeof recentSearches | null
+  >(null);
+  const [apiRecentSearchesToken, setApiRecentSearchesToken] = useState<
+    string | null
   >(null);
   const [resultMessage, setResultMessage] = useState("");
   const [groupMessage, setGroupMessage] = useState("");
@@ -181,6 +205,14 @@ export function SearchExperience({
     }),
   );
   const popularGroupItems = apiPopularGroups ?? fallbackPopularGroupItems;
+  const currentRecentSearchToken = authState.isLoggedIn
+    ? authState.accessToken ?? null
+    : null;
+  const recentSearchItems = authState.isLoggedIn
+    ? (apiRecentSearchesToken === currentRecentSearchToken
+        ? apiRecentSearches
+        : null) ?? recentSearches
+    : recentSearches;
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -237,6 +269,59 @@ export function SearchExperience({
   }, [isRestoringPreviousResult, keyword]);
 
   useEffect(() => {
+    let isActive = true;
+
+    setApiRecentSearches(null);
+    setApiRecentSearchesToken(null);
+
+    if (!authState.isLoggedIn) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    getFreshAccessToken()
+      .then((accessToken) =>
+        accessToken
+          ? requestRecentSearchKeywords(accessToken).then((searchKeywords) => ({
+              accessToken,
+              searchKeywords,
+            }))
+          : null,
+      )
+      .then((result) => {
+        if (!isActive) {
+          return;
+        }
+
+        if (!result) {
+          setApiRecentSearches(null);
+          setApiRecentSearchesToken(null);
+          return;
+        }
+
+        setApiRecentSearches(
+          result.searchKeywords.map((searchKeyword) => ({
+            label: searchKeyword.keyword,
+          })),
+        );
+        setApiRecentSearchesToken(result.accessToken);
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiRecentSearches(null);
+        setApiRecentSearchesToken(null);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn]);
+
+  useEffect(() => {
     const accessToken = authState.isLoggedIn
       ? authState.accessToken ?? undefined
       : undefined;
@@ -251,7 +336,27 @@ export function SearchExperience({
 
     const loadSearchData = async () => {
       const searchKeyword = keyword ?? "";
-      const groups = await requestGroups(searchKeyword, accessToken);
+      const [rawGroups, rawMemberSearchGroups, favoriteGroups] =
+        await Promise.all([
+          searchKeyword ? requestGroups(searchKeyword) : requestPopularGroups(),
+          searchKeyword
+            ? requestGroupsByMemberKeyword(searchKeyword).catch(() => [])
+            : [],
+          authState.isLoggedIn
+            ? getFreshAccessToken()
+                .then((accessToken) =>
+                  accessToken
+                    ? requestFavoriteGroups(accessToken).catch(() => [])
+                    : [],
+                )
+                .catch(() => [])
+            : [],
+        ]);
+      const groups = mergeFavoriteGroups(rawGroups, favoriteGroups);
+      const memberSearchGroups = mergeFavoriteGroups(
+        rawMemberSearchGroups,
+        favoriteGroups,
+      );
 
       if (!searchKeyword) {
         return {
@@ -261,17 +366,28 @@ export function SearchExperience({
       }
 
       const candidateGroups =
-        groups.length > 0
-          ? groups
-          : await requestGroups("", accessToken).catch(() => []);
+        groups.length > 0 || memberSearchGroups.length > 0
+          ? [...groups, ...memberSearchGroups].filter(
+              (group, index, allGroups) =>
+                allGroups.findIndex((candidate) => candidate.id === group.id) ===
+                index,
+            )
+          : mergeFavoriteGroups(
+              await requestGroups("").catch(() => []),
+              favoriteGroups,
+            );
       const rankedGroups = rankGroupSearchResults(
         candidateGroups,
         searchKeyword,
         3,
       );
       const rankedGroupIds = new Set(rankedGroups.map((group) => group.id));
+      const memberSearchGroupMap = new Map(
+        memberSearchGroups.map((group) => [group.id, group.members]),
+      );
       const normalizedKeyword = normalizeGroupSearchText(searchKeyword);
       const memberGroups = [
+        ...memberSearchGroups,
         ...rankedGroups,
         ...groups,
         ...candidateGroups,
@@ -286,7 +402,11 @@ export function SearchExperience({
         await Promise.all(
           memberGroups.map(async (group) => {
             try {
-              const members = await requestGroupMembers(group.id);
+              const cachedMembers = memberSearchGroupMap.get(group.id);
+              const members =
+                cachedMembers && cachedMembers.length > 0
+                  ? cachedMembers
+                  : await requestGroupMembers(group.id);
               const isRankedGroup = rankedGroupIds.has(group.id);
               const matchedMembers = members
                 .filter((member) =>
@@ -754,7 +874,7 @@ export function SearchExperience({
                       최근 검색어
                     </h2>
                     <div className="mt-4 flex flex-wrap gap-3">
-                      {recentSearches.map((search) => (
+                      {recentSearchItems.map((search) => (
                         <button
                           key={search.label}
                           onClick={() => handleSearch(search.label)}
@@ -838,7 +958,7 @@ export function SearchExperience({
                   최근 검색어
                 </h2>
                 <div className="mt-4 flex flex-wrap gap-3">
-                  {recentSearches.map((search) => (
+                  {recentSearchItems.map((search) => (
                     <button
                       key={search.label}
                       className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"

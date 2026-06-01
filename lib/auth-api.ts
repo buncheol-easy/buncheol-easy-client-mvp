@@ -129,6 +129,15 @@ export type ApiGroupMember = {
   name: string;
 };
 
+export type ApiGroupWithMembers = ApiGroup & {
+  members: ApiGroupMember[];
+};
+
+export type RecentSearchKeyword = {
+  id: string;
+  keyword: string;
+};
+
 export type BuncheolSummary = {
   activeParticipationCount?: number;
   bookmarkId?: string;
@@ -1701,25 +1710,15 @@ export async function updateBuncheol(
   appendJsonFormPart(formData, body);
   appendImageFormParts(formData, images);
 
-  const url = `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}`;
-  let response = await fetch(url, {
-    body: formData,
-    credentials: "include",
-    headers: getAuthHeaders(accessToken),
-    method: "PATCH",
-  });
-
-  if (response.status === 405) {
-    response = await fetch(
-      url,
-      {
-        body: formData,
-        credentials: "include",
-        headers: getAuthHeaders(accessToken),
-        method: "PUT",
-      },
-    );
-  }
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}`,
+    {
+      body: formData,
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "PUT",
+    },
+  );
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -2035,10 +2034,69 @@ function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null
   } satisfies ApiGroup;
 }
 
-export async function requestGroups(
-  keyword = "",
-  accessToken?: string,
-): Promise<ApiGroup[]> {
+function getApiGroupMemberFromRecord(
+  record: Record<string, unknown>,
+): ApiGroupMember | null {
+  const nestedMember = getNestedData(record.member);
+  const memberRecord = isRecord(nestedMember) ? nestedMember : record;
+  const id = getStringValue(memberRecord, ["id", "memberId"]);
+  const name = getStringValue(memberRecord, ["name", "memberName"]);
+
+  if (!id || !name) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    imageUrl: getOptionalStringValue(memberRecord, [
+      "image",
+      "imageUrl",
+      "thumbnailUrl",
+      "profileImageUrl",
+    ]),
+  };
+}
+
+function getApiGroupWithMembersFromRecord(
+  record: Record<string, unknown>,
+): ApiGroupWithMembers | null {
+  const group = getApiGroupFromRecord(record);
+
+  if (!group) {
+    return null;
+  }
+
+  const members = getRecordListValue(record, [
+    "members",
+    "groupMembers",
+    "idolMembers",
+  ])
+    .map(getApiGroupMemberFromRecord)
+    .filter((member): member is ApiGroupMember => member !== null);
+
+  return {
+    ...group,
+    members,
+  };
+}
+
+function getRecentSearchKeywordFromRecord(
+  record: Record<string, unknown>,
+): RecentSearchKeyword | null {
+  const keyword = getStringValue(record, ["keyword", "text", "query"]).trim();
+
+  if (!keyword) {
+    return null;
+  }
+
+  return {
+    id: getStringValue(record, ["id", "searchKeywordId"]) || keyword,
+    keyword,
+  };
+}
+
+export async function requestGroups(keyword = ""): Promise<ApiGroup[]> {
   const searchParams = keyword
     ? `?${new URLSearchParams({ keyword }).toString()}`
     : "";
@@ -2046,7 +2104,6 @@ export async function requestGroups(
     `${getVersionedApiBaseUrl()}/groups${searchParams}`,
     {
       credentials: "omit",
-      headers: getAuthHeaders(accessToken),
       method: "GET",
     },
   );
@@ -2059,6 +2116,69 @@ export async function requestGroups(
     .filter(isRecord)
     .map(getApiGroupFromRecord)
     .filter((group): group is ApiGroup => group !== null);
+}
+
+export async function requestPopularGroups(): Promise<ApiGroup[]> {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/groups/popular`, {
+    credentials: "omit",
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  return getBuncheolList(await readJsonBody(response))
+    .filter(isRecord)
+    .map(getApiGroupFromRecord)
+    .filter((group): group is ApiGroup => group !== null);
+}
+
+export async function requestGroupsByMemberKeyword(
+  keyword: string,
+): Promise<ApiGroupWithMembers[]> {
+  const searchParams = new URLSearchParams({ keyword }).toString();
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/groups/members?${searchParams}`,
+    {
+      credentials: "omit",
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  return getBuncheolList(await readJsonBody(response))
+    .filter(isRecord)
+    .map(getApiGroupWithMembersFromRecord)
+    .filter((group): group is ApiGroupWithMembers => group !== null);
+}
+
+export async function requestRecentSearchKeywords(
+  accessToken?: string,
+): Promise<RecentSearchKeyword[]> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/search-keywords/recent`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  return getBuncheolList(await readJsonBody(response))
+    .filter(isRecord)
+    .map(getRecentSearchKeywordFromRecord)
+    .filter(
+      (searchKeyword): searchKeyword is RecentSearchKeyword =>
+        searchKeyword !== null,
+    );
 }
 
 export async function requestFavoriteGroups(
@@ -2127,7 +2247,7 @@ export async function requestGroupMembers(groupId: string) {
   const response = await fetch(
     `${getVersionedApiBaseUrl()}/groups/${groupId}/members`,
     {
-      credentials: "include",
+      credentials: "omit",
       method: "GET",
     },
   );
@@ -2138,26 +2258,6 @@ export async function requestGroupMembers(groupId: string) {
 
   return getBuncheolList(await readJsonBody(response))
     .filter(isRecord)
-    .map((record): ApiGroupMember | null => {
-      const nestedMember = getNestedData(record.member);
-      const memberRecord = isRecord(nestedMember) ? nestedMember : record;
-      const id = getStringValue(memberRecord, ["id", "memberId"]);
-      const name = getStringValue(memberRecord, ["name", "memberName"]);
-
-      if (!id || !name) {
-        return null;
-      }
-
-      return {
-        id,
-        name,
-        imageUrl: getOptionalStringValue(memberRecord, [
-          "image",
-          "imageUrl",
-          "thumbnailUrl",
-          "profileImageUrl",
-        ]),
-      };
-    })
+    .map(getApiGroupMemberFromRecord)
     .filter((member): member is ApiGroupMember => member !== null);
 }
