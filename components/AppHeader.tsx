@@ -1,6 +1,7 @@
 "use client";
 
 import type { MouseEvent } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BellIcon, SearchIcon } from "@/components/icons";
 
@@ -81,12 +82,13 @@ export function AppHeader() {
           </span>
           <SearchIcon />
         </a>
-        <button
-          aria-label="알림"
+        <Link
+          aria-label="소식함"
           className="app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white"
+          href="/board"
         >
           <BellIcon />
-        </button>
+        </Link>
       </div>
     </header>
   );

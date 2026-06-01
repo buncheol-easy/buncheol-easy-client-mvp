@@ -12,7 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { MouseEvent } from "react";
-import { CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
+import { BellIcon, CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
@@ -1615,6 +1615,30 @@ export function ProfileContent({
               </p>
             </div>
           </div>
+        </section>
+
+        <section className="mt-4">
+          <Link
+            className="flex h-14 items-center justify-between rounded-[0.95rem] bg-[#f7f7f7] px-4 text-black"
+            href="/board"
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white">
+                <BellIcon />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[15px] font-semibold tracking-[-0.04em]">
+                  소식함
+                </span>
+                <span className="mt-0.5 block truncate text-[12px] font-medium text-black/45">
+                  공지와 알림을 한 번에 확인해요
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 text-[20px] font-semibold text-black/25">
+              ›
+            </span>
+          </Link>
         </section>
 
         <section className="mt-5 border-t border-black/10 pt-5">
