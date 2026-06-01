@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { MouseEvent } from "react";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import { BellIcon, CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
@@ -2250,6 +2251,9 @@ export function ProfileContent({
             ) : null}
           </section>
         ) : null}
+        <div className="-mx-4 -mb-6 mt-6">
+          <BusinessFooter />
+        </div>
       </main>
 
       {isPaymentSheetOpen && selectedPaymentBid ? (
