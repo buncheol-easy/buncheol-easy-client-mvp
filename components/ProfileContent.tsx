@@ -35,11 +35,13 @@ import {
   requestLogout,
   requestMyHostedBuncheols,
   requestMyParticipations,
+  requestPaymentConfirmation,
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
   updateShippingAddress,
   toProductDetailItem,
+  type BankAccountInfo,
   type MyHostedBuncheol,
   type MyParticipation,
   type UserProfile,
@@ -70,8 +72,10 @@ import {
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
+  type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductDetailItem } from "@/lib/mock-products";
+import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -204,17 +208,23 @@ type ProfileBidEntry = {
   buncheolStatus?: string;
   deadline: string;
   id: string;
+  imageUrl?: string;
   member: string;
   optionLabel: string;
+  paidAt?: string | null;
+  payerName?: string;
   participantCount: number;
+  paymentAmount?: number | null;
   participationStatus?: string;
   productId: string;
   rank: number;
   courier?: string;
+  shippingFee?: number | null;
   shippingMethods?: ProductDetailItem["shippingMethods"];
   submittedAt: string;
   title: string;
   tone: string;
+  hostBankAccount?: BankAccountInfo | null;
 };
 
 function ProfileListSkeleton({ count = 2 }: { count?: number }) {
@@ -273,6 +283,24 @@ function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
   );
 }
 
+function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
+  return (
+    !bid.paidAt &&
+    (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
+      (isProfileBidClosed(bid, now) && bid.rank === 1))
+  );
+}
+
+function isPaymentWaitingParticipationStatus(status: string | undefined) {
+  return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
+}
+
+function isProfileBidTransferRequested(bid: ProfileBidEntry) {
+  return (
+    !bid.paidAt && isTransferPaymentRequestedStatus(bid.participationStatus)
+  );
+}
+
 function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
   if (product.status && !isRecruitingStatus(product.status)) {
     return false;
@@ -325,19 +353,30 @@ function getProfileBidEntryFromParticipation(
 ): ProfileBidEntry {
   const rank =
     participation.closedRank ??
-    (participation.participationStatus === "AWAITING_PAYMENT" ? 1 : 0);
+    (isPaymentWaitingParticipationStatus(participation.participationStatus)
+      ? 1
+      : 0);
 
   return {
     id: participation.participationId,
     amount: participation.bidAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
+    imageUrl: participation.thumbnailUrl,
     member: `${participation.buncheolMemberCount}개 옵션`,
     optionLabel: participation.memberName,
     participantCount: 0,
+    paidAt:
+      participation.participationStatus === "CONFIRMED" ||
+      participation.participationStatus === "PAYMENT_CONFIRMED"
+        ? "결제 완료"
+        : null,
     buncheolStatus: participation.buncheolStatus,
+    paymentAmount: participation.paymentAmount,
     productId: participation.buncheolId,
     participationStatus: participation.participationStatus,
     rank: rank > 0 ? rank : 0,
+    shippingFee: participation.shippingFee,
+    hostBankAccount: participation.hostBankAccount,
     submittedAt: "",
     title: participation.buncheolTitle,
     tone: getToneFromId(participation.buncheolId),
@@ -357,6 +396,8 @@ async function getProfileBidEntryWithShippingData(
     return {
       ...bidEntry,
       courier: product.courier,
+      hostBankAccount: bidEntry.hostBankAccount ?? detail.hostBankAccount,
+      imageUrl: bidEntry.imageUrl ?? product.imageUrl,
       shippingMethods: product.shippingMethods,
     };
   } catch {
@@ -425,17 +466,25 @@ export function ProfileContent({
   });
   const [withdrawnBidIds, setWithdrawnBidIds] = useState<string[]>([]);
   const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
+  const [payingBidId, setPayingBidId] = useState<string | null>(null);
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
+  const [isPaymentReportConfirmOpen, setIsPaymentReportConfirmOpen] =
+    useState(false);
   const addressSyncRequestIdRef = useRef(0);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
+  const [apiPaymentStoreTypes, setApiPaymentStoreTypes] = useState<
+    ConvenienceStoreType[] | null
+  >(null);
+  const [isPaymentStoreTypeLoading, setIsPaymentStoreTypeLoading] =
+    useState(false);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -459,6 +508,7 @@ export function ProfileContent({
   const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
   const [isDefaultAddressLoading, setIsDefaultAddressLoading] = useState(false);
   const addressSheetCloseTimerRef = useRef<number | null>(null);
+  const paymentStoreTypeRequestIdRef = useRef(0);
   const [manageAddressSnapshot, setManageAddressSnapshot] = useState<
     DeliveryAddress[]
   >([]);
@@ -492,11 +542,14 @@ export function ProfileContent({
   const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
   const isHostedProductsLoading =
     authState.isLoggedIn && apiHostedProducts === null;
-  const allBids = useMemo(
-    () =>
-      authState.isLoggedIn && apiBidEntries
-        ? apiBidEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
-        : [],
+  const allBids: ProfileBidEntry[] = useMemo(
+    () => {
+      const sourceEntries: ProfileBidEntry[] = apiBidEntries ?? [];
+
+      return authState.isLoggedIn
+        ? sourceEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
+        : [];
+    },
     [apiBidEntries, authState.isLoggedIn, withdrawnBidIds],
   );
   const activeBids = useMemo(
@@ -504,9 +557,17 @@ export function ProfileContent({
       allBids.filter((bid) => {
         const isClosed = isProfileBidClosed(bid, now);
 
-        return !isClosed || bid.rank === 1;
+        return (
+          !isClosed ||
+          isProfileBidPaymentReady(bid, now) ||
+          isProfileBidTransferRequested(bid)
+        );
       }),
     [allBids, now],
+  );
+  const shouldRefreshPaymentState = allBids.some(
+    (bid) =>
+      bid.participationStatus === "ACTIVE_BID" && isProfileBidClosed(bid, now),
   );
   const activeHostedProducts = useMemo(
     () =>
@@ -560,12 +621,18 @@ export function ProfileContent({
     deliveryAddresses,
     defaultAddressIds,
   );
-  const availablePaymentStoreTypes = getAvailableConvenienceStoreTypes(
-    selectedPaymentBid?.shippingMethods,
-    selectedPaymentBid?.courier,
-  );
+  const availablePaymentStoreTypes =
+    apiPaymentStoreTypes ??
+    getAvailableConvenienceStoreTypes(
+      selectedPaymentBid?.shippingMethods,
+      selectedPaymentBid?.courier,
+    );
+  const isApiPaymentStoreTypePending =
+    selectedPaymentBid !== null && isPaymentStoreTypeLoading;
   const eligiblePaymentAddresses =
-    availablePaymentStoreTypes.length > 0
+    isApiPaymentStoreTypePending
+      ? []
+      : availablePaymentStoreTypes.length > 0
       ? prioritizedDeliveryAddresses.filter((address) =>
           availablePaymentStoreTypes.includes(address.storeType),
         )
@@ -578,7 +645,24 @@ export function ProfileContent({
     selectedEligiblePaymentAddress ??
     eligiblePaymentAddresses[0] ??
     null;
-  const paymentVisibleAddresses = availablePaymentStoreTypes.map((storeType) => ({
+  const paymentShippingFee = selectedPaymentBid?.shippingFee ?? shippingFee;
+  const paymentTotalAmount = selectedPaymentBid
+    ? selectedPaymentBid.paymentAmount ??
+      selectedPaymentBid.amount + paymentShippingFee
+    : 0;
+  const selectedPaymentBankAccount =
+    selectedPaymentBid?.hostBankAccount ?? null;
+  const visiblePaymentStoreTypes =
+    isApiPaymentStoreTypePending
+      ? []
+      : availablePaymentStoreTypes.length > 0
+      ? availablePaymentStoreTypes
+      : [
+          ...new Set(
+            eligiblePaymentAddresses.map((address) => address.storeType),
+          ),
+        ];
+  const paymentVisibleAddresses = visiblePaymentStoreTypes.map((storeType) => ({
     storeType,
     address:
       paymentDeliveryAddress?.storeType === storeType
@@ -734,6 +818,47 @@ export function ProfileContent({
       isActive = false;
     };
   }, [authState.accessToken, authState.isLoggedIn]);
+
+  useEffect(() => {
+    if (!authState.isLoggedIn || !shouldRefreshPaymentState) {
+      return;
+    }
+
+    let isActive = true;
+
+    async function refreshParticipations() {
+      const accessToken = await getFreshAccessToken();
+
+      if (!isActive || !accessToken) {
+        return;
+      }
+
+      try {
+        const participations = await requestMyParticipations(accessToken);
+        const bidEntries = await Promise.all(
+          participations.map((participation) =>
+            getProfileBidEntryWithShippingData(accessToken, participation),
+          ),
+        );
+
+        if (isActive) {
+          setApiBidEntries(bidEntries);
+        }
+      } catch {
+        // Keep the current list while the backend finishes deadline processing.
+      }
+    }
+
+    void refreshParticipations();
+    const timer = window.setInterval(() => {
+      void refreshParticipations();
+    }, 15_000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(timer);
+    };
+  }, [authState.isLoggedIn, shouldRefreshPaymentState]);
 
   useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {
@@ -1006,6 +1131,7 @@ export function ProfileContent({
 
     setIsPaymentSheetOpen(false);
     setIsPaymentSheetClosing(false);
+    setIsPaymentReportConfirmOpen(false);
     setSelectedPaymentBidId(null);
   }
 
@@ -1188,17 +1314,21 @@ export function ProfileContent({
       paymentSheetCloseTimerRef.current = null;
     }
 
+    const requestId = paymentStoreTypeRequestIdRef.current + 1;
     const selectedBid = activeBids.find((bid) => bid.id === bidId) ?? null;
     const allowedStoreTypes = getAvailableConvenienceStoreTypes(
       selectedBid?.shippingMethods,
       selectedBid?.courier,
     );
+    const shouldLoadApiStoreTypes =
+      selectedBid !== null && allowedStoreTypes.length === 0;
     const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
       deliveryAddresses,
       defaultAddressIds,
     );
-    const fallbackAddress =
-      allowedStoreTypes.length > 0
+    const fallbackAddress = shouldLoadApiStoreTypes
+      ? null
+      : allowedStoreTypes.length > 0
         ? allowedStoreTypes
             .map((storeType) => nextDefaultAddresses[storeType])
             .find((address) => address !== null) ??
@@ -1208,6 +1338,9 @@ export function ProfileContent({
           null
         : prioritizedDeliveryAddresses[0] ?? null;
 
+    paymentStoreTypeRequestIdRef.current = requestId;
+    setApiPaymentStoreTypes(null);
+    setIsPaymentStoreTypeLoading(shouldLoadApiStoreTypes);
     setSelectedPaymentBidId(bidId);
     setSelectedPaymentAddressId((current) =>
       current &&
@@ -1227,6 +1360,55 @@ export function ProfileContent({
     setIsPaymentSheetOpen(true);
     setIsPaymentSheetClosing(false);
 
+    if (selectedBid && shouldLoadApiStoreTypes) {
+      requestBuncheolDetail(
+        authState.isLoggedIn ? authState.accessToken ?? undefined : undefined,
+        selectedBid.productId,
+      )
+        .then((detail) => {
+          if (paymentStoreTypeRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          const storeTypes = getAvailableConvenienceStoreTypes(
+            detail.shippingOptions.map((option) => ({ name: option.method })),
+            undefined,
+          );
+
+          setApiPaymentStoreTypes(storeTypes.length > 0 ? storeTypes : null);
+
+          if (storeTypes.length === 0) {
+            return;
+          }
+
+          setSelectedPaymentAddressId((current) => {
+            const currentAddress = prioritizedDeliveryAddresses.find(
+              (address) => address.id === current,
+            );
+
+            if (currentAddress && storeTypes.includes(currentAddress.storeType)) {
+              return current;
+            }
+
+            return (
+              storeTypes
+                .map((storeType) => nextDefaultAddresses[storeType])
+                .find((address) => address !== null)?.id ??
+              prioritizedDeliveryAddresses.find((address) =>
+                storeTypes.includes(address.storeType),
+              )?.id ??
+              null
+            );
+          });
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (paymentStoreTypeRequestIdRef.current === requestId) {
+            setIsPaymentStoreTypeLoading(false);
+          }
+        });
+    }
+
     window.requestAnimationFrame(() => {
       setIsPaymentSheetEntered(true);
     });
@@ -1239,6 +1421,7 @@ export function ProfileContent({
 
     setIsPaymentSheetClosing(true);
     setIsPaymentSheetEntered(false);
+    setIsPaymentReportConfirmOpen(false);
     paymentSheetCloseTimerRef.current = window.setTimeout(
       finishPaymentSheetClose,
       280,
@@ -1322,6 +1505,83 @@ export function ProfileContent({
       );
     } finally {
       setDeletingHostedProductId(null);
+    }
+  }
+
+  async function copyTransferText(value: string, label: string) {
+    if (!value.trim() || value.includes("준비 중")) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setUserProfileMessage(`${label}을 복사했어요.`);
+    } catch {
+      setUserProfileMessage(`${label}을 복사하지 못했어요.`);
+    }
+  }
+
+  function openPaymentReportConfirm() {
+    if (
+      !selectedPaymentBid ||
+      !paymentDeliveryAddress ||
+      !selectedPaymentBankAccount ||
+      payingBidId
+    ) {
+      return;
+    }
+
+    setIsPaymentReportConfirmOpen(true);
+  }
+
+  async function handleTransferPaymentRequest() {
+    if (
+      !selectedPaymentBid ||
+      !paymentDeliveryAddress ||
+      !selectedPaymentBankAccount ||
+      payingBidId
+    ) {
+      return;
+    }
+
+    setPayingBidId(selectedPaymentBid.id);
+    setIsPaymentReportConfirmOpen(false);
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
+      await requestPaymentConfirmation(accessToken, selectedPaymentBid.id, {
+        shippingAddressId: paymentDeliveryAddress.id,
+      });
+      setApiBidEntries((current) =>
+        current
+          ? current.map((bid) =>
+              bid.id === selectedPaymentBid.id
+                ? {
+                    ...bid,
+                    paidAt: null,
+                    participationStatus: "PAYMENT_REPORTED",
+                  }
+                : bid,
+            )
+          : current,
+      );
+      setUserProfileMessage(
+        "입금 확인 요청을 보냈어요. 판매자의 확인을 기다려 주세요.",
+      );
+      closePaymentSheet();
+    } catch (error: unknown) {
+      setUserProfileMessage(
+        error instanceof Error
+          ? error.message
+          : "입금 완료를 접수하지 못했어요.",
+      );
+    } finally {
+      setPayingBidId(null);
     }
   }
 
@@ -1844,6 +2104,9 @@ export function ProfileContent({
             <div className="mt-4 space-y-3">
               {activeBids.map((bid) => {
                 const isClosed = isProfileBidClosed(bid, now);
+                const isPaymentReady = isProfileBidPaymentReady(bid, now);
+                const isTransferRequested =
+                  isProfileBidTransferRequested(bid);
                 const remainingTime = formatRemainingTime(bid.deadline, now);
                 const paymentRemainingTime = formatPaymentRemainingTime(
                   bid.deadline,
@@ -1858,10 +2121,21 @@ export function ProfileContent({
                     <div className="flex items-start gap-3">
                       <Link
                         aria-label={`${bid.title} 상세 보기`}
-                        className={`h-14 w-14 shrink-0 rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
+                        className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
                         href={`/products/${bid.productId}?from=profile`}
                         onClick={rememberProfileProductEntry}
-                      />
+                      >
+                        {bid.imageUrl ? (
+                          <Image
+                            alt=""
+                            className="h-full w-full object-cover"
+                            fill
+                            sizes="56px"
+                            src={bid.imageUrl}
+                            unoptimized
+                          />
+                        ) : null}
+                      </Link>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
                           <Link
@@ -1902,7 +2176,9 @@ export function ProfileContent({
                                 상태
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {isClosed
+                                {isTransferRequested
+                                  ? "입금 확인 중"
+                                  : isClosed
                                   ? bid.rank === 1
                                     ? "낙찰"
                                     : "미낙찰"
@@ -1923,13 +2199,22 @@ export function ProfileContent({
                         <div className="mt-4 flex items-center justify-between gap-3">
                           <div
                             className={`min-w-0 text-[12px] font-medium ${
-                              isClosed && bid.rank === 1
+                              isPaymentReady || isTransferRequested
                                 ? "text-black"
                                 : "text-black/35"
                             }`}
                           >
                             {isClosed
-                              ? bid.rank === 1
+                              ? isTransferRequested
+                                ? (
+                                  <>
+                                    <p>입금 확인 중이에요</p>
+                                    <p className="mt-0.5 text-black/45">
+                                      판매자의 확인을 기다리고 있어요
+                                    </p>
+                                  </>
+                                )
+                                : isPaymentReady
                                 ? (
                                   <>
                                     <p>결제가 필요해요</p>
@@ -1950,7 +2235,7 @@ export function ProfileContent({
                             >
                               철회
                             </button>
-                          ) : bid.rank === 1 ? (
+                          ) : isPaymentReady ? (
                             <button
                               className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
                               onClick={() => openPaymentSheet(bid.id)}
@@ -2235,6 +2520,44 @@ export function ProfileContent({
               </p>
             </div>
 
+            <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-black/40">
+                    개최자 계좌
+                  </p>
+                  <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                    {selectedPaymentBankAccount
+                      ? `${selectedPaymentBankAccount.bank} ${selectedPaymentBankAccount.account}`.trim()
+                      : "계좌 정보 확인 중"}
+                  </p>
+                  <p className="mt-1 text-[12px] font-medium text-black/40">
+                    {selectedPaymentBankAccount?.holder
+                      ? `예금주 ${selectedPaymentBankAccount.holder}`
+                      : "개최자가 등록한 계좌로 입금해 주세요."}
+                  </p>
+                </div>
+                <button
+                  className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
+                  disabled={!selectedPaymentBankAccount}
+                  onClick={() =>
+                    selectedPaymentBankAccount
+                      ? void copyTransferText(
+                          selectedPaymentBankAccount.account,
+                          "계좌번호",
+                        )
+                      : undefined
+                  }
+                  type="button"
+                >
+                  계좌 복사
+                </button>
+              </div>
+              <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                송금 후 입금 완료를 눌러 주세요.
+              </p>
+            </div>
+
             <div className="mt-4 space-y-2">
               {paymentVisibleAddresses.map(({ storeType, address }) => {
                 const isSelected = address?.id === paymentDeliveryAddress?.id;
@@ -2328,26 +2651,64 @@ export function ProfileContent({
               </div>
               <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
                 <span>배송비</span>
-                <span>{formatPrice(shippingFee)}</span>
+                <span>{formatPrice(paymentShippingFee)}</span>
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[15px] font-semibold tracking-[-0.04em]">
                   결제 예정 금액
                 </span>
                 <span className="text-[22px] font-semibold tracking-[-0.05em]">
-                  {formatPrice(selectedPaymentBid.amount + shippingFee)}
+                  {formatPrice(paymentTotalAmount)}
                 </span>
               </div>
             </div>
 
             <button
               className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
-              disabled={!paymentDeliveryAddress}
-              onClick={closePaymentSheet}
+              disabled={
+                !paymentDeliveryAddress ||
+                !selectedPaymentBankAccount ||
+                payingBidId === selectedPaymentBid.id
+              }
+              onClick={openPaymentReportConfirm}
               type="button"
             >
-              결제하기
+              입금 완료
             </button>
+
+            {isPaymentReportConfirmOpen ? (
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-t-[1.4rem] bg-black/35 px-5">
+                <section className="w-full rounded-[1.1rem] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
+                  <h3 className="text-[22px] font-semibold tracking-[-0.06em]">
+                    입금을 완료하셨나요?
+                  </h3>
+                  <p className="mt-2 text-[14px] font-medium leading-6 text-black/50">
+                    송금 후에만 입금 완료 버튼을 눌러주세요. 허위 신고 시
+                    서비스 이용이 제한될 수 있습니다.
+                  </p>
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <button
+                      className="h-12 rounded-full bg-[#f5f5f5] text-[15px] font-semibold text-black/45"
+                      onClick={() => setIsPaymentReportConfirmOpen(false)}
+                      type="button"
+                    >
+                      취소
+                    </button>
+                    <button
+                      className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
+                      disabled={
+                        !selectedPaymentBankAccount ||
+                        payingBidId === selectedPaymentBid.id
+                      }
+                      onClick={() => void handleTransferPaymentRequest()}
+                      type="button"
+                    >
+                      입금 완료
+                    </button>
+                  </div>
+                </section>
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}

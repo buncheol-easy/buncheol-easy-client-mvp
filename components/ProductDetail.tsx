@@ -1250,7 +1250,7 @@ export function ProductDetail({
                         transform: `translateX(${productImageTrackOffset})`,
                       }}
                     >
-                      {productImages.map((imageUrl) => (
+                      {productImages.map((imageUrl, imageIndex) => (
                         <div
                           className="h-full w-full shrink-0 overflow-hidden"
                           key={imageUrl}
@@ -1260,6 +1260,8 @@ export function ProductDetail({
                             alt=""
                             className="h-full w-full object-cover"
                             draggable={false}
+                            fetchPriority={imageIndex === 0 ? "high" : "auto"}
+                            loading={imageIndex === 0 ? "eager" : "lazy"}
                             src={imageUrl}
                           />
                         </div>

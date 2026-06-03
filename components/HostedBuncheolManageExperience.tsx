@@ -75,7 +75,10 @@ export function HostedBuncheolManageExperience({
     <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-white text-[#111111]">
       <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
         <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-          <BidHistoryContent skipEnterAnimation />
+          <BidHistoryContent
+            restoreStoredViewState={false}
+            skipEnterAnimation
+          />
           <BottomNavigator activeLabel="Bids" />
         </SwipeUnderlay>
 

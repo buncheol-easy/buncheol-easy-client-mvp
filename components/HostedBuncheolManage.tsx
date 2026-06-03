@@ -4,16 +4,17 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { BackIcon } from "@/components/icons";
 import {
-  requestBuncheolDetail,
-  requestMyHostedBuncheols,
-  type BuncheolDetail,
-  type BuncheolMember,
+  requestBuncheolManagement,
+  requestPaymentConfirmation,
+  type BuncheolManagementDetail,
+  type BuncheolManagementOption,
 } from "@/lib/auth-api";
 import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { getFreshAccessToken } from "@/lib/auth-session";
 
 type HostedBuncheolManageProps = {
   id: string;
@@ -55,7 +56,7 @@ function formatKoreaDateTime(value: string) {
   )}일 ${getPart("hour")}시`;
 }
 
-function isClosedBuncheol(detail: BuncheolDetail) {
+function isClosedBuncheol(detail: BuncheolManagementDetail) {
   if (detail.status && detail.status !== "RECRUITING") {
     return true;
   }
@@ -65,19 +66,48 @@ function isClosedBuncheol(detail: BuncheolDetail) {
   return !Number.isNaN(deadline.getTime()) && deadline.getTime() <= Date.now();
 }
 
-function getHighestBidAmount(member: BuncheolMember) {
-  if (member.participantCount <= 0) {
+function getHighestBidAmount(option: BuncheolManagementOption) {
+  if (option.participationCount <= 0) {
     return 0;
   }
 
-  return Math.max(
-    member.currentBidAmount,
-    member.topBidAmounts[0] ?? 0,
+  return option.currentHighestBid ?? 0;
+}
+
+function getWinnerCount(option: BuncheolManagementOption) {
+  return option.winner ? 1 : 0;
+}
+
+function isPaymentConfirmedStatus(status: string | undefined) {
+  return status === "CONFIRMED" || status === "PAYMENT_CONFIRMED";
+}
+
+function isPaymentReportedStatus(status: string | undefined) {
+  return (
+    status === "PAYMENT_REPORTED" ||
+    status === "PAYMENT_CONFIRMING" ||
+    status === "CONFIRMATION_REQUESTED" ||
+    status === "TRANSFER_REQUESTED"
   );
 }
 
-function getWinnerCount(member: BuncheolMember) {
-  return getHighestBidAmount(member) > 0 && member.participantCount > 0 ? 1 : 0;
+function hasPaymentReport(option: BuncheolManagementOption) {
+  return Boolean(
+    option.winner?.paymentReportedAt ||
+      isPaymentReportedStatus(option.winner?.paymentStatus) ||
+      isPaymentConfirmedStatus(option.winner?.paymentStatus),
+  );
+}
+
+function isPaymentConfirmable(option: BuncheolManagementOption) {
+  const paymentStatus = option.winner?.paymentStatus;
+
+  return Boolean(
+    option.winner?.participationId &&
+      !option.winner.paymentConfirmedAt &&
+      !isPaymentConfirmedStatus(paymentStatus) &&
+      hasPaymentReport(option),
+  );
 }
 
 export function HostedBuncheolManage({
@@ -90,8 +120,11 @@ export function HostedBuncheolManage({
     readAuthState,
     getInitialAuthState,
   );
-  const [detail, setDetail] = useState<BuncheolDetail | null>(null);
+  const [detail, setDetail] = useState<BuncheolManagementDetail | null>(null);
   const [message, setMessage] = useState("개최 분철 정보를 불러오고 있어요.");
+  const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(
+    null,
+  );
   const [deliveryStates, setDeliveryStates] = useState<
     Record<string, DeliveryState>
   >({});
@@ -120,32 +153,9 @@ export function HostedBuncheolManage({
       };
     }
 
-    requestBuncheolDetail(accessToken, id)
-      .then(async (nextDetail) => {
+    requestBuncheolManagement(accessToken, id)
+      .then((nextDetail) => {
         if (!isActive) {
-          return;
-        }
-
-        let isHostedByMe = nextDetail.isHostedByMe === true;
-
-        if (!isHostedByMe) {
-          try {
-            const hostedBuncheols = await requestMyHostedBuncheols(accessToken);
-            isHostedByMe = hostedBuncheols.some(
-              (buncheol) => String(buncheol.id) === String(id),
-            );
-          } catch {
-            isHostedByMe = false;
-          }
-        }
-
-        if (!isActive) {
-          return;
-        }
-
-        if (!isHostedByMe) {
-          setDetail(null);
-          setMessage("내가 개최한 분철만 관리할 수 있어요.");
           return;
         }
 
@@ -171,12 +181,14 @@ export function HostedBuncheolManage({
   }, [authState.accessToken, authState.isLoggedIn, id, router]);
 
   const isClosed = detail ? isClosedBuncheol(detail) : false;
-  const memberCount = detail?.members.length ?? 0;
+  const memberCount = detail?.optionCount ?? detail?.options.length ?? 0;
   const participantCount =
-    detail?.members.reduce(
-      (total, member) => total + member.participantCount,
+    detail?.totalParticipationCount ??
+    detail?.options.reduce(
+      (total, option) => total + option.participationCount,
       0,
-    ) ?? 0;
+    ) ??
+    0;
 
   function updateTrackingNumber(memberId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -196,6 +208,65 @@ export function HostedBuncheolManage({
         trackingNumber: current[memberId]?.trackingNumber ?? "",
       },
     }));
+  }
+
+  async function confirmPayment(option: BuncheolManagementOption) {
+    const participationId = option.winner?.participationId;
+
+    if (!option.winner || confirmingPaymentId) {
+      return;
+    }
+
+    if (!participationId) {
+      setMessage("입금 확인에 필요한 참여 ID가 없어요.");
+      return;
+    }
+
+    setConfirmingPaymentId(participationId);
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
+      await requestPaymentConfirmation(accessToken, participationId, {
+        ignoreConflict: true,
+      });
+
+      const confirmedAt = new Date().toISOString();
+
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              options: current.options.map((currentOption) =>
+                currentOption.buncheolMemberId === option.buncheolMemberId
+                  ? {
+                      ...currentOption,
+                      winner: currentOption.winner
+                        ? {
+                            ...currentOption.winner,
+                            paymentConfirmedAt: confirmedAt,
+                          }
+                        : currentOption.winner,
+                    }
+                  : currentOption,
+              ),
+            }
+          : current,
+      );
+      setMessage("입금 확인을 완료했어요.");
+    } catch (error: unknown) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "입금 확인을 처리하지 못했어요.",
+      );
+    } finally {
+      setConfirmingPaymentId(null);
+    }
   }
 
   if (!detail) {
@@ -231,6 +302,12 @@ export function HostedBuncheolManage({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+          {message ? (
+            <p className="mb-3 rounded-[0.8rem] bg-black/[0.04] px-3 py-2 text-[12px] font-semibold text-black/45">
+              {message}
+            </p>
+          ) : null}
+
           <section className="rounded-[1rem] border border-black/10 px-4 py-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -282,35 +359,41 @@ export function HostedBuncheolManage({
             </div>
 
             <div className="space-y-3">
-              {detail.members.map((member) => {
-                const deliveryState = deliveryStates[member.id] ?? {
+              {detail.options.map((option) => {
+                const optionId = option.buncheolMemberId;
+                const deliveryState = deliveryStates[optionId] ?? {
                   isShipped: false,
-                  trackingNumber: "",
+                  trackingNumber: option.winner?.trackingNumber ?? "",
                 };
-                const winnerCount = getWinnerCount(member);
+                const winnerCount = getWinnerCount(option);
+                const paymentReportedAt = option.winner?.paymentReportedAt;
+                const hasPaymentReportValue = hasPaymentReport(option);
+                const isConfirmable = isPaymentConfirmable(option);
+                const isConfirming =
+                  confirmingPaymentId === option.winner?.participationId;
 
                 return (
                   <article
                     className="rounded-[1rem] border border-black/10 px-4 py-4"
-                    key={member.id}
+                    key={optionId}
                   >
                     <div className="flex items-center gap-3">
                       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-[0.85rem] bg-[#f1f1f1]">
-                        {member.imageUrl ? (
+                        {option.memberImage ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             alt=""
                             className="h-full w-full object-cover"
-                            src={member.imageUrl}
+                            src={option.memberImage}
                           />
                         ) : null}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[16px] font-semibold tracking-[-0.04em]">
-                          {member.name}
+                          {option.memberName}
                         </p>
                         <p className="mt-1 text-[12px] font-medium text-black/40">
-                          참여 {member.participantCount}명
+                          참여 {option.participationCount}명
                         </p>
                       </div>
                     </div>
@@ -321,7 +404,7 @@ export function HostedBuncheolManage({
                           현 최고가
                         </p>
                         <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                          {formatWonAmount(getHighestBidAmount(member))}
+                          {formatWonAmount(getHighestBidAmount(option))}
                         </p>
                       </div>
                       <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
@@ -338,6 +421,48 @@ export function HostedBuncheolManage({
                       {isClosed ? (
                         <>
                         <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-medium text-black/35">
+                                입금 요청
+                              </p>
+                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black">
+                                {paymentReportedAt
+                                  ? formatKoreaDateTime(paymentReportedAt)
+                                  : hasPaymentReportValue
+                                    ? "입금 완료 요청됨"
+                                    : "입금 완료 요청 없음"}
+                              </p>
+                              {option.winner?.paymentAmount ? (
+                                <p className="mt-1 text-[12px] font-semibold text-black/40">
+                                  {formatWonAmount(option.winner.paymentAmount)}
+                                </p>
+                              ) : null}
+                            </div>
+                            <button
+                              className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
+                              disabled={!isConfirmable || isConfirming}
+                              onClick={() => void confirmPayment(option)}
+                              type="button"
+                            >
+                              {option.winner?.paymentConfirmedAt
+                                ? "확인 완료"
+                                : isConfirming
+                                  ? "확인 중"
+                                  : "입금 확인"}
+                            </button>
+                          </div>
+                          {option.winner?.paymentConfirmedAt ? (
+                            <p className="mt-2 text-[12px] font-medium text-black/40">
+                              확인 시각{" "}
+                              {formatKoreaDateTime(
+                                option.winner.paymentConfirmedAt,
+                              )}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-3 rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
                           <p className="text-[11px] font-medium text-black/35">
                             낙찰자 배송지
                           </p>
@@ -356,7 +481,7 @@ export function HostedBuncheolManage({
                             inputMode="numeric"
                             onChange={(event) =>
                               updateTrackingNumber(
-                                member.id,
+                                optionId,
                                 event.currentTarget.value,
                               )
                             }
@@ -372,7 +497,7 @@ export function HostedBuncheolManage({
                             deliveryState.isShipped ||
                             deliveryState.trackingNumber.trim().length === 0
                           }
-                          onClick={() => completeShipping(member.id)}
+                          onClick={() => completeShipping(optionId)}
                         >
                           {deliveryState.isShipped ? "발송 완료됨" : "발송 완료"}
                         </button>
