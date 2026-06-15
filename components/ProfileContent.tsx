@@ -31,11 +31,13 @@ import {
   cancelBuncheolParticipation,
   deleteBuncheol,
   deleteShippingAddress,
+  requestDeliveryReceiptConfirmation,
   requestBuncheolDetail,
   requestLogout,
   requestMyHostedBuncheols,
   requestMyParticipations,
-  requestPaymentConfirmation,
+  requestParticipationPaymentDetail,
+  requestPaymentReport,
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
@@ -187,16 +189,33 @@ function formatRemainingTime(deadline: string, now: Date) {
   return formatRemainingTimeFromDate(parseDeadline(deadline), now);
 }
 
-function formatPaymentRemainingTime(deadline: string, now: Date) {
-  const paymentDeadline = parseDeadline(deadline);
+function getPaymentDeadlineDate(
+  deadline: string,
+  paymentDueAt?: string | null,
+) {
+  const paymentDeadline = paymentDueAt
+    ? new Date(paymentDueAt)
+    : parseDeadline(deadline);
+
+  if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
+    paymentDeadline.setUTCDate(
+      paymentDeadline.getUTCDate() + paymentDeadlineDays,
+    );
+  }
+
+  return paymentDeadline;
+}
+
+function formatPaymentRemainingTime(
+  deadline: string,
+  now: Date,
+  paymentDueAt?: string | null,
+) {
+  const paymentDeadline = getPaymentDeadlineDate(deadline, paymentDueAt);
 
   if (Number.isNaN(paymentDeadline.getTime())) {
     return "결제 기한 확인 필요";
   }
-
-  paymentDeadline.setUTCDate(
-    paymentDeadline.getUTCDate() + paymentDeadlineDays,
-  );
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
@@ -215,7 +234,10 @@ type ProfileBidEntry = {
   payerName?: string;
   participantCount: number;
   paymentAmount?: number | null;
+  paymentDueAt?: string | null;
   participationStatus?: string;
+  deliveryId?: string | null;
+  deliveryStatus?: string | null;
   productId: string;
   rank: number;
   courier?: string;
@@ -224,6 +246,7 @@ type ProfileBidEntry = {
   submittedAt: string;
   title: string;
   tone: string;
+  trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
 };
 
@@ -287,17 +310,72 @@ function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
   return (
     !bid.paidAt &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
-      (isProfileBidClosed(bid, now) && bid.rank === 1))
+      (isProfileBidClosed(bid, now) && bid.rank === 1)) &&
+    !isProfileBidPaymentExpired(bid, now)
   );
+}
+
+function canRequestProfileBidPaymentReport(bid: ProfileBidEntry, now: Date) {
+  const isRequestableStatus =
+    !bid.participationStatus ||
+    bid.participationStatus === "ACTIVE_BID" ||
+    isPaymentWaitingParticipationStatus(bid.participationStatus);
+
+  return isRequestableStatus && isProfileBidPaymentReady(bid, now);
 }
 
 function isPaymentWaitingParticipationStatus(status: string | undefined) {
   return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
 }
 
+function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
+  const isPaymentCandidate =
+    isPaymentWaitingParticipationStatus(bid.participationStatus) ||
+    (isProfileBidClosed(bid, now) && bid.rank === 1);
+
+  if (
+    bid.paidAt ||
+    isTransferPaymentRequestedStatus(bid.participationStatus) ||
+    !isPaymentCandidate
+  ) {
+    return false;
+  }
+
+  const paymentDeadline = getPaymentDeadlineDate(
+    bid.deadline,
+    bid.paymentDueAt,
+  );
+
+  return (
+    !Number.isNaN(paymentDeadline.getTime()) &&
+    paymentDeadline.getTime() <= now.getTime()
+  );
+}
+
 function isProfileBidTransferRequested(bid: ProfileBidEntry) {
   return (
     !bid.paidAt && isTransferPaymentRequestedStatus(bid.participationStatus)
+  );
+}
+
+function isDeliveryReceiptCompleteStatus(status: string | undefined | null) {
+  return status === "RECEIVED" || status === "RECEIPT_CONFIRMED";
+}
+
+function canConfirmProfileDeliveryReceipt(bid: ProfileBidEntry) {
+  return Boolean(
+    bid.deliveryId &&
+      bid.paidAt &&
+      bid.trackingNumber &&
+      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
+  );
+}
+
+function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
+  return Boolean(
+    bid.deliveryId &&
+      bid.paidAt &&
+      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
   );
 }
 
@@ -371,11 +449,15 @@ function getProfileBidEntryFromParticipation(
         ? "결제 완료"
         : null,
     buncheolStatus: participation.buncheolStatus,
+    deliveryId: participation.deliveryId,
+    deliveryStatus: participation.deliveryStatus,
     paymentAmount: participation.paymentAmount,
+    paymentDueAt: participation.paymentDueAt,
     productId: participation.buncheolId,
     participationStatus: participation.participationStatus,
     rank: rank > 0 ? rank : 0,
     shippingFee: participation.shippingFee,
+    trackingNumber: participation.trackingNumber,
     hostBankAccount: participation.hostBankAccount,
     submittedAt: "",
     title: participation.buncheolTitle,
@@ -467,6 +549,9 @@ export function ProfileContent({
   const [withdrawnBidIds, setWithdrawnBidIds] = useState<string[]>([]);
   const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
   const [payingBidId, setPayingBidId] = useState<string | null>(null);
+  const [receivingDeliveryId, setReceivingDeliveryId] = useState<string | null>(
+    null,
+  );
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
@@ -477,6 +562,8 @@ export function ProfileContent({
     useState(false);
   const addressSyncRequestIdRef = useRef(0);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
+  const paymentCopyToastTimerRef = useRef<number | null>(null);
+  const [paymentCopyToast, setPaymentCopyToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
@@ -560,7 +647,8 @@ export function ProfileContent({
         return (
           !isClosed ||
           isProfileBidPaymentReady(bid, now) ||
-          isProfileBidTransferRequested(bid)
+          isProfileBidTransferRequested(bid) ||
+          shouldKeepProfileDeliveryReachable(bid)
         );
       }),
     [allBids, now],
@@ -613,6 +701,9 @@ export function ProfileContent({
   const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
   const selectedPaymentBid =
     activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+  const canSelectedPaymentBidReportPayment = selectedPaymentBid
+    ? canRequestProfileBidPaymentReport(selectedPaymentBid, now)
+    : false;
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
@@ -736,6 +827,10 @@ export function ProfileContent({
 
       if (paymentSheetCloseTimerRef.current !== null) {
         window.clearTimeout(paymentSheetCloseTimerRef.current);
+      }
+
+      if (paymentCopyToastTimerRef.current !== null) {
+        window.clearTimeout(paymentCopyToastTimerRef.current);
       }
 
       if (addressSheetCloseTimerRef.current !== null) {
@@ -1176,6 +1271,42 @@ export function ProfileContent({
     }
   }
 
+  async function confirmDeliveryReceipt(bid: ProfileBidEntry) {
+    if (!authState.isLoggedIn || !bid.deliveryId || receivingDeliveryId) {
+      return;
+    }
+
+    setReceivingDeliveryId(bid.deliveryId);
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
+      await requestDeliveryReceiptConfirmation(accessToken, bid.deliveryId);
+
+      const participations = await requestMyParticipations(accessToken);
+      const bidEntries = await Promise.all(
+        participations.map((participation) =>
+          getProfileBidEntryWithShippingData(accessToken, participation),
+        ),
+      );
+
+      setApiBidEntries(bidEntries);
+      setUserProfileMessage("배송 수령을 확인했어요.");
+    } catch (error: unknown) {
+      setUserProfileMessage(
+        error instanceof Error
+          ? error.message
+          : "배송 수령을 확인하지 못했어요.",
+      );
+    } finally {
+      setReceivingDeliveryId(null);
+    }
+  }
+
   function rememberScrollPosition() {
     if (!scrollContainerRef.current) {
       return;
@@ -1316,12 +1447,24 @@ export function ProfileContent({
 
     const requestId = paymentStoreTypeRequestIdRef.current + 1;
     const selectedBid = activeBids.find((bid) => bid.id === bidId) ?? null;
+
+    if (!selectedBid) {
+      return;
+    }
+
+    if (isProfileBidPaymentExpired(selectedBid, new Date())) {
+      setUserProfileMessage(
+        "입금 기한이 지나 결제할 수 없어요. 다음 순위로 낙찰이 넘어갔어요.",
+      );
+      return;
+    }
+
     const allowedStoreTypes = getAvailableConvenienceStoreTypes(
-      selectedBid?.shippingMethods,
-      selectedBid?.courier,
+      selectedBid.shippingMethods,
+      selectedBid.courier,
     );
     const shouldLoadApiStoreTypes =
-      selectedBid !== null && allowedStoreTypes.length === 0;
+      allowedStoreTypes.length === 0;
     const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
       deliveryAddresses,
       defaultAddressIds,
@@ -1360,7 +1503,41 @@ export function ProfileContent({
     setIsPaymentSheetOpen(true);
     setIsPaymentSheetClosing(false);
 
-    if (selectedBid && shouldLoadApiStoreTypes) {
+    if (authState.accessToken) {
+      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
+        .then((paymentDetail) => {
+          if (paymentStoreTypeRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          setApiBidEntries((current) =>
+            current
+              ? current.map((bid) =>
+                  bid.id === selectedBid.id
+                    ? {
+                        ...bid,
+                        amount: paymentDetail.bidAmount || bid.amount,
+                        hostBankAccount:
+                          paymentDetail.hostBankAccount ?? bid.hostBankAccount,
+                        paymentAmount:
+                          paymentDetail.paymentAmount ?? bid.paymentAmount,
+                        paymentDueAt:
+                          paymentDetail.paymentDueAt ?? bid.paymentDueAt,
+                        participationStatus:
+                          paymentDetail.paymentStatus ||
+                          bid.participationStatus,
+                        shippingFee:
+                          paymentDetail.shippingFee ?? bid.shippingFee,
+                      }
+                    : bid,
+                )
+              : current,
+          );
+        })
+        .catch(() => {});
+    }
+
+    if (shouldLoadApiStoreTypes) {
       requestBuncheolDetail(
         authState.isLoggedIn ? authState.accessToken ?? undefined : undefined,
         selectedBid.productId,
@@ -1513,17 +1690,27 @@ export function ProfileContent({
       return;
     }
 
+    if (paymentCopyToastTimerRef.current !== null) {
+      window.clearTimeout(paymentCopyToastTimerRef.current);
+    }
+
     try {
       await navigator.clipboard.writeText(value);
-      setUserProfileMessage(`${label}을 복사했어요.`);
+      setPaymentCopyToast(`${label}가 복사됐어요.`);
     } catch {
-      setUserProfileMessage(`${label}을 복사하지 못했어요.`);
+      setPaymentCopyToast(`${label}를 복사하지 못했어요.`);
     }
+
+    paymentCopyToastTimerRef.current = window.setTimeout(() => {
+      setPaymentCopyToast("");
+      paymentCopyToastTimerRef.current = null;
+    }, 1800);
   }
 
   function openPaymentReportConfirm() {
     if (
       !selectedPaymentBid ||
+      !canSelectedPaymentBidReportPayment ||
       !paymentDeliveryAddress ||
       !selectedPaymentBankAccount ||
       payingBidId
@@ -1544,6 +1731,15 @@ export function ProfileContent({
       return;
     }
 
+    if (!canSelectedPaymentBidReportPayment) {
+      setIsPaymentReportConfirmOpen(false);
+      setUserProfileMessage(
+        "입금 완료를 접수할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
+      );
+      closePaymentSheet();
+      return;
+    }
+
     setPayingBidId(selectedPaymentBid.id);
     setIsPaymentReportConfirmOpen(false);
 
@@ -1554,9 +1750,11 @@ export function ProfileContent({
         return;
       }
 
-      await requestPaymentConfirmation(accessToken, selectedPaymentBid.id, {
-        shippingAddressId: paymentDeliveryAddress.id,
-      });
+      await requestPaymentReport(
+        accessToken,
+        selectedPaymentBid.id,
+        paymentDeliveryAddress.id,
+      );
       setApiBidEntries((current) =>
         current
           ? current.map((bid) =>
@@ -2104,15 +2302,15 @@ export function ProfileContent({
             <div className="mt-4 space-y-3">
               {activeBids.map((bid) => {
                 const isClosed = isProfileBidClosed(bid, now);
+                const isPaymentExpired = isProfileBidPaymentExpired(bid, now);
                 const isPaymentReady = isProfileBidPaymentReady(bid, now);
                 const isTransferRequested =
                   isProfileBidTransferRequested(bid);
+                const isReceivingDelivery =
+                  receivingDeliveryId === bid.deliveryId;
+                const canConfirmDeliveryReceipt =
+                  canConfirmProfileDeliveryReceipt(bid);
                 const remainingTime = formatRemainingTime(bid.deadline, now);
-                const paymentRemainingTime = formatPaymentRemainingTime(
-                  bid.deadline,
-                  now,
-                );
-
                 return (
                   <article
                     className="rounded-[1rem] border border-black/10 px-4 py-4"
@@ -2178,6 +2376,8 @@ export function ProfileContent({
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
                                 {isTransferRequested
                                   ? "입금 확인 중"
+                                  : isPaymentExpired
+                                  ? "입금 만료"
                                   : isClosed
                                   ? bid.rank === 1
                                     ? "낙찰"
@@ -2214,12 +2414,26 @@ export function ProfileContent({
                                     </p>
                                   </>
                                 )
+                                : isPaymentExpired
+                                ? (
+                                  <>
+                                    <p>입금 기한이 지났어요</p>
+                                    <p className="mt-0.5 text-black/45">
+                                      다음 순위로 낙찰이 넘어갔어요
+                                    </p>
+                                  </>
+                                )
                                 : isPaymentReady
                                 ? (
                                   <>
                                     <p>결제가 필요해요</p>
                                     <p className="mt-0.5 text-black/45">
-                                      결제까지 {paymentRemainingTime}
+                                      결제까지{" "}
+                                      {formatPaymentRemainingTime(
+                                        bid.deadline,
+                                        now,
+                                        bid.paymentDueAt,
+                                      )}
                                     </p>
                                   </>
                                 )
@@ -2245,6 +2459,40 @@ export function ProfileContent({
                             </button>
                           ) : null}
                         </div>
+                        {bid.deliveryId && bid.paidAt ? (
+                          <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-medium text-black/35">
+                                  배송
+                                </p>
+                                <p className="mt-1 truncate text-[13px] font-semibold text-black/55">
+                                  {bid.trackingNumber
+                                    ? `운송장 ${bid.trackingNumber}`
+                                    : "운송장 등록 대기"}
+                                </p>
+                              </div>
+                              {isDeliveryReceiptCompleteStatus(
+                                bid.deliveryStatus,
+                              ) ? (
+                                <span className="shrink-0 rounded-full bg-black/10 px-3 py-2 text-[12px] font-semibold text-black/45">
+                                  수령 완료
+                                </span>
+                              ) : canConfirmDeliveryReceipt ? (
+                                <button
+                                  className="shrink-0 rounded-full bg-black px-3 py-2 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                  disabled={isReceivingDelivery}
+                                  onClick={() =>
+                                    void confirmDeliveryReceipt(bid)
+                                  }
+                                  type="button"
+                                >
+                                  {isReceivingDelivery ? "확인 중" : "수령 확인"}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </article>
@@ -2463,20 +2711,20 @@ export function ProfileContent({
 
       {isPaymentSheetOpen && selectedPaymentBid ? (
         <div
-          className={`bid-sheet-backdrop absolute inset-0 z-20 flex items-end ${
+          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
             isPaymentSheetEntered && !isPaymentSheetClosing
               ? "bid-sheet-backdrop-active"
               : ""
           }`}
         >
           <button
-            aria-label="결제 배송지 선택 닫기"
+            aria-label="입금 정보 닫기"
             className="absolute inset-0 cursor-default"
             onClick={closePaymentSheet}
             type="button"
           />
           <section
-            className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
               isPaymentSheetEntered && !isPaymentSheetClosing
                 ? "bid-sheet-panel-active"
                 : ""
@@ -2495,10 +2743,10 @@ export function ProfileContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  배송지 선택
+                  입금 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  낙찰 상품을 받을 주소를 확인해 주세요.
+                  계좌와 배송지를 확인한 뒤 입금 완료를 눌러 주세요.
                 </p>
               </div>
               <button
@@ -2511,6 +2759,7 @@ export function ProfileContent({
               </button>
             </div>
 
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
@@ -2520,7 +2769,7 @@ export function ProfileContent({
               </p>
             </div>
 
-            <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+            <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[12px] font-semibold text-black/40">
@@ -2556,6 +2805,17 @@ export function ProfileContent({
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                 송금 후 입금 완료를 눌러 주세요.
               </p>
+              {paymentCopyToast ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
+                  <p
+                    aria-live="polite"
+                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                    role="status"
+                  >
+                    {paymentCopyToast}
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-4 space-y-2">
@@ -2644,7 +2904,9 @@ export function ProfileContent({
               다른 배송지 선택
             </button>
 
-            <div className="mt-5 border-t border-black/10 pt-4">
+            </div>
+
+            <div className="shrink-0 border-t border-black/10 bg-white pt-4">
               <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
                 <span>낙찰가</span>
                 <span>{formatPrice(selectedPaymentBid.amount)}</span>
@@ -2668,6 +2930,7 @@ export function ProfileContent({
               disabled={
                 !paymentDeliveryAddress ||
                 !selectedPaymentBankAccount ||
+                !canSelectedPaymentBidReportPayment ||
                 payingBidId === selectedPaymentBid.id
               }
               onClick={openPaymentReportConfirm}
@@ -2698,6 +2961,7 @@ export function ProfileContent({
                       className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
                       disabled={
                         !selectedPaymentBankAccount ||
+                        !canSelectedPaymentBidReportPayment ||
                         payingBidId === selectedPaymentBid.id
                       }
                       onClick={() => void handleTransferPaymentRequest()}
@@ -2715,7 +2979,7 @@ export function ProfileContent({
 
       {isAddressSheetOpen ? (
         <div
-          className={`bid-sheet-backdrop fixed inset-0 z-30 flex items-end ${
+          className={`bid-sheet-backdrop fixed inset-0 z-50 flex items-end ${
             isAddressSheetEntered && !isAddressSheetClosing
               ? "bid-sheet-backdrop-active"
               : ""

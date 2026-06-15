@@ -31,10 +31,12 @@ import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   cancelBuncheolParticipation,
   deleteBuncheol,
+  requestDeliveryReceiptConfirmation,
   requestBuncheolDetail,
   requestMyHostedBuncheols,
   requestMyParticipations,
-  requestPaymentConfirmation,
+  requestParticipationPaymentDetail,
+  requestPaymentReport,
   toProductDetailItem,
   type BankAccountInfo,
   type MyHostedBuncheol,
@@ -131,16 +133,33 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   return `${minutes}분 남았어요`;
 }
 
-function formatPaymentRemainingTime(deadline: string, now: Date) {
-  const paymentDeadline = parseDeadline(deadline);
+function getPaymentDeadlineDate(
+  deadline: string,
+  paymentDueAt?: string | null,
+) {
+  const paymentDeadline = paymentDueAt
+    ? new Date(paymentDueAt)
+    : parseDeadline(deadline);
+
+  if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
+    paymentDeadline.setUTCDate(
+      paymentDeadline.getUTCDate() + paymentDeadlineDays,
+    );
+  }
+
+  return paymentDeadline;
+}
+
+function formatPaymentRemainingTime(
+  deadline: string,
+  now: Date,
+  paymentDueAt?: string | null,
+) {
+  const paymentDeadline = getPaymentDeadlineDate(deadline, paymentDueAt);
 
   if (Number.isNaN(paymentDeadline.getTime())) {
     return "결제 기한 확인 필요";
   }
-
-  paymentDeadline.setUTCDate(
-    paymentDeadline.getUTCDate() + paymentDeadlineDays,
-  );
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
@@ -221,6 +240,8 @@ type BidRecord = {
   productId: string;
   rank: number;
   courier?: string;
+  deliveryId?: string | null;
+  deliveryStatus?: string | null;
   shippingMethods?: ProductDetailItem["shippingMethods"];
   submittedAt: string;
   title: string;
@@ -228,8 +249,10 @@ type BidRecord = {
   buncheolStatus?: string;
   payerName?: string;
   paymentAmount?: number | null;
+  paymentDueAt?: string | null;
   participationStatus?: string;
   shippingFee?: number | null;
+  trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
 };
 
@@ -254,17 +277,64 @@ function isBidRecordPaymentReady(bid: BidRecord, now: Date) {
   return (
     !bid.paidAt &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
-      (isBidRecordClosed(bid, now) && bid.rank === 1))
+      (isBidRecordClosed(bid, now) && bid.rank === 1)) &&
+    !isBidRecordPaymentExpired(bid, now)
   );
+}
+
+function canRequestBidPaymentReport(bid: BidRecord, now: Date) {
+  const isRequestableStatus =
+    !bid.participationStatus ||
+    bid.participationStatus === "ACTIVE_BID" ||
+    isPaymentWaitingParticipationStatus(bid.participationStatus);
+
+  return isRequestableStatus && isBidRecordPaymentReady(bid, now);
 }
 
 function isPaymentWaitingParticipationStatus(status: string | undefined) {
   return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
 }
 
+function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
+  const isPaymentCandidate =
+    isPaymentWaitingParticipationStatus(bid.participationStatus) ||
+    (isBidRecordClosed(bid, now) && bid.rank === 1);
+
+  if (
+    bid.paidAt ||
+    isTransferPaymentRequestedStatus(bid.participationStatus) ||
+    !isPaymentCandidate
+  ) {
+    return false;
+  }
+
+  const paymentDeadline = getPaymentDeadlineDate(
+    bid.deadline,
+    bid.paymentDueAt,
+  );
+
+  return (
+    !Number.isNaN(paymentDeadline.getTime()) &&
+    paymentDeadline.getTime() <= now.getTime()
+  );
+}
+
 function isBidRecordTransferRequested(bid: BidRecord) {
   return (
     !bid.paidAt && isTransferPaymentRequestedStatus(bid.participationStatus)
+  );
+}
+
+function isDeliveryReceiptCompleteStatus(status: string | undefined | null) {
+  return status === "RECEIVED" || status === "RECEIPT_CONFIRMED";
+}
+
+function canConfirmBidDeliveryReceipt(bid: BidRecord) {
+  return Boolean(
+    bid.deliveryId &&
+      bid.paidAt &&
+      bid.trackingNumber &&
+      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
   );
 }
 
@@ -338,11 +408,15 @@ function getBidRecordFromParticipation(
         ? "결제 완료"
         : null,
     buncheolStatus: participation.buncheolStatus,
+    deliveryId: participation.deliveryId,
+    deliveryStatus: participation.deliveryStatus,
     paymentAmount: participation.paymentAmount,
+    paymentDueAt: participation.paymentDueAt,
     productId: participation.buncheolId,
     participationStatus: participation.participationStatus,
     rank: rank > 0 ? rank : 0,
     shippingFee: participation.shippingFee,
+    trackingNumber: participation.trackingNumber,
     hostBankAccount: participation.hostBankAccount,
     submittedAt: "",
     title: participation.buncheolTitle,
@@ -477,6 +551,8 @@ export function BidHistoryContent({
   const [isPaymentReportConfirmOpen, setIsPaymentReportConfirmOpen] =
     useState(false);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
+  const paymentCopyToastTimerRef = useRef<number | null>(null);
+  const [paymentCopyToast, setPaymentCopyToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
@@ -514,6 +590,9 @@ export function BidHistoryContent({
   >(null);
   const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
   const [payingBidId, setPayingBidId] = useState<string | null>(null);
+  const [receivingDeliveryId, setReceivingDeliveryId] = useState<string | null>(
+    null,
+  );
   const [historyMessage, setHistoryMessage] = useState("");
   const [hostedMessage, setHostedMessage] = useState("");
   const isBidRecordsLoading = authState.isLoggedIn && apiBidRecords === null;
@@ -526,6 +605,9 @@ export function BidHistoryContent({
   );
   const selectedPaymentBid =
     paymentBidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+  const canSelectedPaymentBidReportPayment = selectedPaymentBid
+    ? canRequestBidPaymentReport(selectedPaymentBid, now)
+    : false;
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
       bid.participationStatus === "ACTIVE_BID" && isBidRecordClosed(bid, now),
@@ -597,6 +679,10 @@ export function BidHistoryContent({
 
       if (paymentSheetCloseTimerRef.current !== null) {
         window.clearTimeout(paymentSheetCloseTimerRef.current);
+      }
+
+      if (paymentCopyToastTimerRef.current !== null) {
+        window.clearTimeout(paymentCopyToastTimerRef.current);
       }
 
       if (addressSheetCloseTimerRef.current !== null) {
@@ -920,12 +1006,24 @@ export function BidHistoryContent({
 
     const requestId = paymentStoreTypeRequestIdRef.current + 1;
     const selectedBid = paymentBidRecords.find((bid) => bid.id === bidId) ?? null;
+
+    if (!selectedBid) {
+      return;
+    }
+
+    if (isBidRecordPaymentExpired(selectedBid, new Date())) {
+      setHistoryMessage(
+        "입금 기한이 지나 결제할 수 없어요. 다음 순위로 낙찰이 넘어갔어요.",
+      );
+      return;
+    }
+
     const allowedStoreTypes = getAvailableConvenienceStoreTypes(
-      selectedBid?.shippingMethods,
-      selectedBid?.courier,
+      selectedBid.shippingMethods,
+      selectedBid.courier,
     );
     const shouldLoadApiStoreTypes =
-      selectedBid !== null && allowedStoreTypes.length === 0;
+      allowedStoreTypes.length === 0;
     const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
       deliveryAddresses,
       defaultAddressIds,
@@ -960,7 +1058,41 @@ export function BidHistoryContent({
     setIsPaymentSheetOpen(true);
     setIsPaymentSheetClosing(false);
 
-    if (selectedBid && shouldLoadApiStoreTypes) {
+    if (authState.accessToken) {
+      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
+        .then((paymentDetail) => {
+          if (paymentStoreTypeRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          setApiBidRecords((current) =>
+            current
+              ? current.map((bid) =>
+                  bid.id === selectedBid.id
+                    ? {
+                        ...bid,
+                        amount: paymentDetail.bidAmount || bid.amount,
+                        hostBankAccount:
+                          paymentDetail.hostBankAccount ?? bid.hostBankAccount,
+                        paymentAmount:
+                          paymentDetail.paymentAmount ?? bid.paymentAmount,
+                        paymentDueAt:
+                          paymentDetail.paymentDueAt ?? bid.paymentDueAt,
+                        participationStatus:
+                          paymentDetail.paymentStatus ||
+                          bid.participationStatus,
+                        shippingFee:
+                          paymentDetail.shippingFee ?? bid.shippingFee,
+                      }
+                    : bid,
+                )
+              : current,
+          );
+        })
+        .catch(() => {});
+    }
+
+    if (shouldLoadApiStoreTypes) {
       requestBuncheolDetail(
         authState.isLoggedIn ? authState.accessToken ?? undefined : undefined,
         selectedBid.productId,
@@ -1153,6 +1285,42 @@ export function BidHistoryContent({
     }
   }
 
+  async function handleConfirmDeliveryReceipt(bid: BidRecord) {
+    if (!authState.isLoggedIn || !bid.deliveryId || receivingDeliveryId) {
+      return;
+    }
+
+    setReceivingDeliveryId(bid.deliveryId);
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
+      await requestDeliveryReceiptConfirmation(accessToken, bid.deliveryId);
+
+      const participations = await requestMyParticipations(accessToken);
+      const bidRecords = await Promise.all(
+        participations.map((participation) =>
+          getBidRecordWithShippingData(accessToken, participation),
+        ),
+      );
+
+      setApiBidRecords(bidRecords);
+      setHistoryMessage("배송 수령을 확인했어요.");
+    } catch (error: unknown) {
+      setHistoryMessage(
+        error instanceof Error
+          ? error.message
+          : "배송 수령을 확인하지 못했어요.",
+      );
+    } finally {
+      setReceivingDeliveryId(null);
+    }
+  }
+
   async function handleDeleteHostedProduct(product: ProductDetailItem) {
     const accessToken = authState.accessToken;
     const buncheolId = product.buncheolId ?? product.id;
@@ -1193,17 +1361,27 @@ export function BidHistoryContent({
       return;
     }
 
+    if (paymentCopyToastTimerRef.current !== null) {
+      window.clearTimeout(paymentCopyToastTimerRef.current);
+    }
+
     try {
       await navigator.clipboard.writeText(value);
-      setHistoryMessage(`${label}을 복사했어요.`);
+      setPaymentCopyToast(`${label}가 복사됐어요.`);
     } catch {
-      setHistoryMessage(`${label}을 복사하지 못했어요.`);
+      setPaymentCopyToast(`${label}를 복사하지 못했어요.`);
     }
+
+    paymentCopyToastTimerRef.current = window.setTimeout(() => {
+      setPaymentCopyToast("");
+      paymentCopyToastTimerRef.current = null;
+    }, 1800);
   }
 
   function openPaymentReportConfirm() {
     if (
       !selectedPaymentBid ||
+      !canSelectedPaymentBidReportPayment ||
       !paymentDeliveryAddress ||
       !selectedPaymentBankAccount ||
       payingBidId
@@ -1224,6 +1402,15 @@ export function BidHistoryContent({
       return;
     }
 
+    if (!canSelectedPaymentBidReportPayment) {
+      setIsPaymentReportConfirmOpen(false);
+      setHistoryMessage(
+        "입금 완료를 접수할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
+      );
+      closePaymentSheet();
+      return;
+    }
+
     setPayingBidId(selectedPaymentBid.id);
     setIsPaymentReportConfirmOpen(false);
 
@@ -1234,9 +1421,11 @@ export function BidHistoryContent({
         return;
       }
 
-      await requestPaymentConfirmation(accessToken, selectedPaymentBid.id, {
-        shippingAddressId: paymentDeliveryAddress.id,
-      });
+      await requestPaymentReport(
+        accessToken,
+        selectedPaymentBid.id,
+        paymentDeliveryAddress.id,
+      );
       setApiBidRecords((current) =>
         current
           ? current.map((bid) =>
@@ -1445,14 +1634,14 @@ export function BidHistoryContent({
             ) : null}
             {!isBidRecordsLoading && records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
+              const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
               const isTransferRequested = isBidRecordTransferRequested(bid);
               const isWithdrawPending = withdrawingBidId === bid.id;
-              const paymentRemainingTime = formatPaymentRemainingTime(
-                bid.deadline,
-                now,
-              );
-
+              const isReceivingDelivery =
+                receivingDeliveryId === bid.deliveryId;
+              const canConfirmDeliveryReceipt =
+                canConfirmBidDeliveryReceipt(bid);
               return (
                 <article
                   className="rounded-[1rem] border border-black/10 px-4 py-4"
@@ -1520,6 +1709,8 @@ export function BidHistoryContent({
                                 ? "결제 완료"
                                 : isTransferRequested
                                 ? "입금 확인 중"
+                                : isPaymentExpired
+                                ? "입금 만료"
                                 : isClosed
                                 ? bid.rank === 1
                                   ? "낙찰"
@@ -1561,11 +1752,23 @@ export function BidHistoryContent({
                                   판매자의 확인을 기다리고 있어요
                                 </p>
                               </>
+                            ) : isPaymentExpired ? (
+                              <>
+                                <p>입금 기한이 지났어요</p>
+                                <p className="mt-0.5 text-black/45">
+                                  다음 순위로 낙찰이 넘어갔어요
+                                </p>
+                              </>
                             ) : isPaymentReady ? (
                               <>
                                 <p>결제가 필요해요</p>
                                 <p className="mt-0.5 text-black/45">
-                                  결제까지 {paymentRemainingTime}
+                                  결제까지{" "}
+                                  {formatPaymentRemainingTime(
+                                    bid.deadline,
+                                    now,
+                                    bid.paymentDueAt,
+                                  )}
                                 </p>
                               </>
                             ) : (
@@ -1594,6 +1797,40 @@ export function BidHistoryContent({
                           </button>
                         ) : null}
                       </div>
+                      {bid.deliveryId && bid.paidAt ? (
+                        <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-medium text-black/35">
+                                배송
+                              </p>
+                              <p className="mt-1 truncate text-[13px] font-semibold text-black/55">
+                                {bid.trackingNumber
+                                  ? `운송장 ${bid.trackingNumber}`
+                                  : "운송장 등록 대기"}
+                              </p>
+                            </div>
+                            {isDeliveryReceiptCompleteStatus(
+                              bid.deliveryStatus,
+                            ) ? (
+                              <span className="shrink-0 rounded-full bg-black/10 px-3 py-2 text-[12px] font-semibold text-black/45">
+                                수령 완료
+                              </span>
+                            ) : canConfirmDeliveryReceipt ? (
+                              <button
+                                className="shrink-0 rounded-full bg-black px-3 py-2 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                disabled={isReceivingDelivery}
+                                onClick={() =>
+                                  void handleConfirmDeliveryReceipt(bid)
+                                }
+                                type="button"
+                              >
+                                {isReceivingDelivery ? "확인 중" : "수령 확인"}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -1757,20 +1994,20 @@ export function BidHistoryContent({
 
       {isPaymentSheetOpen && selectedPaymentBid ? (
         <div
-          className={`bid-sheet-backdrop absolute inset-0 z-20 flex items-end ${
+          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
             isPaymentSheetEntered && !isPaymentSheetClosing
               ? "bid-sheet-backdrop-active"
               : ""
           }`}
         >
           <button
-            aria-label="결제 배송지 선택 닫기"
+            aria-label="입금 정보 닫기"
             className="absolute inset-0 cursor-default"
             onClick={closePaymentSheet}
             type="button"
           />
           <section
-            className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
               isPaymentSheetEntered && !isPaymentSheetClosing
                 ? "bid-sheet-panel-active"
                 : ""
@@ -1789,10 +2026,10 @@ export function BidHistoryContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  배송지 선택
+                  입금 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  낙찰 상품을 받을 주소를 확인해 주세요.
+                  계좌와 배송지를 확인한 뒤 입금 완료를 눌러 주세요.
                 </p>
               </div>
               <button
@@ -1805,6 +2042,7 @@ export function BidHistoryContent({
               </button>
             </div>
 
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
@@ -1814,7 +2052,7 @@ export function BidHistoryContent({
               </p>
             </div>
 
-            <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+            <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[12px] font-semibold text-black/40">
@@ -1850,6 +2088,17 @@ export function BidHistoryContent({
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                 송금 후 입금 완료를 눌러 주세요.
               </p>
+              {paymentCopyToast ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
+                  <p
+                    aria-live="polite"
+                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                    role="status"
+                  >
+                    {paymentCopyToast}
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-4 space-y-2">
@@ -1938,7 +2187,9 @@ export function BidHistoryContent({
               다른 배송지 선택
             </button>
 
-            <div className="mt-5 border-t border-black/10 pt-4">
+            </div>
+
+            <div className="shrink-0 border-t border-black/10 bg-white pt-4">
               <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
                 <span>낙찰가</span>
                 <span>{formatPrice(selectedPaymentBid.amount)}</span>
@@ -1962,6 +2213,7 @@ export function BidHistoryContent({
               disabled={
                 !paymentDeliveryAddress ||
                 !selectedPaymentBankAccount ||
+                !canSelectedPaymentBidReportPayment ||
                 payingBidId === selectedPaymentBid.id
               }
               onClick={openPaymentReportConfirm}
@@ -1992,6 +2244,7 @@ export function BidHistoryContent({
                       className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
                       disabled={
                         !selectedPaymentBankAccount ||
+                        !canSelectedPaymentBidReportPayment ||
                         payingBidId === selectedPaymentBid.id
                       }
                       onClick={() => void handleTransferPaymentRequest()}
@@ -2009,7 +2262,7 @@ export function BidHistoryContent({
 
       {isAddressSheetOpen ? (
         <div
-          className={`bid-sheet-backdrop absolute inset-0 z-30 flex items-end ${
+          className={`bid-sheet-backdrop fixed inset-0 z-50 flex items-end ${
             isAddressSheetEntered && !isAddressSheetClosing
               ? "bid-sheet-backdrop-active"
               : ""
@@ -2022,7 +2275,7 @@ export function BidHistoryContent({
             type="button"
           />
           <section
-            className={`bid-sheet-panel relative flex h-[76dvh] w-full flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+            className={`bid-sheet-panel relative mx-auto flex h-[76dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
               isAddressSheetEntered && !isAddressSheetClosing
                 ? "bid-sheet-panel-active"
                 : ""

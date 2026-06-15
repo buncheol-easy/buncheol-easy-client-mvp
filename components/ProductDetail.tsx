@@ -248,6 +248,16 @@ function getProductImageUrls(product: ProductDetailItem) {
   );
 }
 
+function getMyBidsFromOptions(options: ProductOption[]) {
+  return options.reduce<Record<string, number>>((bids, option) => {
+    if (typeof option.myBidAmount === "number" && option.myBidAmount > 0) {
+      bids[option.id] = option.myBidAmount;
+    }
+
+    return bids;
+  }, {});
+}
+
 export function ProductDetail({
   backHref,
   product,
@@ -280,13 +290,7 @@ export function ProductDetail({
   );
   const [bidAmounts, setBidAmounts] = useState<Record<string, string>>({});
   const [myBids, setMyBids] = useState<Record<string, number>>(() =>
-    product.options.reduce<Record<string, number>>((bids, option) => {
-      if (typeof option.myBidAmount === "number" && option.myBidAmount > 0) {
-        bids[option.id] = option.myBidAmount;
-      }
-
-      return bids;
-    }, {}),
+    getMyBidsFromOptions(product.options),
   );
   const [isLiked, setIsLiked] = useState(product.liked === true);
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
@@ -328,9 +332,11 @@ export function ProductDetail({
       }
 
       const rank =
-        getTopBids(option)
-          .map((bid) => priceToNumber(bid))
-          .filter((bid) => bid > amount).length + 1;
+        typeof option.myRank === "number" && option.myRank > 0
+          ? option.myRank
+          : getTopBids(option)
+              .map((bid) => priceToNumber(bid))
+              .filter((bid) => bid > amount).length + 1;
 
       return {
         amount,
@@ -416,6 +422,12 @@ export function ProductDetail({
   useEffect(() => {
     setIsLiked(product.liked === true);
   }, [product.id, product.liked]);
+
+  useEffect(() => {
+    setAuctionOptions(product.options);
+    setMyBids(getMyBidsFromOptions(product.options));
+    setBidAmounts({});
+  }, [product.id, product.options]);
 
   function buildTopBids(
     option: ProductOption,

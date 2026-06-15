@@ -6,6 +6,7 @@ export type ProductOption = {
   buncheolMemberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
+  myRank?: number;
   label: string;
   price: string;
   startingBid?: string;
