@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
+import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
 import { blackChromeViewport } from "@/lib/system-chrome";
 import { Suspense } from "react";
 import "./globals.css";
@@ -32,6 +33,7 @@ export default function RootLayout({
           <SystemChromeColorSync />
         </Suspense>
         {children}
+        <TestAccountSwitcher />
       </body>
     </html>
   );

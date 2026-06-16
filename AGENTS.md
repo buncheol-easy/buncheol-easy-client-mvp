@@ -135,3 +135,13 @@ PR 본문은 아래 형식을 사용한다.
 
 [KAN-110]: https://easy00.atlassian.net/browse/KAN-110
 ```
+
+### Codex Review Re-Review
+
+`chatgpt-codex-connector` 리뷰 지적을 반영한 뒤에는 PR을 draft/ready 상태로 바꾸지 않는다.
+
+수정 커밋을 푸시한 다음 PR Conversation에 아래 댓글만 추가해 재검토를 요청한다.
+
+```text
+@chatgpt-codex-connector re-review
+```
