@@ -93,6 +93,7 @@ export type CreateBuncheolRequest = {
   buncheolMembers: BuncheolMemberRequest[];
   cuShippingFee?: number;
   deadline: string;
+  minHeadcount: number;
   description?: string;
   groupId: number;
   gs25ShippingFee?: number;
@@ -109,6 +110,7 @@ export type UpdateBuncheolRequest = {
 export type ParticipateBuncheolRequest = {
   bidAmount: number;
   buncheolMemberId: number;
+  refundAccount: BankAccountInfo;
   shippingAddressId: number;
 };
 
@@ -181,6 +183,7 @@ export type BuncheolDetail = BuncheolSummary & {
   gs25ShippingFee?: number;
   hostBankAccount?: BankAccountInfo | null;
   imageUrls: string[];
+  minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
   purchaseSite?: string;
@@ -271,6 +274,7 @@ export type MyParticipation = {
   participationStatus: string;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
+  createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
@@ -1559,6 +1563,7 @@ function getBuncheolDetailFromBody(body: unknown) {
       "sellerAccount",
     ]),
     imageUrls: getImageUrls(data),
+    minHeadcount: getOptionalNumberValue(data, ["minHeadcount"]),
     isHostedByMe:
       getBooleanValue(data, ["isHostedByMe", "hostedByMe", "owner"]) ??
       undefined,
@@ -2028,6 +2033,7 @@ function getMemberLabel(memberNames: string[]) {
 function getStatusBadge(status: string) {
   const statusLabels: Record<string, string> = {
     CANCELLED: "취소",
+    CONFIRMED: "진행확정",
     CLOSED: "마감",
     FINISHED: "완료",
     PAID: "결제중",
@@ -2186,6 +2192,7 @@ export function toProductDetailItem(
     isApiProduct: true,
     isHostedByMe: detail.isHostedByMe,
     member: getMemberLabel(memberNames),
+    minHeadcount: detail.minHeadcount,
     options,
     purchaseSource: detail.purchaseSite ?? "공식 판매처",
     shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
@@ -2576,34 +2583,8 @@ export async function participateBuncheol(
     participationId: getStringValue(data, ["participationId", "id"]),
     participationStatus:
       getOptionalStringValue(data, ["participationStatus", "status"]) ??
-      "ACTIVE_BID",
+      "AWAITING_PAYMENT",
   } satisfies ParticipationCheckoutResponse;
-}
-
-export async function cancelBuncheolParticipation(
-  accessToken: string,
-  participationId: string,
-) {
-  const requestInit: RequestInit = {
-    credentials: "include",
-    headers: getAuthHeaders(accessToken),
-    method: "DELETE",
-  };
-  let response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}`,
-    requestInit,
-  );
-
-  if (response.status === 404) {
-    response = await fetch(
-      `${getVersionedApiBaseUrl()}/participaitons/${participationId}`,
-      requestInit,
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
 }
 
 export async function requestMyParticipations(accessToken: string) {
@@ -2735,13 +2716,20 @@ export async function requestMyParticipations(accessToken: string) {
           getOptionalStringValue(record, [
             "participationStatus",
             "status",
-          ]) ?? "ACTIVE_BID",
+          ]) ?? "AWAITING_PAYMENT",
         paymentAmount:
           getOptionalNumberValue(record, ["paymentAmount", "totalAmount"]) ??
           null,
         paymentDueAt:
           getOptionalStringValue(record, ["paymentDueAt", "paymentDeadline"]) ??
           null,
+        createdAt:
+          getOptionalStringValue(record, [
+            "createdAt",
+            "participationCreatedAt",
+            "participatedAt",
+            "requestedAt",
+          ]) ?? null,
         hostBankAccount: getNestedBankAccountInfo(record, [
           "hostBankAccount",
           "sellerBankAccount",
@@ -3078,24 +3066,6 @@ export async function requestDeliveryTrackingRegistration(
     throw new Error(await parseErrorMessage(response));
   }
 }
-export async function requestDeliveryReceiptConfirmation(
-  accessToken: string,
-  deliveryId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/deliveries/${deliveryId}/receipt`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
-
 function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null {
   const nestedGroup = getNestedData(record.group);
   const groupRecord = isRecord(nestedGroup) ? nestedGroup : record;

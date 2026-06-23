@@ -13,11 +13,11 @@ import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
   addBuncheolBookmark,
-  cancelBuncheolParticipation,
   deleteBuncheol,
   participateBuncheol,
   removeBuncheolBookmark,
   requestShippingAddresses,
+  requestUserProfile,
 } from "@/lib/auth-api";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
@@ -173,6 +173,10 @@ function priceToNumber(price: string) {
   return Number(price.replace(/[^0-9]/g, ""));
 }
 
+function isHundredWonAmount(value: number) {
+  return Number.isInteger(value) && value > 0 && value % 100 === 0;
+}
+
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
 }
@@ -296,9 +300,6 @@ export function ProductDetail({
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const [isDeletePending, setIsDeletePending] = useState(false);
   const [isBidSubmitPending, setIsBidSubmitPending] = useState(false);
-  const [withdrawingOptionId, setWithdrawingOptionId] = useState<string | null>(
-    null,
-  );
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -307,7 +308,10 @@ export function ProductDetail({
     return auctionOptions.filter((option) => {
       const bidAmount = Number(bidAmounts[option.id] ?? 0);
 
-      return bidAmount > priceToNumber(getBidBaseline(option));
+      return (
+        bidAmount > priceToNumber(getBidBaseline(option)) &&
+        isHundredWonAmount(bidAmount)
+      );
     }).length;
   }, [auctionOptions, bidAmounts]);
 
@@ -315,7 +319,10 @@ export function ProductDetail({
     return auctionOptions.reduce((sum, option) => {
       const bidAmount = Number(bidAmounts[option.id] ?? 0);
 
-      if (bidAmount <= priceToNumber(getBidBaseline(option))) {
+      if (
+        bidAmount <= priceToNumber(getBidBaseline(option)) ||
+        !isHundredWonAmount(bidAmount)
+      ) {
         return sum;
       }
 
@@ -455,105 +462,11 @@ export function ProductDetail({
     ] as [string, string, string];
   }
 
-  function removeBidFromTopBids(option: ProductOption, bidAmount: number) {
-    const nextTopBidAmounts = getTopBids(option)
-      .map((bid) => priceToNumber(bid))
-      .filter((bid) => bid > 0);
-    const withdrawnBidIndex = nextTopBidAmounts.indexOf(bidAmount);
-
-    if (withdrawnBidIndex >= 0) {
-      nextTopBidAmounts.splice(withdrawnBidIndex, 1);
-    }
-
-    const nextTopBids = nextTopBidAmounts
-      .slice(0, 3)
-      .map(formatPrice);
-
-    return {
-      currentBid: nextTopBids[0] ?? "-",
-      topBids: [
-        nextTopBids[0] ?? "-",
-        nextTopBids[1] ?? "-",
-        nextTopBids[2] ?? "-",
-      ] as [string, string, string],
-    };
-  }
-
   function updateBidAmount(optionId: string, nextAmount: string) {
     setBidAmounts((current) => ({
       ...current,
       [optionId]: nextAmount.replace(/[^0-9]/g, ""),
     }));
-  }
-
-  async function withdrawBid(optionId: string) {
-    const withdrawnBid = myBids[optionId];
-
-    if (!withdrawnBid || withdrawingOptionId) {
-      return;
-    }
-
-    const option = auctionOptions.find((option) => option.id === optionId);
-    const participationId = option?.myParticipationId;
-    const accessToken = authState.accessToken;
-
-    if (product.isApiProduct) {
-      if (!authState.isLoggedIn || !accessToken) {
-        const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
-        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
-        return;
-      }
-
-      if (!participationId) {
-        window.alert("입찰 철회 정보를 확인하지 못했어요.");
-        return;
-      }
-
-      setWithdrawingOptionId(optionId);
-
-      try {
-        await cancelBuncheolParticipation(accessToken, participationId);
-      } catch (error: unknown) {
-        window.alert(
-          error instanceof Error ? error.message : "입찰을 철회하지 못했어요.",
-        );
-        setWithdrawingOptionId(null);
-        return;
-      }
-    }
-
-    setAuctionOptions((currentOptions) =>
-      currentOptions.map((option) => {
-        if (option.id !== optionId) {
-          return option;
-        }
-
-        const { currentBid, topBids } = removeBidFromTopBids(
-          option,
-          withdrawnBid,
-        );
-
-        return {
-          ...option,
-          currentBid,
-          participantCount: Math.max(0, option.participantCount - 1),
-          topBids,
-        };
-      }),
-    );
-    setMyBids((current) => {
-      const nextBids = { ...current };
-      delete nextBids[optionId];
-
-      return nextBids;
-    });
-    setBidAmounts((current) => {
-      const nextAmounts = { ...current };
-      delete nextAmounts[optionId];
-
-      return nextAmounts;
-    });
-    setWithdrawingOptionId(null);
   }
 
   function applySubmittedBidState(
@@ -642,6 +555,20 @@ export function ProductDetail({
       return;
     }
 
+    const hasInvalidBidAmount = auctionOptions.some((option) => {
+      const bidAmount = Number(bidAmounts[option.id] ?? 0);
+
+      return (
+        bidAmount > priceToNumber(getBidBaseline(option)) &&
+        !isHundredWonAmount(bidAmount)
+      );
+    });
+
+    if (hasInvalidBidAmount) {
+      window.alert("참여 금액은 100원 단위로 입력해 주세요.");
+      return;
+    }
+
     const submittedBids = auctionOptions
       .map((option) => ({
         bidAmount: Number(bidAmounts[option.id] ?? 0),
@@ -649,9 +576,9 @@ export function ProductDetail({
       }))
       .filter(
         ({ bidAmount, option }) =>
-          bidAmount > priceToNumber(getBidBaseline(option)),
+          bidAmount > priceToNumber(getBidBaseline(option)) &&
+          isHundredWonAmount(bidAmount),
       );
-
     if (submittedBids.length === 0) {
       return;
     }
@@ -691,12 +618,28 @@ export function ProductDetail({
       const shippingAddressId = Number(nextBidDeliveryAddress?.id);
 
       if (!Number.isFinite(shippingAddressId)) {
-        window.alert("입찰하려면 배송지를 먼저 등록해 주세요.");
+        window.alert("참여하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
         router.push("/profile/addresses?openAdd=1");
         return;
       }
 
+      let refundAccount;
+
+      try {
+        const profile = await requestUserProfile(accessToken);
+
+        refundAccount = profile.bankAccount;
+      } catch {
+        refundAccount = null;
+      }
+
+      if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
+        window.alert("참여하려면 환불 계좌를 먼저 등록해 주세요.");
+        setIsBidSubmitPending(false);
+        router.push("/profile/account");
+        return;
+      }
       try {
         for (const { bidAmount, option } of submittedBids) {
           const buncheolMemberId = Number(option.buncheolMemberId ?? option.id);
@@ -708,6 +651,7 @@ export function ProductDetail({
           const result = await participateBuncheol(accessToken, buncheolId, {
             bidAmount,
             buncheolMemberId,
+            refundAccount,
             shippingAddressId,
           });
 
@@ -1396,14 +1340,6 @@ export function ProductDetail({
                           <p className="text-[15px] font-semibold tracking-[-0.04em]">
                             {formatPrice(amount)}
                           </p>
-                          <button
-                            type="button"
-                            className="mt-2 text-[13px] font-semibold text-black/45 disabled:text-black/20"
-                            disabled={withdrawingOptionId === option.id}
-                            onClick={() => void withdrawBid(option.id)}
-                          >
-                            철회
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -1609,6 +1545,7 @@ export function ProductDetail({
                               getBidBaseline(option),
                             ) + 100,
                           )} 이상`}
+                          step={100}
                           type="number"
                           value={bidAmounts[option.id] ?? ""}
                         />

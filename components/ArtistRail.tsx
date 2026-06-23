@@ -32,6 +32,11 @@ type ArtistRailProps = {
   selectedId?: string;
 };
 
+const proxiedImageHosts = new Set([
+  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+]);
+
 function getContrastingColor(image: HTMLImageElement) {
   const canvas = document.createElement("canvas");
   const size = 24;
@@ -81,7 +86,7 @@ function getProxiedImageUrl(imageUrl: string) {
     const url = new URL(imageUrl);
 
     if (
-      url.hostname === "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com" &&
+      proxiedImageHosts.has(url.hostname) &&
       url.pathname.startsWith("/idol-groups/")
     ) {
       return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;

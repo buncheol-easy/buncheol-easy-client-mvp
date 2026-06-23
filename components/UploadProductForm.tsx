@@ -84,6 +84,20 @@ function parsePriceInput(value: string) {
   return Number(value.replace(/[^\d]/g, "")) || 0;
 }
 
+function isHundredWonAmount(value: number) {
+  return Number.isInteger(value) && value > 0 && value % 100 === 0;
+}
+
+function isValidMinHeadcount(value: string, maxHeadcount: number) {
+  const parsedValue = Number(value);
+
+  return (
+    Number.isInteger(parsedValue) &&
+    parsedValue >= 1 &&
+    parsedValue <= maxHeadcount
+  );
+}
+
 function toNumericInput(value: string) {
   return value.replace(/[^\d]/g, "");
 }
@@ -443,6 +457,7 @@ export function UploadProductForm({
   const [memberMinimumPrices, setMemberMinimumPrices] = useState<
     Record<string, string>
   >({});
+  const [minHeadcount, setMinHeadcount] = useState("");
   const [renderedMinimumPricePrompt, setRenderedMinimumPricePrompt] =
     useState<MinimumPricePrompt | null>(null);
   const [isMinimumPricePromptOpen, setIsMinimumPricePromptOpen] =
@@ -538,14 +553,14 @@ export function UploadProductForm({
       title.trim().length > 0 &&
       purchaseSource.trim().length > 0 &&
       targetMembers.length > 0 &&
-      targetMembers.every(
-        (member) => parsePriceInput(memberMinimumPrices[member.id] ?? "") > 0,
+      targetMembers.every((member) =>
+        isHundredWonAmount(parsePriceInput(memberMinimumPrices[member.id] ?? "")),
       ) &&
+      isValidMinHeadcount(minHeadcount, targetMembers.length) &&
       selectedShipping.length > 0 &&
-      selectedShipping.every(
-        (option) => parsePriceInput(shippingPrices[option] ?? "") > 0,
+      selectedShipping.every((option) =>
+        isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
       );
-
   useEffect(() => {
     return () => {
       if (photoLimitToastTimeoutRef.current) {
@@ -693,6 +708,11 @@ export function UploadProductForm({
               setIdolQuery("");
               setTargetMemberIds(apiGroup.members.map((member) => member.id));
               setExcludedMemberIds([]);
+              setMinHeadcount(
+                apiProduct.minHeadcount
+                  ? String(apiProduct.minHeadcount)
+                  : String(apiGroup.members.length),
+              );
               setMemberMinimumPrices(
                 apiGroup.members.reduce<Record<string, string>>(
                   (prices, member) => {
@@ -809,6 +829,7 @@ export function UploadProductForm({
       setSelectedGroupId(group?.id ?? null);
       setIdolQuery("");
       setTargetMemberIds(selectedMembers.map((member) => member.id));
+      setMinHeadcount(String(product.minHeadcount ?? Math.max(1, selectedMembers.length)));
       setExcludedMemberIds(
         selectedMembers
           .filter((member) => !optionLabels.has(member.name))
@@ -939,6 +960,7 @@ export function UploadProductForm({
     setIdolQuery("");
     setTargetMemberIds(group.members.map((member) => member.id));
     setExcludedMemberIds([]);
+    setMinHeadcount(String(group.members.length));
     setMemberMinimumPrices({});
     setMemberToastMessage("");
     setMemberToastTargetId(null);
@@ -950,6 +972,7 @@ export function UploadProductForm({
     setIdolQuery("");
     setTargetMemberIds([]);
     setExcludedMemberIds([]);
+    setMinHeadcount("");
     setMemberMinimumPrices({});
     setMemberToastMessage("");
     setMemberToastTargetId(null);
@@ -1023,6 +1046,15 @@ export function UploadProductForm({
     }
 
     setExcludedMemberIds(nextExcludedMemberIds);
+    setMinHeadcount((current) => {
+      const parsedValue = Number(current);
+
+      if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+        return String(nextActiveMemberCount);
+      }
+
+      return String(Math.min(parsedValue, nextActiveMemberCount));
+    });
 
     if (!prompt || isCurrentlyExcluded) {
       return;
@@ -1093,13 +1125,25 @@ export function UploadProductForm({
     });
   }
 
+  function updateMinHeadcount(value: string) {
+    const numericValue = toNumericInput(value);
+
+    if (!numericValue) {
+      setMinHeadcount("");
+      return;
+    }
+
+    setMinHeadcount(
+      String(Math.min(Number(numericValue), Math.max(1, targetMembers.length))),
+    );
+  }
+
   function updateShippingPrice(option: string, price: string) {
     setShippingPrices((current) => ({
       ...current,
       [option]: toNumericInput(price),
     }));
   }
-
   function getScheduleValue(field: ScheduleField) {
     void field;
     return closingDate;
@@ -1199,6 +1243,13 @@ export function UploadProductForm({
       memberId: Number(member.id),
     }));
     const isApiEditMode = isEditMode && !productId.startsWith("uploaded-");
+    const parsedMinHeadcount = Number(minHeadcount);
+    const hasInvalidAmount =
+      apiMembers.some((member) => !isHundredWonAmount(member.bidMinPrice)) ||
+      selectedShipping.some(
+        (option) =>
+          !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
+      );
     let storedPhotoUrls: string[];
 
     try {
@@ -1258,6 +1309,7 @@ export function UploadProductForm({
         targetMembers.length > 1
           ? `${firstMember.name} 외 ${targetMembers.length - 1}명`
           : firstMember.name,
+      minHeadcount: parsedMinHeadcount,
       targetMembers: targetMembers.map((member) => member.name),
       uploadedAt:
         editingProduct?.uploadedAt ?? formatDateTimeLabel(new Date().toISOString()),
@@ -1284,8 +1336,18 @@ export function UploadProductForm({
         (Number.isFinite(apiGroupId) &&
           apiMembers.every(
             (member) =>
-              Number.isFinite(member.memberId) && member.bidMinPrice > 0,
+              Number.isFinite(member.memberId) && isHundredWonAmount(member.bidMinPrice),
           )));
+
+    if (!isApiEditMode && hasInvalidAmount) {
+      setSubmitError("금액은 100원 단위로 입력해 주세요.");
+      return;
+    }
+
+    if (!isApiEditMode && !isValidMinHeadcount(minHeadcount, targetMembers.length)) {
+      setSubmitError("최소 진행 인원을 대상 멤버 수 안에서 입력해 주세요.");
+      return;
+    }
 
     if (
       !isApiEditMode &&
@@ -1293,7 +1355,7 @@ export function UploadProductForm({
       accessToken &&
       !canUseBuncheolApi
     ) {
-      setSubmitError("최소 입찰가를 1원 이상으로 입력해 주세요.");
+      setSubmitError("최소 입찰가와 대상 멤버 정보를 다시 확인해 주세요.");
       return;
     }
 
@@ -1353,6 +1415,7 @@ export function UploadProductForm({
               deadline: deadlineDate.toISOString(),
               description: product.description,
               groupId: apiGroupId,
+              minHeadcount: parsedMinHeadcount,
               gs25ShippingFee:
                 getStoreShippingFee(selectedShipping, shippingPrices, "GS") ||
                 undefined,
@@ -2133,6 +2196,30 @@ export function UploadProductForm({
                       대상 멤버가 없습니다.
                     </p>
                   )}
+                {targetMembers.length > 0 ? (
+                  <label className="mt-4 block rounded-[0.9rem] border border-black/10 px-4 py-4">
+                    <span className="text-[13px] font-semibold text-black/45">
+                      최소 진행 인원
+                    </span>
+                    <div className="mt-2 flex h-13 items-center rounded-[0.85rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
+                      <input
+                        aria-label="최소 진행 인원"
+                        className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/55"
+                        disabled={isApiEditMode}
+                        inputMode="numeric"
+                        max={targetMembers.length}
+                        min={1}
+                        onChange={(event) => updateMinHeadcount(event.currentTarget.value)}
+                        placeholder={String(targetMembers.length)}
+                        type="text"
+                        value={minHeadcount}
+                      />
+                      <span className="shrink-0 text-[13px] font-semibold text-black/45">
+                        / {targetMembers.length}명
+                      </span>
+                    </div>
+                  </label>
+                ) : null}
                 </div>
               ) : (
                 <div

@@ -33,6 +33,7 @@ export type ProductDetailItem = ProductCardItem & {
   isPublicPreview?: boolean;
   isBidUnavailable?: boolean;
   isHostedByMe?: boolean;
+  minHeadcount?: number | null;
   purchaseSource?: string;
   shippingDeadline?: string;
   shippingMethods?: ShippingMethod[];

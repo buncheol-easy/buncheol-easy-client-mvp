@@ -28,10 +28,8 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
-  cancelBuncheolParticipation,
   deleteBuncheol,
   deleteShippingAddress,
-  requestDeliveryReceiptConfirmation,
   requestBuncheolDetail,
   requestLogout,
   requestMyHostedBuncheols,
@@ -84,7 +82,7 @@ function formatPrice(price: number) {
 }
 
 const kstOffsetHours = 9;
-const paymentDeadlineDays = 3;
+const paymentDeadlineMinutes = 30;
 const settlementAccountPanelExitMs = 180;
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 
@@ -185,21 +183,21 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   return `${minutes}분 남았어요`;
 }
 
-function formatRemainingTime(deadline: string, now: Date) {
-  return formatRemainingTimeFromDate(parseDeadline(deadline), now);
-}
 
 function getPaymentDeadlineDate(
   deadline: string,
   paymentDueAt?: string | null,
+  createdAt?: string | null,
 ) {
   const paymentDeadline = paymentDueAt
     ? new Date(paymentDueAt)
-    : parseDeadline(deadline);
+    : createdAt
+      ? new Date(createdAt)
+      : parseDeadline(deadline);
 
   if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
-    paymentDeadline.setUTCDate(
-      paymentDeadline.getUTCDate() + paymentDeadlineDays,
+    paymentDeadline.setUTCMinutes(
+      paymentDeadline.getUTCMinutes() + paymentDeadlineMinutes,
     );
   }
 
@@ -210,8 +208,13 @@ function formatPaymentRemainingTime(
   deadline: string,
   now: Date,
   paymentDueAt?: string | null,
+  createdAt?: string | null,
 ) {
-  const paymentDeadline = getPaymentDeadlineDate(deadline, paymentDueAt);
+  const paymentDeadline = getPaymentDeadlineDate(
+    deadline,
+    paymentDueAt,
+    createdAt,
+  );
 
   if (Number.isNaN(paymentDeadline.getTime())) {
     return "결제 기한 확인 필요";
@@ -219,7 +222,6 @@ function formatPaymentRemainingTime(
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
-
 const shippingFee = 3200;
 
 type ProfileBidEntry = {
@@ -235,6 +237,7 @@ type ProfileBidEntry = {
   participantCount: number;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
+  createdAt?: string | null;
   participationStatus?: string;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
@@ -328,6 +331,10 @@ function isPaymentWaitingParticipationStatus(status: string | undefined) {
   return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
 }
 
+function isCancelledParticipationStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "CANCELED";
+}
+
 function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
   const isPaymentCandidate =
     isPaymentWaitingParticipationStatus(bid.participationStatus) ||
@@ -344,6 +351,7 @@ function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
   const paymentDeadline = getPaymentDeadlineDate(
     bid.deadline,
     bid.paymentDueAt,
+    bid.createdAt,
   );
 
   return (
@@ -358,25 +366,8 @@ function isProfileBidTransferRequested(bid: ProfileBidEntry) {
   );
 }
 
-function isDeliveryReceiptCompleteStatus(status: string | undefined | null) {
-  return status === "RECEIVED" || status === "RECEIPT_CONFIRMED";
-}
-
-function canConfirmProfileDeliveryReceipt(bid: ProfileBidEntry) {
-  return Boolean(
-    bid.deliveryId &&
-      bid.paidAt &&
-      bid.trackingNumber &&
-      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
-  );
-}
-
 function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
-  return Boolean(
-    bid.deliveryId &&
-      bid.paidAt &&
-      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
-  );
+  return Boolean(bid.deliveryId && bid.paidAt);
 }
 
 function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
@@ -453,6 +444,7 @@ function getProfileBidEntryFromParticipation(
     deliveryStatus: participation.deliveryStatus,
     paymentAmount: participation.paymentAmount,
     paymentDueAt: participation.paymentDueAt,
+    createdAt: participation.createdAt,
     productId: participation.buncheolId,
     participationStatus: participation.participationStatus,
     rank: rank > 0 ? rank : 0,
@@ -546,12 +538,7 @@ export function ProfileContent({
 
     return shouldSkip;
   });
-  const [withdrawnBidIds, setWithdrawnBidIds] = useState<string[]>([]);
-  const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
   const [payingBidId, setPayingBidId] = useState<string | null>(null);
-  const [receivingDeliveryId, setReceivingDeliveryId] = useState<string | null>(
-    null,
-  );
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
@@ -630,19 +617,17 @@ export function ProfileContent({
   const isHostedProductsLoading =
     authState.isLoggedIn && apiHostedProducts === null;
   const allBids: ProfileBidEntry[] = useMemo(
-    () => {
-      const sourceEntries: ProfileBidEntry[] = apiBidEntries ?? [];
-
-      return authState.isLoggedIn
-        ? sourceEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
-        : [];
-    },
-    [apiBidEntries, authState.isLoggedIn, withdrawnBidIds],
+    () => (authState.isLoggedIn ? apiBidEntries ?? [] : []),
+    [apiBidEntries, authState.isLoggedIn],
   );
   const activeBids = useMemo(
     () =>
       allBids.filter((bid) => {
         const isClosed = isProfileBidClosed(bid, now);
+
+        if (isCancelledParticipationStatus(bid.participationStatus)) {
+          return false;
+        }
 
         return (
           !isClosed ||
@@ -1240,73 +1225,6 @@ export function ProfileContent({
     setIsAddressSheetClosing(false);
   }
 
-  async function withdrawBid(bidId: string) {
-    if (!authState.isLoggedIn || withdrawingBidId) {
-      return;
-    }
-
-    setWithdrawingBidId(bidId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await cancelBuncheolParticipation(accessToken, bidId);
-      setWithdrawnBidIds((current) =>
-        current.includes(bidId) ? current : [...current, bidId],
-      );
-      setApiBidEntries((current) =>
-        current ? current.filter((bid) => bid.id !== bidId) : current,
-      );
-      setUserProfileMessage("");
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error ? error.message : "입찰을 철회하지 못했어요.",
-      );
-    } finally {
-      setWithdrawingBidId(null);
-    }
-  }
-
-  async function confirmDeliveryReceipt(bid: ProfileBidEntry) {
-    if (!authState.isLoggedIn || !bid.deliveryId || receivingDeliveryId) {
-      return;
-    }
-
-    setReceivingDeliveryId(bid.deliveryId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestDeliveryReceiptConfirmation(accessToken, bid.deliveryId);
-
-      const participations = await requestMyParticipations(accessToken);
-      const bidEntries = await Promise.all(
-        participations.map((participation) =>
-          getProfileBidEntryWithShippingData(accessToken, participation),
-        ),
-      );
-
-      setApiBidEntries(bidEntries);
-      setUserProfileMessage("배송 수령을 확인했어요.");
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error
-          ? error.message
-          : "배송 수령을 확인하지 못했어요.",
-      );
-    } finally {
-      setReceivingDeliveryId(null);
-    }
-  }
-
   function rememberScrollPosition() {
     if (!scrollContainerRef.current) {
       return;
@@ -1830,7 +1748,6 @@ export function ProfileContent({
     clearSettlementAccountState();
     setSelectedPaymentBidId(null);
     setSelectedPaymentAddressId(null);
-    setWithdrawnBidIds([]);
     setManageAddressSnapshot([]);
     setIsEditingSettlementAccount(false);
     setUserProfile(null);
@@ -2288,7 +2205,7 @@ export function ProfileContent({
                 입찰 현황
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                등수 확인과 철회를 여기서 관리해요.
+                참여 상태와 결제 진행을 여기서 확인해요.
               </p>
             </div>
             <span className="shrink-0 text-[13px] font-semibold text-black/45">
@@ -2306,11 +2223,6 @@ export function ProfileContent({
                 const isPaymentReady = isProfileBidPaymentReady(bid, now);
                 const isTransferRequested =
                   isProfileBidTransferRequested(bid);
-                const isReceivingDelivery =
-                  receivingDeliveryId === bid.deliveryId;
-                const canConfirmDeliveryReceipt =
-                  canConfirmProfileDeliveryReceipt(bid);
-                const remainingTime = formatRemainingTime(bid.deadline, now);
                 return (
                   <article
                     className="rounded-[1rem] border border-black/10 px-4 py-4"
@@ -2378,6 +2290,8 @@ export function ProfileContent({
                                   ? "입금 확인 중"
                                   : isPaymentExpired
                                   ? "입금 만료"
+                                  : isPaymentReady
+                                  ? "결제 필요"
                                   : isClosed
                                   ? bid.rank === 1
                                     ? "낙찰"
@@ -2433,23 +2347,30 @@ export function ProfileContent({
                                         bid.deadline,
                                         now,
                                         bid.paymentDueAt,
+                                        bid.createdAt,
                                       )}
                                     </p>
                                   </>
                                 )
                                 : <p>마감된 입찰이에요</p>
-                              : `철회까지 ${remainingTime}`}
+                              : isPaymentReady
+                              ? (
+                                <>
+                                  <p>결제가 필요해요</p>
+                                  <p className="mt-0.5 text-black/45">
+                                    결제까지{" "}
+                                    {formatPaymentRemainingTime(
+                                      bid.deadline,
+                                      now,
+                                      bid.paymentDueAt,
+                                      bid.createdAt,
+                                    )}
+                                  </p>
+                                </>
+                              )
+                              : "입금 기한 내 미입금 시 자동 취소돼요"}
                           </div>
-                          {!isClosed ? (
-                            <button
-                              className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55 disabled:text-black/25"
-                              disabled={withdrawingBidId === bid.id}
-                              onClick={() => void withdrawBid(bid.id)}
-                              type="button"
-                            >
-                              철회
-                            </button>
-                          ) : isPaymentReady ? (
+                          {isPaymentReady ? (
                             <button
                               className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
                               onClick={() => openPaymentSheet(bid.id)}
@@ -2472,23 +2393,10 @@ export function ProfileContent({
                                     : "운송장 등록 대기"}
                                 </p>
                               </div>
-                              {isDeliveryReceiptCompleteStatus(
-                                bid.deliveryStatus,
-                              ) ? (
+                              {bid.trackingNumber ? (
                                 <span className="shrink-0 rounded-full bg-black/10 px-3 py-2 text-[12px] font-semibold text-black/45">
-                                  수령 완료
+                                  운송장 등록
                                 </span>
-                              ) : canConfirmDeliveryReceipt ? (
-                                <button
-                                  className="shrink-0 rounded-full bg-black px-3 py-2 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                  disabled={isReceivingDelivery}
-                                  onClick={() =>
-                                    void confirmDeliveryReceipt(bid)
-                                  }
-                                  type="button"
-                                >
-                                  {isReceivingDelivery ? "확인 중" : "수령 확인"}
-                                </button>
                               ) : null}
                             </div>
                           </div>
