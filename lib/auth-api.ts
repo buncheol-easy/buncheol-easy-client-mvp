@@ -206,6 +206,29 @@ export type BuncheolManagementWinner = {
   trackingNumber?: string | null;
 };
 
+export type BuncheolManagementDelivery = {
+  deliveryId?: string;
+  receiverNickname?: string;
+  receiverPhoneNumber?: string;
+  shippingMethod?: string;
+  status?: string;
+  storeName?: string;
+  trackingNumber?: string | null;
+};
+
+export type BuncheolManagementParticipant = {
+  amount: number;
+  buncheolMemberId?: string;
+  confirmedAt?: string | null;
+  delivery?: BuncheolManagementDelivery | null;
+  dueAt?: string | null;
+  memberName: string;
+  participantNickname: string;
+  participationId: string;
+  refundAccount?: BankAccountInfo | null;
+  status: string;
+};
+
 export type BuncheolManagementOption = {
   buncheolMemberId: string;
   currentHighestBid?: number | null;
@@ -217,17 +240,20 @@ export type BuncheolManagementOption = {
 };
 
 export type BuncheolManagementDetail = {
+  confirmedCount?: number;
   deadline: string;
   groupName: string;
   id: string;
+  memberCount?: number;
+  minHeadcount?: number;
   optionCount: number;
   options: BuncheolManagementOption[];
+  participants: BuncheolManagementParticipant[];
   purchaseSite?: string;
   status: BuncheolStatus;
   title: string;
   totalParticipationCount: number;
 };
-
 export type MyParticipation = {
   bidAmount: number;
   buncheolDeadline: string;
@@ -1661,6 +1687,128 @@ function getBuncheolManagementWinnerFromRecord(
   };
 }
 
+function getBuncheolManagementDeliveryFromRecord(
+  record: Record<string, unknown>,
+): BuncheolManagementDelivery | null {
+  const nestedDelivery = getNestedData(record.delivery);
+  const hasNestedDelivery = isRecord(nestedDelivery);
+  const deliveryRecord = hasNestedDelivery ? nestedDelivery : record;
+  const deliveryId = hasNestedDelivery
+    ? getOptionalStringValue(deliveryRecord, ["deliveryId", "id"])
+    : getOptionalStringValue(record, ["deliveryId"]);
+  const receiverNickname = getOptionalStringValue(deliveryRecord, [
+    "receiverNickname",
+    "nickname",
+  ]);
+  const receiverPhoneNumber = getOptionalStringValue(deliveryRecord, [
+    "receiverPhoneNumber",
+    "phoneNumber",
+    "receiverPhone",
+  ]);
+  const shippingMethod = getOptionalStringValue(deliveryRecord, [
+    "shippingMethod",
+    "storeType",
+    "deliveryMethod",
+  ]);
+  const status = getOptionalStringValue(deliveryRecord, [
+    "status",
+    "deliveryStatus",
+    "shippingStatus",
+  ]);
+  const storeName = getOptionalStringValue(deliveryRecord, [
+    "storeName",
+    "branchName",
+    "shippingAddressName",
+    "name",
+  ]);
+  const trackingNumber =
+    getOptionalStringValue(deliveryRecord, [
+      "trackingNumber",
+      "invoiceNumber",
+      "waybillNumber",
+    ]) ?? null;
+
+  if (
+    !deliveryId &&
+    !receiverNickname &&
+    !receiverPhoneNumber &&
+    !shippingMethod &&
+    !status &&
+    !storeName &&
+    !trackingNumber
+  ) {
+    return null;
+  }
+
+  return {
+    deliveryId,
+    receiverNickname,
+    receiverPhoneNumber,
+    shippingMethod,
+    status,
+    storeName,
+    trackingNumber,
+  };
+}
+
+function getBuncheolManagementParticipantFromRecord(
+  record: Record<string, unknown>,
+): BuncheolManagementParticipant | null {
+  const participationId = getStringValue(record, ["participationId", "id"]);
+
+  if (!participationId) {
+    return null;
+  }
+
+  const refundAccount = getNestedBankAccountInfo(record, [
+    "refundAccount",
+    "refundBankAccount",
+    "refundBankAccountInfo",
+  ]);
+  const participantNickname =
+    getStringValue(record, [
+      "participantNickname",
+      "buyerNickname",
+      "nickname",
+      "userNickname",
+      "depositorName",
+    ]) || refundAccount?.holder || `참여 ${participationId}`;
+
+  return {
+    amount:
+      getNumberValue(record, [
+        "amount",
+        "paymentAmount",
+        "totalAmount",
+        "bidAmount",
+      ]) ?? 0,
+    buncheolMemberId: getOptionalStringValue(record, [
+      "buncheolMemberId",
+      "memberSlotId",
+    ]),
+    confirmedAt:
+      getOptionalStringValue(record, [
+        "confirmedAt",
+        "paymentConfirmedAt",
+        "paymentConfirmationAt",
+      ]) ?? null,
+    delivery: getBuncheolManagementDeliveryFromRecord(record),
+    dueAt:
+      getOptionalStringValue(record, ["dueAt", "paymentDueAt", "paymentDeadline"]) ??
+      null,
+    memberName:
+      getStringValue(record, ["memberName", "name", "label"]) || "옵션",
+    participantNickname,
+    participationId,
+    refundAccount,
+    status:
+      getOptionalStringValue(record, [
+        "status",
+        "paymentStatus",
+        "participationStatus",
+      ]) ?? "",
+  };
+}
 function getBuncheolManagementOptionFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementOption | null {
@@ -1767,6 +1915,15 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     return null;
   }
 
+  const participants = getRecordListValue(data, [
+    "participants",
+    "participations",
+  ])
+    .map(getBuncheolManagementParticipantFromRecord)
+    .filter(
+      (participant): participant is BuncheolManagementParticipant =>
+        participant !== null,
+    );
   const options = getRecordListValue(data, [
     "options",
     "members",
@@ -1776,15 +1933,20 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     .filter(
       (option): option is BuncheolManagementOption => option !== null,
     );
+  const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
 
   return {
+    confirmedCount: getNumberValue(data, ["confirmedCount"]) ?? undefined,
     deadline: getStringValue(data, ["deadline", "buncheolDeadline"]),
-    groupName: getStringValue(data, ["groupName"]),
+    groupName: getStringValue(data, ["groupName", "group"]),
     id,
+    memberCount: memberCount ?? undefined,
+    minHeadcount: getNumberValue(data, ["minHeadcount"]) ?? undefined,
     optionCount:
-      getNumberValue(data, ["optionCount", "memberSlotCount"]) ??
+      getNumberValue(data, ["optionCount", "memberSlotCount", "memberCount"]) ??
       options.length,
     options,
+    participants,
     purchaseSite: getOptionalStringValue(data, [
       "purchaseSite",
       "purchaseSource",
@@ -1799,10 +1961,12 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
         "totalParticipationCount",
         "participationCount",
         "participantCount",
-      ]) ?? options.reduce((sum, option) => sum + option.participationCount, 0),
+      ]) ??
+      (participants.length > 0
+        ? participants.length
+        : options.reduce((sum, option) => sum + option.participationCount, 0)),
   } satisfies BuncheolManagementDetail;
 }
-
 function getRequestQuery(params: BuncheolListParams) {
   const searchParams = new URLSearchParams();
 
@@ -2823,14 +2987,23 @@ export async function requestPaymentConfirmation(
   participationId: string,
   options: { ignoreConflict?: boolean } = {},
 ) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment/confirm`,
-    {
+  async function sendConfirmationRequest(path: string) {
+    return fetch(`${getVersionedApiBaseUrl()}${path}`, {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
       method: "POST",
-    },
+    });
+  }
+
+  let response = await sendConfirmationRequest(
+    `/participations/${participationId}/confirm`,
   );
+
+  if (!response.ok && [404, 405].includes(response.status)) {
+    response = await sendConfirmationRequest(
+      `/participations/${participationId}/payment/confirm`,
+    );
+  }
 
   if (!response.ok) {
     if (options.ignoreConflict && response.status === 409) {
@@ -2840,7 +3013,6 @@ export async function requestPaymentConfirmation(
     throw new Error(await parseErrorMessage(response));
   }
 }
-
 export async function requestPaymentExpiration(
   accessToken: string,
   participationId: string,
@@ -2887,21 +3059,25 @@ export async function requestDeliveryTrackingRegistration(
   deliveryId: string,
   trackingNumber: string,
 ) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/deliveries/${deliveryId}/tracking`,
-    {
+  async function sendTrackingRequest(method: "PATCH" | "POST") {
+    return fetch(`${getVersionedApiBaseUrl()}/deliveries/${deliveryId}/tracking`, {
       body: JSON.stringify({ trackingNumber }),
       credentials: "include",
       headers: getJsonHeaders(accessToken),
-      method: "POST",
-    },
-  );
+      method,
+    });
+  }
+
+  let response = await sendTrackingRequest("PATCH");
+
+  if (!response.ok && [404, 405].includes(response.status)) {
+    response = await sendTrackingRequest("POST");
+  }
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
 }
-
 export async function requestDeliveryReceiptConfirmation(
   accessToken: string,
   deliveryId: string,
