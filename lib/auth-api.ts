@@ -182,6 +182,7 @@ export type BuncheolDetail = BuncheolSummary & {
   gs25ShippingFee?: number;
   hostBankAccount?: BankAccountInfo | null;
   imageUrls: string[];
+  imageIds: number[];
   minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
@@ -1141,6 +1142,7 @@ function appendJsonFormPart(formData: FormData, body: unknown) {
   formData.append(
     "request",
     new Blob([JSON.stringify(body)], { type: "application/json" }),
+    "request.json",
   );
 }
 
@@ -1296,6 +1298,49 @@ function getImageUrls(data: Record<string, unknown>) {
   );
 }
 
+function getImageId(value: unknown) {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return getOptionalNumberValue(value, [
+    "imageId",
+    "buncheolImageId",
+    "fileId",
+    "attachmentId",
+    "id",
+  ]);
+}
+
+function getImageIds(data: Record<string, unknown>) {
+  const directImageIds = getStringListValue(data, ["imageIds", "keepImageIds"])
+    .map((imageId) => Number(imageId))
+    .filter((imageId) => Number.isFinite(imageId));
+  const imageKeys = [
+    "imageUrls",
+    "images",
+    "imageList",
+    "buncheolImages",
+    "photos",
+    "files",
+    "attachments",
+  ];
+  const nestedImageIds = imageKeys.flatMap((key) => {
+    const value = data[key];
+
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map(getImageId)
+      .filter((imageId): imageId is number => imageId !== null);
+  });
+
+  return [...directImageIds, ...nestedImageIds].filter(
+    (imageId, index, imageIds) => imageIds.indexOf(imageId) === index,
+  );
+}
 function getBuncheolSummaryFromRecord(
   record: Record<string, unknown>,
 ): BuncheolSummary | null {
@@ -1615,6 +1660,7 @@ function getBuncheolDetailFromBody(body: unknown) {
       "sellerAccount",
     ]),
     imageUrls: getImageUrls(data),
+    imageIds: getImageIds(data),
     minHeadcount: getOptionalNumberValue(data, ["minHeadcount"]),
     isHostedByMe:
       getBooleanValue(data, ["isHostedByMe", "hostedByMe", "owner"]) ??
@@ -2241,6 +2287,7 @@ export function toProductDetailItem(
       detail.description ?? "판매자가 아직 상품 설명을 작성하지 않았습니다.",
     imageUrl: detail.imageUrls[0],
     imageUrls: detail.imageUrls,
+    imageIds: detail.imageIds,
     isApiProduct: true,
     isHostedByMe: detail.isHostedByMe,
     member: getMemberLabel(memberNames),

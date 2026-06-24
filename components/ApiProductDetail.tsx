@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ProductDetail } from "@/components/ProductDetail";
@@ -13,6 +13,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { readUploadedProduct } from "@/lib/hosted-products-store";
 import { readPublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import type { ProductDetailItem } from "@/lib/mock-products";
 
@@ -106,7 +107,26 @@ export function ApiProductDetail({
           return;
         }
 
-        const detailProduct = toProductDetailItem(detail);
+        let detailProduct = toProductDetailItem(detail);
+        const cachedProduct = readUploadedProduct(id);
+        const cachedImageUrls = cachedProduct?.imageUrls?.length
+          ? cachedProduct.imageUrls
+          : cachedProduct?.imageUrl
+            ? [cachedProduct.imageUrl]
+            : [];
+
+        if (
+          cachedImageUrls.length > 0 &&
+          !detailProduct.imageUrl &&
+          (detailProduct.imageUrls?.length ?? 0) === 0
+        ) {
+          detailProduct = {
+            ...detailProduct,
+            imageUrl: cachedImageUrls[0],
+            imageUrls: cachedImageUrls,
+          };
+        }
+
         const detailHostedByMe = detailProduct.isHostedByMe === true;
         let isHostedByMe = detailHostedByMe;
         const shouldVerifyHostedOwnership =

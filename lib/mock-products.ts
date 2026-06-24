@@ -29,6 +29,7 @@ export type ProductDetailItem = ProductCardItem & {
   deadline: string;
   imageUrl?: string;
   imageUrls?: string[];
+  imageIds?: number[];
   isApiProduct?: boolean;
   isPublicPreview?: boolean;
   isBidUnavailable?: boolean;

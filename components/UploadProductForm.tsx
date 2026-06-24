@@ -36,9 +36,11 @@ import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
 type PhotoPreview = {
+  file?: File;
   id: string;
   name: string;
   url: string;
+  existingImageId?: number;
 };
 
 type MinimumPricePrompt = {
@@ -761,6 +763,7 @@ export function UploadProductForm({
                   id: `existing-photo-${index}`,
                   name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
                   url: imageUrl,
+                  existingImageId: apiProduct.imageIds?.[index],
                 }));
 
               setPhotos(restoredPhotos);
@@ -864,6 +867,7 @@ export function UploadProductForm({
             id: `existing-photo-${index}`,
             name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
             url: imageUrl,
+            existingImageId: product.imageIds?.[index],
           }));
 
         setPhotos(restoredPhotos);
@@ -1004,6 +1008,7 @@ export function UploadProductForm({
         photoIdSeed.current += 1;
 
         return {
+          file,
           id: `${file.name}-${file.lastModified}-${photoIdSeed.current}`,
           name: file.name,
           url,
@@ -1367,22 +1372,56 @@ export function UploadProductForm({
         return;
       }
 
+      const keepImageIds = isApiEditMode
+        ? orderedPhotos
+            .map((photo) => photo.existingImageId)
+            .filter((imageId): imageId is number => typeof imageId === "number")
+        : undefined;
+      const hasUntrackedExistingPhoto =
+        isApiEditMode &&
+        orderedPhotos.some((photo, index) => {
+          const imageUrl = storedPhotoUrls[index] ?? photo.url;
+
+          return (
+            typeof photo.existingImageId !== "number" &&
+            !canExportImageThroughCanvas(imageUrl)
+          );
+        });
+
+      if (hasUntrackedExistingPhoto) {
+        setSubmitError(
+          "기존 사진 정보를 확인하지 못했어요. 사진을 삭제한 뒤 다시 업로드해 주세요.",
+        );
+        return;
+      }
+
       let imageFiles: File[];
 
       try {
-        const uploadablePhotoUrls = isApiEditMode
-          ? storedPhotoUrls.filter(
-              (imageUrl) => canExportImageThroughCanvas(imageUrl),
-            )
-          : storedPhotoUrls;
+        const uploadablePhotos = orderedPhotos
+          .map((photo, index) => ({
+            imageUrl: storedPhotoUrls[index] ?? photo.url,
+            photo,
+          }))
+          .filter(
+            ({ imageUrl, photo }) =>
+              !isApiEditMode ||
+              (typeof photo.existingImageId !== "number" &&
+                canExportImageThroughCanvas(imageUrl)),
+          );
 
         imageFiles = await Promise.all(
-          uploadablePhotoUrls.map((imageUrl, index) =>
-            dataUrlToFile(imageUrl, `buncheol-${index + 1}.jpg`),
+          uploadablePhotos.map(({ imageUrl, photo }, index) =>
+            photo.file ?? dataUrlToFile(imageUrl, `buncheol-${index + 1}.jpg`),
           ),
         );
       } catch {
         setSubmitError("사진 파일을 업로드 형식으로 변환하지 못했어요.");
+        return;
+      }
+
+      if (((keepImageIds?.length ?? 0) + imageFiles.length) === 0) {
+        setSubmitError("사진을 1장 이상 등록해 주세요.");
         return;
       }
 
@@ -1393,11 +1432,20 @@ export function UploadProductForm({
             productId,
             {
               description: product.description,
-              keepImageIds: undefined,
+              keepImageIds,
               title: product.title,
             },
             imageFiles,
           );
+
+          try {
+            writeUploadedProduct({
+              ...product,
+              isApiProduct: true,
+            });
+          } catch {
+            // The API save already succeeded; the cache is only an immediate preview fallback.
+          }
 
           const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
           router.replace(`/products/${productId}${returnSourceQuery}`);
@@ -1438,6 +1486,18 @@ export function UploadProductForm({
           }
 
           if (nextProductId) {
+            try {
+              writeUploadedProduct({
+                ...product,
+                buncheolId: nextProductId,
+                id: nextProductId,
+                isApiProduct: true,
+                productId: nextProductId,
+              });
+            } catch {
+              // The API save already succeeded; the cache is only an immediate preview fallback.
+            }
+
             router.push(`/products/${nextProductId}?from=upload`);
             return;
           }
