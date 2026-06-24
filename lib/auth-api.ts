@@ -742,6 +742,21 @@ function getRecordListValue(body: Record<string, unknown>, keys: string[]) {
     if (Array.isArray(value)) {
       return value.filter(isRecord);
     }
+  }
+
+  return [];
+}
+
+function getNestedRecordListValue(
+  body: Record<string, unknown>,
+  keys: string[],
+) {
+  for (const key of keys) {
+    const value = body[key];
+
+    if (Array.isArray(value)) {
+      return value.filter(isRecord);
+    }
 
     const nestedValue = getNestedData(value);
 
@@ -2052,7 +2067,7 @@ function getBuncheolManagementOptionFromRecord(
     : null;
   const fallbackWinnerFields = getBuncheolManagementWinnerFromRecord(record);
   const optionMemberName = memberName || `Option ${memberId ?? buncheolMemberId}`;
-  const participants = getRecordListValue(record, [
+  const participants = getNestedRecordListValue(record, [
     "participants",
     "participations",
     "paymentParticipants",
@@ -2131,12 +2146,29 @@ function getBuncheolManagementOptionFromRecord(
 }
 
 function getBuncheolManagementDetailFromBody(body: unknown) {
-  const data = getNestedData(body);
+  const responseData = getNestedData(body);
 
-  if (!isRecord(data)) {
+  if (!isRecord(responseData)) {
     return null;
   }
 
+  const nestedDetail = [
+    responseData,
+    responseData.buncheol,
+    responseData.buncheolInfo,
+    responseData.detail,
+    responseData.management,
+    responseData.buncheolManagement,
+  ]
+    .map(getNestedData)
+    .find((candidate): candidate is Record<string, unknown> => {
+      return (
+        isRecord(candidate) &&
+        Boolean(getStringValue(candidate, ["id", "buncheolId"])) &&
+        Boolean(getStringValue(candidate, ["title", "buncheolTitle"]))
+      );
+    });
+  const data = nestedDetail ?? responseData;
   const id = getStringValue(data, ["id", "buncheolId"]);
   const title = getStringValue(data, ["title", "buncheolTitle"]);
 
@@ -2144,15 +2176,19 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     return null;
   }
 
-  const directParticipants = getRecordListValue(data, [
-    "participants",
-    "participations",
-    "paymentParticipants",
-    "paymentRequests",
-    "payments",
-    "records",
-    "items",
-  ])
+  const sourceRecords =
+    data === responseData ? [data] : [data, responseData];
+  const directParticipants = sourceRecords
+    .flatMap((sourceRecord) =>
+      getNestedRecordListValue(sourceRecord, [
+        "participants",
+        "participations",
+        "paymentParticipants",
+        "paymentRequests",
+        "payments",
+        "records",
+      ]),
+    )
     .map((participantRecord) =>
       getBuncheolManagementParticipantFromRecord(participantRecord),
     )
@@ -2160,11 +2196,14 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
       (participant): participant is BuncheolManagementParticipant =>
         participant !== null,
     );
-  const options = getRecordListValue(data, [
-    "options",
-    "members",
-    "buncheolMembers",
-  ])
+  const options = sourceRecords
+    .flatMap((sourceRecord) =>
+      getNestedRecordListValue(sourceRecord, [
+        "options",
+        "members",
+        "buncheolMembers",
+      ]),
+    )
     .map(getBuncheolManagementOptionFromRecord)
     .filter(
       (option): option is BuncheolManagementOption => option !== null,
@@ -2181,8 +2220,12 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
 
   return {
     confirmedCount: getNumberValue(data, ["confirmedCount"]) ?? undefined,
-    deadline: getStringValue(data, ["deadline", "buncheolDeadline"]),
-    groupName: getStringValue(data, ["groupName", "group"]),
+    deadline:
+      getStringValue(data, ["deadline", "buncheolDeadline"]) ||
+      getStringValue(responseData, ["deadline", "buncheolDeadline"]),
+    groupName:
+      getStringValue(data, ["groupName", "group"]) ||
+      getStringValue(responseData, ["groupName", "group"]),
     id,
     memberCount: memberCount ?? undefined,
     minHeadcount: getNumberValue(data, ["minHeadcount"]) ?? undefined,

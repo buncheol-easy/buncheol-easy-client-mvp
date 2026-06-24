@@ -342,6 +342,43 @@ function canExportImageThroughCanvas(imageUrl: string) {
   return imageUrl.startsWith("data:") || imageUrl.startsWith("blob:");
 }
 
+async function writeApiProductPreview(product: ProductDetailItem) {
+  try {
+    writeUploadedProduct(product);
+    return;
+  } catch {
+    // Retry below with smaller images so the API-created page keeps a preview.
+  }
+
+  const imageUrls = product.imageUrls?.length
+    ? product.imageUrls
+    : product.imageUrl
+      ? [product.imageUrl]
+      : [];
+
+  if (imageUrls.length === 0) {
+    return;
+  }
+
+  try {
+    const compressedImageUrls = await Promise.all(
+      imageUrls.map((imageUrl) =>
+        canExportImageThroughCanvas(imageUrl)
+          ? compressImageDataUrl(imageUrl, { maxSize: 560, quality: 0.5 })
+          : Promise.resolve(imageUrl),
+      ),
+    );
+
+    writeUploadedProduct({
+      ...product,
+      imageUrl: compressedImageUrls[0] ?? product.imageUrl,
+      imageUrls: compressedImageUrls,
+    });
+  } catch {
+    // API save succeeded; the preview cache is best-effort.
+  }
+}
+
 function ScheduleWheel({
   field,
   formatter = String,
@@ -1438,14 +1475,10 @@ export function UploadProductForm({
             imageFiles,
           );
 
-          try {
-            writeUploadedProduct({
-              ...product,
-              isApiProduct: true,
-            });
-          } catch {
-            // The API save already succeeded; the cache is only an immediate preview fallback.
-          }
+          await writeApiProductPreview({
+            ...product,
+            isApiProduct: true,
+          });
 
           const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
           router.replace(`/products/${productId}${returnSourceQuery}`);
@@ -1486,17 +1519,13 @@ export function UploadProductForm({
           }
 
           if (nextProductId) {
-            try {
-              writeUploadedProduct({
-                ...product,
-                buncheolId: nextProductId,
-                id: nextProductId,
-                isApiProduct: true,
-                productId: nextProductId,
-              });
-            } catch {
-              // The API save already succeeded; the cache is only an immediate preview fallback.
-            }
+            await writeApiProductPreview({
+              ...product,
+              buncheolId: nextProductId,
+              id: nextProductId,
+              isApiProduct: true,
+              productId: nextProductId,
+            });
 
             router.push(`/products/${nextProductId}?from=upload`);
             return;
