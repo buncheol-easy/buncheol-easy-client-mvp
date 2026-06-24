@@ -34,6 +34,7 @@ import {
   requestLogout,
   requestMyHostedBuncheols,
   requestMyParticipations,
+  requestParticipationPaymentDetail,
   requestPaymentReport,
   requestShippingAddresses,
   requestUserProfile,
@@ -1425,6 +1426,40 @@ export function ProfileContent({
     );
     setIsPaymentSheetOpen(true);
     setIsPaymentSheetClosing(false);
+
+    if (!selectedBid.hostBankAccount && authState.accessToken) {
+      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
+        .then((paymentDetail) => {
+          if (paymentStoreTypeRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          setApiBidEntries((current) =>
+            current
+              ? current.map((bid) =>
+                  bid.id === selectedBid.id
+                    ? {
+                        ...bid,
+                        amount: paymentDetail.bidAmount || bid.amount,
+                        hostBankAccount:
+                          paymentDetail.hostBankAccount ?? bid.hostBankAccount,
+                        paymentAmount:
+                          paymentDetail.paymentAmount ?? bid.paymentAmount,
+                        paymentDueAt:
+                          paymentDetail.paymentDueAt ?? bid.paymentDueAt,
+                        participationStatus:
+                          paymentDetail.paymentStatus ||
+                          bid.participationStatus,
+                        shippingFee:
+                          paymentDetail.shippingFee ?? bid.shippingFee,
+                      }
+                    : bid,
+                )
+              : current,
+          );
+        })
+        .catch(() => {});
+    }
 
     const shouldLoadPaymentBuncheolDetail =
       shouldLoadApiStoreTypes || !selectedBid.hostBankAccount;

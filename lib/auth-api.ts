@@ -286,15 +286,6 @@ export type MyHostedBuncheol = BuncheolSummary & {
   memberSlotCount: number;
 };
 
-export type PaymentOrderResponse = {
-  amount: number;
-  clientKey: string;
-  failUrl: string;
-  paymentOrderId: string;
-  paymentOrderName: string;
-  successUrl: string;
-};
-
 export type ParticipationPaymentDetail = {
   bidAmount: number;
   hostBankAccount: BankAccountInfo | null;
@@ -661,7 +652,8 @@ function getParticipationPaymentDetailFromBody(
   }
 
   return {
-    bidAmount: getNumberValue(data, ["bidAmount"]) ?? 0,
+    bidAmount:
+      getNumberValue(data, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
@@ -689,9 +681,17 @@ function getParticipationPaymentDetailFromBody(
       getNumberValue(data, ["totalAmount", "paymentAmount", "amount"]) ??
       null,
     paymentDueAt:
-      getOptionalStringValue(data, ["paymentDueAt", "paymentDeadline"]) ?? null,
+      getOptionalStringValue(data, [
+        "paymentDueAt",
+        "paymentDeadline",
+        "dueAt",
+      ]) ?? null,
     paymentStatus:
-      getOptionalStringValue(data, ["paymentStatus", "participationStatus"]) ??
+      getOptionalStringValue(data, [
+        "paymentStatus",
+        "participationStatus",
+        "status",
+      ]) ??
       "",
     shippingFee: getNumberValue(data, ["shippingFee"]) ?? null,
   };
@@ -2782,7 +2782,9 @@ export async function requestMyParticipations(accessToken: string) {
       }
 
       return {
-        bidAmount: getNumberValue(record, ["bidAmount"]) ?? 0,
+        bidAmount:
+          getNumberValue(record, ["bidAmount", "amount", "paymentAmount"]) ??
+          0,
         buncheolDeadline:
           getStringValue(record, [
             "buncheolDeadline",
@@ -2879,7 +2881,11 @@ export async function requestMyParticipations(accessToken: string) {
           getOptionalNumberValue(record, ["paymentAmount", "totalAmount"]) ??
           null,
         paymentDueAt:
-          getOptionalStringValue(record, ["paymentDueAt", "paymentDeadline"]) ??
+          getOptionalStringValue(record, [
+            "paymentDueAt",
+            "paymentDeadline",
+            "dueAt",
+          ]) ??
           null,
         createdAt:
           getOptionalStringValue(record, [
@@ -3114,32 +3120,12 @@ export async function removeBuncheolBookmark(
   }
 }
 
-export async function requestPaymentCheckout(
-  accessToken: string,
-  participationId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment/checkout`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-
-  return getNestedData(await readJsonBody(response)) as PaymentOrderResponse;
-}
-
 export async function requestParticipationPaymentDetail(
   accessToken: string,
   participationId: string,
 ) {
   const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment`,
+    `${getVersionedApiBaseUrl()}/participations/${participationId}`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
