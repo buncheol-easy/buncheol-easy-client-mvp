@@ -15,9 +15,11 @@ import {
   addBuncheolBookmark,
   deleteBuncheol,
   participateBuncheol,
+  requestParticipationPaymentDetail,
   removeBuncheolBookmark,
   requestShippingAddresses,
   requestUserProfile,
+  type BankAccountInfo,
 } from "@/lib/auth-api";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
@@ -29,16 +31,14 @@ import {
 } from "@/lib/delivery-address-store";
 import {
   getAvailableConvenienceStoreTypes,
+  getConvenienceStoreLabel,
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
+  type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
 import { BackIcon, CloseIcon, HeartIcon } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
-import {
-  BID_HISTORY_OPEN_PAYMENT_ID_KEY,
-  BID_HISTORY_SKIP_ENTER_KEY,
-  BidHistoryContent,
-} from "@/components/BidHistoryContent";
+import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
 import {
   FAVORITES_SKIP_ENTER_KEY,
@@ -69,6 +69,33 @@ const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const kstOffsetHours = 9;
+
+type CheckoutSheetStep = "options" | "confirm" | "payment";
+
+type CheckoutDraftItem = {
+  bidAmount: number;
+  option: ProductOption;
+};
+
+type CheckoutPaymentItem = {
+  bidAmount: number;
+  option: ProductOption;
+  participationId: string;
+  paymentAmount: number;
+  paymentDueAt?: string | null;
+  participationStatus: string;
+  shippingFee: number;
+};
+
+type CheckoutPaymentSummary = {
+  deliveryAddress: DeliveryAddress | null;
+  hostBankAccount: BankAccountInfo | null;
+  items: CheckoutPaymentItem[];
+  paymentDueAt?: string | null;
+  productAmount: number;
+  shippingAmount: number;
+  totalAmount: number;
+};
 
 type ProductHistoryState = {
   idx?: unknown;
@@ -239,6 +266,62 @@ function getProductImageUrls(product: ProductDetailItem) {
   );
 }
 
+function formatCheckoutDateTime(value: string | null | undefined) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit",
+  }).format(date);
+}
+
+function getBankAccountKey(account: BankAccountInfo | null | undefined) {
+  if (!account) {
+    return "";
+  }
+
+  return [account.bank, account.account, account.holder]
+    .map((value) => value.trim())
+    .join("|");
+}
+
+function getEarliestPaymentDueAt(items: CheckoutPaymentItem[]) {
+  return items.reduce<string | null>((earliestDueAt, item) => {
+    if (!item.paymentDueAt) {
+      return earliestDueAt;
+    }
+
+    if (!earliestDueAt) {
+      return item.paymentDueAt;
+    }
+
+    const itemDate = new Date(item.paymentDueAt);
+    const earliestDate = new Date(earliestDueAt);
+
+    if (Number.isNaN(itemDate.getTime())) {
+      return earliestDueAt;
+    }
+
+    if (Number.isNaN(earliestDate.getTime())) {
+      return item.paymentDueAt;
+    }
+
+    return itemDate.getTime() < earliestDate.getTime()
+      ? item.paymentDueAt
+      : earliestDueAt;
+  }, null);
+}
+
 function getMyBidsFromOptions(options: ProductOption[]) {
   return options.reduce<Record<string, number>>((bids, option) => {
     if (typeof option.myBidAmount === "number" && option.myBidAmount > 0) {
@@ -269,6 +352,7 @@ export function ProductDetail({
   const didNavigateBack = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
+  const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
   const [isEntered, setIsEntered] = useState(false);
@@ -276,6 +360,16 @@ export function ProductDetail({
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
   const [isSheetClosing, setIsSheetClosing] = useState(false);
+  const [checkoutStep, setCheckoutStep] =
+    useState<CheckoutSheetStep>("options");
+  const [checkoutDeliveryAddress, setCheckoutDeliveryAddress] =
+    useState<DeliveryAddress | null>(null);
+  const [checkoutRefundAccount, setCheckoutRefundAccount] =
+    useState<BankAccountInfo | null>(null);
+  const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
+    useState<CheckoutPaymentSummary | null>(null);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [checkoutCopyToast, setCheckoutCopyToast] = useState("");
   const [auctionOptions, setAuctionOptions] = useState<ProductOption[]>(
     product.options,
   );
@@ -291,19 +385,25 @@ export function ProductDetail({
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
 
-  const activeBidCount = useMemo(() => {
-    return auctionOptions.filter((option) => bidAmounts[option.id] === "selected" && !myBids[option.id]).length;
+  const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
+    return auctionOptions
+      .filter(
+        (option) => bidAmounts[option.id] === "selected" && !myBids[option.id],
+      )
+      .map((option) => ({
+        bidAmount: priceToNumber(getBidBaseline(option)),
+        option,
+      }));
   }, [auctionOptions, bidAmounts, myBids]);
+
+  const activeBidCount = selectedCheckoutItems.length;
 
   const totalBidAmount = useMemo(() => {
-    return auctionOptions.reduce((sum, option) => {
-      if (bidAmounts[option.id] !== "selected" || myBids[option.id]) {
-        return sum;
-      }
-
-      return sum + priceToNumber(getBidBaseline(option));
-    }, 0);
-  }, [auctionOptions, bidAmounts, myBids]);
+    return selectedCheckoutItems.reduce(
+      (sum, item) => sum + item.bidAmount,
+      0,
+    );
+  }, [selectedCheckoutItems]);
 
   const myBidItems = auctionOptions
     .map((option) => {
@@ -339,6 +439,9 @@ export function ProductDetail({
     (product.isApiProduct
       ? []
       : [{ name: product.courier, price: "판매자 안내" }]);
+  const estimatedShippingFee = priceToNumber(shippingMethods[0]?.price ?? "");
+  const estimatedShippingAmount = estimatedShippingFee * activeBidCount;
+  const estimatedCheckoutTotal = totalBidAmount + estimatedShippingAmount;
   const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
     product.shippingMethods,
     product.courier,
@@ -401,6 +504,12 @@ export function ProductDetail({
     setAuctionOptions(product.options);
     setMyBids(getMyBidsFromOptions(product.options));
     setBidAmounts({});
+    setCheckoutStep("options");
+    setCheckoutDeliveryAddress(null);
+    setCheckoutRefundAccount(null);
+    setCheckoutPaymentSummary(null);
+    setCheckoutError("");
+    setCheckoutCopyToast("");
   }, [product.id, product.options]);
 
   function togglePurchaseOption(optionId: string) {
@@ -477,7 +586,7 @@ export function ProductDetail({
     });
   }
 
-  async function handleSubmitBids() {
+  async function handleProceedToCheckoutConfirm() {
     if (isBidSubmitPending) {
       return;
     }
@@ -487,27 +596,18 @@ export function ProductDetail({
         isHostedProduct
           ? "내가 연 분철에는 참여할 수 없어요."
           : isDeadlinePassed
-          ? "참여 기한이 지나 구매할 수 없어요."
-          : "지금은 구매할 수 없는 분철이에요.",
+            ? "참여 기한이 지나 구매할 수 없어요."
+            : "지금은 구매할 수 없는 분철이에요.",
       );
       return;
     }
 
-    const submittedBids = auctionOptions
-      .filter((option) => bidAmounts[option.id] === "selected" && !myBids[option.id])
-      .map((option) => ({
-        bidAmount: priceToNumber(getBidBaseline(option)),
-        option,
-      }));
-
-    if (submittedBids.length === 0) {
+    if (selectedCheckoutItems.length === 0) {
       return;
     }
 
-    const participationResults = new Map<
-      string,
-      { bidAmount: number; participationId: string }
-    >();
+    setCheckoutError("");
+    setIsBidSubmitPending(true);
 
     if (product.isApiProduct) {
       const accessToken = authState.accessToken;
@@ -518,9 +618,7 @@ export function ProductDetail({
         return;
       }
 
-      setIsBidSubmitPending(true);
-
-      let nextBidDeliveryAddress = bidDeliveryAddress;
+      let nextBidDeliveryAddress = checkoutDeliveryAddress ?? bidDeliveryAddress;
 
       if (!nextBidDeliveryAddress) {
         try {
@@ -545,14 +643,114 @@ export function ProductDetail({
         return;
       }
 
-      let refundAccount;
+      let refundAccount = checkoutRefundAccount;
 
-      try {
-        const profile = await requestUserProfile(accessToken);
+      if (!refundAccount) {
+        try {
+          const profile = await requestUserProfile(accessToken);
 
-        refundAccount = profile.bankAccount;
-      } catch {
-        refundAccount = null;
+          refundAccount = profile.bankAccount;
+          setCheckoutRefundAccount(refundAccount);
+        } catch {
+          refundAccount = null;
+        }
+      }
+
+      if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
+        window.alert("구매하려면 환불 계좌를 먼저 등록해 주세요.");
+        setIsBidSubmitPending(false);
+        router.push("/profile/account");
+        return;
+      }
+
+      setCheckoutDeliveryAddress(nextBidDeliveryAddress);
+      setCheckoutRefundAccount(refundAccount);
+    } else {
+      setCheckoutDeliveryAddress(bidDeliveryAddress);
+      setCheckoutRefundAccount(null);
+    }
+
+    setCheckoutStep("confirm");
+    setIsBidSubmitPending(false);
+  }
+
+  async function handleSubmitBids() {
+    if (isBidSubmitPending) {
+      return;
+    }
+
+    if (!canBidProduct) {
+      window.alert(
+        isHostedProduct
+          ? "내가 연 분철에는 참여할 수 없어요."
+          : isDeadlinePassed
+          ? "참여 기한이 지나 구매할 수 없어요."
+          : "지금은 구매할 수 없는 분철이에요.",
+      );
+      return;
+    }
+
+    const submittedBids = selectedCheckoutItems.map((item) => ({ ...item }));
+
+    if (submittedBids.length === 0) {
+      return;
+    }
+
+    const participationResults = new Map<
+      string,
+      { bidAmount: number; participationId: string }
+    >();
+    const paymentItems: CheckoutPaymentItem[] = [];
+    const bankAccountKeys = new Set<string>();
+    let checkoutHostBankAccount: BankAccountInfo | null = null;
+
+    if (product.isApiProduct) {
+      const accessToken = authState.accessToken;
+
+      if (!authState.isLoggedIn || !accessToken) {
+        const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
+        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        return;
+      }
+
+      setIsBidSubmitPending(true);
+
+      let nextBidDeliveryAddress = checkoutDeliveryAddress ?? bidDeliveryAddress;
+
+      if (!nextBidDeliveryAddress) {
+        try {
+          const addresses = await requestShippingAddresses(accessToken);
+          const nextAddressState =
+            getDeliveryAddressStateFromSyncedAddresses(addresses);
+
+          writeDeliveryAddressState(nextAddressState);
+          nextBidDeliveryAddress =
+            getBidDeliveryAddressFromState(nextAddressState);
+        } catch {
+          nextBidDeliveryAddress = null;
+        }
+      }
+
+      const shippingAddressId = Number(nextBidDeliveryAddress?.id);
+
+      if (!Number.isFinite(shippingAddressId)) {
+        window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
+        setIsBidSubmitPending(false);
+        router.push("/profile/addresses?openAdd=1");
+        return;
+      }
+
+      let refundAccount = checkoutRefundAccount;
+
+      if (!refundAccount) {
+        try {
+          const profile = await requestUserProfile(accessToken);
+
+          refundAccount = profile.bankAccount;
+          setCheckoutRefundAccount(refundAccount);
+        } catch {
+          refundAccount = null;
+        }
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
@@ -576,49 +774,123 @@ export function ProductDetail({
             shippingAddressId,
           });
 
+          let paymentDetail:
+            | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
+            | null = null;
+
+          if (
+            result.participationId &&
+            (!result.hostBankAccount ||
+              result.paymentAmount === null ||
+              !result.paymentDueAt)
+          ) {
+            try {
+              paymentDetail = await requestParticipationPaymentDetail(
+                accessToken,
+                result.participationId,
+              );
+            } catch {
+              paymentDetail = null;
+            }
+          }
+
+          const nextBidAmount =
+            result.bidAmount || paymentDetail?.bidAmount || bidAmount;
+          const nextShippingFee =
+            result.shippingFee ??
+            paymentDetail?.shippingFee ??
+            (result.paymentAmount !== null && result.paymentAmount !== undefined
+              ? Math.max(result.paymentAmount - nextBidAmount, 0)
+              : estimatedShippingFee);
+          const nextPaymentAmount =
+            result.paymentAmount ??
+            paymentDetail?.paymentAmount ??
+            nextBidAmount + nextShippingFee;
+
           if (result.participationId) {
             writeCachedParticipationPayment({
-              bidAmount: result.bidAmount || bidAmount,
-              hostBankAccount: result.hostBankAccount,
+              bidAmount: nextBidAmount,
+              hostBankAccount:
+                result.hostBankAccount ?? paymentDetail?.hostBankAccount ?? null,
               participationId: result.participationId,
-              participationStatus: result.participationStatus,
-              paymentAmount: result.paymentAmount,
-              paymentDueAt: result.paymentDueAt,
-              shippingFee: result.shippingFee,
+              participationStatus:
+                result.participationStatus ||
+                paymentDetail?.paymentStatus ||
+                "AWAITING_PAYMENT",
+              paymentAmount: nextPaymentAmount,
+              paymentDueAt: result.paymentDueAt ?? paymentDetail?.paymentDueAt,
+              shippingFee: nextShippingFee,
             });
           }
 
+          const hostBankAccount =
+            result.hostBankAccount ?? paymentDetail?.hostBankAccount ?? null;
+
+          if (hostBankAccount) {
+            checkoutHostBankAccount ??= hostBankAccount;
+            bankAccountKeys.add(getBankAccountKey(hostBankAccount));
+          }
+
           participationResults.set(option.id, {
-            bidAmount: result.bidAmount || bidAmount,
+            bidAmount: nextBidAmount,
             participationId: result.participationId,
           });
+
+          paymentItems.push({
+            bidAmount: nextBidAmount,
+            option,
+            participationId: result.participationId,
+            paymentAmount: nextPaymentAmount,
+            paymentDueAt: result.paymentDueAt ?? paymentDetail?.paymentDueAt,
+            participationStatus:
+              result.participationStatus ||
+              paymentDetail?.paymentStatus ||
+              "AWAITING_PAYMENT",
+            shippingFee: nextShippingFee,
+          });
+        }
+
+        if (bankAccountKeys.size > 1) {
+          throw new Error(
+            "선택한 옵션의 입금 계좌가 달라요. 구매 내역에서 각각 확인해 주세요.",
+          );
         }
       } catch (error: unknown) {
         if (participationResults.size > 0) {
           applySubmittedBidState(participationResults, true);
         }
 
-        window.alert(
-          error instanceof Error ? error.message : "구매를 시작하지 못했어요.",
+        setCheckoutError(
+          error instanceof Error
+            ? error.message
+            : "구매를 시작하지 못했어요.",
         );
         setIsBidSubmitPending(false);
         return;
       }
 
-      const firstParticipationId = participationResults.values().next().value
-        ?.participationId;
-
-      if (firstParticipationId) {
-        applySubmittedBidState(participationResults, true);
-        window.sessionStorage.setItem(
-          BID_HISTORY_OPEN_PAYMENT_ID_KEY,
-          firstParticipationId,
-        );
-        window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
-        setIsBidSubmitPending(false);
-        router.push("/profile/bids");
-        return;
-      }
+      applySubmittedBidState(participationResults, true);
+      setCheckoutPaymentSummary({
+        deliveryAddress: nextBidDeliveryAddress,
+        hostBankAccount: checkoutHostBankAccount,
+        items: paymentItems,
+        paymentDueAt: getEarliestPaymentDueAt(paymentItems),
+        productAmount: paymentItems.reduce(
+          (sum, item) => sum + item.bidAmount,
+          0,
+        ),
+        shippingAmount: paymentItems.reduce(
+          (sum, item) => sum + item.shippingFee,
+          0,
+        ),
+        totalAmount: paymentItems.reduce(
+          (sum, item) => sum + item.paymentAmount,
+          0,
+        ),
+      });
+      setCheckoutStep("payment");
+      setIsBidSubmitPending(false);
+      return;
     } else {
       submittedBids.forEach(({ bidAmount, option }) => {
         participationResults.set(option.id, {
@@ -773,6 +1045,10 @@ export function ProductDetail({
 
       if (sheetCloseFallbackTimerRef.current !== null) {
         window.clearTimeout(sheetCloseFallbackTimerRef.current);
+      }
+
+      if (checkoutCopyToastTimerRef.current !== null) {
+        window.clearTimeout(checkoutCopyToastTimerRef.current);
       }
     };
   }, []);
@@ -963,6 +1239,10 @@ export function ProductDetail({
       sheetCloseFallbackTimerRef.current = null;
     }
 
+    setCheckoutStep("options");
+    setCheckoutPaymentSummary(null);
+    setCheckoutError("");
+    setCheckoutCopyToast("");
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -1017,6 +1297,29 @@ export function ProductDetail({
     sheetCloseFallbackTimerRef.current = window.setTimeout(() => {
       finishCloseSheet();
     }, 260);
+  }
+
+  async function copyCheckoutText(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCheckoutCopyToast(`${label}를 복사했어요.`);
+    } catch {
+      setCheckoutCopyToast(`${label} 복사에 실패했어요.`);
+    }
+
+    if (checkoutCopyToastTimerRef.current !== null) {
+      window.clearTimeout(checkoutCopyToastTimerRef.current);
+    }
+
+    checkoutCopyToastTimerRef.current = window.setTimeout(() => {
+      setCheckoutCopyToast("");
+      checkoutCopyToastTimerRef.current = null;
+    }, 1800);
+  }
+
+  function openBidHistory() {
+    window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
+    router.push("/profile/bids");
   }
 
   return (
@@ -1394,10 +1697,18 @@ export function ProductDetail({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                    구매 옵션
+                    {checkoutStep === "payment"
+                      ? "입금 안내"
+                      : checkoutStep === "confirm"
+                        ? "주문 확인"
+                        : "구매 옵션"}
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
-                    구매할 옵션을 선택하면 바로 입금 정보를 확인할 수 있어요.
+                    {checkoutStep === "payment"
+                      ? "마감 시각까지 아래 계좌로 입금해 주세요."
+                      : checkoutStep === "confirm"
+                        ? "결제 후 입금 계좌와 마감 시각이 안내돼요."
+                        : "구매할 옵션을 선택해 주세요."}
                   </p>
                 </div>
                 <button
@@ -1410,89 +1721,291 @@ export function ProductDetail({
                 </button>
               </div>
 
-              <div className="mt-5 max-h-[34dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
-                {sortedAuctionOptions.map((option) => {
-                  const myBid = myBids[option.id];
-                  const isSelected = bidAmounts[option.id] === "selected";
+              {checkoutStep === "options" ? (
+                <>
+                  <div className="mt-5 max-h-[38dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                    {sortedAuctionOptions.map((option) => {
+                      const myBid = myBids[option.id];
+                      const isSelected = bidAmounts[option.id] === "selected";
 
-                  return (
-                    <div
-                      key={option.id}
-                      className={`rounded-[0.9rem] border px-4 py-3 ${
-                        myBid || isSelected
-                          ? "border-black bg-[#f2f2f0]"
-                          : "border-black/10 bg-white"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <OptionAvatar option={option} size="lg" />
-
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                                {option.label}
-                              </p>
-                              {myBid ? (
-                                <span className="shrink-0 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
-                                  참여 완료
-                                </span>
-                              ) : null}
+                      return (
+                        <div
+                          key={option.id}
+                          className={`rounded-[0.9rem] border px-4 py-3 ${
+                            myBid || isSelected
+                              ? "border-black bg-[#f2f2f0]"
+                              : "border-black/10 bg-white"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <OptionAvatar option={option} size="lg" />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                                    {option.label}
+                                  </p>
+                                  {myBid ? (
+                                    <span className="shrink-0 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                                      참여 완료
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-1 text-[13px] font-medium tracking-[-0.04em] text-black/45">
+                                  {myBid
+                                    ? `참여 금액 ${formatPrice(myBid)}`
+                                    : `참여 ${option.participantCount}명`}
+                                </p>
+                              </div>
                             </div>
-                            <p className="mt-1 text-[13px] font-medium tracking-[-0.04em] text-black/45">
-                              {myBid
-                                ? `참여 금액 ${formatPrice(myBid)}`
-                                : `참여 ${option.participantCount}명`}
+                            <div className="shrink-0 text-right">
+                              <p className="text-[12px] font-medium text-black/45">
+                                {getOptionPriceLabel()}
+                              </p>
+                              <p className="mt-1 text-[15px] font-semibold tracking-[-0.04em]">
+                                {getBidBaseline(option)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            className={`mt-3 h-12 w-full rounded-[0.8rem] text-[14px] font-semibold transition-colors ${
+                              myBid
+                                ? "bg-black/10 text-black/35"
+                                : isSelected
+                                  ? "bg-black text-white"
+                                  : "bg-[#f7f7f7] text-black/55"
+                            }`}
+                            disabled={Boolean(myBid)}
+                            onClick={() => togglePurchaseOption(option.id)}
+                            type="button"
+                          >
+                            {myBid ? "참여 완료" : isSelected ? "선택 해제" : "선택"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-between border-t border-black/10 pt-4">
+                    <span className="text-[14px] font-medium text-black/45">
+                      구매 옵션 {activeBidCount}개
+                    </span>
+                    <span className="text-[22px] font-semibold tracking-[-0.05em]">
+                      {formatPrice(totalBidAmount)}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+                    disabled={activeBidCount === 0 || isBidSubmitPending}
+                    onClick={() => void handleProceedToCheckoutConfirm()}
+                  >
+                    {isBidSubmitPending ? "확인 중" : "다음"}
+                  </button>
+                </>
+              ) : null}
+
+              {checkoutStep === "confirm" ? (
+                <>
+                  <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                    <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                      <p className="text-[12px] font-semibold text-black/40">선택 옵션</p>
+                      <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
+                        {selectedCheckoutItems[0]?.option.label ?? "-"}
+                        {selectedCheckoutItems.length > 1
+                          ? ` 외 ${selectedCheckoutItems.length - 1}개`
+                          : ""}
+                      </p>
+                      <div className="mt-3 space-y-2">
+                        {selectedCheckoutItems.map(({ bidAmount, option }) => (
+                          <div
+                            key={option.id}
+                            className="flex items-center justify-between gap-3 text-[13px] font-semibold tracking-[-0.04em]"
+                          >
+                            <span className="truncate text-black/55">{option.label}</span>
+                            <span className="shrink-0">{formatPrice(bidAmount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[0.95rem] border border-black/10 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-semibold text-black/40">배송지</p>
+                          <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                            {checkoutDeliveryAddress
+                              ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${checkoutDeliveryAddress.branchName}`
+                              : "등록된 배송지 없음"}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
+                            {checkoutDeliveryAddress?.address ?? "배송지를 등록해 주세요."}
+                          </p>
+                        </div>
+                        <button
+                          className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/55"
+                          onClick={() => router.push("/profile/addresses")}
+                          type="button"
+                        >
+                          변경
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white">
+                      <div className="flex items-center justify-between text-[13px] font-semibold text-white/60">
+                        <span>상품 금액</span>
+                        <span>{formatPrice(totalBidAmount)}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-[13px] font-semibold text-white/60">
+                        <span>예상 배송비</span>
+                        <span>{formatPrice(estimatedShippingAmount)}</span>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
+                        <span className="text-[14px] font-semibold text-white/70">총 예상 금액</span>
+                        <span className="text-[22px] font-semibold tracking-[-0.05em]">
+                          {formatPrice(estimatedCheckoutTotal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
+                      결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시각까지 입금하면 관리자가 확인 후 주문을 확정해요.
+                    </p>
+                    {checkoutError ? (
+                      <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
+                        {checkoutError}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-[0.42fr_0.58fr] gap-2">
+                    <button
+                      className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
+                      onClick={() => setCheckoutStep("options")}
+                      type="button"
+                    >
+                      이전
+                    </button>
+                    <button
+                      className="h-14 rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+                      disabled={isBidSubmitPending || activeBidCount === 0}
+                      onClick={() => void handleSubmitBids()}
+                      type="button"
+                    >
+                      {isBidSubmitPending ? "결제 처리 중" : "결제하기"}
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {checkoutStep === "payment" ? (
+                checkoutPaymentSummary ? (
+                  <>
+                    <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                      <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                        <p className="text-[12px] font-semibold text-black/40">선택 옵션</p>
+                        <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
+                          {checkoutPaymentSummary.items[0]?.option.label ?? "-"}
+                          {checkoutPaymentSummary.items.length > 1
+                            ? ` 외 ${checkoutPaymentSummary.items.length - 1}개`
+                            : ""}
+                        </p>
+                      </div>
+
+                      <div className="relative rounded-[0.95rem] border border-black/10 px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[12px] font-semibold text-black/40">입금 계좌</p>
+                            <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                              {checkoutPaymentSummary.hostBankAccount
+                                ? `${checkoutPaymentSummary.hostBankAccount.bank} ${checkoutPaymentSummary.hostBankAccount.account}`.trim()
+                                : "계좌 정보 확인 중"}
+                            </p>
+                            <p className="mt-1 text-[12px] font-medium text-black/40">
+                              {checkoutPaymentSummary.hostBankAccount?.holder
+                                ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
+                                : "구매 내역에서 다시 확인해 주세요."}
                             </p>
                           </div>
+                          <button
+                            className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
+                            disabled={!checkoutPaymentSummary.hostBankAccount}
+                            onClick={() =>
+                              checkoutPaymentSummary.hostBankAccount
+                                ? void copyCheckoutText(
+                                    checkoutPaymentSummary.hostBankAccount.account,
+                                    "계좌번호",
+                                  )
+                                : undefined
+                            }
+                            type="button"
+                          >
+                            계좌 복사
+                          </button>
                         </div>
+                        {checkoutCopyToast ? (
+                          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
+                            <p className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]">
+                              {checkoutCopyToast}
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
 
-                        <div className="shrink-0 text-right">
-                          <p className="text-[12px] font-medium text-black/45">
-                            {getOptionPriceLabel()}
-                          </p>
-                          <p className="mt-1 text-[15px] font-semibold tracking-[-0.04em]">
-                            {getBidBaseline(option)}
-                          </p>
+                      <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white">
+                        <div className="flex items-center justify-between text-[13px] font-semibold text-white/60">
+                          <span>상품 금액</span>
+                          <span>{formatPrice(checkoutPaymentSummary.productAmount)}</span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-[13px] font-semibold text-white/60">
+                          <span>배송비</span>
+                          <span>{formatPrice(checkoutPaymentSummary.shippingAmount)}</span>
+                        </div>
+                        <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
+                          <span className="text-[14px] font-semibold text-white/70">총 입금액</span>
+                          <span className="text-[23px] font-semibold tracking-[-0.05em]">
+                            {formatPrice(checkoutPaymentSummary.totalAmount)}
+                          </span>
                         </div>
                       </div>
 
+                      <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                        <p className="text-[12px] font-semibold text-black/40">입금 마감</p>
+                        <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em]">
+                          {formatCheckoutDateTime(checkoutPaymentSummary.paymentDueAt)}
+                        </p>
+                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
+                          마감 시각까지 입금하면 관리자가 확인 후 주문을 확정해요.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
                       <button
-                        className={`mt-3 h-12 w-full rounded-[0.8rem] text-[14px] font-semibold transition-colors ${
-                          myBid
-                            ? "bg-black/10 text-black/35"
-                            : isSelected
-                              ? "bg-black text-white"
-                              : "bg-[#f7f7f7] text-black/55"
-                        }`}
-                        disabled={Boolean(myBid)}
-                        onClick={() => togglePurchaseOption(option.id)}
+                        className="h-14 rounded-full bg-black text-[16px] font-semibold tracking-[-0.04em] text-white"
+                        onClick={closeSheet}
                         type="button"
                       >
-                        {myBid ? "참여 완료" : isSelected ? "선택 해제" : "선택"}
+                        확인했어요
+                      </button>
+                      <button
+                        className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
+                        onClick={openBidHistory}
+                        type="button"
+                      >
+                        구매 내역 보기
                       </button>
                     </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-5 flex items-center justify-between border-t border-black/10 pt-4">
-                <span className="text-[14px] font-medium text-black/45">
-                  구매 옵션 {activeBidCount}개
-                </span>
-                <span className="text-[22px] font-semibold tracking-[-0.05em]">
-                  {formatPrice(totalBidAmount)}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
-                disabled={activeBidCount === 0 || isBidSubmitPending}
-                onClick={() => void handleSubmitBids()}
-              >
-                {isBidSubmitPending ? "구매 처리 중" : "구매하고 입금 정보 보기"}
-              </button>
+                  </>
+                ) : (
+                  <div className="mt-5 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5 text-[14px] font-semibold text-black/45">
+                    입금 정보를 불러오고 있어요.
+                  </div>
+                )
+              ) : null}
             </section>
           </div>
         ) : null}

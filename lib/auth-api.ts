@@ -331,6 +331,32 @@ function getVersionedApiBaseUrl() {
   return baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 }
 
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMessage: string,
+) {
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => {
+    controller.abort();
+  }, 20000);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(timeoutMessage);
+    }
+
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+}
+
 export function getKakaoAuthorizationUrl() {
   return `${getApiRootUrl()}/oauth2/authorization/kakao`;
 }
@@ -658,7 +684,12 @@ function getParticipationPaymentDetailFromBody(
 
   return {
     bidAmount:
-      getNumberValue(data, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
+      getNumberValue(data, [
+        "bidAmount",
+        "productAmount",
+        "itemAmount",
+        "price",
+      ]) ?? 0,
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
@@ -2835,9 +2866,10 @@ export async function participateBuncheol(
     headers: getJsonHeaders(accessToken),
     method: "POST",
   };
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/participations`,
     requestInit,
+    "구매 요청 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
   );
 
   if (!response.ok) {
@@ -2851,7 +2883,13 @@ export async function participateBuncheol(
   }
 
   return {
-    bidAmount: getNumberValue(data, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
+    bidAmount:
+      getNumberValue(data, [
+        "bidAmount",
+        "productAmount",
+        "itemAmount",
+        "price",
+      ]) ?? 0,
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
@@ -3272,13 +3310,14 @@ export async function requestParticipationPaymentDetail(
   accessToken: string,
   participationId: string,
 ) {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${getVersionedApiBaseUrl()}/participations/${participationId}`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
       method: "GET",
     },
+    "입금 정보를 불러오는 데 시간이 오래 걸리고 있어요.",
   );
 
   if (!response.ok) {
