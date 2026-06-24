@@ -645,18 +645,17 @@ export function ProductDetail({
           const buncheolMemberId = Number(option.buncheolMemberId ?? option.id);
 
           if (!Number.isFinite(buncheolMemberId)) {
-            throw new Error("입찰할 멤버 정보를 확인하지 못했어요.");
+            throw new Error("참여할 멤버 정보를 확인하지 못했어요.");
           }
 
           const result = await participateBuncheol(accessToken, buncheolId, {
-            bidAmount,
             buncheolMemberId,
             refundAccount,
             shippingAddressId,
           });
 
           participationResults.set(option.id, {
-            bidAmount: result.bidAmount,
+            bidAmount: result.bidAmount || bidAmount,
             participationId: result.participationId,
           });
         }

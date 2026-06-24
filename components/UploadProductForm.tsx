@@ -1239,13 +1239,13 @@ export function UploadProductForm({
     const accessToken = authState.accessToken;
     const apiGroupId = Number(selectedGroup.id);
     const apiMembers = targetMembers.map((member) => ({
-      bidMinPrice: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
+      price: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
       memberId: Number(member.id),
     }));
     const isApiEditMode = isEditMode && !productId.startsWith("uploaded-");
     const parsedMinHeadcount = Number(minHeadcount);
     const hasInvalidAmount =
-      apiMembers.some((member) => !isHundredWonAmount(member.bidMinPrice)) ||
+      apiMembers.some((member) => !isHundredWonAmount(member.price)) ||
       selectedShipping.some(
         (option) =>
           !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
@@ -1336,7 +1336,7 @@ export function UploadProductForm({
         (Number.isFinite(apiGroupId) &&
           apiMembers.every(
             (member) =>
-              Number.isFinite(member.memberId) && isHundredWonAmount(member.bidMinPrice),
+              Number.isFinite(member.memberId) && isHundredWonAmount(member.price),
           )));
 
     if (!isApiEditMode && hasInvalidAmount) {

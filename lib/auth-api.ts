@@ -85,8 +85,8 @@ export type BuncheolListParams = {
 };
 
 export type BuncheolMemberRequest = {
-  bidMinPrice: number;
   memberId: number;
+  price: number;
 };
 
 export type CreateBuncheolRequest = {
@@ -108,7 +108,6 @@ export type UpdateBuncheolRequest = {
 };
 
 export type ParticipateBuncheolRequest = {
-  bidAmount: number;
   buncheolMemberId: number;
   refundAccount: BankAccountInfo;
   shippingAddressId: number;
@@ -2579,7 +2578,7 @@ export async function participateBuncheol(
   }
 
   return {
-    bidAmount: getNumberValue(data, ["bidAmount"]) ?? body.bidAmount,
+    bidAmount: getNumberValue(data, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
     participationId: getStringValue(data, ["participationId", "id"]),
     participationStatus:
       getOptionalStringValue(data, ["participationStatus", "status"]) ??
