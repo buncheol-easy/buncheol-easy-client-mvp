@@ -17,6 +17,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 type FavoriteFilter = "all" | "favoriteArtist";
 type FavoriteSort = "deadline" | "recent";
@@ -225,7 +226,7 @@ export function FavoritesContent({
 
         setApiFavoriteProducts(
           items.map((item, index) => ({
-            ...toProductCardItem(item),
+            ...mergeCachedProductImage(toProductCardItem(item)),
             favoritedOrder: items.length - index,
           })),
         );

@@ -45,6 +45,7 @@ import {
   toArtistRailItem,
   toMemberRailItem,
 } from "@/lib/group-presenters";
+import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 type SearchExperienceProps = {
   query?: string;
@@ -565,7 +566,11 @@ export function SearchExperience({
 
         if (keyword) {
           setApiResultGroups(groupItems);
-          setApiResultItems((productItems ?? []).map(toProductCardItem));
+          setApiResultItems(
+            (productItems ?? [])
+              .map(toProductCardItem)
+              .map(mergeCachedProductImage),
+          );
           setResultMessage("");
         } else {
           setApiPopularGroups(groupItems);

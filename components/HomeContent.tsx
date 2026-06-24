@@ -29,6 +29,7 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { toArtistRailItem } from "@/lib/group-presenters";
+import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
@@ -354,7 +355,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
-        setApiListings(items.map(toProductCardItem));
+        setApiListings(
+          items.map(toProductCardItem).map(mergeCachedProductImage),
+        );
         setListingMessage("");
       })
       .catch((error: unknown) => {
