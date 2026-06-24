@@ -53,7 +53,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
                 )}
               </span>
               <span className="bottom-navigator__label hidden max-w-full truncate">
-                {item.label === "Bids" ? "입찰" : item.label}
+                {item.label === "Bids" ? "참여" : item.label}
               </span>
             </>
           );

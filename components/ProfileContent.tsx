@@ -1372,7 +1372,7 @@ export function ProfileContent({
 
     if (isProfileBidPaymentExpired(selectedBid, new Date())) {
       setUserProfileMessage(
-        "입금 기한이 지나 결제할 수 없어요. 다음 순위로 낙찰이 넘어갔어요.",
+        "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );
       return;
     }
@@ -1966,7 +1966,7 @@ export function ProfileContent({
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">1등</p>
+              <p className="text-[11px] font-medium text-white/45">참여</p>
               <p className="mt-1 text-[19px] font-semibold">
                 {isBidEntriesLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
@@ -2202,7 +2202,7 @@ export function ProfileContent({
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                입찰 현황
+                참여 현황
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
                 참여 상태와 결제 진행을 여기서 확인해요.
@@ -2267,7 +2267,7 @@ export function ProfileContent({
                                 : "bg-[#f1f1f1] text-black/55"
                             }`}
                           >
-                            {bid.rank}등
+                            참여
                           </span>
                         </div>
 
@@ -2275,7 +2275,7 @@ export function ProfileContent({
                           <div className="grid grid-cols-2 gap-2">
                             <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                               <p className="text-[11px] font-medium text-black/35">
-                                내 입찰가
+                                상품 금액
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
                                 {formatPrice(bid.amount)}
@@ -2294,9 +2294,9 @@ export function ProfileContent({
                                   ? "결제 필요"
                                   : isClosed
                                   ? bid.rank === 1
-                                    ? "낙찰"
-                                    : "미낙찰"
-                                  : "입찰중"}
+                                    ? "참여"
+                                    : "마감"
+                                  : "참여중"}
                               </p>
                             </div>
                           </div>
@@ -2333,7 +2333,7 @@ export function ProfileContent({
                                   <>
                                     <p>입금 기한이 지났어요</p>
                                     <p className="mt-0.5 text-black/45">
-                                      다음 순위로 낙찰이 넘어갔어요
+                                      입금 기한이 지나 참여가 취소됐을 수 있어요
                                     </p>
                                   </>
                                 )
@@ -2352,7 +2352,7 @@ export function ProfileContent({
                                     </p>
                                   </>
                                 )
-                                : <p>마감된 입찰이에요</p>
+                                : <p>마감된 분철이에요</p>
                               : isPaymentReady
                               ? (
                                 <>
@@ -2411,7 +2411,7 @@ export function ProfileContent({
             <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
                 {authState.isLoggedIn
-                  ? "참여 중인 입찰이 없습니다."
+                  ? "참여 중인 분철이 없습니다."
                   : "로그인 후 이용할 수 있어요."}
               </p>
             </div>
@@ -2816,7 +2816,7 @@ export function ProfileContent({
 
             <div className="shrink-0 border-t border-black/10 bg-white pt-4">
               <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
-                <span>낙찰가</span>
+                <span>상품 금액</span>
                 <span>{formatPrice(selectedPaymentBid.amount)}</span>
               </div>
               <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">

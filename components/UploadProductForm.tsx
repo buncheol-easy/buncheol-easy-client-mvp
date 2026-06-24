@@ -1360,7 +1360,7 @@ export function UploadProductForm({
       accessToken &&
       !canUseBuncheolApi
     ) {
-      setSubmitError("최소 입찰가와 대상 멤버 정보를 다시 확인해 주세요.");
+      setSubmitError("가격과 대상 멤버 정보를 다시 확인해 주세요.");
       return;
     }
 
@@ -1763,7 +1763,7 @@ export function UploadProductForm({
                           </div>
                           <div className="col-span-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
                             <p className="text-[12px] font-semibold text-black/35">
-                              입찰 기한
+                              참여 기한
                             </p>
                             <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
                               {formatDateTimeLabel(closingDate) || "-"}
@@ -1828,7 +1828,7 @@ export function UploadProductForm({
                                   {member.name}
                                 </p>
                                 <p className="mt-0.5 text-[12px] font-semibold text-black/35">
-                                  최소 입찰가
+                                  가격
                                 </p>
                               </div>
                               <p className="shrink-0 text-[14px] font-semibold text-black/55">
@@ -2157,7 +2157,7 @@ export function UploadProductForm({
                                 </p>
                                 <label className="flex h-9 w-24 shrink-0 items-center rounded-[0.65rem] bg-white px-2 ring-1 ring-black/10 focus-within:ring-black">
                                   <input
-                                    aria-label={`${member.name} 최소 가격`}
+                                    aria-label={`${member.name} 가격`}
                                     className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
                                     disabled={isApiEditMode || isExcluded}
                                     inputMode="numeric"
@@ -2224,7 +2224,7 @@ export function UploadProductForm({
                                   </p>
                                   <div className="flex shrink-0 items-center gap-2">
                                     <button
-                                      aria-label="최소 가격 전체 적용 취소"
+                                      aria-label="가격 전체 적용 취소"
                                       className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[14px] font-semibold text-white"
                                       onClick={hideMinimumPricePrompt}
                                       type="button"
@@ -2232,7 +2232,7 @@ export function UploadProductForm({
                                       ×
                                     </button>
                                     <button
-                                      aria-label="비어있는 멤버에 최소 가격 적용"
+                                      aria-label="비어있는 멤버에 가격 적용"
                                       className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[13px] font-semibold text-black"
                                       onClick={() =>
                                         applyMinimumPriceToEmptyMembers(

@@ -39,7 +39,7 @@ function toPublicPreviewProduct(
     buncheolId: productId,
     courier: lockedLabel,
     description: requiresLogin
-      ? "로그인 후 입찰과 상세 정보를 확인할 수 있어요."
+      ? "로그인 후 구매와 상세 정보를 확인할 수 있어요."
       : "목록에 공개된 분철 정보를 표시하고 있어요.",
     isApiProduct: true,
     isBidUnavailable: false,

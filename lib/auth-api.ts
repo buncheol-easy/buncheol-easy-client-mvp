@@ -1956,6 +1956,10 @@ function getBuncheolManagementOptionFromRecord(
       "currentHighestBidAmount",
       "highestBidAmount",
       "currentBidAmount",
+      "baseAmount",
+      "basePrice",
+      "fixedPrice",
+      "price",
     ]) ?? null,
     memberId: getOptionalStringValue(record, ["memberId"]),
     memberImage: getOptionalStringValue(record, [
@@ -2244,34 +2248,23 @@ export function toProductDetailItem(
           },
         ];
   const options = optionMembers.map((member) => {
-    const baselineAmount = Math.max(
-      member.bidMinPrice,
-      member.currentBidAmount,
-      member.myBidAmount ?? 0,
-    );
-    const formattedBaseline = formatWonAmount(baselineAmount);
-    const topBids =
-      member.topBidAmounts.length > 0
-        ? member.topBidAmounts.slice(0, 3).map(formatWonAmount)
-        : [];
+    const priceAmount =
+      member.bidMinPrice || member.currentBidAmount || member.myBidAmount || 0;
+    const formattedPrice = formatWonAmount(priceAmount);
 
     return {
       id: member.id,
       buncheolMemberId: member.id,
-      currentBid: formattedBaseline,
+      currentBid: formattedPrice,
       imageUrl: member.imageUrl,
       label: member.name,
       myBidAmount: member.myBidAmount,
       myParticipationId: member.myParticipationId,
       myRank: member.myRank,
       participantCount: member.participantCount,
-      price: formattedBaseline,
-      startingBid: formatWonAmount(member.bidMinPrice),
-      topBids: [
-        topBids[0] ?? "-",
-        topBids[1] ?? "-",
-        topBids[2] ?? "-",
-      ] as [string, string, string],
+      price: formattedPrice,
+      startingBid: formattedPrice,
+      topBids: ["-", "-", "-"] as [string, string, string],
     } satisfies ProductOption;
   }) as unknown as [ProductOption, ...ProductOption[]];
   const memberNames = detail.memberNames.length

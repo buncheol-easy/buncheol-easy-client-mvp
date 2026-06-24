@@ -59,6 +59,7 @@ const paymentDeadlineMinutes = 30;
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
 const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
+export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -503,7 +504,7 @@ function takeShouldSkipBidHistoryEnter() {
 
 function BidHistoryListSkeleton({ count = 2 }: { count?: number }) {
   return (
-    <div aria-label="입찰 기록을 불러오는 중" className="space-y-3" role="status">
+    <div aria-label="참여 내역을 불러오는 중" className="space-y-3" role="status">
       {Array.from({ length: count }).map((_, index) => (
         <div
           className="rounded-[1rem] border border-black/10 px-4 py-4"
@@ -741,6 +742,32 @@ export function BidHistoryContent({
 
           setApiBidRecords(bidRecords);
           setHistoryMessage("");
+
+          const pendingPaymentId = window.sessionStorage.getItem(
+            BID_HISTORY_OPEN_PAYMENT_ID_KEY,
+          );
+          const pendingPaymentRecord = pendingPaymentId
+            ? bidRecords.find((bid) => bid.id === pendingPaymentId)
+            : null;
+
+          if (pendingPaymentRecord) {
+            window.sessionStorage.removeItem(BID_HISTORY_OPEN_PAYMENT_ID_KEY);
+            setMode("joined");
+            setFilter("payment");
+            setSelectedPaymentBidId(pendingPaymentRecord.id);
+            setIsPaymentSheetOpen(true);
+            setIsPaymentSheetClosing(false);
+            setIsAddressSheetOpen(false);
+            setIsAddressSheetClosing(false);
+
+            window.requestAnimationFrame(() => {
+              if (!isActive) {
+                return;
+              }
+
+              setIsPaymentSheetEntered(true);
+            });
+          }
         });
       })
       .catch((error: unknown) => {
@@ -1012,7 +1039,7 @@ export function BidHistoryContent({
 
     if (isBidRecordPaymentExpired(selectedBid, new Date())) {
       setHistoryMessage(
-        "입금 기한이 지나 결제할 수 없어요. 다음 순위로 낙찰이 넘어갔어요.",
+        "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );
       return;
     }
@@ -1446,7 +1473,7 @@ export function BidHistoryContent({
             History
           </p>
           <h1 className="bid-history-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
-            {mode === "joined" ? "입찰 기록" : "개최 기록"}
+            {mode === "joined" ? "참여 내역" : "개최 기록"}
           </h1>
         </div>
       </header>
@@ -1484,7 +1511,7 @@ export function BidHistoryContent({
           {(
             [
               ["all", "전체"],
-              ["active", "입찰 중"],
+              ["active", "진행 중"],
               ["payment", "결제 필요"],
             ] as const
           ).map(([value, label]) => {
@@ -1620,7 +1647,7 @@ export function BidHistoryContent({
                               : "bg-[#f1f1f1] text-black/55"
                           }`}
                         >
-                          {bid.rank}등
+                          참여
                         </span>
                       </div>
 
@@ -1628,7 +1655,7 @@ export function BidHistoryContent({
                         <div className="grid grid-cols-2 gap-2">
                           <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                             <p className="text-[11px] font-medium text-black/35">
-                              내 입찰가
+                              상품 금액
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
                               {formatPrice(bid.amount)}
@@ -1649,9 +1676,9 @@ export function BidHistoryContent({
                                 ? "결제 필요"
                                 : isClosed
                                 ? bid.rank === 1
-                                  ? "낙찰"
-                                  : "미낙찰"
-                                : "입찰중"}
+                                  ? "참여"
+                                  : "마감"
+                                : "참여중"}
                             </p>
                           </div>
                         </div>
@@ -1692,7 +1719,7 @@ export function BidHistoryContent({
                               <>
                                 <p>입금 기한이 지났어요</p>
                                 <p className="mt-0.5 text-black/45">
-                                  다음 순위로 낙찰이 넘어갔어요
+                                  입금 기한이 지나 참여가 취소됐을 수 있어요
                                 </p>
                               </>
                             ) : isPaymentReady ? (
@@ -1709,7 +1736,7 @@ export function BidHistoryContent({
                                 </p>
                               </>
                             ) : (
-                              <p>마감된 입찰이에요</p>
+                              <p>마감된 분철이에요</p>
                             )
                           ) : isPaymentReady ? (
                             <>
@@ -2119,7 +2146,7 @@ export function BidHistoryContent({
 
             <div className="shrink-0 border-t border-black/10 bg-white pt-4">
               <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
-                <span>낙찰가</span>
+                <span>상품 금액</span>
                 <span>{formatPrice(selectedPaymentBid.amount)}</span>
               </div>
               <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">

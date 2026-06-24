@@ -58,7 +58,7 @@ const HOME_BANNERS = [
   {
     href: "/board/closed-bid-status?from=home",
     eyebrow: "Bid Alert",
-    title: "마감 후 낙찰 상태를\n빠르게 확인하세요.",
+    title: "참여와 입금 상태를\n빠르게 확인하세요.",
     badge: "BID",
     caption: "Winning Status",
     gradient:

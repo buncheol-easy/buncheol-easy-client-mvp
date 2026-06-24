@@ -168,7 +168,7 @@ function getWinnerReceiverLabel(
 
 function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
   if (!winner) {
-    return "낙찰 전";
+    return "참여 전";
   }
 
   if (winner.paymentConfirmedAt || isPaymentConfirmedStatus(winner.paymentStatus)) {
@@ -411,13 +411,13 @@ export function HostedBuncheolManage({
     }
 
     if (!participationId) {
-      setMessage("만료시킬 낙찰자 참여 ID가 없어요.");
+      setMessage("만료시킬 참여자 참여 ID가 없어요.");
       return;
     }
 
     if (
       !window.confirm(
-        "이 낙찰자를 미입금 만료 처리하고 차순위 낙찰자로 승계할까요?",
+        "이 참여자를 미입금 만료 처리하고 차순위 참여자로 승계할까요?",
       )
     ) {
       return;
@@ -436,12 +436,12 @@ export function HostedBuncheolManage({
       const nextDetail = await requestBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
-      setMessage("미입금 낙찰자를 만료 처리하고 차순위 낙찰자를 반영했어요.");
+      setMessage("미입금 참여자를 만료 처리하고 차순위 참여자를 반영했어요.");
     } catch (error: unknown) {
       setMessage(
         error instanceof Error
           ? error.message
-          : "차순위 낙찰자 승계를 처리하지 못했어요.",
+          : "차순위 참여자 승계를 처리하지 못했어요.",
       );
     } finally {
       setExpiringPaymentId(null);
@@ -538,10 +538,10 @@ export function HostedBuncheolManage({
           <section className="mt-6">
             <div className="mb-3">
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                옵션별 입찰 현황
+                옵션별 참여 현황
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/40">
-                현 최고가와 낙찰자 입금 상태를 확인해요.
+                참여자 입금 상태와 배송 정보를 확인해요.
               </p>
             </div>
 
@@ -581,9 +581,9 @@ export function HostedBuncheolManage({
                 const hasRegisteredTrackingNumber = Boolean(
                   option.winner?.trackingNumber || deliveryState.isShipped,
                 );
-                const canShowExpireAction = Boolean(
+                const canShowExpireAction = false && Boolean(
                   option.winner?.participationId &&
-                    isPaymentAwaitingStatus(option.winner.paymentStatus) &&
+                    isPaymentAwaitingStatus(option.winner?.paymentStatus) &&
                     !hasPaymentReportValue &&
                     !isPaymentConfirmed,
                 );
@@ -630,7 +630,7 @@ export function HostedBuncheolManage({
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
                         <p className="text-[11px] font-medium text-black/35">
-                          현 최고가
+                          가격
                         </p>
                         <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                           {formatWonAmount(getHighestBidAmount(option))}
@@ -638,7 +638,7 @@ export function HostedBuncheolManage({
                       </div>
                       <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
                         <p className="text-[11px] font-medium text-black/35">
-                          {isClosed ? "낙찰" : "낙찰 예정"}
+                          {isClosed ? "참여" : "참여 예정"}
                         </p>
                         <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                           {winnerCount}명
@@ -735,14 +735,14 @@ export function HostedBuncheolManage({
                                 type="button"
                               >
                                 {!hasNextWinnerCandidate
-                                  ? "차순위 낙찰자 없음"
+                                  ? "차순위 참여자 없음"
                                   : isExpiring
                                     ? "승계 중"
-                                    : "차순위 낙찰자로 승계"}
+                                    : "차순위 참여자로 승계"}
                               </button>
                               {hasNextWinnerCandidate && !isExpirable ? (
                                 <p className="mt-2 text-center text-[11px] font-medium text-black/35">
-                                  입금 기한이 지난 미입금 낙찰자만 승계할 수 있어요.
+                                  입금 기한이 지난 미입금 참여자만 승계할 수 있어요.
                                 </p>
                               ) : null}
                             </div>
@@ -834,10 +834,10 @@ export function HostedBuncheolManage({
                           <div className="pointer-events-none select-none opacity-35">
                             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
                               <p className="text-[11px] font-medium text-black/35">
-                                낙찰자 배송지
+                                참여자 배송지
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
-                                마감 후 낙찰자 배송지가 표시돼요.
+                                마감 후 참여자 배송지가 표시돼요.
                               </p>
                             </div>
 

@@ -86,11 +86,11 @@ export function LoginContent({
             바로 이어서 볼 수 있어요
           </h2>
           <p className="mt-3 text-center text-[14px] font-medium leading-6 tracking-[-0.04em] text-black/45">
-            입찰 현황, 배송지, 찜한 포토카드를 한 번에 관리해요.
+            참여 내역, 배송지, 찜한 포토카드를 한 번에 관리해요.
           </p>
 
           <div className="mt-6 grid gap-2">
-            {["진행 중인 입찰 확인", "배송지 관리", "찜한 상품 이어보기"].map(
+            {["진행 중인 참여 확인", "배송지 관리", "찜한 상품 이어보기"].map(
               (label) => (
                 <div
                   className="flex h-11 items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] px-3 text-[13px] font-semibold tracking-[-0.04em] text-black/65"
