@@ -35,7 +35,6 @@ import {
   requestMyHostedBuncheols,
   requestMyParticipations,
   requestParticipationPaymentDetail,
-  requestPaymentReport,
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
@@ -556,7 +555,6 @@ export function ProfileContent({
 
     return shouldSkip;
   });
-  const [payingBidId, setPayingBidId] = useState<string | null>(null);
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
@@ -1679,9 +1677,7 @@ export function ProfileContent({
     if (
       !selectedPaymentBid ||
       !canSelectedPaymentBidReportPayment ||
-      !paymentDeliveryAddress ||
-      !selectedPaymentBankAccount ||
-      payingBidId
+      !selectedPaymentBankAccount
     ) {
       return;
     }
@@ -1689,12 +1685,10 @@ export function ProfileContent({
     setIsPaymentReportConfirmOpen(true);
   }
 
-  async function handleTransferPaymentRequest() {
+  function handleTransferPaymentRequest() {
     if (
       !selectedPaymentBid ||
-      !paymentDeliveryAddress ||
-      !selectedPaymentBankAccount ||
-      payingBidId
+      !selectedPaymentBankAccount
     ) {
       return;
     }
@@ -1702,53 +1696,17 @@ export function ProfileContent({
     if (!canSelectedPaymentBidReportPayment) {
       setIsPaymentReportConfirmOpen(false);
       setUserProfileMessage(
-        "입금 완료를 접수할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
+        "입금 안내를 확인할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
       );
       closePaymentSheet();
       return;
     }
 
-    setPayingBidId(selectedPaymentBid.id);
     setIsPaymentReportConfirmOpen(false);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestPaymentReport(
-        accessToken,
-        selectedPaymentBid.id,
-        paymentDeliveryAddress.id,
-      );
-      setApiBidEntries((current) =>
-        current
-          ? current.map((bid) =>
-              bid.id === selectedPaymentBid.id
-                ? {
-                    ...bid,
-                    paidAt: null,
-                    participationStatus: "PAYMENT_REPORTED",
-                  }
-                : bid,
-            )
-          : current,
-      );
-      setUserProfileMessage(
-        "입금 확인 요청을 보냈어요. 판매자의 확인을 기다려 주세요.",
-      );
-      closePaymentSheet();
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error
-          ? error.message
-          : "입금 완료를 접수하지 못했어요.",
-      );
-    } finally {
-      setPayingBidId(null);
-    }
+    setUserProfileMessage(
+      "입금 후 관리자가 확인하면 참여가 확정돼요.",
+    );
+    closePaymentSheet();
   }
 
   function commitDeliveryAddressState(nextState: StoredDeliveryAddressState) {
@@ -2341,7 +2299,7 @@ export function ProfileContent({
                                   : isPaymentExpired
                                   ? "입금 만료"
                                   : isPaymentReady
-                                  ? "결제 필요"
+                                  ? "입금 대기"
                                   : isClosed
                                   ? bid.rank === 1
                                     ? "참여"
@@ -2390,9 +2348,9 @@ export function ProfileContent({
                                 : isPaymentReady
                                 ? (
                                   <>
-                                    <p>결제가 필요해요</p>
+                                    <p>입금이 필요해요</p>
                                     <p className="mt-0.5 text-black/45">
-                                      결제까지{" "}
+                                      입금 기한까지{" "}
                                       {formatPaymentRemainingTime(
                                         bid.deadline,
                                         now,
@@ -2406,9 +2364,9 @@ export function ProfileContent({
                               : isPaymentReady
                               ? (
                                 <>
-                                  <p>결제가 필요해요</p>
+                                  <p>입금이 필요해요</p>
                                   <p className="mt-0.5 text-black/45">
-                                    결제까지{" "}
+                                    입금 기한까지{" "}
                                     {formatPaymentRemainingTime(
                                       bid.deadline,
                                       now,
@@ -2426,7 +2384,7 @@ export function ProfileContent({
                               onClick={() => openPaymentSheet(bid.id)}
                               type="button"
                             >
-                              결제
+                              입금 정보
                             </button>
                           ) : null}
                         </div>
@@ -2704,7 +2662,7 @@ export function ProfileContent({
                   입금 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  계좌와 배송지를 확인한 뒤 입금 완료를 눌러 주세요.
+                  계좌와 금액을 확인한 뒤 기한 내 입금해 주세요.
                 </p>
               </div>
               <button
@@ -2761,7 +2719,7 @@ export function ProfileContent({
                 </button>
               </div>
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                송금 후 입금 완료를 눌러 주세요.
+                송금 후 관리자가 입금을 확인하면 참여가 확정돼요.
               </p>
               {paymentCopyToast ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
@@ -2886,26 +2844,24 @@ export function ProfileContent({
             <button
               className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
               disabled={
-                !paymentDeliveryAddress ||
                 !selectedPaymentBankAccount ||
-                !canSelectedPaymentBidReportPayment ||
-                payingBidId === selectedPaymentBid.id
+                !canSelectedPaymentBidReportPayment
               }
               onClick={openPaymentReportConfirm}
               type="button"
             >
-              입금 완료
+              입금 안내 확인
             </button>
 
             {isPaymentReportConfirmOpen ? (
               <div className="absolute inset-0 z-10 flex items-center justify-center rounded-t-[1.4rem] bg-black/35 px-5">
                 <section className="w-full rounded-[1.1rem] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
                   <h3 className="text-[22px] font-semibold tracking-[-0.06em]">
-                    입금을 완료하셨나요?
+                    입금 안내를 확인했나요?
                   </h3>
                   <p className="mt-2 text-[14px] font-medium leading-6 text-black/50">
-                    송금 후에만 입금 완료 버튼을 눌러주세요. 허위 신고 시
-                    서비스 이용이 제한될 수 있습니다.
+                    이 버튼은 입금 신고가 아니에요. 실제 송금 후 관리자가
+                    입금을 확인하면 참여가 확정돼요.
                   </p>
                   <div className="mt-5 grid grid-cols-2 gap-2">
                     <button
@@ -2913,19 +2869,18 @@ export function ProfileContent({
                       onClick={() => setIsPaymentReportConfirmOpen(false)}
                       type="button"
                     >
-                      취소
+                      계속 보기
                     </button>
                     <button
                       className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
                       disabled={
                         !selectedPaymentBankAccount ||
-                        !canSelectedPaymentBidReportPayment ||
-                        payingBidId === selectedPaymentBid.id
+                        !canSelectedPaymentBidReportPayment
                       }
-                      onClick={() => void handleTransferPaymentRequest()}
+                      onClick={handleTransferPaymentRequest}
                       type="button"
                     >
-                      입금 완료
+                      확인했어요
                     </button>
                   </div>
                 </section>

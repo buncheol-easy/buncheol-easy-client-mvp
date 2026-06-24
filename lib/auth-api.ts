@@ -242,6 +242,7 @@ export type BuncheolManagementOption = {
   memberId?: string;
   memberImage?: string;
   memberName: string;
+  participants?: BuncheolManagementParticipant[];
   participationCount: number;
   winner?: BuncheolManagementWinner | null;
 };
@@ -740,6 +741,26 @@ function getRecordListValue(body: Record<string, unknown>, keys: string[]) {
 
     if (Array.isArray(value)) {
       return value.filter(isRecord);
+    }
+
+    const nestedValue = getNestedData(value);
+
+    if (Array.isArray(nestedValue)) {
+      return nestedValue.filter(isRecord);
+    }
+
+    if (isRecord(nestedValue)) {
+      const nestedList = [
+        nestedValue.items,
+        nestedValue.content,
+        nestedValue.list,
+        nestedValue.records,
+        nestedValue.results,
+      ].find(Array.isArray);
+
+      if (nestedList) {
+        return nestedList.filter(isRecord);
+      }
     }
   }
 
@@ -1924,8 +1945,17 @@ function getBuncheolManagementDeliveryFromRecord(
 
 function getBuncheolManagementParticipantFromRecord(
   record: Record<string, unknown>,
+  fallback: {
+    buncheolMemberId?: string;
+    memberName?: string;
+  } = {},
 ): BuncheolManagementParticipant | null {
-  const participationId = getStringValue(record, ["participationId", "id"]);
+  const participationId = getStringValue(record, [
+    "participationId",
+    "paymentParticipationId",
+    "participantId",
+    "id",
+  ]);
 
   if (!participationId) {
     return null;
@@ -1952,11 +1982,14 @@ function getBuncheolManagementParticipantFromRecord(
         "paymentAmount",
         "totalAmount",
         "bidAmount",
+        "price",
       ]) ?? 0,
-    buncheolMemberId: getOptionalStringValue(record, [
-      "buncheolMemberId",
-      "memberSlotId",
-    ]),
+    buncheolMemberId:
+      getOptionalStringValue(record, [
+        "buncheolMemberId",
+        "memberSlotId",
+        "optionId",
+      ]) ?? fallback.buncheolMemberId,
     confirmedAt:
       getOptionalStringValue(record, [
         "confirmedAt",
@@ -1968,7 +2001,9 @@ function getBuncheolManagementParticipantFromRecord(
       getOptionalStringValue(record, ["dueAt", "paymentDueAt", "paymentDeadline"]) ??
       null,
     memberName:
-      getStringValue(record, ["memberName", "name", "label"]) || "옵션",
+      getStringValue(record, ["memberName", "name", "label"]) ||
+      fallback.memberName ||
+      "옵션",
     participantNickname,
     participationId,
     refundAccount,
@@ -2016,6 +2051,24 @@ function getBuncheolManagementOptionFromRecord(
     ? getBuncheolManagementWinnerFromRecord(winnerRecord)
     : null;
   const fallbackWinnerFields = getBuncheolManagementWinnerFromRecord(record);
+  const optionMemberName = memberName || `Option ${memberId ?? buncheolMemberId}`;
+  const participants = getRecordListValue(record, [
+    "participants",
+    "participations",
+    "paymentParticipants",
+    "paymentRequests",
+    "payments",
+  ])
+    .map((participantRecord) =>
+      getBuncheolManagementParticipantFromRecord(participantRecord, {
+        buncheolMemberId,
+        memberName: optionMemberName,
+      }),
+    )
+    .filter(
+      (participant): participant is BuncheolManagementParticipant =>
+        participant !== null,
+    );
 
   return {
     buncheolMemberId,
@@ -2035,7 +2088,8 @@ function getBuncheolManagementOptionFromRecord(
       "memberImageUrl",
       "imageUrl",
     ]),
-    memberName: memberName || `Option ${memberId ?? buncheolMemberId}`,
+    memberName: optionMemberName,
+    participants,
     participationCount:
       getNumberValue(record, ["participationCount", "participantCount"]) ?? 0,
     winner: winner
@@ -2090,11 +2144,18 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     return null;
   }
 
-  const participants = getRecordListValue(data, [
+  const directParticipants = getRecordListValue(data, [
     "participants",
     "participations",
+    "paymentParticipants",
+    "paymentRequests",
+    "payments",
+    "records",
+    "items",
   ])
-    .map(getBuncheolManagementParticipantFromRecord)
+    .map((participantRecord) =>
+      getBuncheolManagementParticipantFromRecord(participantRecord),
+    )
     .filter(
       (participant): participant is BuncheolManagementParticipant =>
         participant !== null,
@@ -2108,6 +2169,14 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     .filter(
       (option): option is BuncheolManagementOption => option !== null,
     );
+  const participantsById = new Map<string, BuncheolManagementParticipant>();
+
+  [...directParticipants, ...options.flatMap((option) => option.participants ?? [])]
+    .forEach((participant) => {
+      participantsById.set(participant.participationId, participant);
+    });
+
+  const participants = [...participantsById.values()];
   const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
 
   return {
@@ -3225,29 +3294,6 @@ export async function requestPaymentExpiration(
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
-
-export async function requestPaymentReport(
-  accessToken: string,
-  participationId: string,
-  shippingAddressId: string,
-) {
-  const parsedShippingAddressId = Number.isFinite(Number(shippingAddressId))
-    ? Number(shippingAddressId)
-    : shippingAddressId;
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment/report`,
-    {
-      body: JSON.stringify({ shippingAddressId: parsedShippingAddressId }),
-      credentials: "include",
-      headers: getJsonHeaders(accessToken),
       method: "POST",
     },
   );

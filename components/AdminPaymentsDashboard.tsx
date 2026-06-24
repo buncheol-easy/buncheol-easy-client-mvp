@@ -84,6 +84,10 @@ function isAwaitingPaymentStatus(status: string) {
     "AWAITING_CONFIRMATION",
     "AWAITING_PAYMENT",
     "PENDING_PAYMENT",
+    "PAYMENT_PENDING",
+    "PENDING_CONFIRMATION",
+    "WAITING_PAYMENT",
+    "WAITING_CONFIRMATION",
   ].includes(status);
 }
 
@@ -92,8 +96,10 @@ function isConfirmedPaymentStatus(status: string) {
 }
 
 function normalizePaymentStatus(status: string): AdminPaymentStatus {
-  if (isConfirmedPaymentStatus(status)) return "CONFIRMED";
-  if (isAwaitingPaymentStatus(status)) return "AWAITING_CONFIRMATION";
+  const normalizedStatus = status.trim().toUpperCase();
+
+  if (isConfirmedPaymentStatus(normalizedStatus)) return "CONFIRMED";
+  if (isAwaitingPaymentStatus(normalizedStatus)) return "AWAITING_CONFIRMATION";
   return "OTHER";
 }
 
