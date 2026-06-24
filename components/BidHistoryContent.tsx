@@ -33,7 +33,6 @@ import {
   requestBuncheolDetail,
   requestMyHostedBuncheols,
   requestMyParticipations,
-  requestParticipationPaymentDetail,
   requestPaymentReport,
   toProductDetailItem,
   type BankAccountInfo,
@@ -1090,41 +1089,10 @@ export function BidHistoryContent({
     setIsPaymentSheetOpen(true);
     setIsPaymentSheetClosing(false);
 
-    if (authState.accessToken) {
-      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
-        .then((paymentDetail) => {
-          if (paymentStoreTypeRequestIdRef.current !== requestId) {
-            return;
-          }
+    const shouldLoadPaymentBuncheolDetail =
+      shouldLoadApiStoreTypes || !selectedBid.hostBankAccount;
 
-          setApiBidRecords((current) =>
-            current
-              ? current.map((bid) =>
-                  bid.id === selectedBid.id
-                    ? {
-                        ...bid,
-                        amount: paymentDetail.bidAmount || bid.amount,
-                        hostBankAccount:
-                          paymentDetail.hostBankAccount ?? bid.hostBankAccount,
-                        paymentAmount:
-                          paymentDetail.paymentAmount ?? bid.paymentAmount,
-                        paymentDueAt:
-                          paymentDetail.paymentDueAt ?? bid.paymentDueAt,
-                        participationStatus:
-                          paymentDetail.paymentStatus ||
-                          bid.participationStatus,
-                        shippingFee:
-                          paymentDetail.shippingFee ?? bid.shippingFee,
-                      }
-                    : bid,
-                )
-              : current,
-          );
-        })
-        .catch(() => {});
-    }
-
-    if (shouldLoadApiStoreTypes) {
+    if (shouldLoadPaymentBuncheolDetail) {
       requestBuncheolDetail(
         authState.isLoggedIn ? authState.accessToken ?? undefined : undefined,
         selectedBid.productId,
@@ -1133,6 +1101,25 @@ export function BidHistoryContent({
           if (paymentStoreTypeRequestIdRef.current !== requestId) {
             return;
           }
+
+          const product = toProductDetailItem(detail);
+          setApiBidRecords((current) =>
+            current
+              ? current.map((bid) =>
+                  bid.id === selectedBid.id
+                    ? {
+                        ...bid,
+                        courier: product.courier,
+                        hostBankAccount:
+                          bid.hostBankAccount ?? detail.hostBankAccount,
+                        imageUrl: bid.imageUrl ?? product.imageUrl,
+                        shippingMethods:
+                          bid.shippingMethods ?? product.shippingMethods,
+                      }
+                    : bid,
+                )
+              : current,
+          );
 
           const storeTypes = getAvailableConvenienceStoreTypes(
             detail.shippingOptions.map((option) => ({ name: option.method })),

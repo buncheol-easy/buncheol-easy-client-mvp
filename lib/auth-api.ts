@@ -541,6 +541,7 @@ function getBankAccountInfoFromRecord(
   const bank = getStringValue(body, [
     "bank",
     "bankName",
+    "bankCode",
     "hostBank",
     "hostBankName",
     "sellerBank",
@@ -549,8 +550,11 @@ function getBankAccountInfoFromRecord(
   const account = getStringValue(body, [
     "account",
     "accountNumber",
+    "accountNo",
+    "accountNum",
     "bankAccount",
     "bankAccountNumber",
+    "number",
     "hostAccount",
     "hostAccountNumber",
     "sellerAccount",
@@ -558,9 +562,13 @@ function getBankAccountInfoFromRecord(
   ]).trim();
   const holder = getStringValue(body, [
     "holder",
+    "holderName",
     "accountHolder",
+    "accountOwner",
+    "accountOwnerName",
     "depositor",
     "depositorName",
+    "name",
     "hostHolder",
     "hostAccountHolder",
     "sellerHolder",
@@ -578,6 +586,42 @@ function getBankAccountInfoFromRecord(
   };
 }
 
+function getBankAccountInfoFromNestedRecord(
+  body: Record<string, unknown>,
+  visited = new Set<unknown>(),
+): BankAccountInfo | null {
+  const directBankAccount = getBankAccountInfoFromRecord(body);
+
+  if (directBankAccount) {
+    return directBankAccount;
+  }
+
+  if (visited.has(body)) {
+    return null;
+  }
+
+  visited.add(body);
+
+  for (const value of Object.values(body)) {
+    const nestedValue = getNestedData(value);
+
+    if (!isRecord(nestedValue)) {
+      continue;
+    }
+
+    const nestedBankAccount = getBankAccountInfoFromNestedRecord(
+      nestedValue,
+      visited,
+    );
+
+    if (nestedBankAccount) {
+      return nestedBankAccount;
+    }
+  }
+
+  return null;
+}
+
 function getNestedBankAccountInfo(
   body: Record<string, unknown>,
   keys: string[],
@@ -589,7 +633,7 @@ function getNestedBankAccountInfo(
       continue;
     }
 
-    const bankAccount = getBankAccountInfoFromRecord(value);
+    const bankAccount = getBankAccountInfoFromNestedRecord(value);
 
     if (bankAccount) {
       return bankAccount;
@@ -621,12 +665,22 @@ function getParticipationPaymentDetailFromBody(
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
+      "host",
+      "hostProfile",
       "sellerBankAccount",
+      "seller",
+      "sellerProfile",
       "creatorBankAccount",
+      "creator",
+      "creatorProfile",
       "ownerBankAccount",
+      "owner",
+      "ownerProfile",
       "paymentBankAccount",
       "transferBankAccount",
       "settlementBankAccount",
+      "organizer",
+      "organizerProfile",
       "sellerAccount",
       "bankAccount",
     ]),
@@ -1650,12 +1704,22 @@ function getBuncheolDetailFromBody(body: unknown) {
         : undefined),
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostBankAccount",
+      "host",
+      "hostProfile",
       "sellerBankAccount",
+      "seller",
+      "sellerProfile",
       "creatorBankAccount",
+      "creator",
+      "creatorProfile",
       "ownerBankAccount",
+      "owner",
+      "ownerProfile",
       "paymentBankAccount",
       "transferBankAccount",
       "settlementBankAccount",
+      "organizer",
+      "organizerProfile",
       "hostAccount",
       "sellerAccount",
     ]),
@@ -2824,18 +2888,53 @@ export async function requestMyParticipations(accessToken: string) {
             "participatedAt",
             "requestedAt",
           ]) ?? null,
-        hostBankAccount: getNestedBankAccountInfo(record, [
-          "hostBankAccount",
-          "sellerBankAccount",
-          "creatorBankAccount",
-          "ownerBankAccount",
-          "paymentBankAccount",
-          "transferBankAccount",
-          "settlementBankAccount",
-          "hostAccount",
-          "sellerAccount",
-          "bankAccount",
-        ]),
+        hostBankAccount:
+          getNestedBankAccountInfo(record, [
+            "hostBankAccount",
+            "host",
+            "hostProfile",
+            "sellerBankAccount",
+            "seller",
+            "sellerProfile",
+            "creatorBankAccount",
+            "creator",
+            "creatorProfile",
+            "ownerBankAccount",
+            "owner",
+            "ownerProfile",
+            "paymentBankAccount",
+            "transferBankAccount",
+            "settlementBankAccount",
+            "organizer",
+            "organizerProfile",
+            "hostAccount",
+            "sellerAccount",
+            "bankAccount",
+          ]) ??
+          (buncheol
+            ? getNestedBankAccountInfo(buncheol, [
+                "hostBankAccount",
+                "host",
+                "hostProfile",
+                "sellerBankAccount",
+                "seller",
+                "sellerProfile",
+                "creatorBankAccount",
+                "creator",
+                "creatorProfile",
+                "ownerBankAccount",
+                "owner",
+                "ownerProfile",
+                "paymentBankAccount",
+                "transferBankAccount",
+                "settlementBankAccount",
+                "organizer",
+                "organizerProfile",
+                "hostAccount",
+                "sellerAccount",
+                "bankAccount",
+              ])
+            : null),
         shippingFee: getOptionalNumberValue(record, ["shippingFee"]) ?? null,
         trackingNumber:
           getOptionalStringValue(record, [
