@@ -1204,40 +1204,93 @@ function getBuncheolListPageInfo(body: unknown) {
   };
 }
 
+function normalizeImageUrl(imageUrl: string) {
+  const trimmedImageUrl = imageUrl.trim();
+
+  if (!trimmedImageUrl) {
+    return "";
+  }
+
+  if (
+    trimmedImageUrl.startsWith("http://") ||
+    trimmedImageUrl.startsWith("https://") ||
+    trimmedImageUrl.startsWith("data:") ||
+    trimmedImageUrl.startsWith("blob:")
+  ) {
+    return trimmedImageUrl;
+  }
+
+  if (trimmedImageUrl.startsWith("//")) {
+    return `https:${trimmedImageUrl}`;
+  }
+
+  if (trimmedImageUrl.startsWith("/")) {
+    return `${getApiRootUrl()}${trimmedImageUrl}`;
+  }
+
+  return trimmedImageUrl;
+}
+
 function getImageUrl(value: unknown) {
-  if (typeof value === "string") {
-    return value;
+  if (typeof value === "string" || typeof value === "number") {
+    return normalizeImageUrl(String(value));
   }
 
   if (!isRecord(value)) {
     return "";
   }
 
-  return getStringValue(value, [
-    "imageUrl",
-    "thumbnailUrl",
-    "url",
-    "path",
-    "src",
-  ]);
+  return normalizeImageUrl(
+    getStringValue(value, [
+      "imageUrl",
+      "thumbnailUrl",
+      "representativeImageUrl",
+      "mainImageUrl",
+      "coverImageUrl",
+      "fileUrl",
+      "cdnUrl",
+      "s3Url",
+      "storedUrl",
+      "url",
+      "image",
+      "path",
+      "src",
+    ]),
+  );
 }
 
 function getImageUrls(data: Record<string, unknown>) {
-  const images = getRecordListValue(data, ["images", "imageList"])
-    .map(getImageUrl)
-    .filter((imageUrl) => imageUrl.trim().length > 0);
-  const stringImages = getStringListValue(data, [
+  const imageKeys = [
     "imageUrls",
     "images",
     "imageList",
-  ]);
-  const thumbnailUrl = getOptionalStringValue(data, [
-    "thumbnailUrl",
-    "thumbnail",
-    "imageUrl",
-  ]);
+    "buncheolImages",
+    "photos",
+    "files",
+    "attachments",
+  ];
+  const images = imageKeys.flatMap((key) => {
+    const value = data[key];
 
-  return [thumbnailUrl, ...stringImages, ...images].filter(
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.map(getImageUrl);
+  });
+  const thumbnailUrl = getImageUrl(
+    getOptionalStringValue(data, [
+      "thumbnailUrl",
+      "thumbnail",
+      "imageUrl",
+      "representativeImageUrl",
+      "mainImageUrl",
+      "coverImageUrl",
+      "image",
+    ]),
+  );
+
+  return [thumbnailUrl, ...images].filter(
     (imageUrl, index, imageUrls): imageUrl is string =>
       Boolean(imageUrl) && imageUrls.indexOf(imageUrl) === index,
   );
