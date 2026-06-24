@@ -115,8 +115,12 @@ export type ParticipateBuncheolRequest = {
 
 export type ParticipationCheckoutResponse = {
   bidAmount: number;
+  hostBankAccount?: BankAccountInfo | null;
+  paymentAmount?: number | null;
+  paymentDueAt?: string | null;
   participationId: string;
   participationStatus: string;
+  shippingFee?: number | null;
 };
 
 export type ApiGroup = {
@@ -2736,10 +2740,42 @@ export async function participateBuncheol(
 
   return {
     bidAmount: getNumberValue(data, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
+    hostBankAccount: getNestedBankAccountInfo(data, [
+      "hostAccount",
+      "hostBankAccount",
+      "host",
+      "hostProfile",
+      "sellerBankAccount",
+      "seller",
+      "sellerProfile",
+      "creatorBankAccount",
+      "creator",
+      "creatorProfile",
+      "ownerBankAccount",
+      "owner",
+      "ownerProfile",
+      "paymentBankAccount",
+      "transferBankAccount",
+      "settlementBankAccount",
+      "organizer",
+      "organizerProfile",
+      "sellerAccount",
+      "bankAccount",
+    ]),
+    paymentAmount:
+      getOptionalNumberValue(data, ["totalAmount", "paymentAmount", "amount"]) ??
+      null,
+    paymentDueAt:
+      getOptionalStringValue(data, [
+        "paymentDueAt",
+        "paymentDeadline",
+        "dueAt",
+      ]) ?? null,
     participationId: getStringValue(data, ["participationId", "id"]),
     participationStatus:
       getOptionalStringValue(data, ["participationStatus", "status"]) ??
       "AWAITING_PAYMENT",
+    shippingFee: getOptionalNumberValue(data, ["shippingFee"]) ?? null,
   } satisfies ParticipationCheckoutResponse;
 }
 

@@ -39,6 +39,7 @@ import {
   BID_HISTORY_SKIP_ENTER_KEY,
   BidHistoryContent,
 } from "@/components/BidHistoryContent";
+import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
 import {
   FAVORITES_SKIP_ENTER_KEY,
   FavoritesContent,
@@ -574,6 +575,18 @@ export function ProductDetail({
             refundAccount,
             shippingAddressId,
           });
+
+          if (result.participationId) {
+            writeCachedParticipationPayment({
+              bidAmount: result.bidAmount || bidAmount,
+              hostBankAccount: result.hostBankAccount,
+              participationId: result.participationId,
+              participationStatus: result.participationStatus,
+              paymentAmount: result.paymentAmount,
+              paymentDueAt: result.paymentDueAt,
+              shippingFee: result.shippingFee,
+            });
+          }
 
           participationResults.set(option.id, {
             bidAmount: result.bidAmount || bidAmount,

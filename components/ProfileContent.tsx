@@ -75,6 +75,10 @@ import {
   type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductDetailItem } from "@/lib/mock-products";
+import {
+  readCachedParticipationPayment,
+  writeCachedParticipationPayment,
+} from "@/lib/participation-payment-cache";
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
@@ -421,15 +425,20 @@ function getToneFromId(id: string) {
 function getProfileBidEntryFromParticipation(
   participation: MyParticipation,
 ): ProfileBidEntry {
+  const cachedPayment = readCachedParticipationPayment(
+    participation.participationId,
+  );
+  const participationStatus =
+    participation.participationStatus ||
+    cachedPayment?.participationStatus ||
+    "";
   const rank =
     participation.closedRank ??
-    (isPaymentWaitingParticipationStatus(participation.participationStatus)
-      ? 1
-      : 0);
+    (isPaymentWaitingParticipationStatus(participationStatus) ? 1 : 0);
 
   return {
     id: participation.participationId,
-    amount: participation.bidAmount,
+    amount: cachedPayment?.bidAmount ?? participation.bidAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
     imageUrl:
       participation.thumbnailUrl ??
@@ -445,15 +454,18 @@ function getProfileBidEntryFromParticipation(
     buncheolStatus: participation.buncheolStatus,
     deliveryId: participation.deliveryId,
     deliveryStatus: participation.deliveryStatus,
-    paymentAmount: participation.paymentAmount,
-    paymentDueAt: participation.paymentDueAt,
+    paymentAmount:
+      participation.paymentAmount ?? cachedPayment?.paymentAmount ?? null,
+    paymentDueAt:
+      participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
     createdAt: participation.createdAt,
     productId: participation.buncheolId,
-    participationStatus: participation.participationStatus,
+    participationStatus,
     rank: rank > 0 ? rank : 0,
-    shippingFee: participation.shippingFee,
+    shippingFee: participation.shippingFee ?? cachedPayment?.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
-    hostBankAccount: participation.hostBankAccount,
+    hostBankAccount:
+      participation.hostBankAccount ?? cachedPayment?.hostBankAccount ?? null,
     submittedAt: "",
     title: participation.buncheolTitle,
     tone: getToneFromId(participation.buncheolId),
@@ -1433,6 +1445,16 @@ export function ProfileContent({
           if (paymentStoreTypeRequestIdRef.current !== requestId) {
             return;
           }
+
+          writeCachedParticipationPayment({
+            bidAmount: paymentDetail.bidAmount,
+            hostBankAccount: paymentDetail.hostBankAccount,
+            participationId: paymentDetail.participationId,
+            participationStatus: paymentDetail.paymentStatus,
+            paymentAmount: paymentDetail.paymentAmount,
+            paymentDueAt: paymentDetail.paymentDueAt,
+            shippingFee: paymentDetail.shippingFee,
+          });
 
           setApiBidEntries((current) =>
             current
