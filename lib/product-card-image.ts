@@ -1,14 +1,25 @@
-import type { ProductCardItem } from "@/components/ProductCard";
 import { readUploadedProduct } from "@/lib/hosted-products-store";
 
-export function mergeCachedProductImage<T extends ProductCardItem>(item: T): T {
+type ProductImageTarget = {
+  id: string;
+  imageUrl?: string;
+  productId?: string;
+};
+
+export function getCachedProductImageUrl(productId: string) {
+  const cachedProduct = readUploadedProduct(productId);
+
+  return cachedProduct?.imageUrl ?? cachedProduct?.imageUrls?.[0];
+}
+
+export function mergeCachedProductImage<T extends ProductImageTarget>(
+  item: T,
+): T {
   if (item.imageUrl) {
     return item;
   }
 
-  const cachedProduct = readUploadedProduct(item.productId ?? item.id);
-  const cachedImageUrl =
-    cachedProduct?.imageUrl ?? cachedProduct?.imageUrls?.[0];
+  const cachedImageUrl = getCachedProductImageUrl(item.productId ?? item.id);
 
   return cachedImageUrl ? { ...item, imageUrl: cachedImageUrl } : item;
 }

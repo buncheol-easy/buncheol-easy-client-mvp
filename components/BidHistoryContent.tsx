@@ -48,6 +48,7 @@ import {
   type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductDetailItem } from "@/lib/mock-products";
+import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
 function formatPrice(price: number) {
@@ -397,7 +398,9 @@ function getBidRecordFromParticipation(
     id: participation.participationId,
     amount: participation.bidAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
-    imageUrl: participation.thumbnailUrl,
+    imageUrl:
+      participation.thumbnailUrl ??
+      getCachedProductImageUrl(participation.buncheolId),
     member: `${participation.buncheolMemberCount}개 옵션`,
     optionLabel: participation.memberName,
     participantCount: 0,
@@ -449,6 +452,9 @@ async function getBidRecordWithShippingData(
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
 ): ProductDetailItem {
+  const imageUrl =
+    buncheol.thumbnailUrl ?? getCachedProductImageUrl(buncheol.id);
+
   return {
     id: buncheol.id,
     buncheolId: buncheol.id,
@@ -466,8 +472,8 @@ function getHostedProductFromBuncheol(
     courier: "배송 방법 확인 필요",
     deadline: formatApiDateTime(buncheol.deadline),
     description: "",
-    imageUrl: buncheol.thumbnailUrl,
-    imageUrls: buncheol.thumbnailUrl ? [buncheol.thumbnailUrl] : [],
+    imageUrl,
+    imageUrls: imageUrl ? [imageUrl] : [],
     isApiProduct: true,
     options: [
       {

@@ -2797,7 +2797,9 @@ export async function requestMyParticipations(accessToken: string) {
             "imageUrl",
             "buncheolImageUrl",
             "representativeImageUrl",
-          ]) ?? getImageUrls(record)[0],
+          ]) ??
+          getImageUrls(record)[0] ??
+          (buncheol ? getImageUrls(buncheol)[0] : undefined),
         memberName:
           getStringValue(record, ["memberName", "optionLabel"]) ||
           (buncheolMember
