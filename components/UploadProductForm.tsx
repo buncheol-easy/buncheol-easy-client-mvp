@@ -1411,8 +1411,8 @@ export function UploadProductForm({
           );
 
         imageFiles = await Promise.all(
-          uploadablePhotos.map(({ imageUrl, photo }, index) =>
-            photo.file ?? dataUrlToFile(imageUrl, `buncheol-${index + 1}.jpg`),
+          uploadablePhotos.map(({ imageUrl }, index) =>
+            dataUrlToFile(imageUrl, `buncheol-${index + 1}.jpg`),
           ),
         );
       } catch {
