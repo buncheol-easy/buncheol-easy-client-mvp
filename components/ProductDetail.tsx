@@ -15,6 +15,7 @@ import {
   addBuncheolBookmark,
   deleteBuncheol,
   participateBuncheol,
+  requestBuncheolDetail,
   requestParticipationPaymentDetail,
   removeBuncheolBookmark,
   requestShippingAddresses,
@@ -381,6 +382,9 @@ export function ProductDetail({
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const [isDeletePending, setIsDeletePending] = useState(false);
   const [isBidSubmitPending, setIsBidSubmitPending] = useState(false);
+  const [isHostedByMeFromApi, setIsHostedByMeFromApi] = useState(
+    product.isHostedByMe === true,
+  );
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -484,8 +488,9 @@ export function ProductDetail({
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
   const isDeadlinePassed = isDeadlineClosed(product.deadline);
-  const isHostedProduct = product.isHostedByMe === true;
   const buncheolId = product.buncheolId ?? product.id;
+  const isHostedProduct =
+    product.isHostedByMe === true || isHostedByMeFromApi === true;
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
   const canDeleteProduct = product.isApiProduct && isHostedProduct;
@@ -504,13 +509,47 @@ export function ProductDetail({
     setAuctionOptions(product.options);
     setMyBids(getMyBidsFromOptions(product.options));
     setBidAmounts({});
+    setIsHostedByMeFromApi(product.isHostedByMe === true);
     setCheckoutStep("options");
     setCheckoutDeliveryAddress(null);
     setCheckoutRefundAccount(null);
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
     setCheckoutCopyToast("");
-  }, [product.id, product.options]);
+  }, [product.id, product.isHostedByMe, product.options]);
+
+  useEffect(() => {
+    if (
+      !product.isApiProduct ||
+      isPublicPreview ||
+      !authState.isLoggedIn ||
+      !authState.accessToken
+    ) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    requestBuncheolDetail(authState.accessToken, buncheolId)
+      .then((detail) => {
+        if (!isCancelled) {
+          setIsHostedByMeFromApi(detail.isHostedByMe === true);
+        }
+      })
+      .catch(() => {
+        // The submit path still handles permission failures with a user-facing message.
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    buncheolId,
+    isPublicPreview,
+    product.isApiProduct,
+  ]);
 
   function togglePurchaseOption(optionId: string) {
     setBidAmounts((current) => {
@@ -860,11 +899,22 @@ export function ProductDetail({
           applySubmittedBidState(participationResults, true);
         }
 
-        setCheckoutError(
-          error instanceof Error
-            ? error.message
-            : "구매를 시작하지 못했어요.",
-        );
+        const errorMessage =
+          error instanceof Error ? error.message : "구매를 시작하지 못했어요.";
+
+        if (
+          errorMessage.includes("403") ||
+          errorMessage.includes("Forbidden") ||
+          errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
+          errorMessage.includes("개최자")
+        ) {
+          setIsHostedByMeFromApi(true);
+          setCheckoutError(
+            "내가 연 분철에는 참여할 수 없어요. 구매 계정으로 전환해 주세요.",
+          );
+        } else {
+          setCheckoutError(errorMessage);
+        }
         setIsBidSubmitPending(false);
         return;
       }
@@ -1799,7 +1849,9 @@ export function ProductDetail({
                   <button
                     type="button"
                     className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
-                    disabled={activeBidCount === 0 || isBidSubmitPending}
+                    disabled={
+                      activeBidCount === 0 || isBidSubmitPending || !canBidProduct
+                    }
                     onClick={() => void handleProceedToCheckoutConfirm()}
                   >
                     {isBidSubmitPending ? "확인 중" : "다음"}
@@ -1891,7 +1943,9 @@ export function ProductDetail({
                     </button>
                     <button
                       className="h-14 rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
-                      disabled={isBidSubmitPending || activeBidCount === 0}
+                      disabled={
+                        isBidSubmitPending || activeBidCount === 0 || !canBidProduct
+                      }
                       onClick={() => void handleSubmitBids()}
                       type="button"
                     >
