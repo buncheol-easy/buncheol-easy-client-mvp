@@ -123,6 +123,39 @@ export type ParticipationCheckoutResponse = {
   shippingFee?: number | null;
 };
 
+export type InboxMessageType = "NOTICE" | "NOTIFICATION" | string;
+
+export type InboxMessageSummary = {
+  createdAt: string;
+  id: string;
+  pinned: boolean;
+  title: string;
+  type: InboxMessageType;
+};
+
+export type InboxMessageDetail = InboxMessageSummary & {
+  description: string;
+  linkPath?: string;
+  reference?: string;
+};
+
+export type InboxFeed = {
+  hasNext: boolean;
+  items: InboxMessageSummary[];
+  nextCursor: string | null;
+};
+
+export type InboxMessagesResponse = {
+  feed: InboxFeed;
+  pinned: InboxMessageSummary[];
+};
+
+export type InboxMessagesParams = {
+  cursor?: string | null;
+  size?: number;
+  type?: "NOTICE" | "NOTIFICATION";
+};
+
 export type ApiGroup = {
   favorited?: boolean;
   id: string;
@@ -2064,13 +2097,31 @@ function getBuncheolManagementParticipantFromRecord(
 function getBuncheolManagementOptionFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementOption | null {
+  const memberRecord = getNestedData(record.member);
+  const member = isRecord(memberRecord) ? memberRecord : null;
   const buncheolMemberId = getStringValue(record, [
     "buncheolMemberId",
+    "buncheolMemberSlotId",
+    "memberSlotId",
+    "optionId",
     "id",
     "slotId",
   ]);
-  const memberName = getStringValue(record, ["memberName", "name", "label"]);
-  const memberId = getOptionalStringValue(record, ["memberId"]);
+  const memberName =
+    getStringValue(record, ["memberName", "name", "label", "optionLabel"]) ||
+    (member
+      ? getStringValue(member, ["memberName", "name", "label", "optionLabel"])
+      : "");
+  const memberId =
+    getOptionalStringValue(record, ["memberId"]) ??
+    (member
+      ? getOptionalStringValue(member, [
+          "memberId",
+          "id",
+          "profileId",
+          "artistMemberId",
+        ])
+      : undefined);
 
   if (!buncheolMemberId) {
     return null;
@@ -2128,12 +2179,22 @@ function getBuncheolManagementOptionFromRecord(
       "fixedPrice",
       "price",
     ]) ?? null,
-    memberId: getOptionalStringValue(record, ["memberId"]),
-    memberImage: getOptionalStringValue(record, [
-      "memberImage",
-      "memberImageUrl",
-      "imageUrl",
-    ]),
+    memberId,
+    memberImage:
+      getOptionalStringValue(record, [
+        "memberImage",
+        "memberImageUrl",
+        "imageUrl",
+      ]) ??
+      (member
+        ? getOptionalStringValue(member, [
+            "memberImage",
+            "memberImageUrl",
+            "image",
+            "imageUrl",
+            "profileImageUrl",
+          ])
+        : undefined),
     memberName: optionMemberName,
     participants,
     participationCount:
@@ -2233,6 +2294,9 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
         "options",
         "members",
         "buncheolMembers",
+        "memberSlots",
+        "buncheolMemberSlots",
+        "slots",
       ]),
     )
     .map(getBuncheolManagementOptionFromRecord)
@@ -3409,6 +3473,180 @@ export async function requestDeliveryTrackingRegistration(
     throw new Error(await parseErrorMessage(response));
   }
 }
+
+function getInboxMessageSummaryFromRecord(
+  record: Record<string, unknown>,
+): InboxMessageSummary | null {
+  const id = getStringValue(record, [
+    "id",
+    "messageId",
+    "noticeId",
+    "notificationId",
+  ]);
+  const title = getStringValue(record, ["title", "subject", "name"]);
+
+  if (!id || !title) {
+    return null;
+  }
+
+  return {
+    createdAt:
+      getOptionalStringValue(record, ["createdAt", "sentAt", "publishedAt"]) ??
+      "",
+    id,
+    pinned:
+      getBooleanValue(record, ["pinned", "isPinned", "fixed", "isFixed"]) ??
+      false,
+    title,
+    type:
+      getOptionalStringValue(record, ["type", "messageType", "category"]) ??
+      "NOTICE",
+  };
+}
+
+function getInboxMessageDetailFromRecord(
+  record: Record<string, unknown>,
+): InboxMessageDetail | null {
+  const summary = getInboxMessageSummaryFromRecord(record);
+
+  if (!summary) {
+    return null;
+  }
+
+  return {
+    ...summary,
+    description:
+      getOptionalStringValue(record, [
+        "description",
+        "content",
+        "body",
+        "message",
+      ]) ?? "",
+    linkPath:
+      getOptionalStringValue(record, [
+        "linkPath",
+        "link",
+        "targetPath",
+        "redirectPath",
+      ]) ?? undefined,
+    reference:
+      getOptionalStringValue(record, [
+        "reference",
+        "subtitle",
+        "summary",
+        "descriptionSummary",
+      ]) ?? undefined,
+  };
+}
+
+function getInboxMessagesFromBody(body: unknown): InboxMessagesResponse | null {
+  const data = getNestedData(body);
+
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const feedData = getNestedData(data.feed);
+  const feed = isRecord(feedData) ? feedData : data;
+  const pinned = getRecordListValue(data, [
+    "pinned",
+    "pinnedItems",
+    "pinnedNotices",
+  ])
+    .map(getInboxMessageSummaryFromRecord)
+    .filter((item): item is InboxMessageSummary => item !== null);
+  const items = getRecordListValue(feed, ["items", "messages", "content"])
+    .map(getInboxMessageSummaryFromRecord)
+    .filter((item): item is InboxMessageSummary => item !== null);
+  const nextCursor =
+    getOptionalStringValue(feed, ["nextCursor", "cursor"]) ?? null;
+
+  return {
+    feed: {
+      hasNext: getBooleanValue(feed, ["hasNext"]) ?? Boolean(nextCursor),
+      items,
+      nextCursor,
+    },
+    pinned,
+  };
+}
+
+function getInboxRequestQuery(params: InboxMessagesParams = {}) {
+  const searchParams = new URLSearchParams();
+
+  if (params.type) {
+    searchParams.set("type", params.type);
+  }
+
+  if (params.cursor) {
+    searchParams.set("cursor", params.cursor);
+  }
+
+  if (params.size) {
+    searchParams.set("size", String(params.size));
+  }
+
+  const query = searchParams.toString();
+
+  return query ? `?${query}` : "";
+}
+
+export async function requestInboxMessages(
+  accessToken?: string,
+  params: InboxMessagesParams = {},
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/inbox${getInboxRequestQuery(params)}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const messages = getInboxMessagesFromBody(await readJsonBody(response));
+
+  if (!messages) {
+    throw new Error("공지와 알림 정보를 확인할 수 없어요.");
+  }
+
+  return messages;
+}
+
+export async function requestInboxMessageDetail(
+  accessToken: string | undefined,
+  messageId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/inbox/${encodeURIComponent(messageId)}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const data = getNestedData(await readJsonBody(response));
+
+  if (!isRecord(data)) {
+    throw new Error("공지와 알림 상세를 확인할 수 없어요.");
+  }
+
+  const message = getInboxMessageDetailFromRecord(data);
+
+  if (!message) {
+    throw new Error("공지와 알림 상세를 확인할 수 없어요.");
+  }
+
+  return message;
+}
+
 function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null {
   const nestedGroup = getNestedData(record.group);
   const groupRecord = isRecord(nestedGroup) ? nestedGroup : record;

@@ -4,13 +4,16 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { BackIcon } from "@/components/icons";
 import {
+  requestBuncheolDetail,
   requestBuncheolManagement,
   requestCloseBuncheol,
   requestDeliveryTrackingRegistration,
   requestPaymentConfirmation,
   requestPaymentExpiration,
+  type BuncheolDetail,
   type BuncheolManagementDetail,
   type BuncheolManagementOption,
+  type BuncheolManagementParticipant,
   type BuncheolManagementWinner,
 } from "@/lib/auth-api";
 import {
@@ -182,6 +185,127 @@ function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
   return "입금 대기";
 }
 
+function getParticipantsByOptionId(
+  participants: BuncheolManagementParticipant[],
+) {
+  return participants.reduce(
+    (groups, participant) => {
+      if (!participant.buncheolMemberId) {
+        return groups;
+      }
+
+      const optionParticipants = groups[participant.buncheolMemberId] ?? [];
+      optionParticipants.push(participant);
+      groups[participant.buncheolMemberId] = optionParticipants;
+
+      return groups;
+    },
+    {} as Record<string, BuncheolManagementParticipant[]>,
+  );
+}
+
+function getCurrentParticipant(
+  participants: BuncheolManagementParticipant[],
+) {
+  return (
+    participants.find((participant) =>
+      isPaymentAwaitingStatus(participant.status),
+    ) ??
+    participants.find((participant) =>
+      isPaymentConfirmedStatus(participant.status),
+    ) ??
+    participants[0] ??
+    null
+  );
+}
+
+function getWinnerFromParticipant(
+  participant: BuncheolManagementParticipant,
+): BuncheolManagementWinner {
+  const delivery = participant.delivery;
+
+  return {
+    bidAmount: participant.amount,
+    depositorName: participant.participantNickname,
+    deliveryId: delivery?.deliveryId,
+    deliveryStatus: delivery?.status,
+    participationId: participant.participationId,
+    paymentAmount: participant.amount,
+    paymentConfirmedAt: participant.confirmedAt ?? undefined,
+    paymentDueAt: participant.dueAt ?? undefined,
+    paymentStatus: participant.status,
+    receiverNickname: delivery?.receiverNickname,
+    receiverPhoneNumber: delivery?.receiverPhoneNumber,
+    shippingMethod: delivery?.shippingMethod,
+    storeName: delivery?.storeName,
+    trackingNumber: delivery?.trackingNumber,
+  };
+}
+
+function getManagementOptionsFromDetail(
+  managementDetail: BuncheolManagementDetail,
+  buncheolDetail: BuncheolDetail,
+): BuncheolManagementOption[] {
+  const participantsByOptionId = getParticipantsByOptionId(
+    managementDetail.participants,
+  );
+
+  return buncheolDetail.members.map((member) => {
+    const participants = participantsByOptionId[member.id] ?? [];
+    const currentParticipant = getCurrentParticipant(participants);
+    const highestParticipantAmount = participants.reduce(
+      (highestAmount, participant) =>
+        Math.max(highestAmount, participant.amount),
+      0,
+    );
+
+    return {
+      buncheolMemberId: member.id,
+      currentHighestBid:
+        highestParticipantAmount || member.currentBidAmount || member.bidMinPrice,
+      memberId: member.memberId,
+      memberImage: member.imageUrl,
+      memberName: member.name,
+      participants,
+      participationCount: Math.max(member.participantCount, participants.length),
+      winner: currentParticipant
+        ? getWinnerFromParticipant(currentParticipant)
+        : null,
+    };
+  });
+}
+
+async function requestHostedBuncheolManagement(
+  accessToken: string,
+  id: string,
+) {
+  const managementDetail = await requestBuncheolManagement(accessToken, id);
+
+  if (managementDetail.options.length > 0) {
+    return managementDetail;
+  }
+
+  try {
+    const buncheolDetail = await requestBuncheolDetail(accessToken, id);
+    const fallbackOptions = getManagementOptionsFromDetail(
+      managementDetail,
+      buncheolDetail,
+    );
+
+    if (fallbackOptions.length === 0) {
+      return managementDetail;
+    }
+
+    return {
+      ...managementDetail,
+      optionCount: managementDetail.optionCount || fallbackOptions.length,
+      options: fallbackOptions,
+    };
+  } catch {
+    return managementDetail;
+  }
+}
+
 export function HostedBuncheolManage({
   id,
   onBack,
@@ -232,7 +356,7 @@ export function HostedBuncheolManage({
       };
     }
 
-    requestBuncheolManagement(accessToken, id)
+    requestHostedBuncheolManagement(accessToken, id)
       .then((nextDetail) => {
         if (!isActive) {
           return;
@@ -312,7 +436,7 @@ export function HostedBuncheolManage({
         deliveryId,
         trackingNumber,
       );
-      const nextDetail = await requestBuncheolManagement(accessToken, id);
+      const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
       setDeliveryStates((current) => ({
@@ -349,7 +473,7 @@ export function HostedBuncheolManage({
       }
 
       await requestCloseBuncheol(accessToken, id);
-      const nextDetail = await requestBuncheolManagement(accessToken, id);
+      const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
       setMessage("분철 모집을 마감했어요.");
@@ -388,7 +512,7 @@ export function HostedBuncheolManage({
       await requestPaymentConfirmation(accessToken, participationId, {
         ignoreConflict: true,
       });
-      const nextDetail = await requestBuncheolManagement(accessToken, id);
+      const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
       setMessage("입금 확인이 완료됐어요.");
@@ -433,7 +557,7 @@ export function HostedBuncheolManage({
       }
 
       await requestPaymentExpiration(accessToken, participationId);
-      const nextDetail = await requestBuncheolManagement(accessToken, id);
+      const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
       setMessage("미입금 참여자를 만료 처리하고 차순위 참여자를 반영했어요.");
@@ -546,7 +670,12 @@ export function HostedBuncheolManage({
             </div>
 
             <div className="space-y-3">
-              {detail.options.map((option) => {
+              {detail.options.length === 0 ? (
+                <p className="rounded-[1rem] bg-[#f7f7f7] px-4 py-5 text-center text-[13px] font-semibold text-black/40">
+                  옵션 정보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.
+                </p>
+              ) : (
+                detail.options.map((option) => {
                 const optionId = option.buncheolMemberId;
                 const deliveryState = deliveryStates[optionId] ?? {
                   isShipped: false,
@@ -596,7 +725,10 @@ export function HostedBuncheolManage({
                     isPaymentDuePassed,
                 );
                 const shouldShowPaymentReport =
-                  hasPaymentReportValue || isPaymentConfirmed;
+                  Boolean(option.winner) &&
+                  (hasPaymentReportValue ||
+                    isPaymentConfirmed ||
+                    isPaymentAwaitingStatus(option.winner?.paymentStatus));
 
                 return (
                   <article
@@ -871,7 +1003,8 @@ export function HostedBuncheolManage({
                     </div>
                   </article>
                 );
-              })}
+                })
+              )}
             </div>
           </section>
         </div>

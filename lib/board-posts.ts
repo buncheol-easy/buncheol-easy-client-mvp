@@ -1,3 +1,8 @@
+import type {
+  InboxMessageDetail,
+  InboxMessageSummary,
+} from "@/lib/auth-api";
+
 export type BoardCategory = "notice" | "alert";
 
 export type BoardPost = {
@@ -15,6 +20,93 @@ export type BoardPost = {
     title: string;
   };
 };
+
+function getBoardCategoryFromInboxType(type: string | undefined): BoardCategory {
+  return type === "NOTICE" ? "notice" : "alert";
+}
+
+function formatBoardDate(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const today = new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(new Date());
+  const target = new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(date);
+
+  if (today === target) {
+    return "오늘";
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    day: "numeric",
+    month: "long",
+    timeZone: "Asia/Seoul",
+  }).format(date);
+}
+
+function isRecentlyCreated(value: string | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return Date.now() - date.getTime() < 1000 * 60 * 60 * 24 * 3;
+}
+
+function getBodyParagraphs(description: string | undefined, fallback: string) {
+  const paragraphs = (description ?? "")
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return paragraphs.length > 0 ? paragraphs : [fallback];
+}
+
+export function getBoardPostFromInboxMessage(
+  message: InboxMessageDetail | InboxMessageSummary,
+): BoardPost {
+  const detail = message as InboxMessageDetail;
+  const summary = detail.reference || detail.description || message.title;
+
+  return {
+    id: message.id,
+    body: getBodyParagraphs(detail.description, summary),
+    category: getBoardCategoryFromInboxType(message.type),
+    date: formatBoardDate(message.createdAt),
+    isNew: isRecentlyCreated(message.createdAt),
+    isPinned: message.pinned,
+    summary,
+    title: message.title,
+    action: detail.linkPath
+      ? {
+          href: detail.linkPath,
+          label: "관련 화면 보기",
+          title: detail.reference || "연결된 화면으로 이동",
+        }
+      : undefined,
+  };
+}
 
 export const boardPosts: BoardPost[] = [
   {
