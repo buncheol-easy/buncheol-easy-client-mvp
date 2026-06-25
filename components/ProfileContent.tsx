@@ -315,24 +315,26 @@ function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
 
 function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
   return (
-    !bid.paidAt &&
+    !isProfileBidPaymentConfirmed(bid) &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
       (isProfileBidClosed(bid, now) && bid.rank === 1)) &&
     !isProfileBidPaymentExpired(bid, now)
   );
 }
 
-function canRequestProfileBidPaymentReport(bid: ProfileBidEntry, now: Date) {
-  const isRequestableStatus =
-    !bid.participationStatus ||
-    bid.participationStatus === "ACTIVE_BID" ||
-    isPaymentWaitingParticipationStatus(bid.participationStatus);
-
-  return isRequestableStatus && isProfileBidPaymentReady(bid, now);
-}
-
 function isPaymentWaitingParticipationStatus(status: string | undefined) {
   return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
+}
+
+function isPaymentConfirmedParticipationStatus(status: string | undefined) {
+  return status === "CONFIRMED" || status === "PAYMENT_CONFIRMED";
+}
+
+function isProfileBidPaymentConfirmed(bid: ProfileBidEntry) {
+  return (
+    Boolean(bid.paidAt) ||
+    isPaymentConfirmedParticipationStatus(bid.participationStatus)
+  );
 }
 
 function isCancelledParticipationStatus(status: string | undefined) {
@@ -345,7 +347,7 @@ function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
     (isProfileBidClosed(bid, now) && bid.rank === 1);
 
   if (
-    bid.paidAt ||
+    isProfileBidPaymentConfirmed(bid) ||
     isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
   ) {
@@ -366,12 +368,68 @@ function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
 
 function isProfileBidTransferRequested(bid: ProfileBidEntry) {
   return (
-    !bid.paidAt && isTransferPaymentRequestedStatus(bid.participationStatus)
+    !isProfileBidPaymentConfirmed(bid) &&
+    isTransferPaymentRequestedStatus(bid.participationStatus)
   );
 }
 
+function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
+  if (isCancelledParticipationStatus(bid.participationStatus)) {
+    return "취소";
+  }
+
+  if (isProfileBidPaymentConfirmed(bid)) {
+    return "결제 완료";
+  }
+
+  if (isProfileBidTransferRequested(bid)) {
+    return "관리자 확인 중";
+  }
+
+  if (isProfileBidPaymentExpired(bid, now)) {
+    return "결제 만료";
+  }
+
+  if (isProfileBidPaymentReady(bid, now)) {
+    return "결제 대기";
+  }
+
+  return isProfileBidClosed(bid, now) ? "마감" : "참여중";
+}
+
+function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) {
+  if (isCancelledParticipationStatus(bid.participationStatus)) {
+    return "취소된 참여예요.";
+  }
+
+  if (isProfileBidPaymentConfirmed(bid)) {
+    return "관리자가 입금을 확인했어요.";
+  }
+
+  if (isProfileBidTransferRequested(bid)) {
+    return "관리자가 입금을 확인하고 있어요.";
+  }
+
+  if (isProfileBidPaymentExpired(bid, now)) {
+    return "입금 기한이 지나 참여가 취소됐을 수 있어요.";
+  }
+
+  if (isProfileBidPaymentReady(bid, now)) {
+    return `입금 기한까지 ${formatPaymentRemainingTime(
+      bid.deadline,
+      now,
+      bid.paymentDueAt,
+      bid.createdAt,
+    )}`;
+  }
+
+  return isProfileBidClosed(bid, now)
+    ? "마감된 분철이에요."
+    : "진행 중인 참여예요.";
+}
+
 function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
-  return Boolean(bid.deliveryId && bid.paidAt);
+  return Boolean(bid.deliveryId && isProfileBidPaymentConfirmed(bid));
 }
 
 function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
@@ -561,8 +619,6 @@ export function ProfileContent({
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
-  const [isPaymentReportConfirmOpen, setIsPaymentReportConfirmOpen] =
-    useState(false);
   const addressSyncRequestIdRef = useRef(0);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
@@ -649,6 +705,7 @@ export function ProfileContent({
           !isClosed ||
           isProfileBidPaymentReady(bid, now) ||
           isProfileBidTransferRequested(bid) ||
+          isProfileBidPaymentConfirmed(bid) ||
           shouldKeepProfileDeliveryReachable(bid)
         );
       }),
@@ -656,7 +713,7 @@ export function ProfileContent({
   );
   const shouldRefreshPaymentState = allBids.some(
     (bid) =>
-      bid.participationStatus === "ACTIVE_BID" && isProfileBidClosed(bid, now),
+      isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid),
   );
   const hostedProducts = useMemo(
     () =>
@@ -701,9 +758,6 @@ export function ProfileContent({
   const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
   const selectedPaymentBid =
     activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
-  const canSelectedPaymentBidReportPayment = selectedPaymentBid
-    ? canRequestProfileBidPaymentReport(selectedPaymentBid, now)
-    : false;
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
@@ -1226,7 +1280,6 @@ export function ProfileContent({
 
     setIsPaymentSheetOpen(false);
     setIsPaymentSheetClosing(false);
-    setIsPaymentReportConfirmOpen(false);
     setSelectedPaymentBidId(null);
   }
 
@@ -1563,7 +1616,6 @@ export function ProfileContent({
 
     setIsPaymentSheetClosing(true);
     setIsPaymentSheetEntered(false);
-    setIsPaymentReportConfirmOpen(false);
     paymentSheetCloseTimerRef.current = window.setTimeout(
       finishPaymentSheetClose,
       280,
@@ -1670,42 +1722,6 @@ export function ProfileContent({
       setPaymentCopyToast("");
       paymentCopyToastTimerRef.current = null;
     }, 1800);
-  }
-
-  function openPaymentReportConfirm() {
-    if (
-      !selectedPaymentBid ||
-      !canSelectedPaymentBidReportPayment ||
-      !selectedPaymentBankAccount
-    ) {
-      return;
-    }
-
-    setIsPaymentReportConfirmOpen(true);
-  }
-
-  function handleTransferPaymentRequest() {
-    if (
-      !selectedPaymentBid ||
-      !selectedPaymentBankAccount
-    ) {
-      return;
-    }
-
-    if (!canSelectedPaymentBidReportPayment) {
-      setIsPaymentReportConfirmOpen(false);
-      setUserProfileMessage(
-        "입금 안내를 확인할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
-      );
-      closePaymentSheet();
-      return;
-    }
-
-    setIsPaymentReportConfirmOpen(false);
-    setUserProfileMessage(
-      "입금 후 관리자가 확인하면 참여가 확정돼요.",
-    );
-    closePaymentSheet();
   }
 
   function commitDeliveryAddressState(nextState: StoredDeliveryAddressState) {
@@ -2225,9 +2241,8 @@ export function ProfileContent({
           ) : activeBids.length > 0 ? (
             <div className="mt-4 space-y-3">
               {activeBids.map((bid) => {
-                const isClosed = isProfileBidClosed(bid, now);
-                const isPaymentExpired = isProfileBidPaymentExpired(bid, now);
                 const isPaymentReady = isProfileBidPaymentReady(bid, now);
+                const isPaymentConfirmed = isProfileBidPaymentConfirmed(bid);
                 const isTransferRequested =
                   isProfileBidTransferRequested(bid);
                 return (
@@ -2293,17 +2308,7 @@ export function ProfileContent({
                                 상태
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {isTransferRequested
-                                  ? "입금 확인 중"
-                                  : isPaymentExpired
-                                  ? "입금 만료"
-                                  : isPaymentReady
-                                  ? "입금 대기"
-                                  : isClosed
-                                  ? bid.rank === 1
-                                    ? "참여"
-                                    : "마감"
-                                  : "참여중"}
+                                {getProfileBidPaymentStatusLabel(bid, now)}
                               </p>
                             </div>
                           </div>
@@ -2320,62 +2325,19 @@ export function ProfileContent({
                         <div className="mt-4 flex items-center justify-between gap-3">
                           <div
                             className={`min-w-0 text-[12px] font-medium ${
-                              isPaymentReady || isTransferRequested
+                              isPaymentReady ||
+                              isTransferRequested ||
+                              isPaymentConfirmed
                                 ? "text-black"
                                 : "text-black/35"
                             }`}
                           >
-                            {isClosed
-                              ? isTransferRequested
-                                ? (
-                                  <>
-                                    <p>입금 확인 중이에요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      판매자의 확인을 기다리고 있어요
-                                    </p>
-                                  </>
-                                )
-                                : isPaymentExpired
-                                ? (
-                                  <>
-                                    <p>입금 기한이 지났어요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      입금 기한이 지나 참여가 취소됐을 수 있어요
-                                    </p>
-                                  </>
-                                )
-                                : isPaymentReady
-                                ? (
-                                  <>
-                                    <p>입금이 필요해요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      입금 기한까지{" "}
-                                      {formatPaymentRemainingTime(
-                                        bid.deadline,
-                                        now,
-                                        bid.paymentDueAt,
-                                        bid.createdAt,
-                                      )}
-                                    </p>
-                                  </>
-                                )
-                                : <p>마감된 분철이에요</p>
-                              : isPaymentReady
-                              ? (
-                                <>
-                                  <p>입금이 필요해요</p>
-                                  <p className="mt-0.5 text-black/45">
-                                    입금 기한까지{" "}
-                                    {formatPaymentRemainingTime(
-                                      bid.deadline,
-                                      now,
-                                      bid.paymentDueAt,
-                                      bid.createdAt,
-                                    )}
-                                  </p>
-                                </>
-                              )
-                              : "입금 기한 내 미입금 시 자동 취소돼요"}
+                            <>
+                              <p>{getProfileBidPaymentStatusLabel(bid, now)}</p>
+                              <p className="mt-0.5 text-black/45">
+                                {getProfileBidPaymentStatusDescription(bid, now)}
+                              </p>
+                            </>
                           </div>
                           {isPaymentReady ? (
                             <button
@@ -2383,11 +2345,11 @@ export function ProfileContent({
                               onClick={() => openPaymentSheet(bid.id)}
                               type="button"
                             >
-                              입금 정보
+                              결제 정보
                             </button>
                           ) : null}
                         </div>
-                        {bid.deliveryId && bid.paidAt ? (
+                        {bid.deliveryId && isPaymentConfirmed ? (
                           <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -2635,7 +2597,7 @@ export function ProfileContent({
           }`}
         >
           <button
-            aria-label="입금 정보 닫기"
+            aria-label="결제 정보 닫기"
             className="absolute inset-0 cursor-default"
             onClick={closePaymentSheet}
             type="button"
@@ -2660,7 +2622,7 @@ export function ProfileContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  입금 정보
+                  결제 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
                   계좌와 금액을 확인한 뒤 기한 내 입금해 주세요.
@@ -2686,6 +2648,17 @@ export function ProfileContent({
               </p>
             </div>
 
+            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white">
+              <p className="text-[12px] font-semibold text-white/55">
+                현재 상태
+              </p>
+              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
+                {getProfileBidPaymentStatusLabel(selectedPaymentBid, now)}
+              </p>
+              <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
+                {getProfileBidPaymentStatusDescription(selectedPaymentBid, now)}
+              </p>
+            </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -2844,49 +2817,12 @@ export function ProfileContent({
 
             <button
               className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
-              disabled={
-                !selectedPaymentBankAccount ||
-                !canSelectedPaymentBidReportPayment
-              }
-              onClick={openPaymentReportConfirm}
+              disabled={!selectedPaymentBankAccount}
+              onClick={closePaymentSheet}
               type="button"
             >
-              입금 안내 확인
+              확인했어요
             </button>
-
-            {isPaymentReportConfirmOpen ? (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-t-[1.4rem] bg-black/35 px-5">
-                <section className="w-full rounded-[1.1rem] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-                  <h3 className="text-[22px] font-semibold tracking-[-0.06em]">
-                    입금 안내를 확인했나요?
-                  </h3>
-                  <p className="mt-2 text-[14px] font-medium leading-6 text-black/50">
-                    이 버튼은 입금 신고가 아니에요. 실제 송금 후 관리자가
-                    입금을 확인하면 참여가 확정돼요.
-                  </p>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    <button
-                      className="h-12 rounded-full bg-[#f5f5f5] text-[15px] font-semibold text-black/45"
-                      onClick={() => setIsPaymentReportConfirmOpen(false)}
-                      type="button"
-                    >
-                      계속 보기
-                    </button>
-                    <button
-                      className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-                      disabled={
-                        !selectedPaymentBankAccount ||
-                        !canSelectedPaymentBidReportPayment
-                      }
-                      onClick={handleTransferPaymentRequest}
-                      type="button"
-                    >
-                      확인했어요
-                    </button>
-                  </div>
-                </section>
-              </div>
-            ) : null}
           </section>
         </div>
       ) : null}

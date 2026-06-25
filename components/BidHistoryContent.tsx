@@ -286,24 +286,26 @@ function isBidRecordClosed(bid: BidRecord, now: Date) {
 
 function isBidRecordPaymentReady(bid: BidRecord, now: Date) {
   return (
-    !bid.paidAt &&
+    !isBidRecordPaymentConfirmed(bid) &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
       (isBidRecordClosed(bid, now) && bid.rank === 1)) &&
     !isBidRecordPaymentExpired(bid, now)
   );
 }
 
-function canRequestBidPaymentReport(bid: BidRecord, now: Date) {
-  const isRequestableStatus =
-    !bid.participationStatus ||
-    bid.participationStatus === "ACTIVE_BID" ||
-    isPaymentWaitingParticipationStatus(bid.participationStatus);
-
-  return isRequestableStatus && isBidRecordPaymentReady(bid, now);
-}
-
 function isPaymentWaitingParticipationStatus(status: string | undefined) {
   return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
+}
+
+function isPaymentConfirmedParticipationStatus(status: string | undefined) {
+  return status === "CONFIRMED" || status === "PAYMENT_CONFIRMED";
+}
+
+function isBidRecordPaymentConfirmed(bid: BidRecord) {
+  return (
+    Boolean(bid.paidAt) ||
+    isPaymentConfirmedParticipationStatus(bid.participationStatus)
+  );
 }
 
 function isCancelledParticipationStatus(status: string | undefined) {
@@ -320,7 +322,7 @@ function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
     (isBidRecordClosed(bid, now) && bid.rank === 1);
 
   if (
-    bid.paidAt ||
+    isBidRecordPaymentConfirmed(bid) ||
     isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
   ) {
@@ -341,8 +343,64 @@ function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
 
 function isBidRecordTransferRequested(bid: BidRecord) {
   return (
-    !bid.paidAt && isTransferPaymentRequestedStatus(bid.participationStatus)
+    !isBidRecordPaymentConfirmed(bid) &&
+    isTransferPaymentRequestedStatus(bid.participationStatus)
   );
+}
+
+function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
+  if (isCancelledParticipationStatus(bid.participationStatus)) {
+    return "취소";
+  }
+
+  if (isBidRecordPaymentConfirmed(bid)) {
+    return "결제 완료";
+  }
+
+  if (isBidRecordTransferRequested(bid)) {
+    return "관리자 확인 중";
+  }
+
+  if (isBidRecordPaymentExpired(bid, now)) {
+    return "결제 만료";
+  }
+
+  if (isBidRecordPaymentReady(bid, now)) {
+    return "결제 대기";
+  }
+
+  return isBidRecordClosed(bid, now) ? "마감" : "참여중";
+}
+
+function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
+  if (isCancelledParticipationStatus(bid.participationStatus)) {
+    return "취소된 참여예요.";
+  }
+
+  if (isBidRecordPaymentConfirmed(bid)) {
+    return "관리자가 입금을 확인했어요.";
+  }
+
+  if (isBidRecordTransferRequested(bid)) {
+    return "관리자가 입금을 확인하고 있어요.";
+  }
+
+  if (isBidRecordPaymentExpired(bid, now)) {
+    return "입금 기한이 지나 참여가 취소됐을 수 있어요.";
+  }
+
+  if (isBidRecordPaymentReady(bid, now)) {
+    return `입금 기한까지 ${formatPaymentRemainingTime(
+      bid.deadline,
+      now,
+      bid.paymentDueAt,
+      bid.createdAt,
+    )}`;
+  }
+
+  return isBidRecordClosed(bid, now)
+    ? "마감된 분철이에요."
+    : "진행 중인 참여예요.";
 }
 
 function isHostedProductClosed(product: ProductDetailItem, now: Date) {
@@ -569,8 +627,6 @@ export function BidHistoryContent({
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
-  const [isPaymentReportConfirmOpen, setIsPaymentReportConfirmOpen] =
-    useState(false);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
   const [paymentCopyToast, setPaymentCopyToast] = useState("");
@@ -621,12 +677,9 @@ export function BidHistoryContent({
   );
   const selectedPaymentBid =
     paymentBidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
-  const canSelectedPaymentBidReportPayment = selectedPaymentBid
-    ? canRequestBidPaymentReport(selectedPaymentBid, now)
-    : false;
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
-      bid.participationStatus === "ACTIVE_BID" && isBidRecordClosed(bid, now),
+      isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
   );
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
@@ -963,7 +1016,6 @@ export function BidHistoryContent({
 
     setIsPaymentSheetOpen(false);
     setIsPaymentSheetClosing(false);
-    setIsPaymentReportConfirmOpen(false);
     setSelectedPaymentBidId(null);
   }
 
@@ -1238,7 +1290,6 @@ export function BidHistoryContent({
 
     setIsPaymentSheetClosing(true);
     setIsPaymentSheetEntered(false);
-    setIsPaymentReportConfirmOpen(false);
     paymentSheetCloseTimerRef.current = window.setTimeout(
       finishPaymentSheetClose,
       280,
@@ -1403,42 +1454,6 @@ export function BidHistoryContent({
     }, 1800);
   }
 
-  function openPaymentReportConfirm() {
-    if (
-      !selectedPaymentBid ||
-      !canSelectedPaymentBidReportPayment ||
-      !selectedPaymentBankAccount
-    ) {
-      return;
-    }
-
-    setIsPaymentReportConfirmOpen(true);
-  }
-
-  function handleTransferPaymentRequest() {
-    if (
-      !selectedPaymentBid ||
-      !selectedPaymentBankAccount
-    ) {
-      return;
-    }
-
-    if (!canSelectedPaymentBidReportPayment) {
-      setIsPaymentReportConfirmOpen(false);
-      setHistoryMessage(
-        "입금 안내를 확인할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
-      );
-      closePaymentSheet();
-      return;
-    }
-
-    setIsPaymentReportConfirmOpen(false);
-    setHistoryMessage(
-      "입금 후 관리자가 확인하면 참여가 확정돼요.",
-    );
-    closePaymentSheet();
-  }
-
   useLayoutEffect(() => {
     const storedScrollTop = window.sessionStorage.getItem(
       BID_HISTORY_SCROLL_TOP_KEY,
@@ -1531,7 +1546,7 @@ export function BidHistoryContent({
             [
               ["all", "전체"],
               ["active", "진행 중"],
-              ["payment", "입금 대기"],
+              ["payment", "결제 확인"],
             ] as const
           ).map(([value, label]) => {
             const isActive = filter === value;
@@ -1624,6 +1639,7 @@ export function BidHistoryContent({
               );
               const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
+              const isPaymentConfirmed = isBidRecordPaymentConfirmed(bid);
               const isTransferRequested = isBidRecordTransferRequested(bid);
               return (
                 <article
@@ -1688,21 +1704,7 @@ export function BidHistoryContent({
                               상태
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {isCancelled
-                                ? "취소"
-                                : bid.paidAt
-                                ? "결제 완료"
-                                : isTransferRequested
-                                ? "입금 확인 중"
-                                : isPaymentExpired
-                                ? "입금 만료"
-                                : isPaymentReady
-                                ? "입금 대기"
-                                : isClosed
-                                ? bid.rank === 1
-                                  ? "참여"
-                                  : "마감"
-                                : "참여중"}
+                              {getBidRecordPaymentStatusLabel(bid, now)}
                             </p>
                           </div>
                         </div>
@@ -1725,60 +1727,53 @@ export function BidHistoryContent({
                           }`}
                         >
                           {isCancelled ? (
-                            <p>취소된 참여예요</p>
+                            <p>{getBidRecordPaymentStatusDescription(bid, now)}</p>
                           ) : isClosed ? (
-                            bid.paidAt ? (
+                            isPaymentConfirmed ? (
                               <>
-                                <p>결제가 완료되었어요</p>
+                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
                                 <p className="mt-0.5 text-black/45">
-                                  결제일 {bid.paidAt}
+                                  {bid.paidAt && bid.paidAt !== "결제 완료"
+                                    ? `결제일 ${bid.paidAt}`
+                                    : getBidRecordPaymentStatusDescription(
+                                        bid,
+                                        now,
+                                      )}
                                 </p>
                               </>
                             ) : isTransferRequested ? (
                               <>
-                                <p>입금 확인 중이에요</p>
+                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
                                 <p className="mt-0.5 text-black/45">
-                                  판매자의 확인을 기다리고 있어요
+                                  {getBidRecordPaymentStatusDescription(bid, now)}
                                 </p>
                               </>
                             ) : isPaymentExpired ? (
                               <>
-                                <p>입금 기한이 지났어요</p>
+                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
                                 <p className="mt-0.5 text-black/45">
-                                  입금 기한이 지나 참여가 취소됐을 수 있어요
+                                  {getBidRecordPaymentStatusDescription(bid, now)}
                                 </p>
                               </>
                             ) : isPaymentReady ? (
                               <>
-                                <p>입금이 필요해요</p>
+                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
                                 <p className="mt-0.5 text-black/45">
-                                  입금 기한까지{" "}
-                                  {formatPaymentRemainingTime(
-                                    bid.deadline,
-                                    now,
-                                    bid.paymentDueAt,
-                                    bid.createdAt,
-                                  )}
+                                  {getBidRecordPaymentStatusDescription(bid, now)}
                                 </p>
                               </>
                             ) : (
-                              <p>마감된 분철이에요</p>
+                              <p>{getBidRecordPaymentStatusDescription(bid, now)}</p>
                             )
                           ) : isPaymentReady ? (
                             <>
-                              <p>입금이 필요해요</p>
+                              <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
                               <p className="mt-0.5 text-black/45">
-                                입금 기한까지{" "}
-                                {formatPaymentRemainingTime(
-                                  bid.deadline,
-                                  now,
-                                  bid.paymentDueAt,
-                                  bid.createdAt,
-                                )}
+                                {getBidRecordPaymentStatusDescription(bid, now)}
                               </p>
                             </>
                           ) : (
-                            <p>진행 중인 참여예요</p>
+                            <p>{getBidRecordPaymentStatusDescription(bid, now)}</p>
                           )}
                         </div>
                         {isPaymentReady ? (
@@ -1787,11 +1782,11 @@ export function BidHistoryContent({
                             onClick={() => openPaymentSheet(bid.id)}
                             type="button"
                           >
-                            입금 정보
+                            결제 정보
                           </button>
                         ) : null}
                       </div>
-                      {bid.deliveryId && bid.paidAt ? (
+                      {bid.deliveryId && isPaymentConfirmed ? (
                         <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
@@ -1986,7 +1981,7 @@ export function BidHistoryContent({
           }`}
         >
           <button
-            aria-label="입금 정보 닫기"
+            aria-label="결제 정보 닫기"
             className="absolute inset-0 cursor-default"
             onClick={closePaymentSheet}
             type="button"
@@ -2011,7 +2006,7 @@ export function BidHistoryContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  입금 정보
+                  결제 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
                   계좌와 금액을 확인한 뒤 기한 내 입금해 주세요.
@@ -2037,6 +2032,17 @@ export function BidHistoryContent({
               </p>
             </div>
 
+            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white">
+              <p className="text-[12px] font-semibold text-white/55">
+                현재 상태
+              </p>
+              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
+                {getBidRecordPaymentStatusLabel(selectedPaymentBid, now)}
+              </p>
+              <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
+                {getBidRecordPaymentStatusDescription(selectedPaymentBid, now)}
+              </p>
+            </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -2195,49 +2201,12 @@ export function BidHistoryContent({
 
             <button
               className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
-              disabled={
-                !selectedPaymentBankAccount ||
-                !canSelectedPaymentBidReportPayment
-              }
-              onClick={openPaymentReportConfirm}
+              disabled={!selectedPaymentBankAccount}
+              onClick={closePaymentSheet}
               type="button"
             >
-              입금 안내 확인
+              확인했어요
             </button>
-
-            {isPaymentReportConfirmOpen ? (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-t-[1.4rem] bg-black/35 px-5">
-                <section className="w-full rounded-[1.1rem] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-                  <h3 className="text-[22px] font-semibold tracking-[-0.06em]">
-                    입금 안내를 확인했나요?
-                  </h3>
-                  <p className="mt-2 text-[14px] font-medium leading-6 text-black/50">
-                    이 버튼은 입금 신고가 아니에요. 실제 송금 후 관리자가
-                    입금을 확인하면 참여가 확정돼요.
-                  </p>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    <button
-                      className="h-12 rounded-full bg-[#f5f5f5] text-[15px] font-semibold text-black/45"
-                      onClick={() => setIsPaymentReportConfirmOpen(false)}
-                      type="button"
-                    >
-                      계속 보기
-                    </button>
-                    <button
-                      className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-                      disabled={
-                        !selectedPaymentBankAccount ||
-                        !canSelectedPaymentBidReportPayment
-                      }
-                      onClick={handleTransferPaymentRequest}
-                      type="button"
-                    >
-                      확인했어요
-                    </button>
-                  </div>
-                </section>
-              </div>
-            ) : null}
           </section>
         </div>
       ) : null}
