@@ -297,7 +297,7 @@ function isRecruitingStatus(status: string | undefined) {
 }
 
 function isDeletedProductStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "DELETED";
+  return status === "DELETED";
 }
 
 function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
@@ -658,15 +658,14 @@ export function ProfileContent({
     (bid) =>
       bid.participationStatus === "ACTIVE_BID" && isProfileBidClosed(bid, now),
   );
-  const activeHostedProducts = useMemo(
+  const hostedProducts = useMemo(
     () =>
       authState.isLoggedIn && apiHostedProducts
         ? apiHostedProducts.filter((product) =>
-            !isDeletedProductStatus(product.status) &&
-            isProfileHostedProductActive(product, now),
+            !isDeletedProductStatus(product.status),
           )
         : [],
-    [apiHostedProducts, authState.isLoggedIn, now],
+    [apiHostedProducts, authState.isLoggedIn],
   );
   const settlementAccount = useMemo(
     () => {
@@ -2431,16 +2430,16 @@ export function ProfileContent({
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                진행 중인 개최 분철
+                개최한 분철
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                지금 열려 있는 분철만 빠르게 확인해요.
+                마감 이후 결제 확인과 배송 준비까지 이어서 확인해요.
               </p>
             </div>
             <span className="shrink-0 text-[13px] font-semibold text-black/45">
               {isHostedProductsLoading
                 ? "확인 중"
-                : `${activeHostedProducts.length}개`}
+                : `${hostedProducts.length}개`}
             </span>
           </div>
 
@@ -2452,10 +2451,12 @@ export function ProfileContent({
 
           {isHostedProductsLoading ? (
             <ProfileListSkeleton />
-          ) : activeHostedProducts.length > 0 ? (
+          ) : hostedProducts.length > 0 ? (
             <div className="mt-4 space-y-3">
-              {activeHostedProducts.map((product) => {
+              {hostedProducts.map((product) => {
                 const isClosed = !isProfileHostedProductActive(product, now);
+                const isCancelled =
+                  product.status === "CANCELLED" || product.status === "CANCELED";
                 const optionCount =
                   product.optionCount ??
                   product.targetMembers?.length ??
@@ -2507,7 +2508,7 @@ export function ProfileContent({
                                 : "bg-black text-white"
                             }`}
                           >
-                            {isClosed ? "마감" : "모집중"}
+                            {isCancelled ? "취소" : isClosed ? "마감" : "모집중"}
                           </span>
                         </div>
 
@@ -2533,7 +2534,7 @@ export function ProfileContent({
                               상태
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {isClosed ? "정산 대기" : "진행중"}
+                              {isCancelled ? "취소" : isClosed ? "마감" : "진행중"}
                             </p>
                           </div>
                         </div>
@@ -2577,7 +2578,7 @@ export function ProfileContent({
               href="/upload"
             >
               <p className="text-[14px] font-semibold text-black/70">
-                진행 중인 개최 분철이 없습니다.
+                개최한 분철이 없습니다.
               </p>
               <p className="mt-1 text-[13px] font-medium text-black/40">
                 상품 등록으로 첫 분철을 열어보세요.

@@ -310,6 +310,10 @@ function isCancelledParticipationStatus(status: string | undefined) {
   return status === "CANCELLED" || status === "CANCELED";
 }
 
+function isDeletedProductStatus(status: string | undefined) {
+  return status === "DELETED";
+}
+
 function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
   const isPaymentCandidate =
     isPaymentWaitingParticipationStatus(bid.participationStatus) ||
@@ -984,7 +988,10 @@ export function BidHistoryContent({
       .filter((bid) => {
         const isClosed = isBidRecordClosed(bid, now);
 
-        if (isCancelledParticipationStatus(bid.participationStatus)) {
+        if (
+          filter !== "all" &&
+          isCancelledParticipationStatus(bid.participationStatus)
+        ) {
           return false;
         }
 
@@ -1017,6 +1024,10 @@ export function BidHistoryContent({
     return [...sourceProducts]
       .filter((product) => {
         const isClosed = isHostedProductClosed(product, now);
+
+        if (isDeletedProductStatus(product.status)) {
+          return false;
+        }
 
         if (hostedFilter === "active") {
           return !isClosed;
@@ -1608,6 +1619,9 @@ export function BidHistoryContent({
             ) : null}
             {!isBidRecordsLoading && records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
+              const isCancelled = isCancelledParticipationStatus(
+                bid.participationStatus,
+              );
               const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
               const isTransferRequested = isBidRecordTransferRequested(bid);
@@ -1674,7 +1688,9 @@ export function BidHistoryContent({
                               상태
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {bid.paidAt
+                              {isCancelled
+                                ? "취소"
+                                : bid.paidAt
                                 ? "결제 완료"
                                 : isTransferRequested
                                 ? "입금 확인 중"
@@ -1708,7 +1724,9 @@ export function BidHistoryContent({
                               : "text-black/35"
                           }`}
                         >
-                          {isClosed ? (
+                          {isCancelled ? (
+                            <p>취소된 참여예요</p>
+                          ) : isClosed ? (
                             bid.paidAt ? (
                               <>
                                 <p>결제가 완료되었어요</p>
@@ -1827,6 +1845,8 @@ export function BidHistoryContent({
               ) : null}
               {!isHostedProductsLoading && hostedRecords.map((product) => {
                 const isClosed = isHostedProductClosed(product, now);
+                const isCancelled =
+                  product.status === "CANCELLED" || product.status === "CANCELED";
                 const optionCount =
                   product.optionCount ??
                   product.targetMembers?.length ??
@@ -1878,7 +1898,7 @@ export function BidHistoryContent({
                                 : "bg-black text-white"
                             }`}
                           >
-                            {isClosed ? "마감" : "모집중"}
+                            {isCancelled ? "취소" : isClosed ? "마감" : "모집중"}
                           </span>
                         </div>
 
@@ -1917,7 +1937,9 @@ export function BidHistoryContent({
                           }`}
                         >
                           {isClosed
-                            ? "마감된 개최 분철이에요."
+                            ? isCancelled
+                              ? "취소된 개최 분철이에요."
+                              : "마감된 개최 분철이에요."
                             : "진행 중인 개최 분철이에요."}
                         </p>
                       </div>

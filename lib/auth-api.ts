@@ -2425,6 +2425,10 @@ function isDeletedBuncheolStatus(status: string | undefined) {
   return status === "CANCELLED" || status === "DELETED";
 }
 
+function isRemovedBuncheolStatus(status: string | undefined) {
+  return status === "DELETED";
+}
+
 function getToneFromId(id: string) {
   const tones = [
     "from-black via-zinc-800 to-zinc-500",
@@ -2661,7 +2665,10 @@ export async function requestBuncheols(
   const summaries = getBuncheolList(body)
     .filter(isRecord)
     .map(getBuncheolSummaryFromRecord)
-    .filter((item): item is BuncheolSummary => item !== null);
+    .filter(
+      (item): item is BuncheolSummary =>
+        item !== null && !isDeletedBuncheolStatus(item.status),
+    );
 
   return enrichBuncheolSummariesWithThumbnails(accessToken, summaries);
 }
@@ -2704,7 +2711,10 @@ export async function requestAllBuncheols(
     const pageSummaries = getBuncheolList(body)
       .filter(isRecord)
       .map(getBuncheolSummaryFromRecord)
-      .filter((item): item is BuncheolSummary => item !== null);
+      .filter(
+        (item): item is BuncheolSummary =>
+          item !== null && !isDeletedBuncheolStatus(item.status),
+      );
 
     allSummaries.push(...pageSummaries);
 
@@ -3290,7 +3300,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
 
   return enrichBuncheolSummariesWithThumbnails(
     accessToken,
-    buncheols.filter((buncheol) => !isDeletedBuncheolStatus(buncheol.status)),
+    buncheols.filter((buncheol) => !isRemovedBuncheolStatus(buncheol.status)),
   );
 }
 
