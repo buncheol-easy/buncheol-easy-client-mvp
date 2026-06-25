@@ -411,24 +411,6 @@ export function ProductDetail({
     );
   }, [selectedCheckoutItems]);
 
-  const myBidItems = auctionOptions
-    .map((option) => {
-      const amount = myBids[option.id] ?? 0;
-
-      if (amount <= 0) {
-        return null;
-      }
-
-      return {
-        amount,
-        option,
-      };
-    })
-    .filter(
-      (item): item is { amount: number; option: ProductOption } =>
-        item !== null,
-    );
-
   const sortedAuctionOptions = [...auctionOptions].sort((left, right) => {
     const leftHasBid = Boolean(myBids[left.id]);
     const rightHasBid = Boolean(myBids[right.id]);
@@ -663,9 +645,9 @@ export function ProductDetail({
     if (!canBidProduct) {
       window.alert(
         isHostedProduct
-          ? "내가 연 분철에는 참여할 수 없어요."
+          ? "내가 연 분철은 구매할 수 없어요."
           : isDeadlinePassed
-            ? "참여 기한이 지나 구매할 수 없어요."
+            ? "구매 기한이 지나 구매할 수 없어요."
             : "지금은 구매할 수 없는 분철이에요.",
       );
       return;
@@ -751,9 +733,9 @@ export function ProductDetail({
     if (!canBidProduct) {
       window.alert(
         isHostedProduct
-          ? "내가 연 분철에는 참여할 수 없어요."
+          ? "내가 연 분철은 구매할 수 없어요."
           : isDeadlinePassed
-          ? "참여 기한이 지나 구매할 수 없어요."
+          ? "구매 기한이 지나 구매할 수 없어요."
           : "지금은 구매할 수 없는 분철이에요.",
       );
       return;
@@ -944,7 +926,7 @@ export function ProductDetail({
         if (isHostParticipationBlocked) {
           setIsHostedByMeFromApi(true);
           setCheckoutError(
-            "내가 연 분철에는 참여할 수 없어요. 구매 계정으로 전환해 주세요.",
+            "내가 연 분철은 구매할 수 없어요. 구매 계정으로 전환해 주세요.",
           );
         } else if (isForbidden) {
           setCheckoutError(
@@ -1613,9 +1595,20 @@ export function ProductDetail({
                 </p>
               </div>
               <div className="col-span-2 rounded-[0.9rem] border border-black/10 px-4 py-3">
-                <p className="text-[12px] font-medium text-black/45">참여 기한</p>
+                <p className="text-[12px] font-medium text-black/45">구매 기한</p>
                 <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                   {product.deadline}
+                </p>
+              </div>
+              <div className="col-span-2 rounded-[0.9rem] border border-black/10 px-4 py-3">
+                <p className="text-[12px] font-medium text-black/45">
+                  분철 유지 기준
+                </p>
+                <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
+                  {typeof product.minHeadcount === "number" &&
+                  product.minHeadcount > 0
+                    ? `${product.minHeadcount.toLocaleString("ko-KR")}명 이상`
+                    : "개최자 확인"}
                 </p>
               </div>
             </div>
@@ -1653,56 +1646,8 @@ export function ProductDetail({
             </div>
 
             <div className="mt-8 border-t border-black/10 pt-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
-                  내 참여 현황
-                </h2>
-                <span className="text-[13px] font-medium text-black/45">
-                  {myBidItems.length}개 참여
-                </span>
-              </div>
-
-              {myBidItems.length > 0 ? (
-                <div className="mt-4 grid gap-3">
-                  {myBidItems.map(({ amount, option }) => (
-                    <div
-                      key={option.id}
-                      className="rounded-[0.9rem] border border-black/10 px-4 py-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <OptionAvatar option={option} size="sm" />
-                          <div className="min-w-0">
-                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                              {option.label}
-                            </p>
-                            <p className="mt-1 text-[13px] font-medium text-black/45">
-                              참여 완료
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="shrink-0 text-right">
-                          <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                            {formatPrice(amount)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-5">
-                  <p className="text-[14px] font-medium tracking-[-0.04em] text-black/45">
-                    아직 참여한 옵션이 없습니다.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-8 border-t border-black/10 pt-6">
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
-                옵션별 가격
+                옵션 선택
               </h2>
               <div className="mt-4 grid gap-3">
                 {auctionOptions.map((option) => (
@@ -1717,9 +1662,6 @@ export function ProductDetail({
                           {option.label}
                         </p>
                       </div>
-                      <span className="shrink-0 text-[12px] font-medium text-black/45">
-                        참여 {option.participantCount}명
-                      </span>
                     </div>
                     <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
                       <p className="text-[11px] font-medium text-black/35">
@@ -1748,7 +1690,7 @@ export function ProductDetail({
               : isBidUnavailable
                 ? "구매하기"
               : isHostedProduct
-                ? "내가 연 분철에는 참여할 수 없어요"
+                ? "내가 연 분철은 구매할 수 없어요"
               : canBidProduct
                 ? "구매하기"
               : "마감된 분철이에요"}
@@ -1835,14 +1777,14 @@ export function ProductDetail({
                                   </p>
                                   {myBid ? (
                                     <span className="shrink-0 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
-                                      참여 완료
+                                      구매 진행 중
                                     </span>
                                   ) : null}
                                 </div>
                                 <p className="mt-1 text-[13px] font-medium tracking-[-0.04em] text-black/45">
                                   {myBid
-                                    ? `참여 금액 ${formatPrice(myBid)}`
-                                    : `참여 ${option.participantCount}명`}
+                                    ? `구매 금액 ${formatPrice(myBid)}`
+                                    : "구매 가능"}
                                 </p>
                               </div>
                             </div>
@@ -1868,7 +1810,7 @@ export function ProductDetail({
                             onClick={() => togglePurchaseOption(option.id)}
                             type="button"
                           >
-                            {myBid ? "참여 완료" : isSelected ? "선택 해제" : "선택"}
+                            {myBid ? "구매 진행 중" : isSelected ? "선택 해제" : "선택"}
                           </button>
                         </div>
                       );
