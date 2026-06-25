@@ -25,8 +25,12 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 
-type AdminPaymentFilter = "pending" | "confirmed" | "all";
-type AdminPaymentStatus = "AWAITING_CONFIRMATION" | "CONFIRMED" | "OTHER";
+type AdminPaymentStatus =
+  | "AWAITING_CONFIRMATION"
+  | "CANCELLED"
+  | "CONFIRMED"
+  | "OTHER"
+  | "REFUND_REQUIRED";
 type VerificationKey = "amount" | "participant";
 type VerificationState = Record<VerificationKey, boolean>;
 
@@ -43,6 +47,7 @@ const adminHostTestAccountId = "user1";
 type AdminPaymentRecord = {
   amount: number;
   buncheolId: string;
+  buncheolStatus: string;
   buncheolTitle: string;
   confirmedAt?: string | null;
   delivery?: BuncheolManagementDelivery | null;
@@ -54,12 +59,6 @@ type AdminPaymentRecord = {
   rawStatus: string;
   refundAccount?: BankAccountInfo | null;
   status: AdminPaymentStatus;
-};
-
-const filterLabels: Record<AdminPaymentFilter, string> = {
-  all: "전체",
-  confirmed: "확인 완료",
-  pending: "확인 대기",
 };
 
 function formatPrice(value: number) {
@@ -85,8 +84,10 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function getStatusLabel(status: AdminPaymentStatus) {
+  if (status === "REFUND_REQUIRED") return "환불 필요";
   if (status === "CONFIRMED") return "입금 확인 완료";
   if (status === "AWAITING_CONFIRMATION") return "입금 확인 필요";
+  if (status === "CANCELLED") return "취소됨";
   return "확인 제외";
 }
 
@@ -106,12 +107,41 @@ function isConfirmedPaymentStatus(status: string) {
   return ["CONFIRMED", "PAYMENT_CONFIRMED"].includes(status);
 }
 
-function normalizePaymentStatus(status: string): AdminPaymentStatus {
+function isCancelledStatus(status: string) {
+  return status === "CANCELLED" || status === "CANCELED";
+}
+
+function normalizePaymentStatus(
+  status: string,
+  buncheolStatus = "",
+): AdminPaymentStatus {
   const normalizedStatus = status.trim().toUpperCase();
+  const normalizedBuncheolStatus = buncheolStatus.trim().toUpperCase();
+
+  if (
+    isCancelledStatus(normalizedBuncheolStatus) &&
+    isConfirmedPaymentStatus(normalizedStatus)
+  ) {
+    return "REFUND_REQUIRED";
+  }
 
   if (isConfirmedPaymentStatus(normalizedStatus)) return "CONFIRMED";
   if (isAwaitingPaymentStatus(normalizedStatus)) return "AWAITING_CONFIRMATION";
+  if (isCancelledStatus(normalizedStatus)) return "CANCELLED";
   return "OTHER";
+}
+
+function getBuncheolStatusLabel(status: string) {
+  const normalizedStatus = status.trim().toUpperCase();
+  const labels: Record<string, string> = {
+    CANCELLED: "취소",
+    CANCELED: "취소",
+    CONFIRMED: "진행확정",
+    FINISHED: "완료",
+    RECRUITING: "모집중",
+  };
+
+  return labels[normalizedStatus] ?? (status || "-");
 }
 
 function getShippingMethodLabel(method: string | undefined) {
@@ -267,6 +297,7 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
     (participant): AdminPaymentRecord => ({
       amount: participant.amount,
       buncheolId: detail.id,
+      buncheolStatus: detail.status,
       buncheolTitle: detail.title,
       confirmedAt: participant.confirmedAt,
       delivery: participant.delivery,
@@ -277,7 +308,7 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
       paymentDueAt: participant.dueAt,
       rawStatus: participant.status,
       refundAccount: participant.refundAccount,
-      status: normalizePaymentStatus(participant.status),
+      status: normalizePaymentStatus(participant.status, detail.status),
     }),
   );
 
@@ -295,6 +326,7 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
     records.push({
       amount: winner.paymentAmount ?? winner.bidAmount ?? 0,
       buncheolId: detail.id,
+      buncheolStatus: detail.status,
       buncheolTitle: detail.title,
       confirmedAt: winner.paymentConfirmedAt,
       delivery: toDeliveryFromWinner(option),
@@ -306,7 +338,7 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
       paymentDueAt: winner.paymentDueAt,
       rawStatus,
       refundAccount: null,
-      status: normalizePaymentStatus(rawStatus),
+      status: normalizePaymentStatus(rawStatus, detail.status),
     });
 
     return records;
@@ -321,20 +353,28 @@ function StatusBadge({
   status: AdminPaymentStatus;
 }) {
   const label = compact
-    ? status === "CONFIRMED"
-      ? "완료"
-      : status === "AWAITING_CONFIRMATION"
-        ? "대기"
-        : "기타"
+    ? status === "REFUND_REQUIRED"
+      ? "환불"
+      : status === "CONFIRMED"
+        ? "완료"
+        : status === "AWAITING_CONFIRMATION"
+          ? "대기"
+          : status === "CANCELLED"
+            ? "취소"
+            : "기타"
     : getStatusLabel(status);
 
   return (
     <span
       className={`inline-flex h-8 items-center whitespace-nowrap rounded-full px-3 text-[12px] font-semibold ${
-        status === "CONFIRMED"
+        status === "REFUND_REQUIRED"
+          ? "bg-[#fff1f0] text-[#c03131]"
+          : status === "CONFIRMED"
           ? "bg-[#e8f5ef] text-[#237152]"
           : status === "AWAITING_CONFIRMATION"
             ? "bg-black text-white"
+            : status === "CANCELLED"
+              ? "bg-[#f1f1f1] text-black/55"
             : "bg-[#f1f1f1] text-black/45"
       }`}
     >
@@ -349,7 +389,6 @@ export function AdminPaymentsDashboard() {
     getInitialAuthState,
   );
   const [records, setRecords] = useState<AdminPaymentRecord[]>([]);
-  const [filter, setFilter] = useState<AdminPaymentFilter>("pending");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedParticipationId, setSelectedParticipationId] = useState("");
   const [verificationByParticipation, setVerificationByParticipation] =
@@ -444,14 +483,9 @@ export function AdminPaymentsDashboard() {
     const keyword = searchKeyword.trim().toLowerCase();
 
     return records
-      .filter((record) => {
-        if (filter === "pending") return record.status === "AWAITING_CONFIRMATION";
-        if (filter === "confirmed") return record.status === "CONFIRMED";
-        return true;
-      })
       .filter((record) => !keyword || getSearchText(record).includes(keyword))
       .sort((left, right) => getRecordSortTime(right) - getRecordSortTime(left));
-  }, [filter, records, searchKeyword]);
+  }, [records, searchKeyword]);
 
   const selectedRecord =
     records.find(
@@ -465,6 +499,9 @@ export function AdminPaymentsDashboard() {
   );
   const confirmedRecords = records.filter(
     (record) => record.status === "CONFIRMED",
+  );
+  const refundRecords = records.filter(
+    (record) => record.status === "REFUND_REQUIRED",
   );
   const pendingAmount = pendingRecords.reduce(
     (sum, record) => sum + record.amount,
@@ -540,7 +577,6 @@ export function AdminPaymentsDashboard() {
       await requestPaymentConfirmation(accessToken, record.participationId, {
         ignoreConflict: true,
       });
-      setFilter("confirmed");
       await loadRecords("입금 확인이 완료됐어요.");
     } catch (error: unknown) {
       setMessage(
@@ -640,6 +676,9 @@ export function AdminPaymentsDashboard() {
                   완료 <strong className="ml-1 text-white">{confirmedRecords.length}</strong>
                 </span>
                 <span className="whitespace-nowrap">
+                  환불 <strong className="ml-1 text-white">{refundRecords.length}</strong>
+                </span>
+                <span className="whitespace-nowrap">
                   전체 <strong className="ml-1 text-white">{records.length}</strong>
                 </span>
               </div>
@@ -656,23 +695,8 @@ export function AdminPaymentsDashboard() {
         <section className="grid min-h-[640px] gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-[1.15rem] bg-white p-3.5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex rounded-full bg-[#f4f6f8] p-1">
-                {(Object.keys(filterLabels) as AdminPaymentFilter[]).map(
-                  (nextFilter) => (
-                    <button
-                      className={`h-9 rounded-full px-4 text-[13px] font-semibold ${
-                        filter === nextFilter
-                          ? "bg-black text-white"
-                          : "text-black/45"
-                      }`}
-                      key={nextFilter}
-                      onClick={() => setFilter(nextFilter)}
-                      type="button"
-                    >
-                      {filterLabels[nextFilter]}
-                    </button>
-                  ),
-                )}
+              <div className="rounded-full bg-[#f4f6f8] px-4 py-2 text-[13px] font-semibold text-black/45">
+                결제 건 전체 표시
               </div>
               <input
                 className="h-10 w-full rounded-full border border-black/10 bg-white px-4 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black md:w-[20rem]"
@@ -886,7 +910,9 @@ export function AdminPaymentsDashboard() {
                     {[
                       ["분철", selectedRecord.buncheolTitle],
                       ["옵션", selectedRecord.memberName],
-                      ["상태", selectedRecord.rawStatus || getStatusLabel(selectedRecord.status)],
+                      ["운영 상태", getStatusLabel(selectedRecord.status)],
+                      ["분철 상태", getBuncheolStatusLabel(selectedRecord.buncheolStatus)],
+                      ["결제 상태", selectedRecord.rawStatus || "-"],
                       ["기한", formatDateTime(selectedRecord.paymentDueAt)],
                       ["확인", formatDateTime(selectedRecord.confirmedAt)],
                       ["환불", getRefundAccountLabel(selectedRecord.refundAccount)],
@@ -901,6 +927,24 @@ export function AdminPaymentsDashboard() {
                     ))}
                   </dl>
                 </section>
+
+                {selectedRecord.status === "REFUND_REQUIRED" ? (
+                  <section className="mt-2.5 rounded-[1rem] border border-[#ffd4d0] bg-[#fff8f7] p-3">
+                    <p className="text-[15px] font-semibold text-[#c03131]">
+                      환불 확인 필요
+                    </p>
+                    <p className="mt-1 text-[12px] font-semibold leading-5 text-[#c03131]/70">
+                      취소된 분철에 입금 확인이 완료된 건이에요. 환불 계좌를 확인해
+                      반환 처리를 진행해 주세요.
+                    </p>
+                    <div className="mt-3 rounded-[0.8rem] bg-white px-3 py-2 text-[13px] font-semibold">
+                      <p className="text-[12px] text-black/40">환불 계좌</p>
+                      <p className="mt-0.5 truncate">
+                        {getRefundAccountLabel(selectedRecord.refundAccount)}
+                      </p>
+                    </div>
+                  </section>
+                ) : null}
 
                 {selectedRecord.status === "CONFIRMED" ? (
                   <section className="mt-2.5 rounded-[1rem] border border-black/10 p-3">
