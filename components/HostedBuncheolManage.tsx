@@ -6,7 +6,6 @@ import { BackIcon } from "@/components/icons";
 import {
   requestBuncheolDetail,
   requestBuncheolManagement,
-  requestCloseBuncheol,
   requestDeliveryTrackingRegistration,
   requestPaymentConfirmation,
   type BuncheolDetail,
@@ -62,16 +61,6 @@ function formatKoreaDateTime(value: string | undefined) {
   }).format(date);
 }
 
-function isClosedBuncheol(detail: BuncheolManagementDetail) {
-  if (detail.status && detail.status !== "RECRUITING") {
-    return true;
-  }
-
-  const deadline = new Date(detail.deadline);
-
-  return !Number.isNaN(deadline.getTime()) && deadline.getTime() <= Date.now();
-}
-
 function getHighestBidAmount(option: BuncheolManagementOption) {
   return (
     option.currentHighestBid ??
@@ -115,16 +104,35 @@ function hasPaymentReport(option: BuncheolManagementOption) {
 
 function getBuncheolStatusLabel(detail: BuncheolManagementDetail) {
   if (detail.status === "CONFIRMED") {
-    return "진행확정";
+    return "\uc9c4\ud589 \ud655\uc815";
   }
 
   if (detail.status === "CANCELLED" || detail.status === "CANCELED") {
-    return "취소됨";
+    return "\ucde8\uc18c\ub428";
   }
 
-  return isClosedBuncheol(detail) ? "마감" : "모집중";
+  if (detail.status === "CLOSED") {
+    return "\ubaa8\uc9d1 \uc885\ub8cc";
+  }
+
+  if (detail.status === "RECRUITING") {
+    return "\ubaa8\uc9d1\uc911";
+  }
+
+  return detail.status;
 }
 
+function getBuncheolStatusClass(detail: BuncheolManagementDetail) {
+  if (detail.status === "CONFIRMED") {
+    return "bg-black text-white";
+  }
+
+  if (detail.status === "CANCELLED" || detail.status === "CANCELED") {
+    return "bg-[#f1f1f1] text-black/45";
+  }
+
+  return "bg-[#f1f1f1] text-black/55";
+}
 function isPastDateTime(value: string | undefined) {
   if (!value) {
     return false;
@@ -336,7 +344,6 @@ export function HostedBuncheolManage({
   const [registeringTrackingId, setRegisteringTrackingId] = useState<
     string | null
   >(null);
-  const [isClosingBuncheol, setIsClosingBuncheol] = useState(false);
   const [deliveryStates, setDeliveryStates] = useState<
     Record<string, DeliveryState>
   >({});
@@ -392,7 +399,6 @@ export function HostedBuncheolManage({
     };
   }, [authState.accessToken, authState.isLoggedIn, id, router]);
 
-  const isClosed = detail ? isClosedBuncheol(detail) : false;
   const memberCount = detail?.optionCount ?? detail?.options.length ?? 0;
   const participantCount =
     detail?.totalParticipationCount ??
@@ -401,6 +407,19 @@ export function HostedBuncheolManage({
       0,
     ) ??
     0;
+  const confirmedCount =
+    detail?.confirmedCount ??
+    detail?.participants.filter((participant) =>
+      isPaymentConfirmedStatus(participant.status),
+    ).length ??
+    detail?.options.filter((option) =>
+      isPaymentConfirmedStatus(option.winner?.paymentStatus),
+    ).length ??
+    0;
+  const minHeadcount = detail?.minHeadcount ?? 0;
+  const confirmedProgressLabel = minHeadcount
+    ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
+    : `${confirmedCount}\uba85`;
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -464,36 +483,6 @@ export function HostedBuncheolManage({
       );
     } finally {
       setRegisteringTrackingId(null);
-    }
-  }
-
-  async function closeBuncheol() {
-    if (isClosed || isClosingBuncheol) {
-      return;
-    }
-
-    setIsClosingBuncheol(true);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestCloseBuncheol(accessToken, id);
-      const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
-
-      setDetail(nextDetail);
-      setMessage("분철 모집을 마감했어요.");
-    } catch (error: unknown) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "분철 모집을 마감하지 못했어요.",
-      );
-    } finally {
-      setIsClosingBuncheol(false);
     }
   }
 
@@ -587,41 +576,51 @@ export function HostedBuncheolManage({
                 </p>
               </div>
               <span
-                className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${
-                  isClosed ? "bg-[#f1f1f1] text-black/55" : "bg-black text-white"
-                }`}
+                className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${getBuncheolStatusClass(
+                  detail,
+                )}`}
               >
                 {getBuncheolStatusLabel(detail)}
               </span>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-                <p className="text-[11px] font-medium text-black/35">옵션</p>
-                <p className="mt-1 text-[15px] font-semibold">{memberCount}개</p>
+                <p className="text-[11px] font-medium text-black/35">{"\uc635\uc158"}</p>
+                <p className="mt-1 text-[15px] font-semibold">
+                  {`${memberCount}\uac1c`}
+                </p>
               </div>
               <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-                <p className="text-[11px] font-medium text-black/35">참여</p>
+                <p className="text-[11px] font-medium text-black/35">
+                  {"\ucd5c\uc18c \uc9c4\ud589 \uc778\uc6d0"}
+                </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {participantCount}명
+                  {minHeadcount ? `${minHeadcount}\uba85` : "-"}
+                </p>
+              </div>
+              <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">{"\ucc38\uc5ec"}</p>
+                <p className="mt-1 text-[15px] font-semibold">
+                  {`${participantCount}\uba85`}
+                </p>
+              </div>
+              <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">
+                  {"\uacb0\uc81c \ud655\uc778"}
+                </p>
+                <p className="mt-1 text-[15px] font-semibold">
+                  {confirmedProgressLabel}
                 </p>
               </div>
               <div className="col-span-2 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-                <p className="text-[11px] font-medium text-black/35">마감</p>
+                <p className="text-[11px] font-medium text-black/35">
+                  {"\ubaa8\uc9d1 \uae30\ud55c"}
+                </p>
                 <p className="mt-1 whitespace-nowrap text-[15px] font-semibold tracking-[-0.04em]">
                   {formatKoreaDateTime(detail.deadline)}
                 </p>
               </div>
             </div>
-            {!isClosed ? (
-              <button
-                className="mt-3 h-11 w-full rounded-full bg-black text-[14px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/15 disabled:text-black/35"
-                disabled={isClosingBuncheol}
-                onClick={() => void closeBuncheol()}
-                type="button"
-              >
-                {isClosingBuncheol ? "마감 처리 중" : "분철 수동 마감"}
-              </button>
-            ) : null}
           </section>
 
           <section className="mt-6">
