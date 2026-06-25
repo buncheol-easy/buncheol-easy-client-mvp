@@ -22,6 +22,7 @@ import {
   requestUserProfile,
   type BankAccountInfo,
 } from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
   getDeliveryAddressStateFromSyncedAddresses,
@@ -525,10 +526,13 @@ export function ProductDetail({
       !authState.isLoggedIn ||
       !authState.accessToken
     ) {
+      setIsHostedByMeFromApi(product.isHostedByMe === true);
       return;
     }
 
     let isCancelled = false;
+
+    setIsHostedByMeFromApi(product.isHostedByMe === true);
 
     requestBuncheolDetail(authState.accessToken, buncheolId)
       .then((detail) => {
@@ -548,6 +552,7 @@ export function ProductDetail({
     authState.isLoggedIn,
     buncheolId,
     isPublicPreview,
+    product.isHostedByMe,
     product.isApiProduct,
   ]);
 
@@ -649,9 +654,9 @@ export function ProductDetail({
     setIsBidSubmitPending(true);
 
     if (product.isApiProduct) {
-      const accessToken = authState.accessToken;
+      const accessToken = await getFreshAccessToken();
 
-      if (!authState.isLoggedIn || !accessToken) {
+      if (!accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
         router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
         return;
@@ -744,9 +749,9 @@ export function ProductDetail({
     let checkoutHostBankAccount: BankAccountInfo | null = null;
 
     if (product.isApiProduct) {
-      const accessToken = authState.accessToken;
+      const accessToken = await getFreshAccessToken();
 
-      if (!authState.isLoggedIn || !accessToken) {
+      if (!accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
         router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
         return;
