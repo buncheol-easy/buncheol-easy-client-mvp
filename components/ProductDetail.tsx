@@ -440,7 +440,7 @@ export function ProductDetail({
       ? []
       : [{ name: product.courier, price: "판매자 안내" }]);
   const estimatedShippingFee = priceToNumber(shippingMethods[0]?.price ?? "");
-  const estimatedShippingAmount = estimatedShippingFee * activeBidCount;
+  const estimatedShippingAmount = activeBidCount > 0 ? estimatedShippingFee : 0;
   const estimatedCheckoutTotal = totalBidAmount + estimatedShippingAmount;
   const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
     product.shippingMethods,
@@ -1913,6 +1913,32 @@ export function ProductDetail({
                             ? ` 외 ${checkoutPaymentSummary.items.length - 1}개`
                             : ""}
                         </p>
+                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
+                          선택한 옵션 {checkoutPaymentSummary.items.length}개를
+                          합산해 한 번에 입금해 주세요.
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {checkoutPaymentSummary.items.map((item) => (
+                            <div
+                              className="flex items-center justify-between gap-3 rounded-[0.75rem] bg-white px-3 py-2"
+                              key={item.participationId}
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-[13px] font-semibold tracking-[-0.04em]">
+                                  {item.option.label}
+                                </p>
+                                <p className="mt-0.5 text-[11px] font-medium text-black/40">
+                                  {item.shippingFee > 0
+                                    ? `배송비 ${formatPrice(item.shippingFee)} 포함`
+                                    : "묶음 배송비 0원"}
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-[13px] font-semibold tracking-[-0.04em]">
+                                {formatPrice(item.paymentAmount)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
 
                       <div className="relative rounded-[0.95rem] border border-black/10 px-4 py-4">
