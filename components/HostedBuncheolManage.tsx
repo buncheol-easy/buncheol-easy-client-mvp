@@ -9,7 +9,6 @@ import {
   requestCloseBuncheol,
   requestDeliveryTrackingRegistration,
   requestPaymentConfirmation,
-  requestPaymentExpiration,
   type BuncheolDetail,
   type BuncheolManagementDetail,
   type BuncheolManagementOption,
@@ -74,15 +73,12 @@ function isClosedBuncheol(detail: BuncheolManagementDetail) {
 }
 
 function getHighestBidAmount(option: BuncheolManagementOption) {
-  if (option.participationCount <= 0) {
-    return 0;
-  }
-
-  return option.currentHighestBid ?? 0;
-}
-
-function getWinnerCount(option: BuncheolManagementOption) {
-  return option.winner ? 1 : 0;
+  return (
+    option.currentHighestBid ??
+    option.winner?.paymentAmount ??
+    option.winner?.bidAmount ??
+    0
+  );
 }
 
 function getWinnerBidAmount(option: BuncheolManagementOption) {
@@ -115,6 +111,18 @@ function hasPaymentReport(option: BuncheolManagementOption) {
       isPaymentReportedStatus(option.winner?.paymentStatus) ||
       isPaymentConfirmedStatus(option.winner?.paymentStatus),
   );
+}
+
+function getBuncheolStatusLabel(detail: BuncheolManagementDetail) {
+  if (detail.status === "CONFIRMED") {
+    return "진행확정";
+  }
+
+  if (detail.status === "CANCELLED" || detail.status === "CANCELED") {
+    return "취소됨";
+  }
+
+  return isClosedBuncheol(detail) ? "마감" : "모집중";
 }
 
 function isPastDateTime(value: string | undefined) {
@@ -171,18 +179,22 @@ function getWinnerReceiverLabel(
 
 function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
   if (!winner) {
-    return "참여 전";
+    return "참여 없음";
   }
 
   if (winner.paymentConfirmedAt || isPaymentConfirmedStatus(winner.paymentStatus)) {
-    return "입금 확인 완료";
+    return "결제 확인 완료";
   }
 
-  if (hasPaymentReport({ winner } as BuncheolManagementOption)) {
-    return "입금 신고 도착";
+  if (isPaymentAwaitingStatus(winner.paymentStatus)) {
+    return "결제 대기";
   }
 
-  return "입금 대기";
+  if (isPaymentReportedStatus(winner.paymentStatus)) {
+    return "결제 확인 대기";
+  }
+
+  return winner.paymentStatus ?? "결제 대기";
 }
 
 function getParticipantsByOptionId(
@@ -319,9 +331,6 @@ export function HostedBuncheolManage({
   const [detail, setDetail] = useState<BuncheolManagementDetail | null>(null);
   const [message, setMessage] = useState("개최한 분철 정보를 불러오고 있어요.");
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(
-    null,
-  );
-  const [expiringPaymentId, setExpiringPaymentId] = useState<string | null>(
     null,
   );
   const [registeringTrackingId, setRegisteringTrackingId] = useState<
@@ -527,50 +536,6 @@ export function HostedBuncheolManage({
     }
   }
 
-  async function expirePayment(option: BuncheolManagementOption) {
-    const participationId = option.winner?.participationId;
-
-    if (!option.winner || expiringPaymentId) {
-      return;
-    }
-
-    if (!participationId) {
-      setMessage("만료시킬 참여자 참여 ID가 없어요.");
-      return;
-    }
-
-    if (
-      !window.confirm(
-        "이 참여자를 미입금 만료 처리하고 차순위 참여자로 승계할까요?",
-      )
-    ) {
-      return;
-    }
-
-    setExpiringPaymentId(participationId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestPaymentExpiration(accessToken, participationId);
-      const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
-
-      setDetail(nextDetail);
-      setMessage("미입금 참여자를 만료 처리하고 차순위 참여자를 반영했어요.");
-    } catch (error: unknown) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "차순위 참여자 승계를 처리하지 못했어요.",
-      );
-    } finally {
-      setExpiringPaymentId(null);
-    }
-  }
 
   if (!detail) {
     return (
@@ -626,7 +591,7 @@ export function HostedBuncheolManage({
                   isClosed ? "bg-[#f1f1f1] text-black/55" : "bg-black text-white"
                 }`}
               >
-                {isClosed ? "마감" : "모집중"}
+                {getBuncheolStatusLabel(detail)}
               </span>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -662,10 +627,10 @@ export function HostedBuncheolManage({
           <section className="mt-6">
             <div className="mb-3">
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                옵션별 참여 현황
+                옵션별 결제 관리
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/40">
-                참여자 입금 상태와 배송 정보를 확인해요.
+                참여자 결제를 확인하고 배송 정보를 이어서 관리해요.
               </p>
             </div>
 
@@ -681,15 +646,11 @@ export function HostedBuncheolManage({
                   isShipped: false,
                   trackingNumber: option.winner?.trackingNumber ?? "",
                 };
-                const winnerCount = getWinnerCount(option);
-                const hasNextWinnerCandidate =
-                  option.participationCount > winnerCount;
-                const paymentReportedAt = option.winner?.paymentReportedAt;
-                const hasPaymentReportValue = hasPaymentReport(option);
+                const isPaymentAwaiting = isPaymentAwaitingStatus(
+                  option.winner?.paymentStatus,
+                );
                 const isConfirming =
                   confirmingPaymentId === option.winner?.participationId;
-                const isExpiring =
-                  expiringPaymentId === option.winner?.participationId;
                 const winnerBidAmount = getWinnerBidAmount(option);
                 const shippingMethodLabel = getShippingMethodLabel(
                   option.winner?.shippingMethod,
@@ -710,25 +671,14 @@ export function HostedBuncheolManage({
                 const hasRegisteredTrackingNumber = Boolean(
                   option.winner?.trackingNumber || deliveryState.isShipped,
                 );
-                const canShowExpireAction = false && Boolean(
-                  option.winner?.participationId &&
-                    isPaymentAwaitingStatus(option.winner?.paymentStatus) &&
-                    !hasPaymentReportValue &&
-                    !isPaymentConfirmed,
-                );
                 const isPaymentDuePassed = isPastDateTime(
                   option.winner?.paymentDueAt,
                 );
-                const isExpirable = Boolean(
-                  canShowExpireAction &&
-                    hasNextWinnerCandidate &&
-                    isPaymentDuePassed,
-                );
-                const shouldShowPaymentReport =
+                const shouldShowPaymentRecord =
                   Boolean(option.winner) &&
-                  (hasPaymentReportValue ||
+                  (isPaymentAwaiting ||
                     isPaymentConfirmed ||
-                    isPaymentAwaitingStatus(option.winner?.paymentStatus));
+                    hasPaymentReport(option));
 
                 return (
                   <article
@@ -762,7 +712,7 @@ export function HostedBuncheolManage({
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
                         <p className="text-[11px] font-medium text-black/35">
-                          가격
+                          상품 금액
                         </p>
                         <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                           {formatWonAmount(getHighestBidAmount(option))}
@@ -770,28 +720,28 @@ export function HostedBuncheolManage({
                       </div>
                       <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
                         <p className="text-[11px] font-medium text-black/35">
-                          {isClosed ? "참여" : "참여 예정"}
+                          참여
                         </p>
                         <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                          {winnerCount}명
+                          {option.participationCount}명
                         </p>
                       </div>
                     </div>
 
                     <div className="mt-4 border-t border-black/10 pt-4">
-                      {isClosed ? (
+                      {(
                         <>
-                          {shouldShowPaymentReport ? (
+                          {shouldShowPaymentRecord ? (
                             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="text-[11px] font-medium text-black/35">
-                                    입금 신고
+                                    결제 확인
                                   </p>
                                   <div className="mt-2 space-y-1">
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
-                                        이름
+                                        구매자
                                       </span>
                                       {option.winner?.depositorName ?? "-"}
                                     </p>
@@ -803,11 +753,13 @@ export function HostedBuncheolManage({
                                     </p>
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
-                                        일시
+                                        {isPaymentConfirmed ? "확인" : "기한"}
                                       </span>
-                                      {paymentReportedAt
-                                        ? formatKoreaDateTime(paymentReportedAt)
-                                        : "-"}
+                                      {formatKoreaDateTime(
+                                        isPaymentConfirmed
+                                          ? option.winner?.paymentConfirmedAt
+                                          : option.winner?.paymentDueAt,
+                                      )}
                                     </p>
                                   </div>
                                 </div>
@@ -816,16 +768,17 @@ export function HostedBuncheolManage({
                                   disabled={
                                     !option.winner?.participationId ||
                                     isPaymentConfirmed ||
+                                    isPaymentDuePassed ||
                                     isConfirming
                                   }
                                   onClick={() => void confirmPayment(option)}
                                   type="button"
                                 >
-                                  {option.winner?.paymentConfirmedAt
-                                    ? "확인 완료"
+                                  {isPaymentConfirmed
+                                    ? "결제 확인 완료"
                                     : isConfirming
                                       ? "확인 중"
-                                      : "입금 확인"}
+                                      : "결제 확인"}
                                 </button>
                               </div>
                               {option.winner?.paymentConfirmedAt ? (
@@ -840,12 +793,14 @@ export function HostedBuncheolManage({
                           ) : (
                             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
                               <p className="text-[11px] font-medium text-black/35">
-                                입금 신고
+                                결제 확인
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
-                                {isPaymentDuePassed
-                                  ? "구매자가 입금하지 않았어요."
-                                  : "구매자 입금 신고를 기다리고 있어요."}
+                                {option.winner
+                                  ? isPaymentDuePassed
+                                    ? "결제 기한이 지났어요."
+                                    : "구매자 입금을 기다리고 있어요."
+                                  : "아직 참여자가 없어요."}
                               </p>
                               {option.winner?.paymentDueAt ? (
                                 <p className="mt-1 text-[12px] font-medium text-black/35">
@@ -858,29 +813,7 @@ export function HostedBuncheolManage({
                             </div>
                           )}
 
-                          {canShowExpireAction ? (
-                            <div className="mt-3">
-                              <button
-                                className="h-10 w-full rounded-full border border-black/10 bg-white text-[13px] font-semibold tracking-[-0.04em] text-black/55 disabled:bg-black/5 disabled:text-black/25"
-                                disabled={!isExpirable || isExpiring}
-                                onClick={() => void expirePayment(option)}
-                                type="button"
-                              >
-                                {!hasNextWinnerCandidate
-                                  ? "차순위 참여자 없음"
-                                  : isExpiring
-                                    ? "승계 중"
-                                    : "차순위 참여자로 승계"}
-                              </button>
-                              {hasNextWinnerCandidate && !isExpirable ? (
-                                <p className="mt-2 text-center text-[11px] font-medium text-black/35">
-                                  입금 기한이 지난 미입금 참여자만 승계할 수 있어요.
-                                </p>
-                              ) : null}
-                            </div>
-                          ) : null}
-
-                          {shouldShowPaymentReport ? (
+                          {isPaymentConfirmed ? (
                             <>
                               <div className="mt-3 rounded-[0.85rem] bg-black/[0.04] px-3 py-3">
                                 <p className="text-[11px] font-medium text-black/35">
@@ -901,7 +834,7 @@ export function HostedBuncheolManage({
                                   </div>
                                 ) : (
                                   <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
-                                    입금 확인 후 배송지가 표시돼요.
+                                    배송 정보가 아직 내려오지 않았어요.
                                   </p>
                                 )}
                                 {receiverLabel ? (
@@ -937,7 +870,7 @@ export function HostedBuncheolManage({
                                   placeholder={
                                     canUseTrackingInput
                                       ? "운송장 번호 입력"
-                                      : "운송장 등록 API 대기"
+                                      : "배송 ID 확인 중"
                                   }
                                   value={deliveryState.trackingNumber}
                                 />
@@ -954,51 +887,15 @@ export function HostedBuncheolManage({
                                 }
                                 onClick={() => void completeShipping(option)}
                               >
-                                {isRegisteringTracking
-                                  ? "등록 중"
-                                  : "운송장 입력 완료"}
+                                {hasRegisteredTrackingNumber
+                                  ? "운송장 등록 완료"
+                                  : isRegisteringTracking
+                                    ? "등록 중"
+                                    : "운송장 등록"}
                               </button>
                             </>
                           ) : null}
                         </>
-                      ) : (
-                        <div className="relative overflow-hidden rounded-[0.95rem]">
-                          <div className="pointer-events-none select-none opacity-35">
-                            <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
-                              <p className="text-[11px] font-medium text-black/35">
-                                참여자 배송지
-                              </p>
-                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
-                                마감 후 참여자 배송지가 표시돼요.
-                              </p>
-                            </div>
-
-                            <label className="mt-3 block">
-                              <span className="text-[12px] font-semibold text-black/45">
-                                운송장 번호
-                              </span>
-                              <input
-                                className="mt-2 h-12 w-full rounded-[0.85rem] border border-black/10 bg-white px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
-                                disabled
-                                placeholder="운송장 번호 입력"
-                              />
-                            </label>
-
-                            <button
-                              className="mt-3 h-12 w-full rounded-full bg-black/15 text-[15px] font-semibold tracking-[-0.04em] text-black/35"
-                              disabled
-                              type="button"
-                            >
-                              운송장 입력 완료
-                            </button>
-                          </div>
-
-                          <div className="absolute inset-0 flex items-center justify-center rounded-[0.95rem] bg-white/30 backdrop-blur-[1px]">
-                            <span className="inline-flex h-9 items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold tracking-[-0.04em] text-white shadow-[0_6px_16px_rgba(0,0,0,0.14)]">
-                              마감 전이에요
-                            </span>
-                          </div>
-                        </div>
                       )}
                     </div>
                   </article>
