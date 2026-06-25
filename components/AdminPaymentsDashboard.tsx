@@ -21,6 +21,7 @@ import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
+  writeAuthTokens,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 
@@ -28,6 +29,16 @@ type AdminPaymentFilter = "pending" | "confirmed" | "all";
 type AdminPaymentStatus = "AWAITING_CONFIRMATION" | "CONFIRMED" | "OTHER";
 type VerificationKey = "amount" | "participant";
 type VerificationState = Record<VerificationKey, boolean>;
+
+type ActiveTestAccountResponse = {
+  accountId?: string | null;
+};
+
+type SwitchTestAccountResponse = {
+  accessToken?: string;
+};
+
+const adminHostTestAccountId = "user1";
 
 type AdminPaymentRecord = {
   amount: number;
@@ -153,6 +164,76 @@ function getRecordSortTime(record: AdminPaymentRecord) {
   const time = source ? new Date(source).getTime() : 0;
   return Number.isNaN(time) ? 0 : time;
 }
+
+async function readAdminJsonResponse<T>(
+  response: Response,
+  fallbackMessage: string,
+) {
+  if (!response.ok) {
+    throw new Error(fallbackMessage);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function getActiveTestAccountId(accessToken: string) {
+  const response = await fetch("/api/test-accounts/active", {
+    cache: "no-store",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const data = await readAdminJsonResponse<ActiveTestAccountResponse>(
+    response,
+    "테스트 계정 상태를 확인할 수 없어요.",
+  );
+
+  return data.accountId ?? null;
+}
+
+async function switchToAdminHostTestAccount() {
+  const response = await fetch("/api/test-accounts", {
+    body: JSON.stringify({ accountId: adminHostTestAccountId }),
+    cache: "no-store",
+    headers: {
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+  const data = await readAdminJsonResponse<SwitchTestAccountResponse>(
+    response,
+    "김판매 계정으로 전환할 수 없어요.",
+  );
+
+  if (!data.accessToken) {
+    throw new Error("김판매 계정 토큰을 확인할 수 없어요.");
+  }
+
+  writeAuthTokens({ accessToken: data.accessToken });
+
+  return data.accessToken;
+}
+
+async function getAdminDashboardAccessToken() {
+  const accessToken = await getFreshAccessToken();
+
+  if (!accessToken) {
+    return null;
+  }
+
+  try {
+    const activeAccountId = await getActiveTestAccountId(accessToken);
+
+    if (activeAccountId === adminHostTestAccountId) {
+      return accessToken;
+    }
+
+    return await switchToAdminHostTestAccount();
+  } catch {
+    return accessToken;
+  }
+}
+
 function toDeliveryFromWinner(
   option: BuncheolManagementOption,
 ): BuncheolManagementDelivery | null {
@@ -287,7 +368,7 @@ export function AdminPaymentsDashboard() {
     setIsLoading(true);
 
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getAdminDashboardAccessToken();
 
       if (!accessToken) {
         setRecords([]);
@@ -449,7 +530,7 @@ export function AdminPaymentsDashboard() {
     setConfirmingParticipationId(record.participationId);
 
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getAdminDashboardAccessToken();
 
       if (!accessToken) {
         setMessage("로그인 후 입금 확인을 처리할 수 있어요.");
@@ -493,7 +574,7 @@ export function AdminPaymentsDashboard() {
     setRegisteringDeliveryId(deliveryId);
 
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getAdminDashboardAccessToken();
 
       if (!accessToken) {
         setMessage("로그인 후 운송장 번호를 등록할 수 있어요.");
