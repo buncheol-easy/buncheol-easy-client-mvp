@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon, BellIcon } from "@/components/icons";
 import { requestInboxMessages } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
@@ -332,6 +333,9 @@ export function BoardContent({
               {message}
             </p>
           ) : null}
+          <div className="-mx-4 mt-6">
+            <BusinessFooter />
+          </div>
         </section>
       </main>
     </div>

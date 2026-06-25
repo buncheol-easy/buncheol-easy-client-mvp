@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import {
   BackIcon,
   BellIcon,
@@ -1815,6 +1816,8 @@ export function IntroContent() {
               </div>
             </Reveal>
           </section>
+
+          <BusinessFooter />
         </div>
       </main>
     </IntroMotionContext.Provider>

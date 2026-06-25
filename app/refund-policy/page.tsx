@@ -7,6 +7,7 @@ export default function RefundPolicyPage() {
   return (
     <PolicyPageContent
       title="취소/환불 정책"
+      effectiveDate="2026.6.16"
       description="분철 참여 자동 취소와 결제 이후 환불 기준을 정리한 초안입니다."
       sections={[
         {

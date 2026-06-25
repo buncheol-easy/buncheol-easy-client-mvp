@@ -7,6 +7,7 @@ export default function ShippingPolicyPage() {
   return (
     <PolicyPageContent
       title="배송 정책"
+      effectiveDate="2026.6.16"
       description="분철 상품 수령과 배송 방식 기준을 정리한 초안입니다."
       sections={[
         {

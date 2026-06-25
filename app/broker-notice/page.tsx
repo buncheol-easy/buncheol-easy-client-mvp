@@ -7,6 +7,7 @@ export default function BrokerNoticePage() {
   return (
     <PolicyPageContent
       title="통신판매중개자 고지"
+      effectiveDate="2026.6.16"
       description="분철이지의 통신판매중개 서비스 성격과 책임 범위를 정리한 초안입니다."
       sections={[
         {

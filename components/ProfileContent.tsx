@@ -2621,7 +2621,7 @@ export function ProfileContent({
           </Link>
         ) : null}
         <div className="-mx-4 -mb-6 mt-6">
-          <BusinessFooter />
+          <BusinessFooter variant="compact" />
         </div>
       </main>
 

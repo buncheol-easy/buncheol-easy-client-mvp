@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon } from "@/components/icons";
 
 type PolicySection = {
@@ -11,6 +11,7 @@ type PolicySection = {
 
 type PolicyPageContentProps = {
   description: string;
+  effectiveDate?: string;
   sections: PolicySection[];
   title: string;
 };
@@ -23,6 +24,7 @@ function getHistoryIndex() {
 
 export function PolicyPageContent({
   description,
+  effectiveDate,
   sections,
   title,
 }: PolicyPageContentProps) {
@@ -65,14 +67,13 @@ export function PolicyPageContent({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-2">
           <section className="border-b border-black/10 pb-5">
-            <p className="inline-flex rounded-full bg-[#f7f7f7] px-2.5 py-1 text-[12px] font-semibold tracking-[-0.03em] text-black/45">
-              초안
-            </p>
+            {effectiveDate ? (
+              <p className="inline-flex rounded-full bg-[#f7f7f7] px-2.5 py-1 text-[12px] font-semibold tracking-[-0.03em] text-black/45">
+                시행일 {effectiveDate}
+              </p>
+            ) : null}
             <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/55">
               {description}
-            </p>
-            <p className="mt-4 text-[13px] font-medium leading-6 tracking-[-0.03em] text-black/42">
-              정식 운영 전 최종 검토 후 최신 문서로 업데이트될 예정입니다.
             </p>
           </section>
 
@@ -99,12 +100,9 @@ export function PolicyPageContent({
             ))}
           </div>
 
-          <Link
-            className="mx-auto mt-5 flex w-fit items-center justify-center rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.04em] text-black/45"
-            href="/profile"
-          >
-            마이페이지로 이동
-          </Link>
+          <div className="-mx-4 -mb-8 mt-8">
+            <BusinessFooter />
+          </div>
         </div>
       </div>
     </main>
