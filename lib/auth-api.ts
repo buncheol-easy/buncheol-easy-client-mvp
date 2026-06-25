@@ -1961,43 +1961,142 @@ function getBuncheolManagementWinnerFromRecord(
 function getBuncheolManagementDeliveryFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementDelivery | null {
-  const nestedDelivery = getNestedData(record.delivery);
-  const hasNestedDelivery = isRecord(nestedDelivery);
-  const deliveryRecord = hasNestedDelivery ? nestedDelivery : record;
-  const deliveryId = hasNestedDelivery
-    ? getOptionalStringValue(deliveryRecord, ["deliveryId", "id"])
-    : getOptionalStringValue(record, ["deliveryId"]);
-  const receiverNickname = getOptionalStringValue(deliveryRecord, [
-    "receiverNickname",
-    "nickname",
-  ]);
-  const receiverPhoneNumber = getOptionalStringValue(deliveryRecord, [
-    "receiverPhoneNumber",
-    "phoneNumber",
-    "receiverPhone",
-  ]);
-  const shippingMethod = getOptionalStringValue(deliveryRecord, [
-    "shippingMethod",
-    "storeType",
-    "deliveryMethod",
-  ]);
-  const status = getOptionalStringValue(deliveryRecord, [
-    "status",
-    "deliveryStatus",
-    "shippingStatus",
-  ]);
-  const storeName = getOptionalStringValue(deliveryRecord, [
-    "storeName",
-    "branchName",
-    "shippingAddressName",
-    "name",
-  ]);
+  const deliveryRecord = [
+    record.delivery,
+    record.deliverySnapshot,
+    record.deliveryInfo,
+  ]
+    .map(getNestedData)
+    .find(isRecord);
+  const addressRecord = [
+    record.shippingAddressSnapshot,
+    record.shippingAddress,
+    record.shippingAddressInfo,
+    record.addressSnapshot,
+    record.address,
+  ]
+    .map(getNestedData)
+    .find(isRecord);
+  const primaryRecord = deliveryRecord ?? addressRecord ?? null;
+  const deliveryId =
+    getOptionalStringValue(record, ["deliveryId", "deliverySnapshotId"]) ??
+    (deliveryRecord
+      ? getOptionalStringValue(deliveryRecord, [
+          "deliveryId",
+          "id",
+          "deliverySnapshotId",
+        ])
+      : undefined);
+  const receiverNickname =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "receiverNickname",
+          "recipientNickname",
+          "receiverName",
+          "recipientName",
+          "name",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "receiverNickname",
+      "recipientNickname",
+      "receiverName",
+      "recipientName",
+    ]) ??
+    (primaryRecord || deliveryId
+      ? getOptionalStringValue(record, ["participantNickname", "nickname"])
+      : undefined);
+  const receiverPhoneNumber =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "receiverPhoneNumber",
+          "recipientPhoneNumber",
+          "phoneNumber",
+          "receiverPhone",
+          "recipientPhone",
+          "contact",
+          "contactNumber",
+          "mobilePhoneNumber",
+          "tel",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "receiverPhoneNumber",
+      "recipientPhoneNumber",
+      "phoneNumber",
+      "receiverPhone",
+      "recipientPhone",
+      "contact",
+      "contactNumber",
+      "mobilePhoneNumber",
+      "tel",
+    ]);
+  const shippingMethod =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "shippingMethod",
+          "storeType",
+          "deliveryMethod",
+          "courier",
+          "courierType",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "shippingMethod",
+      "storeType",
+      "deliveryMethod",
+      "courier",
+      "courierType",
+    ]);
+  const status =
+    (deliveryRecord
+      ? getOptionalStringValue(deliveryRecord, [
+          "status",
+          "deliveryStatus",
+          "shippingStatus",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, ["deliveryStatus", "shippingStatus"]);
+  const storeName =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "storeName",
+          "branchName",
+          "shippingAddressName",
+          "storeBranchName",
+          "convenienceStoreName",
+          "pickupStoreName",
+          "address",
+          "roadAddress",
+          "shippingAddress",
+          "name",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "storeName",
+      "branchName",
+      "shippingAddressName",
+      "storeBranchName",
+      "convenienceStoreName",
+      "pickupStoreName",
+      "address",
+      "roadAddress",
+      "shippingAddress",
+    ]);
   const trackingNumber =
-    getOptionalStringValue(deliveryRecord, [
+    (deliveryRecord
+      ? getOptionalStringValue(deliveryRecord, [
+          "trackingNumber",
+          "invoiceNumber",
+          "waybillNumber",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
       "trackingNumber",
       "invoiceNumber",
       "waybillNumber",
-    ]) ?? null;
+    ]) ??
+    null;
 
   if (
     !deliveryId &&
