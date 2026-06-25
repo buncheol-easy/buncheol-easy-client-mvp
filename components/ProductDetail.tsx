@@ -12,6 +12,7 @@ import {
 import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
+  ApiRequestError,
   addBuncheolBookmark,
   deleteBuncheol,
   participateBuncheol,
@@ -502,6 +503,30 @@ export function ProductDetail({
     !isDeadlinePassed &&
     (!product.status || product.status === "RECRUITING");
 
+  function getProductDetailReturnHref() {
+    const fallbackHref = `/products/${encodeURIComponent(buncheolId)}`;
+
+    if (typeof window === "undefined") {
+      return fallbackHref;
+    }
+
+    const currentHref = `${window.location.pathname}${window.location.search}`;
+
+    return currentHref.startsWith("/products/") ? currentHref : fallbackHref;
+  }
+
+  function getAddressManagementHref(openAdd = false) {
+    const params = new URLSearchParams({
+      returnTo: getProductDetailReturnHref(),
+    });
+
+    if (openAdd) {
+      params.set("openAdd", "1");
+    }
+
+    return `/profile/addresses?${params.toString()}`;
+  }
+
   useEffect(() => {
     setIsLiked(product.liked === true);
   }, [product.id, product.liked]);
@@ -683,7 +708,7 @@ export function ProductDetail({
       if (!Number.isFinite(shippingAddressId)) {
         window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push("/profile/addresses?openAdd=1");
+        router.push(getAddressManagementHref(true));
         return;
       }
 
@@ -780,7 +805,7 @@ export function ProductDetail({
       if (!Number.isFinite(shippingAddressId)) {
         window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push("/profile/addresses?openAdd=1");
+        router.push(getAddressManagementHref(true));
         return;
       }
 
@@ -906,16 +931,24 @@ export function ProductDetail({
 
         const errorMessage =
           error instanceof Error ? error.message : "구매를 시작하지 못했어요.";
-
-        if (
-          errorMessage.includes("403") ||
-          errorMessage.includes("Forbidden") ||
+        const isForbidden =
+          error instanceof ApiRequestError && error.status === 403;
+        const isHostParticipationBlocked =
           errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
-          errorMessage.includes("개최자")
-        ) {
+          errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
+          errorMessage.includes("BUNCHEOL_HOST_CANNOT_PARTICIPATE") ||
+          errorMessage.includes("개최자") ||
+          errorMessage.includes("본인") ||
+          errorMessage.includes("내가 연");
+
+        if (isHostParticipationBlocked) {
           setIsHostedByMeFromApi(true);
           setCheckoutError(
             "내가 연 분철에는 참여할 수 없어요. 구매 계정으로 전환해 주세요.",
+          );
+        } else if (isForbidden) {
+          setCheckoutError(
+            "구매 권한이 없어요. 테스트 리모콘에서 구매 계정으로 다시 전환한 뒤 시도해 주세요.",
           );
         } else {
           setCheckoutError(errorMessage);
@@ -1903,10 +1936,14 @@ export function ProductDetail({
                         </div>
                         <button
                           className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/55"
-                          onClick={() => router.push("/profile/addresses")}
+                          onClick={() =>
+                            router.push(
+                              getAddressManagementHref(!checkoutDeliveryAddress),
+                            )
+                          }
                           type="button"
                         >
-                          변경
+                          {checkoutDeliveryAddress ? "변경" : "추가"}
                         </button>
                       </div>
                     </div>
@@ -1949,7 +1986,10 @@ export function ProductDetail({
                     <button
                       className="h-14 rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
                       disabled={
-                        isBidSubmitPending || activeBidCount === 0 || !canBidProduct
+                        isBidSubmitPending ||
+                        activeBidCount === 0 ||
+                        !canBidProduct ||
+                        !checkoutDeliveryAddress
                       }
                       onClick={() => void handleSubmitBids()}
                       type="button"
