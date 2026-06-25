@@ -117,7 +117,7 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   const difference = deadlineDate.getTime() - now.getTime();
 
   if (Number.isNaN(deadlineDate.getTime()) || difference <= 0) {
-    return "마감됨";
+    return "기한 지남";
   }
 
   const totalMinutes = Math.ceil(difference / 60000);
@@ -369,7 +369,7 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
     return "결제 대기";
   }
 
-  return isBidRecordClosed(bid, now) ? "마감" : "참여중";
+  return isBidRecordClosed(bid, now) ? "모집 종료" : "참여중";
 }
 
 function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
@@ -399,7 +399,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   }
 
   return isBidRecordClosed(bid, now)
-    ? "마감된 분철이에요."
+    ? "모집 종료된 분철이에요."
     : "진행 중인 참여예요.";
 }
 
@@ -539,7 +539,7 @@ function getHostedProductFromBuncheol(
     era: buncheol.groupName,
     rating: "0.0",
     reviews: String(buncheol.activeParticipationCount),
-    badge: buncheol.status === "RECRUITING" ? "모집중" : "마감",
+    badge: buncheol.status === "RECRUITING" ? "모집중" : buncheol.status === "CONFIRMED" ? "진행확정" : buncheol.status === "CANCELLED" ? "취소" : "모집종료",
     liked: buncheol.bookmarked,
     tone: getToneFromId(buncheol.id),
     courier: "배송 방법 확인 필요",
@@ -1576,7 +1576,7 @@ export function BidHistoryContent({
             [
               ["all", "전체"],
               ["active", "진행 중"],
-              ["closed", "마감"],
+              ["closed", "모집 종료"],
             ] as const
           ).map(([value, label]) => {
             const isActive = hostedFilter === value;
@@ -1710,7 +1710,7 @@ export function BidHistoryContent({
                         </div>
                         <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                           <p className="text-[11px] font-medium text-black/35">
-                            마감
+                            모집 기한
                           </p>
                           <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
                             {bid.deadline}
@@ -1893,7 +1893,7 @@ export function BidHistoryContent({
                                 : "bg-black text-white"
                             }`}
                           >
-                            {isCancelled ? "취소" : isClosed ? "마감" : "모집중"}
+                            {isCancelled ? "취소" : isClosed ? "모집 종료" : "모집중"}
                           </span>
                         </div>
 
@@ -1918,7 +1918,7 @@ export function BidHistoryContent({
                           </div>
                           <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                             <p className="text-[11px] font-medium text-black/35">
-                              마감
+                              모집 기한
                             </p>
                             <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
                               {product.deadline}
@@ -1934,7 +1934,7 @@ export function BidHistoryContent({
                           {isClosed
                             ? isCancelled
                               ? "취소된 개최 분철이에요."
-                              : "마감된 개최 분철이에요."
+                              : "모집 종료된 개최 분철이에요."
                             : "진행 중인 개최 분철이에요."}
                         </p>
                       </div>

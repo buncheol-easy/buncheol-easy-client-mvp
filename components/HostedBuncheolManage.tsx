@@ -173,7 +173,7 @@ function getDeliveryStatusLabel(status: string | undefined) {
   }
 
   if (status === "RECEIVED") {
-    return "수령 완료";
+    return "배송 완료";
   }
 
   return status;

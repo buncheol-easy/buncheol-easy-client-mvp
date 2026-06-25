@@ -168,7 +168,7 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   const difference = deadlineDate.getTime() - now.getTime();
 
   if (Number.isNaN(deadlineDate.getTime()) || difference <= 0) {
-    return "마감됨";
+    return "기한 지남";
   }
 
   const totalMinutes = Math.ceil(difference / 60000);
@@ -394,7 +394,7 @@ function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
     return "결제 대기";
   }
 
-  return isProfileBidClosed(bid, now) ? "마감" : "참여중";
+  return isProfileBidClosed(bid, now) ? "모집 종료" : "참여중";
 }
 
 function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) {
@@ -424,7 +424,7 @@ function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) 
   }
 
   return isProfileBidClosed(bid, now)
-    ? "마감된 분철이에요."
+    ? "모집 종료된 분철이에요."
     : "진행 중인 참여예요.";
 }
 
@@ -568,7 +568,7 @@ function getHostedProductFromBuncheol(
     era: buncheol.groupName,
     rating: "0.0",
     reviews: String(buncheol.activeParticipationCount),
-    badge: buncheol.status === "RECRUITING" ? "모집중" : "마감",
+    badge: buncheol.status === "RECRUITING" ? "모집중" : buncheol.status === "CONFIRMED" ? "진행확정" : buncheol.status === "CANCELLED" ? "취소" : "모집종료",
     liked: buncheol.bookmarked,
     tone: getToneFromId(buncheol.id),
     courier: "배송 방법 확인 필요",
@@ -2314,7 +2314,7 @@ export function ProfileContent({
                           </div>
                           <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                             <p className="text-[11px] font-medium text-black/35">
-                              마감
+                              모집 기한
                             </p>
                             <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
                               {bid.deadline}
@@ -2395,7 +2395,7 @@ export function ProfileContent({
                 개최한 분철
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                마감 이후 결제 확인과 배송 준비까지 이어서 확인해요.
+                결제 확인과 배송 준비를 이어서 확인해요.
               </p>
             </div>
             <span className="shrink-0 text-[13px] font-semibold text-black/45">
@@ -2470,7 +2470,7 @@ export function ProfileContent({
                                 : "bg-black text-white"
                             }`}
                           >
-                            {isCancelled ? "취소" : isClosed ? "마감" : "모집중"}
+                            {isCancelled ? "취소" : isClosed ? "모집 종료" : "모집중"}
                           </span>
                         </div>
 
@@ -2496,13 +2496,13 @@ export function ProfileContent({
                               상태
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {isCancelled ? "취소" : isClosed ? "마감" : "진행중"}
+                              {isCancelled ? "취소" : isClosed ? "모집 종료" : "진행 중"}
                             </p>
                           </div>
                         </div>
 
                         <p className="mt-3 truncate text-[12px] font-medium text-black/40">
-                          마감 {product.deadline}
+                          모집 기한 {product.deadline}
                         </p>
                       </div>
                       </article>

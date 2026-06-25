@@ -85,8 +85,8 @@ function formatDateTime(value: string | null | undefined) {
 
 function getStatusLabel(status: AdminPaymentStatus) {
   if (status === "REFUND_REQUIRED") return "환불 필요";
-  if (status === "CONFIRMED") return "입금 확인 완료";
-  if (status === "AWAITING_CONFIRMATION") return "입금 확인 필요";
+  if (status === "CONFIRMED") return "결제 확인 완료";
+  if (status === "AWAITING_CONFIRMATION") return "결제 확인 필요";
   if (status === "CANCELLED") return "취소됨";
   return "확인 제외";
 }
@@ -137,7 +137,7 @@ function getBuncheolStatusLabel(status: string) {
     CANCELLED: "취소",
     CANCELED: "취소",
     CONFIRMED: "진행확정",
-    FINISHED: "완료",
+    FINISHED: "진행확정",
     RECRUITING: "모집중",
   };
 
@@ -154,7 +154,7 @@ function getDeliveryStatusLabel(status: string | undefined) {
   if (!status || status === "SNAPSHOTTED") return "운송장 입력 전";
   if (status === "SHIPPING") return "배송 중";
   if (status === "DELIVERED") return "배송 완료";
-  if (status === "RECEIVED") return "수령 완료";
+  if (status === "RECEIVED") return "배송 완료";
   return status;
 }
 
@@ -934,7 +934,7 @@ export function AdminPaymentsDashboard() {
                       환불 확인 필요
                     </p>
                     <p className="mt-1 text-[12px] font-semibold leading-5 text-[#c03131]/70">
-                      취소된 분철에 입금 확인이 완료된 건이에요. 환불 계좌를 확인해
+                      취소된 분철에 결제 확인이 완료된 건이에요. 환불 계좌를 확인해
                       반환 처리를 진행해 주세요.
                     </p>
                     <div className="mt-3 rounded-[0.8rem] bg-white px-3 py-2 text-[13px] font-semibold">
@@ -967,9 +967,9 @@ export function AdminPaymentsDashboard() {
                     {selectedRecord.delivery ? (
                       <div className="mt-3 grid gap-2 text-[13px] font-semibold">
                         <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
-                          <p className="text-[12px] text-black/40">수령지</p>
+                          <p className="text-[12px] text-black/40">배송지</p>
                           <p className="mt-0.5 truncate">
-                            {selectedRecord.delivery.storeName || "수령지 미확인"}
+                            {selectedRecord.delivery.storeName || "배송지 미확인"}
                           </p>
                         </div>
                         <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
@@ -1015,7 +1015,7 @@ export function AdminPaymentsDashboard() {
                       </div>
                     ) : (
                       <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold text-black/45">
-                        입금 확인 후 배송 정보가 내려오면 운송장 번호를 입력할 수 있어요.
+                        결제 확인 후 배송 정보가 내려오면 운송장 번호를 입력할 수 있어요.
                       </p>
                     )}
                   </section>

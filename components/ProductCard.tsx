@@ -93,7 +93,7 @@ function getDeadlineBadge(deadline: string) {
 
   if (Number.isNaN(deadlineDate.getTime())) {
     return {
-      label: "마감",
+      label: "모집 기한",
       value: deadline,
     };
   }
@@ -102,7 +102,7 @@ function getDeadlineBadge(deadline: string) {
 
   if (deadlineDate.getTime() <= now.getTime()) {
     return {
-      label: "Closed",
+      label: "?? ??",
       value: null,
     };
   }
@@ -116,14 +116,14 @@ function getDeadlineBadge(deadline: string) {
 
   if (remainingDays === 0) {
     return {
-      label: "오늘 마감",
+      label: "오늘 종료",
       value: "D-DAY",
     };
   }
 
   if (remainingDays <= soonDeadlineDays) {
     return {
-      label: "마감 임박",
+      label: "모집 임박",
       value: `D-${remainingDays}`,
     };
   }
