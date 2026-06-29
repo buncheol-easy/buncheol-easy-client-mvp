@@ -718,10 +718,12 @@ export function ProductDetail({
     hasSelectableOption;
   const isMainBidButtonDisabled =
     !isPublicPreview && (isBidUnavailable || !canBidProduct);
-  const optionParticipationCount = auctionOptions.reduce(
-    (sum, option) => sum + Math.max(0, option.participantCount),
-    0,
-  );
+  const optionParticipationCount = auctionOptions.reduce((sum, option) => {
+    const explicitCount = Math.max(0, option.participantCount);
+    const purchaseStateCount = hasOptionPurchaseState(option) ? 1 : 0;
+
+    return sum + Math.max(explicitCount, purchaseStateCount);
+  }, 0);
   const parsedProductParticipationCount = Number.parseInt(product.reviews, 10);
   const currentParticipationCount = Math.max(
     optionParticipationCount,
