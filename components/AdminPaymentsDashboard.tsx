@@ -1160,13 +1160,16 @@ export function AdminPaymentsDashboard() {
                               </span>
                               <input
                                 className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                  const nextTrackingNumber =
+                                    event.currentTarget.value;
+
                                   setTrackingInputs((current) => ({
                                     ...current,
                                     [selectedRecord.participationId]:
-                                      event.currentTarget.value,
-                                  }))
-                                }
+                                      nextTrackingNumber,
+                                  }));
+                                }}
                                 placeholder="운송장 번호 입력"
                                 value={selectedTrackingValue}
                               />
@@ -1211,13 +1214,16 @@ export function AdminPaymentsDashboard() {
                               </span>
                               <input
                                 className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                  const nextTrackingNumber =
+                                    event.currentTarget.value;
+
                                   setTrackingInputs((current) => ({
                                     ...current,
                                     [selectedRecord.participationId]:
-                                      event.currentTarget.value,
-                                  }))
-                                }
+                                      nextTrackingNumber,
+                                  }));
+                                }}
                                 placeholder="운송장 번호 입력"
                                 value={selectedTrackingValue}
                               />
