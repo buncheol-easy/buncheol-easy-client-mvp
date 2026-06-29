@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { ArtistImage } from "@/components/ArtistRail";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon, SearchIcon } from "@/components/icons";
 import {
   addFavoriteGroup,
@@ -435,6 +436,9 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
             </p>
           </div>
         )}
+        <div className="-mx-4 mt-6">
+          <BusinessFooter />
+        </div>
       </div>
     </div>
   );

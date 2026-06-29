@@ -405,7 +405,7 @@ export function FavoritesContent({
               onClick={() => setIsSortOpen((current) => !current)}
               type="button"
             >
-              <span>{sort === "recent" ? "최근 찜한 순" : "마감 임박순"}</span>
+              <span>{sort === "recent" ? "최근 찜한 순" : "모집 임박순"}</span>
               <span
                 className={`h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-current transition-transform ${
                   isSortOpen ? "rotate-180" : ""
@@ -418,7 +418,7 @@ export function FavoritesContent({
                 {(
                   [
                     ["recent", "최근 찜한 순"],
-                    ["deadline", "마감 임박순"],
+                    ["deadline", "모집 임박순"],
                   ] as const
                 ).map(([value, label]) => {
                   const isActive = sort === value;
@@ -445,7 +445,7 @@ export function FavoritesContent({
 
           <div className="mr-1 flex items-center gap-2">
             <span className="text-[12px] font-semibold text-black/45">
-              마감 숨김
+              모집 종료 숨김
             </span>
             <button
               aria-pressed={hideClosed}

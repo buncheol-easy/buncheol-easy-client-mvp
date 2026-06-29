@@ -1,3 +1,8 @@
+import type {
+  InboxMessageDetail,
+  InboxMessageSummary,
+} from "@/lib/auth-api";
+
 export type BoardCategory = "notice" | "alert";
 
 export type BoardPost = {
@@ -15,6 +20,93 @@ export type BoardPost = {
     title: string;
   };
 };
+
+function getBoardCategoryFromInboxType(type: string | undefined): BoardCategory {
+  return type === "NOTICE" ? "notice" : "alert";
+}
+
+function formatBoardDate(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const today = new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(new Date());
+  const target = new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(date);
+
+  if (today === target) {
+    return "오늘";
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    day: "numeric",
+    month: "long",
+    timeZone: "Asia/Seoul",
+  }).format(date);
+}
+
+function isRecentlyCreated(value: string | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return Date.now() - date.getTime() < 1000 * 60 * 60 * 24 * 3;
+}
+
+function getBodyParagraphs(description: string | undefined, fallback: string) {
+  const paragraphs = (description ?? "")
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return paragraphs.length > 0 ? paragraphs : [fallback];
+}
+
+export function getBoardPostFromInboxMessage(
+  message: InboxMessageDetail | InboxMessageSummary,
+): BoardPost {
+  const detail = message as InboxMessageDetail;
+  const summary = detail.reference || detail.description || message.title;
+
+  return {
+    id: message.id,
+    body: getBodyParagraphs(detail.description, summary),
+    category: getBoardCategoryFromInboxType(message.type),
+    date: formatBoardDate(message.createdAt),
+    isNew: isRecentlyCreated(message.createdAt),
+    isPinned: message.pinned,
+    summary,
+    title: message.title,
+    action: detail.linkPath
+      ? {
+          href: detail.linkPath,
+          label: "관련 화면 보기",
+          title: detail.reference || "연결된 화면으로 이동",
+        }
+      : undefined,
+  };
+}
 
 export const boardPosts: BoardPost[] = [
   {
@@ -66,10 +158,10 @@ export const boardPosts: BoardPost[] = [
     category: "alert",
     title: "참여 후 입금 기한 안에 계좌이체를 진행해 주세요",
     date: "5월 30일",
-    summary: "마감 직후에는 상태 반영까지 시간이 조금 걸릴 수 있어요.",
+    summary: "모집 종료 직후에는 상태 반영까지 시간이 조금 걸릴 수 있어요.",
     body: [
-      "분철 마감 후 백엔드에서 참여 순위와 결제 대기 상태를 계산해 반영해요.",
-      "상태 반영 전에는 참여 내역에서 아직 진행 중이거나 마감처럼 보일 수 있어요.",
+      "모집 기한까지 참여를 받고, 입금 기한 내 결제 확인 상태를 반영해요.",
+      "상태 반영 전에는 참여 내역에서 아직 진행 중이거나 모집 종료처럼 보일 수 있어요.",
       "잠시 후 다시 확인하면 결제 가능한 참여 항목이 갱신돼요.",
     ],
     action: {
@@ -99,7 +191,7 @@ export const boardPosts: BoardPost[] = [
     body: [
       "분철 등록 후 참여자가 생기면 옵션 변경이 어려울 수 있어요.",
       "멤버별 옵션 가격과 배송 가능 택배사를 등록 전에 다시 확인해 주세요.",
-      "정확한 옵션은 참여자 혼선을 줄이고 마감 후 정산 흐름을 더 안정적으로 만들어줘요.",
+      "정확한 옵션은 참여자 혼선을 줄이고 결제 확인과 배송 흐름을 더 안정적으로 만들어줘요.",
     ],
   },
 ];

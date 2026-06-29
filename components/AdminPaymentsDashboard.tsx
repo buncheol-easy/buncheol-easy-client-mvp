@@ -21,34 +21,47 @@ import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
+  writeAuthTokens,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 
-type AdminPaymentFilter = "pending" | "confirmed" | "all";
-type AdminPaymentStatus = "AWAITING_CONFIRMATION" | "CONFIRMED" | "OTHER";
+type AdminPaymentStatus =
+  | "AWAITING_CONFIRMATION"
+  | "CANCELLED"
+  | "CONFIRMED"
+  | "OTHER"
+  | "REFUND_REQUIRED";
 type VerificationKey = "amount" | "participant";
 type VerificationState = Record<VerificationKey, boolean>;
+
+type ActiveTestAccountResponse = {
+  accountId?: string | null;
+};
+
+type SwitchTestAccountResponse = {
+  accessToken?: string;
+};
+
+const adminHostTestAccountId = "user1";
 
 type AdminPaymentRecord = {
   amount: number;
   buncheolId: string;
+  buncheolStatus: string;
   buncheolTitle: string;
   confirmedAt?: string | null;
   delivery?: BuncheolManagementDelivery | null;
+  deliveries: BuncheolManagementDelivery[];
   groupName: string;
   memberName: string;
+  memberNames: string[];
   participantNickname: string;
   participationId: string;
+  participationIds: string[];
   paymentDueAt?: string | null;
   rawStatus: string;
   refundAccount?: BankAccountInfo | null;
   status: AdminPaymentStatus;
-};
-
-const filterLabels: Record<AdminPaymentFilter, string> = {
-  all: "전체",
-  confirmed: "확인 완료",
-  pending: "확인 대기",
 };
 
 function formatPrice(value: number) {
@@ -74,8 +87,10 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 function getStatusLabel(status: AdminPaymentStatus) {
-  if (status === "CONFIRMED") return "입금 확인 완료";
-  if (status === "AWAITING_CONFIRMATION") return "입금 확인 필요";
+  if (status === "REFUND_REQUIRED") return "환불 필요";
+  if (status === "CONFIRMED") return "결제 확인 완료";
+  if (status === "AWAITING_CONFIRMATION") return "결제 확인 필요";
+  if (status === "CANCELLED") return "취소됨";
   return "확인 제외";
 }
 
@@ -84,6 +99,10 @@ function isAwaitingPaymentStatus(status: string) {
     "AWAITING_CONFIRMATION",
     "AWAITING_PAYMENT",
     "PENDING_PAYMENT",
+    "PAYMENT_PENDING",
+    "PENDING_CONFIRMATION",
+    "WAITING_PAYMENT",
+    "WAITING_CONFIRMATION",
   ].includes(status);
 }
 
@@ -91,10 +110,41 @@ function isConfirmedPaymentStatus(status: string) {
   return ["CONFIRMED", "PAYMENT_CONFIRMED"].includes(status);
 }
 
-function normalizePaymentStatus(status: string): AdminPaymentStatus {
-  if (isConfirmedPaymentStatus(status)) return "CONFIRMED";
-  if (isAwaitingPaymentStatus(status)) return "AWAITING_CONFIRMATION";
+function isCancelledStatus(status: string) {
+  return status === "CANCELLED" || status === "CANCELED";
+}
+
+function normalizePaymentStatus(
+  status: string,
+  buncheolStatus = "",
+): AdminPaymentStatus {
+  const normalizedStatus = status.trim().toUpperCase();
+  const normalizedBuncheolStatus = buncheolStatus.trim().toUpperCase();
+
+  if (
+    isCancelledStatus(normalizedBuncheolStatus) &&
+    isConfirmedPaymentStatus(normalizedStatus)
+  ) {
+    return "REFUND_REQUIRED";
+  }
+
+  if (isConfirmedPaymentStatus(normalizedStatus)) return "CONFIRMED";
+  if (isAwaitingPaymentStatus(normalizedStatus)) return "AWAITING_CONFIRMATION";
+  if (isCancelledStatus(normalizedStatus)) return "CANCELLED";
   return "OTHER";
+}
+
+function getBuncheolStatusLabel(status: string) {
+  const normalizedStatus = status.trim().toUpperCase();
+  const labels: Record<string, string> = {
+    CANCELLED: "취소",
+    CANCELED: "취소",
+    CONFIRMED: "진행확정",
+    FINISHED: "진행확정",
+    RECRUITING: "모집중",
+  };
+
+  return labels[normalizedStatus] ?? (status || "-");
 }
 
 function getShippingMethodLabel(method: string | undefined) {
@@ -107,8 +157,32 @@ function getDeliveryStatusLabel(status: string | undefined) {
   if (!status || status === "SNAPSHOTTED") return "운송장 입력 전";
   if (status === "SHIPPING") return "배송 중";
   if (status === "DELIVERED") return "배송 완료";
-  if (status === "RECEIVED") return "수령 완료";
+  if (status === "RECEIVED") return "배송 완료";
   return status;
+}
+
+function getAdminDeliveryStatusLabel(record: AdminPaymentRecord) {
+  if (record.delivery) {
+    return getDeliveryStatusLabel(record.delivery.status);
+  }
+
+  if (record.status === "CONFIRMED") {
+    return "배송 정보 대기";
+  }
+
+  if (record.status === "AWAITING_CONFIRMATION") {
+    return "입금 확인 전";
+  }
+
+  return "-";
+}
+
+function getMissingDeliveryMessage(record: AdminPaymentRecord) {
+  if (record.status === "CONFIRMED") {
+    return "입금 확인은 완료됐지만 배송 정보가 아직 응답에 없어요. 배송 정보가 내려오면 이곳에서 운송장을 등록할 수 있어요.";
+  }
+
+  return "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요.";
 }
 
 function getRefundAccountLabel(refundAccount: BankAccountInfo | null | undefined) {
@@ -119,13 +193,26 @@ function getRefundAccountLabel(refundAccount: BankAccountInfo | null | undefined
     .join(" ");
 }
 
+function getUniqueValues(values: Array<string | undefined | null>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function getMemberSummary(memberNames: string[]) {
+  if (memberNames.length === 0) return "-";
+  if (memberNames.length === 1) return memberNames[0];
+
+  return `${memberNames[0]} 외 ${memberNames.length - 1}개`;
+}
+
 function getSearchText(record: AdminPaymentRecord) {
   return [
     record.participationId,
+    ...record.participationIds,
     record.buncheolId,
     record.buncheolTitle,
     record.groupName,
     record.memberName,
+    ...record.memberNames,
     record.participantNickname,
     record.refundAccount?.account,
     record.refundAccount?.bank,
@@ -147,6 +234,177 @@ function getRecordSortTime(record: AdminPaymentRecord) {
   const time = source ? new Date(source).getTime() : 0;
   return Number.isNaN(time) ? 0 : time;
 }
+
+function getPaymentGroupKey(record: AdminPaymentRecord) {
+  return [
+    record.buncheolId,
+    record.participantNickname,
+    record.refundAccount?.account ?? "",
+    record.refundAccount?.holder ?? "",
+    record.paymentDueAt ?? "",
+    record.status,
+  ].join("|");
+}
+
+function getDeliveryKey(delivery: BuncheolManagementDelivery) {
+  return [
+    delivery.deliveryId ?? "",
+    delivery.shippingMethod ?? "",
+    delivery.storeName ?? "",
+    delivery.receiverNickname ?? "",
+    delivery.receiverPhoneNumber ?? "",
+  ].join("|");
+}
+
+function mergeDeliveries(records: AdminPaymentRecord[]) {
+  const deliveries = records
+    .flatMap((record) =>
+      record.deliveries.length > 0
+        ? record.deliveries
+        : record.delivery
+          ? [record.delivery]
+          : [],
+    )
+    .filter((delivery): delivery is BuncheolManagementDelivery => Boolean(delivery));
+  const deliveriesByKey = new Map<string, BuncheolManagementDelivery>();
+
+  deliveries.forEach((delivery) => {
+    deliveriesByKey.set(getDeliveryKey(delivery), delivery);
+  });
+
+  return [...deliveriesByKey.values()];
+}
+
+function mergeRawStatuses(records: AdminPaymentRecord[]) {
+  const rawStatuses = getUniqueValues(records.map((record) => record.rawStatus));
+
+  return rawStatuses.join(" / ");
+}
+
+function getRecordDeliveryIds(record: AdminPaymentRecord) {
+  return getUniqueValues(record.deliveries.map((delivery) => delivery.deliveryId));
+}
+
+function getRecordTrackingTargetIds(record: AdminPaymentRecord) {
+  return getRecordDeliveryIds(record);
+}
+
+function getTrackingBatchId(record: AdminPaymentRecord) {
+  return getRecordTrackingTargetIds(record).join("|") || record.participationId;
+}
+
+function groupPaymentRecords(records: AdminPaymentRecord[]) {
+  const recordsByGroup = new Map<string, AdminPaymentRecord[]>();
+
+  records.forEach((record) => {
+    const key = getPaymentGroupKey(record);
+    const groupRecords = recordsByGroup.get(key) ?? [];
+
+    groupRecords.push(record);
+    recordsByGroup.set(key, groupRecords);
+  });
+
+  return [...recordsByGroup.values()].flatMap((groupRecords) => {
+    const primaryRecord = groupRecords[0];
+
+    if (!primaryRecord) {
+      return [];
+    }
+
+    const memberNames = getUniqueValues(
+      groupRecords.flatMap((record) => record.memberNames),
+    );
+    const participationIds = getUniqueValues(
+      groupRecords.flatMap((record) => record.participationIds),
+    );
+    const deliveries = mergeDeliveries(groupRecords);
+
+    return [
+      {
+        ...primaryRecord,
+        amount: groupRecords.reduce((sum, record) => sum + record.amount, 0),
+        confirmedAt: groupRecords.find((record) => record.confirmedAt)?.confirmedAt,
+        deliveries,
+        delivery: deliveries[0] ?? null,
+        memberName: getMemberSummary(memberNames),
+        memberNames,
+        participationId: participationIds[0] ?? primaryRecord.participationId,
+        participationIds,
+        rawStatus: mergeRawStatuses(groupRecords),
+      } satisfies AdminPaymentRecord,
+    ];
+  });
+}
+
+async function readAdminJsonResponse<T>(
+  response: Response,
+  fallbackMessage: string,
+) {
+  if (!response.ok) {
+    throw new Error(fallbackMessage);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function getActiveTestAccountId(accessToken: string) {
+  const response = await fetch("/api/test-accounts/active", {
+    cache: "no-store",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const data = await readAdminJsonResponse<ActiveTestAccountResponse>(
+    response,
+    "테스트 계정 상태를 확인할 수 없어요.",
+  );
+
+  return data.accountId ?? null;
+}
+
+async function switchToAdminHostTestAccount() {
+  const response = await fetch("/api/test-accounts", {
+    body: JSON.stringify({ accountId: adminHostTestAccountId }),
+    cache: "no-store",
+    headers: {
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+  const data = await readAdminJsonResponse<SwitchTestAccountResponse>(
+    response,
+    "김판매 계정으로 전환할 수 없어요.",
+  );
+
+  if (!data.accessToken) {
+    throw new Error("김판매 계정 토큰을 확인할 수 없어요.");
+  }
+
+  writeAuthTokens({ accessToken: data.accessToken });
+
+  return data.accessToken;
+}
+
+async function getAdminDashboardAccessToken() {
+  const accessToken = await getFreshAccessToken();
+
+  if (!accessToken) {
+    return null;
+  }
+
+  try {
+    const activeAccountId = await getActiveTestAccountId(accessToken);
+
+    if (activeAccountId === adminHostTestAccountId) {
+      return accessToken;
+    }
+
+    return await switchToAdminHostTestAccount();
+  } catch {
+    return accessToken;
+  }
+}
+
 function toDeliveryFromWinner(
   option: BuncheolManagementOption,
 ): BuncheolManagementDelivery | null {
@@ -180,17 +438,21 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
     (participant): AdminPaymentRecord => ({
       amount: participant.amount,
       buncheolId: detail.id,
+      buncheolStatus: detail.status,
       buncheolTitle: detail.title,
       confirmedAt: participant.confirmedAt,
       delivery: participant.delivery,
+      deliveries: participant.delivery ? [participant.delivery] : [],
       groupName: detail.groupName,
       memberName: participant.memberName,
+      memberNames: [participant.memberName],
       participantNickname: participant.participantNickname,
       participationId: participant.participationId,
+      participationIds: [participant.participationId],
       paymentDueAt: participant.dueAt,
       rawStatus: participant.status,
       refundAccount: participant.refundAccount,
-      status: normalizePaymentStatus(participant.status),
+      status: normalizePaymentStatus(participant.status, detail.status),
     }),
   );
 
@@ -204,22 +466,27 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
     const rawStatus =
       winner.paymentStatus ||
       (winner.paymentConfirmedAt ? "CONFIRMED" : "AWAITING_PAYMENT");
+    const delivery = toDeliveryFromWinner(option);
 
     records.push({
       amount: winner.paymentAmount ?? winner.bidAmount ?? 0,
       buncheolId: detail.id,
+      buncheolStatus: detail.status,
       buncheolTitle: detail.title,
       confirmedAt: winner.paymentConfirmedAt,
-      delivery: toDeliveryFromWinner(option),
+      delivery,
+      deliveries: delivery ? [delivery] : [],
       groupName: detail.groupName,
       memberName: option.memberName,
+      memberNames: [option.memberName],
       participantNickname:
         winner.depositorName ?? winner.receiverNickname ?? "참여자",
       participationId: winner.participationId,
+      participationIds: [winner.participationId],
       paymentDueAt: winner.paymentDueAt,
       rawStatus,
       refundAccount: null,
-      status: normalizePaymentStatus(rawStatus),
+      status: normalizePaymentStatus(rawStatus, detail.status),
     });
 
     return records;
@@ -234,20 +501,28 @@ function StatusBadge({
   status: AdminPaymentStatus;
 }) {
   const label = compact
-    ? status === "CONFIRMED"
-      ? "완료"
-      : status === "AWAITING_CONFIRMATION"
-        ? "대기"
-        : "기타"
+    ? status === "REFUND_REQUIRED"
+      ? "환불"
+      : status === "CONFIRMED"
+        ? "완료"
+        : status === "AWAITING_CONFIRMATION"
+          ? "대기"
+          : status === "CANCELLED"
+            ? "취소"
+            : "기타"
     : getStatusLabel(status);
 
   return (
     <span
       className={`inline-flex h-8 items-center whitespace-nowrap rounded-full px-3 text-[12px] font-semibold ${
-        status === "CONFIRMED"
+        status === "REFUND_REQUIRED"
+          ? "bg-[#fff1f0] text-[#c03131]"
+          : status === "CONFIRMED"
           ? "bg-[#e8f5ef] text-[#237152]"
           : status === "AWAITING_CONFIRMATION"
             ? "bg-black text-white"
+            : status === "CANCELLED"
+              ? "bg-[#f1f1f1] text-black/55"
             : "bg-[#f1f1f1] text-black/45"
       }`}
     >
@@ -262,7 +537,6 @@ export function AdminPaymentsDashboard() {
     getInitialAuthState,
   );
   const [records, setRecords] = useState<AdminPaymentRecord[]>([]);
-  const [filter, setFilter] = useState<AdminPaymentFilter>("pending");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [selectedParticipationId, setSelectedParticipationId] = useState("");
   const [verificationByParticipation, setVerificationByParticipation] =
@@ -281,7 +555,7 @@ export function AdminPaymentsDashboard() {
     setIsLoading(true);
 
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getAdminDashboardAccessToken();
 
       if (!accessToken) {
         setRecords([]);
@@ -309,7 +583,9 @@ export function AdminPaymentsDashboard() {
         },
         [],
       );
-      const nextRecords = details.flatMap(getRecordsFromManagementDetail);
+      const nextRecords = groupPaymentRecords(
+        details.flatMap(getRecordsFromManagementDetail),
+      );
       const failedCount = managementResults.filter(
         (result) => result.status === "rejected",
       ).length;
@@ -357,14 +633,9 @@ export function AdminPaymentsDashboard() {
     const keyword = searchKeyword.trim().toLowerCase();
 
     return records
-      .filter((record) => {
-        if (filter === "pending") return record.status === "AWAITING_CONFIRMATION";
-        if (filter === "confirmed") return record.status === "CONFIRMED";
-        return true;
-      })
       .filter((record) => !keyword || getSearchText(record).includes(keyword))
       .sort((left, right) => getRecordSortTime(right) - getRecordSortTime(left));
-  }, [filter, records, searchKeyword]);
+  }, [records, searchKeyword]);
 
   const selectedRecord =
     records.find(
@@ -379,6 +650,9 @@ export function AdminPaymentsDashboard() {
   const confirmedRecords = records.filter(
     (record) => record.status === "CONFIRMED",
   );
+  const refundRecords = records.filter(
+    (record) => record.status === "REFUND_REQUIRED",
+  );
   const pendingAmount = pendingRecords.reduce(
     (sum, record) => sum + record.amount,
     0,
@@ -392,15 +666,28 @@ export function AdminPaymentsDashboard() {
       selectedRecord.delivery?.trackingNumber ??
       "")
     : "";
+  const selectedTrackingTargetIds = selectedRecord
+    ? getRecordTrackingTargetIds(selectedRecord)
+    : [];
+  const selectedTrackingBatchId = selectedRecord
+    ? getTrackingBatchId(selectedRecord)
+    : "";
+  const selectedHasTrackingNumber = Boolean(
+    selectedRecord?.deliveries.some((delivery) => delivery.trackingNumber),
+  );
+  const isSelectedPaymentConfirmed = selectedRecord?.status === "CONFIRMED";
+  const shouldShowShippingSection =
+    selectedRecord?.status === "AWAITING_CONFIRMATION" ||
+    selectedRecord?.status === "CONFIRMED";
   const canConfirmSelectedPayment =
     Boolean(selectedRecord) &&
     selectedRecord?.status === "AWAITING_CONFIRMATION" &&
     Object.values(selectedVerification).every(Boolean) &&
     confirmingParticipationId !== selectedRecord?.participationId;
   const canRegisterTracking = Boolean(
-    selectedRecord?.delivery?.deliveryId &&
+    selectedTrackingTargetIds.length > 0 &&
       selectedTrackingValue.trim() &&
-      registeringDeliveryId !== selectedRecord.delivery.deliveryId,
+      registeringDeliveryId !== selectedTrackingBatchId,
   );
   const verificationItems: Array<{
     key: VerificationKey;
@@ -443,17 +730,20 @@ export function AdminPaymentsDashboard() {
     setConfirmingParticipationId(record.participationId);
 
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getAdminDashboardAccessToken();
 
       if (!accessToken) {
         setMessage("로그인 후 입금 확인을 처리할 수 있어요.");
         return;
       }
 
-      await requestPaymentConfirmation(accessToken, record.participationId, {
-        ignoreConflict: true,
-      });
-      setFilter("confirmed");
+      await Promise.all(
+        record.participationIds.map((participationId) =>
+          requestPaymentConfirmation(accessToken, participationId, {
+            ignoreConflict: true,
+          }),
+        ),
+      );
       await loadRecords("입금 확인이 완료됐어요.");
     } catch (error: unknown) {
       setMessage(
@@ -467,14 +757,15 @@ export function AdminPaymentsDashboard() {
   }
 
   async function registerTrackingNumber(record: AdminPaymentRecord) {
-    const deliveryId = record.delivery?.deliveryId;
+    const trackingTargetIds = getRecordTrackingTargetIds(record);
+    const trackingBatchId = getTrackingBatchId(record);
     const trackingNumber = (
       trackingInputs[record.participationId] ??
       record.delivery?.trackingNumber ??
       ""
     ).trim();
 
-    if (!deliveryId) {
+    if (trackingTargetIds.length === 0) {
       setMessage("운송장을 등록할 배송 ID가 없어요.");
       return;
     }
@@ -484,21 +775,32 @@ export function AdminPaymentsDashboard() {
       return;
     }
 
-    setRegisteringDeliveryId(deliveryId);
+    setRegisteringDeliveryId(trackingBatchId);
 
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getAdminDashboardAccessToken();
 
       if (!accessToken) {
         setMessage("로그인 후 운송장 번호를 등록할 수 있어요.");
         return;
       }
 
-      await requestDeliveryTrackingRegistration(
-        accessToken,
-        deliveryId,
-        trackingNumber,
-      );
+      for (const deliveryId of trackingTargetIds) {
+        try {
+          await requestDeliveryTrackingRegistration(
+            accessToken,
+            deliveryId,
+            trackingNumber,
+          );
+        } catch (error: unknown) {
+          throw new Error(
+            error instanceof Error
+              ? `배송 ID ${deliveryId}: ${error.message}`
+              : `배송 ID ${deliveryId}: 운송장 번호를 등록하지 못했어요.`,
+          );
+        }
+      }
+
       await loadRecords("운송장 번호를 등록했어요.");
     } catch (error: unknown) {
       setMessage(
@@ -553,6 +855,9 @@ export function AdminPaymentsDashboard() {
                   완료 <strong className="ml-1 text-white">{confirmedRecords.length}</strong>
                 </span>
                 <span className="whitespace-nowrap">
+                  환불 <strong className="ml-1 text-white">{refundRecords.length}</strong>
+                </span>
+                <span className="whitespace-nowrap">
                   전체 <strong className="ml-1 text-white">{records.length}</strong>
                 </span>
               </div>
@@ -569,23 +874,8 @@ export function AdminPaymentsDashboard() {
         <section className="grid min-h-[640px] gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-[1.15rem] bg-white p-3.5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex rounded-full bg-[#f4f6f8] p-1">
-                {(Object.keys(filterLabels) as AdminPaymentFilter[]).map(
-                  (nextFilter) => (
-                    <button
-                      className={`h-9 rounded-full px-4 text-[13px] font-semibold ${
-                        filter === nextFilter
-                          ? "bg-black text-white"
-                          : "text-black/45"
-                      }`}
-                      key={nextFilter}
-                      onClick={() => setFilter(nextFilter)}
-                      type="button"
-                    >
-                      {filterLabels[nextFilter]}
-                    </button>
-                  ),
-                )}
+              <div className="rounded-full bg-[#f4f6f8] px-4 py-2 text-[13px] font-semibold text-black/45">
+                결제 건 전체 표시
               </div>
               <input
                 className="h-10 w-full rounded-full border border-black/10 bg-white px-4 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black md:w-[20rem]"
@@ -704,7 +994,7 @@ export function AdminPaymentsDashboard() {
                       </p>
                     </div>
                     <p className="max-w-[10rem] truncate text-right font-mono text-[11px] font-semibold text-white/45">
-                      {selectedRecord.participationId}
+                      {selectedRecord.participationIds.join(", ")}
                     </p>
                   </div>
                   <div className="mt-2 grid gap-1 text-[12px] font-semibold text-white/55">
@@ -718,6 +1008,12 @@ export function AdminPaymentsDashboard() {
                       <span>옵션</span>
                       <span className="truncate text-right">
                         {selectedRecord.memberName}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span>참여</span>
+                      <span className="truncate text-right">
+                        {selectedRecord.participationIds.length}건 묶음
                       </span>
                     </div>
                   </div>
@@ -788,6 +1084,9 @@ export function AdminPaymentsDashboard() {
                           ? "입금 확인 처리"
                           : "대조 체크를 완료해 주세요"}
                     </button>
+                    <p className="mt-2 text-[12px] font-semibold leading-5 text-black/40">
+                      입금 확인을 완료하면 이 화면에서 운송장 번호를 이어서 등록해요.
+                    </p>
                   </section>
                 ) : null}
 
@@ -799,7 +1098,13 @@ export function AdminPaymentsDashboard() {
                     {[
                       ["분철", selectedRecord.buncheolTitle],
                       ["옵션", selectedRecord.memberName],
-                      ["상태", selectedRecord.rawStatus || getStatusLabel(selectedRecord.status)],
+                      ["참여 수", `${selectedRecord.participationIds.length}건`],
+                      ["참여 ID", selectedRecord.participationIds.join(", ")],
+                      ["운영 상태", getStatusLabel(selectedRecord.status)],
+                      ["분철 상태", getBuncheolStatusLabel(selectedRecord.buncheolStatus)],
+                      ["결제 상태", selectedRecord.rawStatus || "-"],
+                      ["배송 상태", getAdminDeliveryStatusLabel(selectedRecord)],
+                      ["운송장", selectedRecord.delivery?.trackingNumber || "-"],
                       ["기한", formatDateTime(selectedRecord.paymentDueAt)],
                       ["확인", formatDateTime(selectedRecord.confirmedAt)],
                       ["환불", getRefundAccountLabel(selectedRecord.refundAccount)],
@@ -815,15 +1120,37 @@ export function AdminPaymentsDashboard() {
                   </dl>
                 </section>
 
-                {selectedRecord.status === "CONFIRMED" ? (
+                {selectedRecord.status === "REFUND_REQUIRED" ? (
+                  <section className="mt-2.5 rounded-[1rem] border border-[#ffd4d0] bg-[#fff8f7] p-3">
+                    <p className="text-[15px] font-semibold text-[#c03131]">
+                      환불 확인 필요
+                    </p>
+                    <p className="mt-1 text-[12px] font-semibold leading-5 text-[#c03131]/70">
+                      취소된 분철에 결제 확인이 완료된 건이에요. 환불 계좌를 확인해
+                      반환 처리를 진행해 주세요.
+                    </p>
+                    <div className="mt-3 rounded-[0.8rem] bg-white px-3 py-2 text-[13px] font-semibold">
+                      <p className="text-[12px] text-black/40">환불 계좌</p>
+                      <p className="mt-0.5 truncate">
+                        {getRefundAccountLabel(selectedRecord.refundAccount)}
+                      </p>
+                    </div>
+                  </section>
+                ) : null}
+
+                {shouldShowShippingSection ? (
                   <section className="mt-2.5 rounded-[1rem] border border-black/10 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-[15px] font-semibold">배송 정보</p>
                         <p className="mt-1 text-[12px] font-semibold text-black/40">
                           {selectedRecord.delivery
-                            ? getDeliveryStatusLabel(selectedRecord.delivery.status)
-                            : "배송 정보 생성 전"}
+                            ? isSelectedPaymentConfirmed
+                              ? getDeliveryStatusLabel(selectedRecord.delivery.status)
+                              : "결제 요청 배송지"
+                            : isSelectedPaymentConfirmed
+                              ? getAdminDeliveryStatusLabel(selectedRecord)
+                              : "결제 요청 배송지 확인 필요"}
                         </p>
                       </div>
                       {selectedRecord.delivery?.shippingMethod ? (
@@ -836,9 +1163,9 @@ export function AdminPaymentsDashboard() {
                     {selectedRecord.delivery ? (
                       <div className="mt-3 grid gap-2 text-[13px] font-semibold">
                         <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
-                          <p className="text-[12px] text-black/40">수령지</p>
+                          <p className="text-[12px] text-black/40">배송지</p>
                           <p className="mt-0.5 truncate">
-                            {selectedRecord.delivery.storeName || "수령지 미확인"}
+                            {selectedRecord.delivery.storeName || "배송지 미확인"}
                           </p>
                         </div>
                         <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
@@ -852,39 +1179,51 @@ export function AdminPaymentsDashboard() {
                               .join(" · ") || "-"}
                           </p>
                         </div>
-                        <label className="grid gap-1.5">
-                          <span className="text-[12px] font-semibold text-black/40">
-                            운송장 번호
-                          </span>
-                          <input
-                            className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
-                            onChange={(event) =>
-                              setTrackingInputs((current) => ({
-                                ...current,
-                                [selectedRecord.participationId]:
-                                  event.currentTarget.value,
-                              }))
-                            }
-                            placeholder="운송장 번호 입력"
-                            value={selectedTrackingValue}
-                          />
-                        </label>
-                        <button
-                          className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-                          disabled={!canRegisterTracking}
-                          onClick={() => registerTrackingNumber(selectedRecord)}
-                          type="button"
-                        >
-                          {registeringDeliveryId === selectedRecord.delivery.deliveryId
-                            ? "등록 중"
-                            : selectedRecord.delivery.trackingNumber
-                              ? "운송장 수정"
-                              : "운송장 등록"}
-                        </button>
+                        {isSelectedPaymentConfirmed ? (
+                          <>
+                            <label className="grid gap-1.5">
+                              <span className="text-[12px] font-semibold text-black/40">
+                                운송장 번호
+                              </span>
+                              <input
+                                className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+                                onChange={(event) => {
+                                  const nextTrackingNumber =
+                                    event.currentTarget.value;
+
+                                  setTrackingInputs((current) => ({
+                                    ...current,
+                                    [selectedRecord.participationId]:
+                                      nextTrackingNumber,
+                                  }));
+                                }}
+                                placeholder="운송장 번호 입력"
+                                value={selectedTrackingValue}
+                              />
+                            </label>
+                            <button
+                              className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
+                              disabled={!canRegisterTracking}
+                              onClick={() => registerTrackingNumber(selectedRecord)}
+                              type="button"
+                            >
+                              {registeringDeliveryId === selectedTrackingBatchId
+                                ? "등록 중"
+                                : selectedHasTrackingNumber
+                                  ? "운송장 수정"
+                                  : "운송장 등록"}
+                            </button>
+                          </>
+                        ) : (
+                          <p className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[12px] font-semibold leading-5 text-black/45">
+                            배송지는 결제 요청 시 고정됐어요. 입금 확인 후 이
+                            화면에서 운송장 번호를 등록해요.
+                          </p>
+                        )}
                       </div>
                     ) : (
-                      <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold text-black/45">
-                        입금 확인 후 배송 정보가 내려오면 운송장 번호를 입력할 수 있어요.
+                      <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold leading-5 text-black/45">
+                        {getMissingDeliveryMessage(selectedRecord)}
                       </p>
                     )}
                   </section>

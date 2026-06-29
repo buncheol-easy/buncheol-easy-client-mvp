@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import {
@@ -644,6 +645,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             )}
           </div>
         </section>
+
+        <div className="mt-8">
+          <BusinessFooter />
+        </div>
       </div>
     </div>
   );

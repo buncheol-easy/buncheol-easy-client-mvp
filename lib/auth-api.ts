@@ -5,7 +5,7 @@ import type {
 import type { ProductCardItem } from "@/components/ProductCard";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
-const defaultApiBaseUrl = "https://buncheoleasy.com";
+const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
 const legacyApiBaseUrlPattern = /^https?:\/\/13\.124\.248\.60(?:\/v1)?$/;
 const thumbnailDetailFetchConcurrency = 4;
 const thumbnailDetailFetchLimit = 24;
@@ -108,15 +108,53 @@ export type UpdateBuncheolRequest = {
 };
 
 export type ParticipateBuncheolRequest = {
-  buncheolMemberId: number;
+  buncheolMemberIds: number[];
   refundAccount: BankAccountInfo;
   shippingAddressId: number;
 };
 
 export type ParticipationCheckoutResponse = {
   bidAmount: number;
+  hostBankAccount?: BankAccountInfo | null;
+  paymentAmount?: number | null;
+  paymentDueAt?: string | null;
   participationId: string;
+  participationIds: string[];
   participationStatus: string;
+  shippingFee?: number | null;
+};
+
+export type InboxMessageType = "NOTICE" | "NOTIFICATION" | string;
+
+export type InboxMessageSummary = {
+  createdAt: string;
+  id: string;
+  pinned: boolean;
+  title: string;
+  type: InboxMessageType;
+};
+
+export type InboxMessageDetail = InboxMessageSummary & {
+  description: string;
+  linkPath?: string;
+  reference?: string;
+};
+
+export type InboxFeed = {
+  hasNext: boolean;
+  items: InboxMessageSummary[];
+  nextCursor: string | null;
+};
+
+export type InboxMessagesResponse = {
+  feed: InboxFeed;
+  pinned: InboxMessageSummary[];
+};
+
+export type InboxMessagesParams = {
+  cursor?: string | null;
+  size?: number;
+  type?: "NOTICE" | "NOTIFICATION";
 };
 
 export type ApiGroup = {
@@ -238,6 +276,7 @@ export type BuncheolManagementOption = {
   memberId?: string;
   memberImage?: string;
   memberName: string;
+  participants?: BuncheolManagementParticipant[];
   participationCount: number;
   winner?: BuncheolManagementWinner | null;
 };
@@ -276,6 +315,7 @@ export type MyParticipation = {
   paymentDueAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
+  shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
 };
@@ -324,6 +364,32 @@ function getVersionedApiBaseUrl() {
   const baseUrl = getConfiguredApiBaseUrl();
 
   return baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMessage: string,
+) {
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => {
+    controller.abort();
+  }, 20000);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(timeoutMessage);
+    }
+
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
 }
 
 export function getKakaoAuthorizationUrl() {
@@ -653,7 +719,14 @@ function getParticipationPaymentDetailFromBody(
 
   return {
     bidAmount:
-      getNumberValue(data, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
+      getNumberValue(data, [
+        "bidAmount",
+        "productAmount",
+        "itemAmount",
+        "price",
+        "amount",
+        "paymentAmount",
+      ]) ?? 0,
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
@@ -736,6 +809,41 @@ function getRecordListValue(body: Record<string, unknown>, keys: string[]) {
 
     if (Array.isArray(value)) {
       return value.filter(isRecord);
+    }
+  }
+
+  return [];
+}
+
+function getNestedRecordListValue(
+  body: Record<string, unknown>,
+  keys: string[],
+) {
+  for (const key of keys) {
+    const value = body[key];
+
+    if (Array.isArray(value)) {
+      return value.filter(isRecord);
+    }
+
+    const nestedValue = getNestedData(value);
+
+    if (Array.isArray(nestedValue)) {
+      return nestedValue.filter(isRecord);
+    }
+
+    if (isRecord(nestedValue)) {
+      const nestedList = [
+        nestedValue.items,
+        nestedValue.content,
+        nestedValue.list,
+        nestedValue.records,
+        nestedValue.results,
+      ].find(Array.isArray);
+
+      if (nestedList) {
+        return nestedList.filter(isRecord);
+      }
     }
   }
 
@@ -845,7 +953,15 @@ function getUserShippingAddress(body: unknown): UserShippingAddress | null {
     getConvenienceStoreType(data.storeName) ??
     getConvenienceStoreType(data.branchName);
 
-  const id = getStringValue(data, ["id", "shippingAddressId", "addressId"]);
+  const id = getStringValue(data, [
+    "id",
+    "shippingAddressId",
+    "addressId",
+    "shippingAddressSnapshotId",
+    "addressSnapshotId",
+    "deliveryId",
+    "deliverySnapshotId",
+  ]);
   const branchName = getStringValue(data, [
     "branchName",
     "storeName",
@@ -1285,6 +1401,36 @@ function normalizeImageUrl(imageUrl: string) {
   }
 
   return trimmedImageUrl;
+}
+
+const proxiedGroupImageHosts = new Set([
+  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+]);
+const groupImagePathPrefix = "/idol-groups/";
+
+function getProxiedGroupImageUrl(imageUrl: string | undefined) {
+  if (!imageUrl) {
+    return undefined;
+  }
+
+  const normalizedImageUrl = normalizeImageUrl(imageUrl);
+
+  try {
+    const parsedImageUrl = new URL(normalizedImageUrl);
+
+    if (
+      proxiedGroupImageHosts.has(parsedImageUrl.hostname) &&
+      parsedImageUrl.pathname.startsWith(groupImagePathPrefix)
+    ) {
+      return `/api/group-image?url=${encodeURIComponent(normalizedImageUrl)}`;
+    }
+  } catch {
+    return normalizedImageUrl;
+  }
+
+  return normalizedImageUrl;
 }
 
 function getImageUrl(value: unknown) {
@@ -1857,43 +2003,209 @@ function getBuncheolManagementWinnerFromRecord(
 function getBuncheolManagementDeliveryFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementDelivery | null {
-  const nestedDelivery = getNestedData(record.delivery);
-  const hasNestedDelivery = isRecord(nestedDelivery);
-  const deliveryRecord = hasNestedDelivery ? nestedDelivery : record;
-  const deliveryId = hasNestedDelivery
-    ? getOptionalStringValue(deliveryRecord, ["deliveryId", "id"])
-    : getOptionalStringValue(record, ["deliveryId"]);
-  const receiverNickname = getOptionalStringValue(deliveryRecord, [
-    "receiverNickname",
-    "nickname",
-  ]);
-  const receiverPhoneNumber = getOptionalStringValue(deliveryRecord, [
-    "receiverPhoneNumber",
-    "phoneNumber",
-    "receiverPhone",
-  ]);
-  const shippingMethod = getOptionalStringValue(deliveryRecord, [
-    "shippingMethod",
-    "storeType",
-    "deliveryMethod",
-  ]);
-  const status = getOptionalStringValue(deliveryRecord, [
-    "status",
-    "deliveryStatus",
-    "shippingStatus",
-  ]);
-  const storeName = getOptionalStringValue(deliveryRecord, [
-    "storeName",
-    "branchName",
-    "shippingAddressName",
-    "name",
-  ]);
+  const deliveryRecord = [
+    record.delivery,
+    record.deliverySnapshot,
+    record.deliveryInfo,
+    record.deliveryRequest,
+    record.shipment,
+    record.shipmentInfo,
+    record.shippingDelivery,
+    record.shippingSnapshot,
+  ]
+    .map(getNestedData)
+    .find(isRecord);
+  const addressRecord = [
+    record.shippingAddressSnapshot,
+    record.shippingAddress,
+    record.shippingAddressInfo,
+    record.selectedShippingAddress,
+    record.selectedAddress,
+    record.recipientAddress,
+    record.recipient,
+    record.receiver,
+    record.receiverInfo,
+    record.shipping,
+    record.shippingInfo,
+    record.pickupStore,
+    record.store,
+    record.storeInfo,
+    record.addressSnapshot,
+    record.address,
+  ]
+    .map(getNestedData)
+    .find(isRecord);
+  const primaryRecord = deliveryRecord ?? addressRecord ?? null;
+  const deliveryId =
+    getOptionalStringValue(record, [
+      "deliveryId",
+      "deliverySnapshotId",
+      "trackingDeliveryId",
+      "shipmentId",
+      "shippingId",
+    ]) ??
+    (deliveryRecord
+      ? getOptionalStringValue(deliveryRecord, [
+          "deliveryId",
+          "deliverySnapshotId",
+          "trackingDeliveryId",
+          "shipmentId",
+          "shippingId",
+        ])
+      : undefined);
+  const receiverNickname =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "receiverNickname",
+          "recipientNickname",
+          "receiverName",
+          "recipientName",
+          "buyerName",
+          "participantName",
+          "recipient",
+          "name",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "receiverNickname",
+      "recipientNickname",
+      "receiverName",
+      "recipientName",
+      "buyerName",
+      "participantName",
+      "recipient",
+    ]) ??
+    (primaryRecord || deliveryId
+      ? getOptionalStringValue(record, ["participantNickname", "nickname"])
+      : undefined);
+  const receiverPhoneNumber =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "receiverPhoneNumber",
+          "recipientPhoneNumber",
+          "phoneNumber",
+          "receiverPhone",
+          "recipientPhone",
+          "contact",
+          "contactNumber",
+          "contactPhone",
+          "phone",
+          "mobile",
+          "mobilePhoneNumber",
+          "tel",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "receiverPhoneNumber",
+      "recipientPhoneNumber",
+      "phoneNumber",
+      "receiverPhone",
+      "recipientPhone",
+      "contact",
+      "contactNumber",
+      "contactPhone",
+      "phone",
+      "mobile",
+      "mobilePhoneNumber",
+      "tel",
+    ]);
+  const shippingMethod =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "shippingMethod",
+          "storeType",
+          "deliveryMethod",
+          "deliveryType",
+          "shippingType",
+          "method",
+          "courier",
+          "courierType",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "shippingMethod",
+      "storeType",
+      "deliveryMethod",
+      "deliveryType",
+      "shippingType",
+      "method",
+      "courier",
+      "courierType",
+    ]);
+  const status =
+    (deliveryRecord
+      ? getOptionalStringValue(deliveryRecord, [
+          "status",
+          "deliveryStatus",
+          "shippingStatus",
+          "trackingStatus",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "deliveryStatus",
+      "shippingStatus",
+      "trackingStatus",
+    ]);
+  const storeName =
+    (primaryRecord
+      ? getOptionalStringValue(primaryRecord, [
+          "storeName",
+          "branchName",
+          "shippingAddressName",
+          "storeBranchName",
+          "convenienceStoreName",
+          "pickupStoreName",
+          "pickupStore",
+          "pickupStoreAddress",
+          "storeAddress",
+          "addressName",
+          "address",
+          "roadAddress",
+          "roadNameAddress",
+          "jibunAddress",
+          "detailAddress",
+          "fullAddress",
+          "shippingAddress",
+          "recipientAddress",
+          "receiverAddress",
+          "name",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
+      "storeName",
+      "branchName",
+      "shippingAddressName",
+      "storeBranchName",
+      "convenienceStoreName",
+      "pickupStoreName",
+      "pickupStore",
+      "pickupStoreAddress",
+      "storeAddress",
+      "addressName",
+      "address",
+      "roadAddress",
+      "roadNameAddress",
+      "jibunAddress",
+      "detailAddress",
+      "fullAddress",
+      "shippingAddress",
+      "recipientAddress",
+      "receiverAddress",
+    ]);
   const trackingNumber =
-    getOptionalStringValue(deliveryRecord, [
+    (deliveryRecord
+      ? getOptionalStringValue(deliveryRecord, [
+          "trackingNumber",
+          "invoiceNumber",
+          "waybillNumber",
+        ])
+      : undefined) ??
+    getOptionalStringValue(record, [
       "trackingNumber",
       "invoiceNumber",
       "waybillNumber",
-    ]) ?? null;
+    ]) ??
+    null;
 
   if (
     !deliveryId &&
@@ -1920,8 +2232,17 @@ function getBuncheolManagementDeliveryFromRecord(
 
 function getBuncheolManagementParticipantFromRecord(
   record: Record<string, unknown>,
+  fallback: {
+    buncheolMemberId?: string;
+    memberName?: string;
+  } = {},
 ): BuncheolManagementParticipant | null {
-  const participationId = getStringValue(record, ["participationId", "id"]);
+  const participationId = getStringValue(record, [
+    "participationId",
+    "paymentParticipationId",
+    "participantId",
+    "id",
+  ]);
 
   if (!participationId) {
     return null;
@@ -1948,11 +2269,14 @@ function getBuncheolManagementParticipantFromRecord(
         "paymentAmount",
         "totalAmount",
         "bidAmount",
+        "price",
       ]) ?? 0,
-    buncheolMemberId: getOptionalStringValue(record, [
-      "buncheolMemberId",
-      "memberSlotId",
-    ]),
+    buncheolMemberId:
+      getOptionalStringValue(record, [
+        "buncheolMemberId",
+        "memberSlotId",
+        "optionId",
+      ]) ?? fallback.buncheolMemberId,
     confirmedAt:
       getOptionalStringValue(record, [
         "confirmedAt",
@@ -1964,7 +2288,9 @@ function getBuncheolManagementParticipantFromRecord(
       getOptionalStringValue(record, ["dueAt", "paymentDueAt", "paymentDeadline"]) ??
       null,
     memberName:
-      getStringValue(record, ["memberName", "name", "label"]) || "옵션",
+      getStringValue(record, ["memberName", "name", "label"]) ||
+      fallback.memberName ||
+      "옵션",
     participantNickname,
     participationId,
     refundAccount,
@@ -1979,13 +2305,31 @@ function getBuncheolManagementParticipantFromRecord(
 function getBuncheolManagementOptionFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementOption | null {
+  const memberRecord = getNestedData(record.member);
+  const member = isRecord(memberRecord) ? memberRecord : null;
   const buncheolMemberId = getStringValue(record, [
     "buncheolMemberId",
+    "buncheolMemberSlotId",
+    "memberSlotId",
+    "optionId",
     "id",
     "slotId",
   ]);
-  const memberName = getStringValue(record, ["memberName", "name", "label"]);
-  const memberId = getOptionalStringValue(record, ["memberId"]);
+  const memberName =
+    getStringValue(record, ["memberName", "name", "label", "optionLabel"]) ||
+    (member
+      ? getStringValue(member, ["memberName", "name", "label", "optionLabel"])
+      : "");
+  const memberId =
+    getOptionalStringValue(record, ["memberId"]) ??
+    (member
+      ? getOptionalStringValue(member, [
+          "memberId",
+          "id",
+          "profileId",
+          "artistMemberId",
+        ])
+      : undefined);
 
   if (!buncheolMemberId) {
     return null;
@@ -2012,6 +2356,24 @@ function getBuncheolManagementOptionFromRecord(
     ? getBuncheolManagementWinnerFromRecord(winnerRecord)
     : null;
   const fallbackWinnerFields = getBuncheolManagementWinnerFromRecord(record);
+  const optionMemberName = memberName || `Option ${memberId ?? buncheolMemberId}`;
+  const participants = getNestedRecordListValue(record, [
+    "participants",
+    "participations",
+    "paymentParticipants",
+    "paymentRequests",
+    "payments",
+  ])
+    .map((participantRecord) =>
+      getBuncheolManagementParticipantFromRecord(participantRecord, {
+        buncheolMemberId,
+        memberName: optionMemberName,
+      }),
+    )
+    .filter(
+      (participant): participant is BuncheolManagementParticipant =>
+        participant !== null,
+    );
 
   return {
     buncheolMemberId,
@@ -2025,13 +2387,24 @@ function getBuncheolManagementOptionFromRecord(
       "fixedPrice",
       "price",
     ]) ?? null,
-    memberId: getOptionalStringValue(record, ["memberId"]),
-    memberImage: getOptionalStringValue(record, [
-      "memberImage",
-      "memberImageUrl",
-      "imageUrl",
-    ]),
-    memberName: memberName || `Option ${memberId ?? buncheolMemberId}`,
+    memberId,
+    memberImage:
+      getOptionalStringValue(record, [
+        "memberImage",
+        "memberImageUrl",
+        "imageUrl",
+      ]) ??
+      (member
+        ? getOptionalStringValue(member, [
+            "memberImage",
+            "memberImageUrl",
+            "image",
+            "imageUrl",
+            "profileImageUrl",
+          ])
+        : undefined),
+    memberName: optionMemberName,
+    participants,
     participationCount:
       getNumberValue(record, ["participationCount", "participantCount"]) ?? 0,
     winner: winner
@@ -2073,12 +2446,29 @@ function getBuncheolManagementOptionFromRecord(
 }
 
 function getBuncheolManagementDetailFromBody(body: unknown) {
-  const data = getNestedData(body);
+  const responseData = getNestedData(body);
 
-  if (!isRecord(data)) {
+  if (!isRecord(responseData)) {
     return null;
   }
 
+  const nestedDetail = [
+    responseData,
+    responseData.buncheol,
+    responseData.buncheolInfo,
+    responseData.detail,
+    responseData.management,
+    responseData.buncheolManagement,
+  ]
+    .map(getNestedData)
+    .find((candidate): candidate is Record<string, unknown> => {
+      return (
+        isRecord(candidate) &&
+        Boolean(getStringValue(candidate, ["id", "buncheolId"])) &&
+        Boolean(getStringValue(candidate, ["title", "buncheolTitle"]))
+      );
+    });
+  const data = nestedDetail ?? responseData;
   const id = getStringValue(data, ["id", "buncheolId"]);
   const title = getStringValue(data, ["title", "buncheolTitle"]);
 
@@ -2086,30 +2476,59 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     return null;
   }
 
-  const participants = getRecordListValue(data, [
-    "participants",
-    "participations",
-  ])
-    .map(getBuncheolManagementParticipantFromRecord)
+  const sourceRecords =
+    data === responseData ? [data] : [data, responseData];
+  const directParticipants = sourceRecords
+    .flatMap((sourceRecord) =>
+      getNestedRecordListValue(sourceRecord, [
+        "participants",
+        "participations",
+        "paymentParticipants",
+        "paymentRequests",
+        "payments",
+        "records",
+      ]),
+    )
+    .map((participantRecord) =>
+      getBuncheolManagementParticipantFromRecord(participantRecord),
+    )
     .filter(
       (participant): participant is BuncheolManagementParticipant =>
         participant !== null,
     );
-  const options = getRecordListValue(data, [
-    "options",
-    "members",
-    "buncheolMembers",
-  ])
+  const options = sourceRecords
+    .flatMap((sourceRecord) =>
+      getNestedRecordListValue(sourceRecord, [
+        "options",
+        "members",
+        "buncheolMembers",
+        "memberSlots",
+        "buncheolMemberSlots",
+        "slots",
+      ]),
+    )
     .map(getBuncheolManagementOptionFromRecord)
     .filter(
       (option): option is BuncheolManagementOption => option !== null,
     );
+  const participantsById = new Map<string, BuncheolManagementParticipant>();
+
+  [...directParticipants, ...options.flatMap((option) => option.participants ?? [])]
+    .forEach((participant) => {
+      participantsById.set(participant.participationId, participant);
+    });
+
+  const participants = [...participantsById.values()];
   const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
 
   return {
     confirmedCount: getNumberValue(data, ["confirmedCount"]) ?? undefined,
-    deadline: getStringValue(data, ["deadline", "buncheolDeadline"]),
-    groupName: getStringValue(data, ["groupName", "group"]),
+    deadline:
+      getStringValue(data, ["deadline", "buncheolDeadline"]) ||
+      getStringValue(responseData, ["deadline", "buncheolDeadline"]),
+    groupName:
+      getStringValue(data, ["groupName", "group"]) ||
+      getStringValue(responseData, ["groupName", "group"]),
     id,
     memberCount: memberCount ?? undefined,
     minHeadcount: getNumberValue(data, ["minHeadcount"]) ?? undefined,
@@ -2200,18 +2619,22 @@ function getStatusBadge(status: string) {
   const statusLabels: Record<string, string> = {
     CANCELLED: "취소",
     CONFIRMED: "진행확정",
-    CLOSED: "마감",
-    FINISHED: "완료",
-    PAID: "결제중",
+    CLOSED: "모집종료",
+    FINISHED: "진행확정",
+    PAID: "진행확정",
     RECRUITING: "모집중",
-    SETTLING: "정산중",
+    SETTLING: "진행확정",
   };
 
   return statusLabels[status] ?? status;
 }
 
 function isDeletedBuncheolStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "DELETED";
+  return status === "DELETED";
+}
+
+function isRemovedBuncheolStatus(status: string | undefined) {
+  return status === "DELETED";
 }
 
 function getToneFromId(id: string) {
@@ -2450,7 +2873,10 @@ export async function requestBuncheols(
   const summaries = getBuncheolList(body)
     .filter(isRecord)
     .map(getBuncheolSummaryFromRecord)
-    .filter((item): item is BuncheolSummary => item !== null);
+    .filter(
+      (item): item is BuncheolSummary =>
+        item !== null && !isDeletedBuncheolStatus(item.status),
+    );
 
   return enrichBuncheolSummariesWithThumbnails(accessToken, summaries);
 }
@@ -2493,7 +2919,10 @@ export async function requestAllBuncheols(
     const pageSummaries = getBuncheolList(body)
       .filter(isRecord)
       .map(getBuncheolSummaryFromRecord)
-      .filter((item): item is BuncheolSummary => item !== null);
+      .filter(
+        (item): item is BuncheolSummary =>
+          item !== null && !isDeletedBuncheolStatus(item.status),
+      );
 
     allSummaries.push(...pageSummaries);
 
@@ -2719,13 +3148,14 @@ export async function participateBuncheol(
     headers: getJsonHeaders(accessToken),
     method: "POST",
   };
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/participations`,
     requestInit,
+    "구매 요청 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   const data = getNestedData(await readJsonBody(response));
@@ -2734,12 +3164,60 @@ export async function participateBuncheol(
     throw new Error("참여 결과를 확인할 수 없어요.");
   }
 
+  const participationIds = getStringListValue(data, [
+    "participationIds",
+    "ids",
+  ]);
+  const participationId =
+    getStringValue(data, ["participationId", "id"]) ||
+    participationIds[0] ||
+    "";
+
   return {
-    bidAmount: getNumberValue(data, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
-    participationId: getStringValue(data, ["participationId", "id"]),
+    bidAmount:
+      getNumberValue(data, [
+        "bidAmount",
+        "productAmount",
+        "itemAmount",
+        "price",
+      ]) ?? 0,
+    hostBankAccount: getNestedBankAccountInfo(data, [
+      "hostAccount",
+      "hostBankAccount",
+      "host",
+      "hostProfile",
+      "sellerBankAccount",
+      "seller",
+      "sellerProfile",
+      "creatorBankAccount",
+      "creator",
+      "creatorProfile",
+      "ownerBankAccount",
+      "owner",
+      "ownerProfile",
+      "paymentBankAccount",
+      "transferBankAccount",
+      "settlementBankAccount",
+      "organizer",
+      "organizerProfile",
+      "sellerAccount",
+      "bankAccount",
+    ]),
+    paymentAmount:
+      getOptionalNumberValue(data, ["totalAmount", "paymentAmount", "amount"]) ??
+      null,
+    paymentDueAt:
+      getOptionalStringValue(data, [
+        "paymentDueAt",
+        "paymentDeadline",
+        "dueAt",
+      ]) ?? null,
+    participationId,
+    participationIds,
     participationStatus:
       getOptionalStringValue(data, ["participationStatus", "status"]) ??
       "AWAITING_PAYMENT",
+    shippingFee: getOptionalNumberValue(data, ["shippingFee"]) ?? null,
   } satisfies ParticipationCheckoutResponse;
 }
 
@@ -2763,10 +3241,23 @@ export async function requestMyParticipations(accessToken: string) {
       const buncheolMember = isRecord(buncheolMemberRecord)
         ? buncheolMemberRecord
         : null;
+      const shippingAddressRecord =
+        getNestedData(record.shippingAddressSnapshot) ??
+        getNestedData(record.shippingAddress) ??
+        getNestedData(record.shippingAddressInfo) ??
+        getNestedData(record.addressSnapshot) ??
+        getNestedData(record.address) ??
+        getNestedData(record.delivery) ??
+        getNestedData(record.deliverySnapshot) ??
+        getNestedData(record.deliveryInfo);
+      const shippingAddress = shippingAddressRecord
+        ? getUserShippingAddress(shippingAddressRecord)
+        : null;
       const deliveryRecord =
         getNestedData(record.delivery) ??
         getNestedData(record.deliverySnapshot) ??
         getNestedData(record.shippingAddressSnapshot) ??
+        getNestedData(record.shippingAddress) ??
         getNestedData(record.deliveryInfo);
       const delivery = isRecord(deliveryRecord) ? deliveryRecord : null;
       const participationId = getStringValue(record, [
@@ -2941,6 +3432,7 @@ export async function requestMyParticipations(accessToken: string) {
                 "bankAccount",
               ])
             : null),
+        shippingAddress,
         shippingFee: getOptionalNumberValue(record, ["shippingFee"]) ?? null,
         trackingNumber:
           getOptionalStringValue(record, [
@@ -3040,7 +3532,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
 
   return enrichBuncheolSummariesWithThumbnails(
     accessToken,
-    buncheols.filter((buncheol) => !isDeletedBuncheolStatus(buncheol.status)),
+    buncheols.filter((buncheol) => !isRemovedBuncheolStatus(buncheol.status)),
   );
 }
 
@@ -3124,13 +3616,14 @@ export async function requestParticipationPaymentDetail(
   accessToken: string,
   participationId: string,
 ) {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${getVersionedApiBaseUrl()}/participations/${participationId}`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
       method: "GET",
     },
+    "입금 정보를 불러오는 데 시간이 오래 걸리고 있어요.",
   );
 
   if (!response.ok) {
@@ -3198,21 +3691,18 @@ export async function requestPaymentExpiration(
   }
 }
 
-export async function requestPaymentReport(
+export async function requestDeliveryTrackingRegistration(
   accessToken: string,
-  participationId: string,
-  shippingAddressId: string,
+  deliveryId: string,
+  trackingNumber: string,
 ) {
-  const parsedShippingAddressId = Number.isFinite(Number(shippingAddressId))
-    ? Number(shippingAddressId)
-    : shippingAddressId;
   const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment/report`,
+    `${getVersionedApiBaseUrl()}/deliveries/${deliveryId}/tracking`,
     {
-      body: JSON.stringify({ shippingAddressId: parsedShippingAddressId }),
+      body: JSON.stringify({ trackingNumber }),
       credentials: "include",
       headers: getJsonHeaders(accessToken),
-      method: "POST",
+      method: "PATCH",
     },
   );
 
@@ -3221,35 +3711,192 @@ export async function requestPaymentReport(
   }
 }
 
-export async function requestDeliveryTrackingRegistration(
-  accessToken: string,
-  deliveryId: string,
-  trackingNumber: string,
+function getInboxMessageSummaryFromRecord(
+  record: Record<string, unknown>,
+): InboxMessageSummary | null {
+  const id = getStringValue(record, [
+    "id",
+    "messageId",
+    "noticeId",
+    "notificationId",
+  ]);
+  const title = getStringValue(record, ["title", "subject", "name"]);
+
+  if (!id || !title) {
+    return null;
+  }
+
+  return {
+    createdAt:
+      getOptionalStringValue(record, ["createdAt", "sentAt", "publishedAt"]) ??
+      "",
+    id,
+    pinned:
+      getBooleanValue(record, ["pinned", "isPinned", "fixed", "isFixed"]) ??
+      false,
+    title,
+    type:
+      getOptionalStringValue(record, ["type", "messageType", "category"]) ??
+      "NOTICE",
+  };
+}
+
+function getInboxMessageDetailFromRecord(
+  record: Record<string, unknown>,
+): InboxMessageDetail | null {
+  const summary = getInboxMessageSummaryFromRecord(record);
+
+  if (!summary) {
+    return null;
+  }
+
+  return {
+    ...summary,
+    description:
+      getOptionalStringValue(record, [
+        "description",
+        "content",
+        "body",
+        "message",
+      ]) ?? "",
+    linkPath:
+      getOptionalStringValue(record, [
+        "linkPath",
+        "link",
+        "targetPath",
+        "redirectPath",
+      ]) ?? undefined,
+    reference:
+      getOptionalStringValue(record, [
+        "reference",
+        "subtitle",
+        "summary",
+        "descriptionSummary",
+      ]) ?? undefined,
+  };
+}
+
+function getInboxMessagesFromBody(body: unknown): InboxMessagesResponse | null {
+  const data = getNestedData(body);
+
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const feedData = getNestedData(data.feed);
+  const feed = isRecord(feedData) ? feedData : data;
+  const pinned = getRecordListValue(data, [
+    "pinned",
+    "pinnedItems",
+    "pinnedNotices",
+  ])
+    .map(getInboxMessageSummaryFromRecord)
+    .filter((item): item is InboxMessageSummary => item !== null);
+  const items = getRecordListValue(feed, ["items", "messages", "content"])
+    .map(getInboxMessageSummaryFromRecord)
+    .filter((item): item is InboxMessageSummary => item !== null);
+  const nextCursor =
+    getOptionalStringValue(feed, ["nextCursor", "cursor"]) ?? null;
+
+  return {
+    feed: {
+      hasNext: getBooleanValue(feed, ["hasNext"]) ?? Boolean(nextCursor),
+      items,
+      nextCursor,
+    },
+    pinned,
+  };
+}
+
+function getInboxRequestQuery(params: InboxMessagesParams = {}) {
+  const searchParams = new URLSearchParams();
+
+  if (params.type) {
+    searchParams.set("type", params.type);
+  }
+
+  if (params.cursor) {
+    searchParams.set("cursor", params.cursor);
+  }
+
+  if (params.size) {
+    searchParams.set("size", String(params.size));
+  }
+
+  const query = searchParams.toString();
+
+  return query ? `?${query}` : "";
+}
+
+export async function requestInboxMessages(
+  accessToken?: string,
+  params: InboxMessagesParams = {},
 ) {
-  async function sendTrackingRequest(method: "PATCH" | "POST") {
-    return fetch(`${getVersionedApiBaseUrl()}/deliveries/${deliveryId}/tracking`, {
-      body: JSON.stringify({ trackingNumber }),
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/inbox${getInboxRequestQuery(params)}`,
+    {
       credentials: "include",
-      headers: getJsonHeaders(accessToken),
-      method,
-    });
-  }
-
-  let response = await sendTrackingRequest("PATCH");
-
-  if (!response.ok && [404, 405].includes(response.status)) {
-    response = await sendTrackingRequest("POST");
-  }
+      headers: getAuthHeaders(accessToken),
+    },
+  );
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
+
+  const messages = getInboxMessagesFromBody(await readJsonBody(response));
+
+  if (!messages) {
+    throw new Error("공지와 알림 정보를 확인할 수 없어요.");
+  }
+
+  return messages;
 }
+
+export async function requestInboxMessageDetail(
+  accessToken: string | undefined,
+  messageId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/inbox/${encodeURIComponent(messageId)}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const data = getNestedData(await readJsonBody(response));
+
+  if (!isRecord(data)) {
+    throw new Error("공지와 알림 상세를 확인할 수 없어요.");
+  }
+
+  const message = getInboxMessageDetailFromRecord(data);
+
+  if (!message) {
+    throw new Error("공지와 알림 상세를 확인할 수 없어요.");
+  }
+
+  return message;
+}
+
 function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null {
   const nestedGroup = getNestedData(record.group);
   const groupRecord = isRecord(nestedGroup) ? nestedGroup : record;
   const id = getStringValue(groupRecord, ["id", "groupId"]);
   const name = getStringValue(groupRecord, ["name", "groupName"]);
+  const imageUrl = getProxiedGroupImageUrl(
+    getOptionalStringValue(groupRecord, [
+      "image",
+      "imageUrl",
+      "thumbnailUrl",
+      "profileImageUrl",
+    ]),
+  );
 
   if (!id || !name) {
     return null;
@@ -3272,12 +3919,7 @@ function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null
         "isFavorited",
       ]) ??
       undefined,
-    imageUrl: getOptionalStringValue(groupRecord, [
-      "image",
-      "imageUrl",
-      "thumbnailUrl",
-      "profileImageUrl",
-    ]),
+    imageUrl,
   } satisfies ApiGroup;
 }
 
@@ -3288,6 +3930,14 @@ function getApiGroupMemberFromRecord(
   const memberRecord = isRecord(nestedMember) ? nestedMember : record;
   const id = getStringValue(memberRecord, ["id", "memberId"]);
   const name = getStringValue(memberRecord, ["name", "memberName"]);
+  const imageUrl = getProxiedGroupImageUrl(
+    getOptionalStringValue(memberRecord, [
+      "image",
+      "imageUrl",
+      "thumbnailUrl",
+      "profileImageUrl",
+    ]),
+  );
 
   if (!id || !name) {
     return null;
@@ -3296,12 +3946,7 @@ function getApiGroupMemberFromRecord(
   return {
     id,
     name,
-    imageUrl: getOptionalStringValue(memberRecord, [
-      "image",
-      "imageUrl",
-      "thumbnailUrl",
-      "profileImageUrl",
-    ]),
+    imageUrl,
   };
 }
 
@@ -3375,10 +4020,12 @@ export async function requestPopularGroups(): Promise<ApiGroup[]> {
     throw new Error(await parseErrorMessage(response));
   }
 
-  return getBuncheolList(await readJsonBody(response))
+  const groups = getBuncheolList(await readJsonBody(response))
     .filter(isRecord)
     .map(getApiGroupFromRecord)
     .filter((group): group is ApiGroup => group !== null);
+
+  return groups.length > 0 ? groups : requestGroups("");
 }
 
 export async function requestGroupsByMemberKeyword(

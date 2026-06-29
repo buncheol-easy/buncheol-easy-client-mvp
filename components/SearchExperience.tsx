@@ -14,6 +14,7 @@ import {
   type ArtistRailItem,
 } from "@/components/ArtistRail";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import { HomeContent } from "@/components/HomeContent";
 import { CloseIcon } from "@/components/icons";
 import type { ProductCardItem } from "@/components/ProductCard";
@@ -1048,6 +1049,9 @@ export function SearchExperience({
                       <ProductGrid items={resultItems} />
                     )}
                   </section>
+                  <div className="-mx-5 mt-8">
+                    <BusinessFooter />
+                  </div>
                 </>
               ) : (
                 <>
@@ -1118,6 +1122,9 @@ export function SearchExperience({
                     </div>
                     )}
                   </section>
+                  <div className="-mx-5 mt-8">
+                    <BusinessFooter />
+                  </div>
                 </>
               )}
             </div>
@@ -1236,6 +1243,9 @@ export function SearchExperience({
 
           {isResultLoading ? renderSearchResultSkeleton() : <ProductGrid items={resultItems} />}
       </section>
+        <div className="-mx-5 mt-8">
+          <BusinessFooter />
+        </div>
       </>
     );
   }

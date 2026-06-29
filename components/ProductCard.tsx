@@ -88,12 +88,13 @@ function getKoreaCalendar(date: Date) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getDeadlineBadge(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
   if (Number.isNaN(deadlineDate.getTime())) {
     return {
-      label: "마감",
+      label: "모집 기한",
       value: deadline,
     };
   }
@@ -102,7 +103,7 @@ function getDeadlineBadge(deadline: string) {
 
   if (deadlineDate.getTime() <= now.getTime()) {
     return {
-      label: "Closed",
+      label: "?? ??",
       value: null,
     };
   }
@@ -116,14 +117,14 @@ function getDeadlineBadge(deadline: string) {
 
   if (remainingDays === 0) {
     return {
-      label: "오늘 마감",
+      label: "오늘 종료",
       value: "D-DAY",
     };
   }
 
   if (remainingDays <= soonDeadlineDays) {
     return {
-      label: "마감 임박",
+      label: "모집 임박",
       value: `D-${remainingDays}`,
     };
   }
@@ -132,6 +133,72 @@ function getDeadlineBadge(deadline: string) {
     label: `D-${remainingDays}`,
     value: `${deadlineCalendar.getUTCMonth() + 1}월 ${deadlineCalendar.getUTCDate()}일`,
   };
+}
+
+function getReadableDeadlineBadge(deadline: string) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return {
+      label: "DATE",
+      value: deadline,
+    };
+  }
+
+  const now = new Date();
+
+  if (deadlineDate.getTime() <= now.getTime()) {
+    return {
+      label: "CLOSED",
+      value: null,
+    };
+  }
+
+  const deadlineCalendar = getKoreaCalendar(deadlineDate);
+  const nowCalendar = getKoreaCalendar(now);
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const remainingDays = Math.round(
+    (deadlineCalendar.getTime() - nowCalendar.getTime()) / millisecondsPerDay,
+  );
+
+  if (remainingDays === 0) {
+    return {
+      label: "ENDS TODAY",
+      value: "D-DAY",
+    };
+  }
+
+  if (remainingDays <= soonDeadlineDays) {
+    return {
+      label: "DUE SOON",
+      value: `D-${remainingDays}`,
+    };
+  }
+
+  return {
+    label: `D-${remainingDays}`,
+    value: `${deadlineCalendar.getUTCMonth() + 1}.${deadlineCalendar.getUTCDate()}`,
+  };
+}
+
+function getProductCardBadge(item: ProductCardItem) {
+  const status = item.status?.toUpperCase();
+
+  if (status === "CANCELLED" || status === "CANCELED") {
+    return {
+      label: "취소됨",
+      value: null,
+    };
+  }
+
+  if (status === "CONFIRMED") {
+    return {
+      label: "CONFIRMED",
+      value: null,
+    };
+  }
+
+  return getReadableDeadlineBadge(item.deadline);
 }
 
 function isRecentlyUploaded(uploadedAt?: string) {
@@ -165,7 +232,7 @@ export function ProductCard({ item }: ProductCardProps) {
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
-  const deadlineBadge = getDeadlineBadge(item.deadline);
+  const deadlineBadge = getProductCardBadge(item);
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 

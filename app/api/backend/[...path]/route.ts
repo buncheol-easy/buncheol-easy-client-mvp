@@ -1,4 +1,4 @@
-const defaultApiBaseUrl = "https://buncheoleasy.com";
+const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
 const legacyApiBaseUrlPattern = /^https?:\/\/13\.124\.248\.60(?:\/v1)?$/;
 
 function getBackendApiRootUrl() {

@@ -35,6 +35,7 @@ type ArtistRailProps = {
 const proxiedImageHosts = new Set([
   "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
   "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
 ]);
 
 function getContrastingColor(image: HTMLImageElement) {
@@ -98,6 +99,18 @@ function getProxiedImageUrl(imageUrl: string) {
   return imageUrl;
 }
 
+function getFallbackInitials(value: string) {
+  const initials = value
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return initials || "G";
+}
+
 export function ArtistImage({
   imageUrl,
   name,
@@ -108,7 +121,24 @@ export function ArtistImage({
   roundedClassName?: string;
 }) {
   const [backgroundColor, setBackgroundColor] = useState("#f1f1f1");
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const displayImageUrl = getProxiedImageUrl(imageUrl);
+  const didImageFail = failedImageUrl === imageUrl;
+
+  if (didImageFail) {
+    return (
+      <>
+        <span
+          className={`absolute inset-0 bg-[#f1f1f1] ${roundedClassName}`}
+        />
+        <span
+          className={`relative flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-200 via-white to-zinc-500 text-[13px] font-semibold tracking-[-0.05em] text-black ${roundedClassName}`}
+        >
+          {getFallbackInitials(name)}
+        </span>
+      </>
+    );
+  }
 
   return (
     <>
@@ -121,6 +151,7 @@ export function ArtistImage({
         alt={name}
         className="relative h-full w-full object-contain p-2 [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.9))_drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]"
         crossOrigin="anonymous"
+        onError={() => setFailedImageUrl(imageUrl)}
         onLoad={(event) => {
           try {
             const color = getContrastingColor(event.currentTarget);

@@ -23,11 +23,18 @@ function getHistoryIndex() {
 }
 
 type BoardDetailContentProps = {
+  isLoading?: boolean;
+  message?: string;
   onBack?: () => void;
-  post: BoardPost;
+  post?: BoardPost | null;
 };
 
-export function BoardDetailContent({ onBack, post }: BoardDetailContentProps) {
+export function BoardDetailContent({
+  isLoading = false,
+  message,
+  onBack,
+  post,
+}: BoardDetailContentProps) {
   const router = useRouter();
 
   function handleBack() {
@@ -73,83 +80,101 @@ export function BoardDetailContent({ onBack, post }: BoardDetailContentProps) {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <article className="tab-content-enter">
-          <section className="rounded-[1.15rem] border border-black/10 bg-white px-4 py-5">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span
-                className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getCategoryTone(
-                  post.category,
-                )}`}
-              >
-                {categoryLabels[post.category]}
-              </span>
-              {post.isPinned ? (
-                <span className="rounded-full bg-[#fff6d8] px-2 py-1 text-[11px] font-semibold text-[#7a5c00]">
-                  고정
-                </span>
-              ) : null}
-              {post.isNew ? (
-                <span className="rounded-full bg-black px-2 py-1 text-[11px] font-semibold text-white">
-                  NEW
-                </span>
-              ) : null}
-              <time className="ml-auto text-[12px] font-semibold text-black/35">
-                {post.date}
-              </time>
-            </div>
-
-            <h2 className="mt-4 text-[23px] font-semibold leading-[1.22] tracking-[-0.06em] text-black">
-              {post.title}
-            </h2>
-            <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/45">
-              {post.summary}
+        {!post ? (
+          <section className="tab-content-enter rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center">
+            <p className="text-[14px] font-semibold text-black/40">
+              {isLoading
+                ? "소식 내용을 불러오는 중이에요."
+                : message || "소식 내용을 확인할 수 없어요."}
             </p>
-          </section>
-
-          <section className="mt-3 rounded-[1.15rem] bg-[#f7f7f7] px-4 py-5">
-            <div className="grid gap-4">
-              {post.body.map((paragraph) => (
-                <p
-                  className="text-[15px] font-medium leading-7 tracking-[-0.04em] text-black/72"
-                  key={paragraph}
-                >
-                  {paragraph}
-                </p>
-              ))}
-            </div>
-          </section>
-
-          {post.action ? (
-            <section className="mt-3 rounded-[1.15rem] bg-black px-4 py-4 text-white">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black">
-                  <BidIcon />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                    {post.action.title}
-                  </p>
-                  <p className="mt-1 text-[12px] font-medium text-white/45">
-                    알림과 연결된 화면으로 바로 이동해요.
-                  </p>
-                </div>
-              </div>
+            {!isLoading ? (
               <Link
-                className="mt-4 flex h-11 items-center justify-center rounded-full bg-white text-[14px] font-semibold tracking-[-0.04em] text-black"
-                href={post.action.href}
+                className="mx-auto mt-5 flex w-fit items-center justify-center rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.04em] text-black/45"
+                href="/board"
               >
-                {post.action.label}
+                소식함 목록 보기
               </Link>
+            ) : null}
+          </section>
+        ) : (
+          <article className="tab-content-enter">
+            <section className="rounded-[1.15rem] border border-black/10 bg-white px-4 py-5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${getCategoryTone(
+                    post.category,
+                  )}`}
+                >
+                  {categoryLabels[post.category]}
+                </span>
+                {post.isPinned ? (
+                  <span className="rounded-full bg-[#fff6d8] px-2 py-1 text-[11px] font-semibold text-[#7a5c00]">
+                    고정
+                  </span>
+                ) : null}
+                {post.isNew ? (
+                  <span className="rounded-full bg-black px-2 py-1 text-[11px] font-semibold text-white">
+                    NEW
+                  </span>
+                ) : null}
+                <time className="ml-auto text-[12px] font-semibold text-black/35">
+                  {post.date}
+                </time>
+              </div>
+
+              <h2 className="mt-4 text-[23px] font-semibold leading-[1.22] tracking-[-0.06em] text-black">
+                {post.title}
+              </h2>
+              <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/45">
+                {post.summary}
+              </p>
             </section>
-          ) : (
-            <Link
-              className="mx-auto mt-5 flex w-fit items-center justify-center rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.04em] text-black/45"
-              href="/board"
-            >
-              소식함 목록 보기
-            </Link>
-          )}
-        </article>
+
+            <section className="mt-3 rounded-[1.15rem] bg-[#f7f7f7] px-4 py-5">
+              <div className="grid gap-4">
+                {post.body.map((paragraph, index) => (
+                  <p
+                    className="text-[15px] font-medium leading-7 tracking-[-0.04em] text-black/72"
+                    key={`${paragraph}-${index}`}
+                  >
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </section>
+
+            {post.action ? (
+              <section className="mt-3 rounded-[1.15rem] bg-black px-4 py-4 text-white">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black">
+                    <BidIcon />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                      {post.action.title}
+                    </p>
+                    <p className="mt-1 text-[12px] font-medium text-white/45">
+                      알림과 연결된 화면으로 바로 이동해요.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  className="mt-4 flex h-11 items-center justify-center rounded-full bg-white text-[14px] font-semibold tracking-[-0.04em] text-black"
+                  href={post.action.href}
+                >
+                  {post.action.label}
+                </Link>
+              </section>
+            ) : (
+              <Link
+                className="mx-auto mt-5 flex w-fit items-center justify-center rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.04em] text-black/45"
+                href="/board"
+              >
+                소식함 목록 보기
+              </Link>
+            )}
+          </article>
+        )}
       </main>
     </div>
   );
