@@ -2005,6 +2005,11 @@ function getBuncheolManagementDeliveryFromRecord(
     record.delivery,
     record.deliverySnapshot,
     record.deliveryInfo,
+    record.deliveryRequest,
+    record.shipment,
+    record.shipmentInfo,
+    record.shippingDelivery,
+    record.shippingSnapshot,
   ]
     .map(getNestedData)
     .find(isRecord);
@@ -2012,6 +2017,17 @@ function getBuncheolManagementDeliveryFromRecord(
     record.shippingAddressSnapshot,
     record.shippingAddress,
     record.shippingAddressInfo,
+    record.selectedShippingAddress,
+    record.selectedAddress,
+    record.recipientAddress,
+    record.recipient,
+    record.receiver,
+    record.receiverInfo,
+    record.shipping,
+    record.shippingInfo,
+    record.pickupStore,
+    record.store,
+    record.storeInfo,
     record.addressSnapshot,
     record.address,
   ]
@@ -2019,12 +2035,21 @@ function getBuncheolManagementDeliveryFromRecord(
     .find(isRecord);
   const primaryRecord = deliveryRecord ?? addressRecord ?? null;
   const deliveryId =
-    getOptionalStringValue(record, ["deliveryId", "deliverySnapshotId"]) ??
+    getOptionalStringValue(record, [
+      "deliveryId",
+      "deliverySnapshotId",
+      "trackingDeliveryId",
+      "shipmentId",
+      "shippingId",
+    ]) ??
     (deliveryRecord
       ? getOptionalStringValue(deliveryRecord, [
           "deliveryId",
           "id",
           "deliverySnapshotId",
+          "trackingDeliveryId",
+          "shipmentId",
+          "shippingId",
         ])
       : undefined);
   const receiverNickname =
@@ -2034,6 +2059,9 @@ function getBuncheolManagementDeliveryFromRecord(
           "recipientNickname",
           "receiverName",
           "recipientName",
+          "buyerName",
+          "participantName",
+          "recipient",
           "name",
         ])
       : undefined) ??
@@ -2042,6 +2070,9 @@ function getBuncheolManagementDeliveryFromRecord(
       "recipientNickname",
       "receiverName",
       "recipientName",
+      "buyerName",
+      "participantName",
+      "recipient",
     ]) ??
     (primaryRecord || deliveryId
       ? getOptionalStringValue(record, ["participantNickname", "nickname"])
@@ -2056,6 +2087,9 @@ function getBuncheolManagementDeliveryFromRecord(
           "recipientPhone",
           "contact",
           "contactNumber",
+          "contactPhone",
+          "phone",
+          "mobile",
           "mobilePhoneNumber",
           "tel",
         ])
@@ -2068,6 +2102,9 @@ function getBuncheolManagementDeliveryFromRecord(
       "recipientPhone",
       "contact",
       "contactNumber",
+      "contactPhone",
+      "phone",
+      "mobile",
       "mobilePhoneNumber",
       "tel",
     ]);
@@ -2077,6 +2114,9 @@ function getBuncheolManagementDeliveryFromRecord(
           "shippingMethod",
           "storeType",
           "deliveryMethod",
+          "deliveryType",
+          "shippingType",
+          "method",
           "courier",
           "courierType",
         ])
@@ -2085,6 +2125,9 @@ function getBuncheolManagementDeliveryFromRecord(
       "shippingMethod",
       "storeType",
       "deliveryMethod",
+      "deliveryType",
+      "shippingType",
+      "method",
       "courier",
       "courierType",
     ]);
@@ -2094,9 +2137,14 @@ function getBuncheolManagementDeliveryFromRecord(
           "status",
           "deliveryStatus",
           "shippingStatus",
+          "trackingStatus",
         ])
       : undefined) ??
-    getOptionalStringValue(record, ["deliveryStatus", "shippingStatus"]);
+    getOptionalStringValue(record, [
+      "deliveryStatus",
+      "shippingStatus",
+      "trackingStatus",
+    ]);
   const storeName =
     (primaryRecord
       ? getOptionalStringValue(primaryRecord, [
@@ -2106,9 +2154,19 @@ function getBuncheolManagementDeliveryFromRecord(
           "storeBranchName",
           "convenienceStoreName",
           "pickupStoreName",
+          "pickupStore",
+          "pickupStoreAddress",
+          "storeAddress",
+          "addressName",
           "address",
           "roadAddress",
+          "roadNameAddress",
+          "jibunAddress",
+          "detailAddress",
+          "fullAddress",
           "shippingAddress",
+          "recipientAddress",
+          "receiverAddress",
           "name",
         ])
       : undefined) ??
@@ -2119,9 +2177,19 @@ function getBuncheolManagementDeliveryFromRecord(
       "storeBranchName",
       "convenienceStoreName",
       "pickupStoreName",
+      "pickupStore",
+      "pickupStoreAddress",
+      "storeAddress",
+      "addressName",
       "address",
       "roadAddress",
+      "roadNameAddress",
+      "jibunAddress",
+      "detailAddress",
+      "fullAddress",
       "shippingAddress",
+      "recipientAddress",
+      "receiverAddress",
     ]);
   const trackingNumber =
     (deliveryRecord

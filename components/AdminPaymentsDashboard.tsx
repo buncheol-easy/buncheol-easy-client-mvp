@@ -261,8 +261,18 @@ function getRecordDeliveryIds(record: AdminPaymentRecord) {
   return getUniqueValues(record.deliveries.map((delivery) => delivery.deliveryId));
 }
 
-function getDeliveryBatchId(record: AdminPaymentRecord) {
-  return getRecordDeliveryIds(record).join("|") || record.participationId;
+function getRecordTrackingTargetIds(record: AdminPaymentRecord) {
+  const deliveryIds = getRecordDeliveryIds(record);
+
+  if (deliveryIds.length > 0) {
+    return deliveryIds;
+  }
+
+  return record.status === "CONFIRMED" ? record.participationIds : [];
+}
+
+function getTrackingBatchId(record: AdminPaymentRecord) {
+  return getRecordTrackingTargetIds(record).join("|") || record.participationId;
 }
 
 function groupPaymentRecords(records: AdminPaymentRecord[]) {
@@ -638,11 +648,11 @@ export function AdminPaymentsDashboard() {
       selectedRecord.delivery?.trackingNumber ??
       "")
     : "";
-  const selectedDeliveryIds = selectedRecord
-    ? getRecordDeliveryIds(selectedRecord)
+  const selectedTrackingTargetIds = selectedRecord
+    ? getRecordTrackingTargetIds(selectedRecord)
     : [];
-  const selectedDeliveryBatchId = selectedRecord
-    ? getDeliveryBatchId(selectedRecord)
+  const selectedTrackingBatchId = selectedRecord
+    ? getTrackingBatchId(selectedRecord)
     : "";
   const selectedHasTrackingNumber = Boolean(
     selectedRecord?.deliveries.some((delivery) => delivery.trackingNumber),
@@ -657,9 +667,9 @@ export function AdminPaymentsDashboard() {
     Object.values(selectedVerification).every(Boolean) &&
     confirmingParticipationId !== selectedRecord?.participationId;
   const canRegisterTracking = Boolean(
-    selectedDeliveryIds.length > 0 &&
+    selectedTrackingTargetIds.length > 0 &&
       selectedTrackingValue.trim() &&
-      registeringDeliveryId !== selectedDeliveryBatchId,
+      registeringDeliveryId !== selectedTrackingBatchId,
   );
   const verificationItems: Array<{
     key: VerificationKey;
@@ -729,15 +739,15 @@ export function AdminPaymentsDashboard() {
   }
 
   async function registerTrackingNumber(record: AdminPaymentRecord) {
-    const deliveryIds = getRecordDeliveryIds(record);
-    const deliveryBatchId = getDeliveryBatchId(record);
+    const trackingTargetIds = getRecordTrackingTargetIds(record);
+    const trackingBatchId = getTrackingBatchId(record);
     const trackingNumber = (
       trackingInputs[record.participationId] ??
       record.delivery?.trackingNumber ??
       ""
     ).trim();
 
-    if (deliveryIds.length === 0) {
+    if (trackingTargetIds.length === 0) {
       setMessage("운송장을 등록할 배송 ID가 없어요.");
       return;
     }
@@ -747,7 +757,7 @@ export function AdminPaymentsDashboard() {
       return;
     }
 
-    setRegisteringDeliveryId(deliveryBatchId);
+    setRegisteringDeliveryId(trackingBatchId);
 
     try {
       const accessToken = await getAdminDashboardAccessToken();
@@ -758,7 +768,7 @@ export function AdminPaymentsDashboard() {
       }
 
       await Promise.all(
-        deliveryIds.map((deliveryId) =>
+        trackingTargetIds.map((deliveryId) =>
           requestDeliveryTrackingRegistration(
             accessToken,
             deliveryId,
@@ -1167,7 +1177,7 @@ export function AdminPaymentsDashboard() {
                               onClick={() => registerTrackingNumber(selectedRecord)}
                               type="button"
                             >
-                              {registeringDeliveryId === selectedDeliveryBatchId
+                              {registeringDeliveryId === selectedTrackingBatchId
                                 ? "등록 중"
                                 : selectedHasTrackingNumber
                                   ? "운송장 수정"
@@ -1182,11 +1192,56 @@ export function AdminPaymentsDashboard() {
                         )}
                       </div>
                     ) : (
-                      <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold text-black/45">
-                        {isSelectedPaymentConfirmed
-                          ? "입금 확인은 완료됐지만 운송장 등록에 필요한 배송 정보가 없어 지금은 등록할 수 없어요."
-                          : "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요."}
-                      </p>
+                      <div className="mt-3 grid gap-2 text-[13px] font-semibold">
+                        <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
+                          <p className="text-[12px] text-black/40">배송지</p>
+                          <p className="mt-0.5 truncate">
+                            배송지 정보 확인 중
+                          </p>
+                        </div>
+                        <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
+                          <p className="text-[12px] text-black/40">연락처</p>
+                          <p className="mt-0.5 truncate">-</p>
+                        </div>
+                        {isSelectedPaymentConfirmed ? (
+                          <>
+                            <label className="grid gap-1.5">
+                              <span className="text-[12px] font-semibold text-black/40">
+                                운송장 번호
+                              </span>
+                              <input
+                                className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+                                onChange={(event) =>
+                                  setTrackingInputs((current) => ({
+                                    ...current,
+                                    [selectedRecord.participationId]:
+                                      event.currentTarget.value,
+                                  }))
+                                }
+                                placeholder="운송장 번호 입력"
+                                value={selectedTrackingValue}
+                              />
+                            </label>
+                            <button
+                              className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
+                              disabled={!canRegisterTracking}
+                              onClick={() => registerTrackingNumber(selectedRecord)}
+                              type="button"
+                            >
+                              {registeringDeliveryId === selectedTrackingBatchId
+                                ? "등록 중"
+                                : selectedHasTrackingNumber
+                                  ? "운송장 수정"
+                                  : "운송장 등록"}
+                            </button>
+                          </>
+                        ) : (
+                          <p className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[12px] font-semibold leading-5 text-black/45">
+                            결제 요청 배송지가 응답에 없어 확인할 수 없어요.
+                            입금 확인 전에도 배송지가 필요해요.
+                          </p>
+                        )}
+                      </div>
                     )}
                   </section>
                 ) : null}
