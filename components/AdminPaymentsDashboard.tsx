@@ -761,15 +761,22 @@ export function AdminPaymentsDashboard() {
         return;
       }
 
-      await Promise.all(
-        trackingTargetIds.map((deliveryId) =>
-          requestDeliveryTrackingRegistration(
+      for (const deliveryId of trackingTargetIds) {
+        try {
+          await requestDeliveryTrackingRegistration(
             accessToken,
             deliveryId,
             trackingNumber,
-          ),
-        ),
-      );
+          );
+        } catch (error: unknown) {
+          throw new Error(
+            error instanceof Error
+              ? `배송 ID ${deliveryId}: ${error.message}`
+              : `배송 ID ${deliveryId}: 운송장 번호를 등록하지 못했어요.`,
+          );
+        }
+      }
+
       await loadRecords("운송장 번호를 등록했어요.");
     } catch (error: unknown) {
       setMessage(
