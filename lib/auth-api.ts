@@ -2521,7 +2521,7 @@ function getStatusBadge(status: string) {
 }
 
 function isDeletedBuncheolStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "DELETED";
+  return status === "DELETED";
 }
 
 function isRemovedBuncheolStatus(status: string | undefined) {
