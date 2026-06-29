@@ -74,6 +74,13 @@ const maxPhotos = 5;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const minimumPricePromptExitDelay = 220;
+const emptyProductDescriptionText =
+  "판매자가 상품 설명을 작성하지 않았습니다.";
+const emptyProductDescriptionPlaceholders = new Set([
+  emptyProductDescriptionText,
+  "판매자가 아직 상품 설명을 작성하지 않았습니다.",
+  "상품 설명이 없어요.",
+]);
 
 type ScheduleField = "closing";
 type SchedulePart = "year" | "month" | "day" | "hour";
@@ -120,6 +127,16 @@ function getInitials(value: string) {
 
 function getMemberLookupKey(value: string) {
   return value.trim().toLowerCase();
+}
+
+function getEditableDescription(value: string | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+
+  if (!trimmedValue || emptyProductDescriptionPlaceholders.has(trimmedValue)) {
+    return "";
+  }
+
+  return value ?? "";
 }
 
 function getMemberTone(seed: string) {
@@ -923,7 +940,7 @@ export function UploadProductForm({
                   return prices;
                 }, {}),
               );
-              setDescription(apiProduct.description);
+              setDescription(getEditableDescription(apiProduct.description));
 
               const restoredPhotos = (apiProduct.imageUrls?.length
                 ? apiProduct.imageUrls
@@ -1025,7 +1042,7 @@ export function UploadProductForm({
           return prices;
         }, {}),
       );
-      setDescription(product.description);
+      setDescription(getEditableDescription(product.description));
 
       const storedImageUrls = product.imageUrls?.length
         ? product.imageUrls
@@ -1503,8 +1520,7 @@ export function UploadProductForm({
       imageUrls: storedPhotoUrls,
       purchaseSource: purchaseSource.trim(),
       shippingMethods: selectedShippingMethods,
-      description:
-        description.trim() || "판매자가 아직 상품 설명을 작성하지 않았습니다.",
+      description: description.trim(),
       options: productOptions,
     };
     const canUseBuncheolApi =
@@ -1612,7 +1628,7 @@ export function UploadProductForm({
                 getStoreShippingFee(selectedShipping, shippingPrices, "CU") ||
                 undefined,
               deadline: deadlineDate.toISOString(),
-              description: product.description,
+              description: product.description || undefined,
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
               gs25ShippingFee:

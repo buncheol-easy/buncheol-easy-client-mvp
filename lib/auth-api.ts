@@ -3010,7 +3010,9 @@ export function toProductDetailItem(
     ...toProductCardItem(detail),
     buncheolId: detail.id,
     courier: shippingMethods[0]?.name ?? "배송 방법 확인 필요",
-    description: detail.description?.trim() || "상품 설명이 없어요.",
+    description:
+      detail.description?.trim() ||
+      "판매자가 상품 설명을 작성하지 않았습니다.",
     imageUrl: detail.imageUrls[0],
     imageUrls: detail.imageUrls,
     imageIds: detail.imageIds,

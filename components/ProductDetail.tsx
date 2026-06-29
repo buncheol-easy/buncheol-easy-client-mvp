@@ -2146,7 +2146,8 @@ export function ProductDetail({
                 상품 설명
               </h2>
               <p className="mt-3 text-[15px] leading-7 tracking-[-0.04em] text-black/65">
-                {product.description.trim() || "상품 설명이 없어요."}
+                {product.description.trim() ||
+                  "판매자가 상품 설명을 작성하지 않았습니다."}
               </p>
             </div>
 
