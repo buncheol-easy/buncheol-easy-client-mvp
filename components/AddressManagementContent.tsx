@@ -478,7 +478,7 @@ export function AddressManagementContent({
                 <div
                   className={`w-full rounded-[1rem] border px-4 py-4 text-left transition-colors ${
                     isDefault
-                      ? "border-[#D7FF5F]/55 bg-[#FAFFE9]"
+                      ? "border-[#C8D4A5] bg-[#F3F5EA]"
                       : "border-black/10 bg-[#f7f7f7]"
                   }`}
                   key={address.id}
@@ -489,7 +489,7 @@ export function AddressManagementContent({
                         <span
                           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                             isDefault
-                              ? "bg-[#EFFFB8] text-black"
+                              ? "bg-[#DDE7B8] text-black"
                               : "bg-white text-black/55"
                           }`}
                         >
@@ -507,7 +507,7 @@ export function AddressManagementContent({
                       </div>
                     {isDefault ? (
                       <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                        <span className="inline-flex h-8 items-center rounded-full bg-[#EFFFB8] px-2.5 text-[12px] font-semibold text-black">
+                        <span className="inline-flex h-8 items-center rounded-full bg-[#DDE7B8] px-2.5 text-[12px] font-semibold text-black">
                           기본
                         </span>
                       </div>
@@ -565,7 +565,7 @@ export function AddressManagementContent({
                       <button
                         className={`h-10 rounded-[0.7rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
                           newAddressStoreType === storeType
-                            ? "bg-[#D7FF5F] text-black"
+                            ? "bg-[#DDE7B8] text-black"
                             : "text-black/45"
                         }`}
                         key={storeType}
