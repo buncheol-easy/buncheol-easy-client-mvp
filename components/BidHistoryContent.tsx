@@ -175,7 +175,7 @@ function formatPaymentRemainingTime(
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
 type BidHistoryMode = "joined" | "hosted";
-type BidHistoryFilter = "all" | "payment" | "active";
+type BidHistoryFilter = "all" | "payment" | "confirmed";
 type HostedHistoryFilter = "all" | "active" | "closed";
 type BidHistoryViewState = {
   filter?: BidHistoryFilter;
@@ -184,7 +184,7 @@ type BidHistoryViewState = {
 };
 
 const bidHistoryModes: BidHistoryMode[] = ["joined", "hosted"];
-const bidHistoryFilters: BidHistoryFilter[] = ["all", "payment", "active"];
+const bidHistoryFilters: BidHistoryFilter[] = ["all", "payment", "confirmed"];
 const hostedHistoryFilters: HostedHistoryFilter[] = [
   "all",
   "active",
@@ -1038,8 +1038,6 @@ export function BidHistoryContent({
 
     return [...sourceRecords]
       .filter((bid) => {
-        const isClosed = isBidRecordClosed(bid, now);
-
         if (
           filter !== "all" &&
           isCancelledParticipationStatus(bid.participationStatus)
@@ -1054,8 +1052,8 @@ export function BidHistoryContent({
           );
         }
 
-        if (filter === "active") {
-          return !isClosed;
+        if (filter === "confirmed") {
+          return isBidRecordPaymentConfirmed(bid);
         }
 
         return true;
@@ -1545,8 +1543,8 @@ export function BidHistoryContent({
           {(
             [
               ["all", "전체"],
-              ["active", "진행 중"],
-              ["payment", "결제 확인"],
+              ["payment", "입금 필요"],
+              ["confirmed", "확정"],
             ] as const
           ).map(([value, label]) => {
             const isActive = filter === value;

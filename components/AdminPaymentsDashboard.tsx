@@ -1102,7 +1102,7 @@ export function AdminPaymentsDashboard() {
                         <p className="mt-1 text-[12px] font-semibold text-black/40">
                           {selectedRecord.delivery
                             ? getDeliveryStatusLabel(selectedRecord.delivery.status)
-                            : "배송 정보 생성 전"}
+                            : "운송장 입력 대기"}
                         </p>
                       </div>
                       {selectedRecord.delivery?.shippingMethod ? (
@@ -1163,7 +1163,8 @@ export function AdminPaymentsDashboard() {
                       </div>
                     ) : (
                       <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold text-black/45">
-                        결제 확인 후 배송 정보가 내려오면 운송장 번호를 입력할 수 있어요.
+                        운송장 입력은 이 관리자 화면에서 진행해요. 다만 이 건은
+                        배송지가 확인되지 않아 지금은 등록할 수 없어요.
                       </p>
                     )}
                   </section>
