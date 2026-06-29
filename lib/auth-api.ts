@@ -196,6 +196,7 @@ export type BuncheolSummary = {
 };
 
 export type BuncheolMember = {
+  available?: boolean;
   bidMinPrice: number;
   currentBidAmount: number;
   id: string;
@@ -1765,6 +1766,7 @@ function getBuncheolMemberFromRecord(
   const purchaseState = getBuncheolMemberPurchaseStateFromRecord(record);
 
   return {
+    available: getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
     id,
     name,
     bidMinPrice,
@@ -1795,6 +1797,137 @@ function getBuncheolMemberFromRecord(
       ]) ?? 0,
     ...purchaseState,
   };
+}
+
+function isInactiveBuncheolPaymentStatus(status: string | undefined) {
+  return [
+    "CANCELLED",
+    "CANCELED",
+    "EXPIRED",
+    "FAILED",
+    "REFUNDED",
+    "REJECTED",
+  ].includes(status?.toUpperCase() ?? "");
+}
+
+function getBuncheolParticipantOptionIdentity(record: Record<string, unknown>) {
+  const nestedMemberRecord = [
+    record.buncheolMember,
+    record.member,
+    record.option,
+    record.memberSlot,
+    record.buncheolMemberSlot,
+  ]
+    .map(getNestedData)
+    .find(isRecord);
+  const memberRecord = isRecord(nestedMemberRecord) ? nestedMemberRecord : null;
+
+  return {
+    id:
+      getOptionalStringValue(record, [
+        "buncheolMemberId",
+        "buncheolMemberSlotId",
+        "memberId",
+        "memberSlotId",
+        "optionId",
+        "slotId",
+      ]) ??
+      (memberRecord
+        ? getOptionalStringValue(memberRecord, [
+            "buncheolMemberId",
+            "buncheolMemberSlotId",
+            "id",
+            "memberId",
+            "memberSlotId",
+            "optionId",
+            "slotId",
+          ])
+        : undefined),
+    name:
+      getStringValue(record, [
+        "memberName",
+        "optionLabel",
+        "name",
+        "label",
+        "memberLabel",
+      ]) ||
+      (memberRecord
+        ? getStringValue(memberRecord, [
+            "memberName",
+            "name",
+            "label",
+            "optionLabel",
+            "memberLabel",
+          ])
+        : ""),
+  };
+}
+
+function mergeBuncheolMemberPurchaseStates(
+  members: BuncheolMember[],
+  data: Record<string, unknown>,
+) {
+  const participantRecords = getNestedRecordListValue(data, [
+    "activeParticipations",
+    "activeParticipants",
+    "activePayments",
+    "activePurchases",
+    "orders",
+    "participants",
+    "participations",
+    "paymentParticipants",
+    "paymentRequests",
+    "payments",
+    "purchaseParticipants",
+    "purchaseRequests",
+    "purchases",
+    "winners",
+  ]).filter((record) => {
+    const status = getOptionalStringValue(record, [
+      "paymentStatus",
+      "participationStatus",
+      "status",
+    ]);
+
+    return !isInactiveBuncheolPaymentStatus(status);
+  });
+
+  if (participantRecords.length === 0) {
+    return members;
+  }
+
+  const participantById = new Map<string, Record<string, unknown>>();
+  const participantByName = new Map<string, Record<string, unknown>>();
+
+  participantRecords.forEach((record) => {
+    const identity = getBuncheolParticipantOptionIdentity(record);
+
+    if (identity.id && !participantById.has(identity.id)) {
+      participantById.set(identity.id, record);
+    }
+
+    if (identity.name && !participantByName.has(identity.name)) {
+      participantByName.set(identity.name, record);
+    }
+  });
+
+  return members.map((member) => {
+    const participantRecord =
+      participantById.get(member.id) ?? participantByName.get(member.name);
+
+    if (!participantRecord) {
+      return member;
+    }
+
+    const purchaseState =
+      getBuncheolMemberPurchaseStateFromRecord(participantRecord);
+
+    return {
+      ...member,
+      ...purchaseState,
+      participantCount: Math.max(member.participantCount, 1),
+    };
+  });
 }
 
 function getBuncheolShippingOptionFromRecord(
@@ -1873,28 +2006,31 @@ function getBuncheolDetailFromBody(body: unknown) {
   }
 
   const myParticipationBids = getMyParticipationBidsFromRecord(data);
-  const members = getRecordListValue(data, [
-    "buncheolMembers",
-    "members",
-    "memberSlots",
-    "options",
-  ])
-    .map(getBuncheolMemberFromRecord)
-    .filter((member): member is BuncheolMember => member !== null)
-    .map((member) => {
-      const myBid = myParticipationBids.get(member.id);
+  const members = mergeBuncheolMemberPurchaseStates(
+    getRecordListValue(data, [
+      "buncheolMembers",
+      "members",
+      "memberSlots",
+      "options",
+    ])
+      .map(getBuncheolMemberFromRecord)
+      .filter((member): member is BuncheolMember => member !== null)
+      .map((member) => {
+        const myBid = myParticipationBids.get(member.id);
 
-      if (!myBid) {
-        return member;
-      }
+        if (!myBid) {
+          return member;
+        }
 
-      return {
-        ...member,
-        myBidAmount: myBid.bidAmount,
-        myParticipationId: myBid.participationId,
-        myRank: myBid.rank,
-      };
-    });
+        return {
+          ...member,
+          myBidAmount: myBid.bidAmount,
+          myParticipationId: myBid.participationId,
+          myRank: myBid.rank,
+        };
+      }),
+    data,
+  );
   const shippingOptions = getRecordListValue(data, [
     "shippingOptions",
     "shippingMethods",
@@ -2848,6 +2984,7 @@ export function toProductDetailItem(
       id: member.id,
       buncheolMemberId: member.id,
       currentBid: formattedPrice,
+      available: member.available,
       imageUrl: member.imageUrl,
       label: member.name,
       myBidAmount: member.myBidAmount,

@@ -2,6 +2,7 @@ import type { ProductCardItem } from "@/components/ProductCard";
 
 export type ProductOption = {
   id: string;
+  available?: boolean;
   imageUrl?: string;
   buncheolMemberId?: string;
   myBidAmount?: number;

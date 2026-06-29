@@ -383,6 +383,10 @@ function hasOptionPurchaseState(option: ProductOption) {
   );
 }
 
+function isUnavailablePurchaseOption(option: ProductOption) {
+  return option.available === false;
+}
+
 function getOptionPurchaseOverlayLabel(
   option: ProductOption,
   myBid?: number,
@@ -396,6 +400,14 @@ function getOptionPurchaseOverlayLabel(
 
   if (hasOptionPurchaseState(option)) {
     return isConfirmed ? "구매 완료" : "결제 대기 중";
+  }
+
+  if (isUnavailablePurchaseOption(option)) {
+    return "구매 진행 중";
+  }
+
+  if (option.available === true) {
+    return null;
   }
 
   if (shouldUseParticipantCount && option.participantCount > 0) {
@@ -491,6 +503,8 @@ export function ProductDetail({
   const didNavigateBack = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
+  const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
+  const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
   const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
@@ -503,6 +517,12 @@ export function ProductDetail({
     useState<CheckoutSheetStep>("options");
   const [checkoutDeliveryAddress, setCheckoutDeliveryAddress] =
     useState<DeliveryAddress | null>(null);
+  const [isCheckoutAddressSheetOpen, setIsCheckoutAddressSheetOpen] =
+    useState(false);
+  const [isCheckoutAddressSheetEntered, setIsCheckoutAddressSheetEntered] =
+    useState(false);
+  const [isCheckoutAddressSheetClosing, setIsCheckoutAddressSheetClosing] =
+    useState(false);
   const [checkoutRefundAccount, setCheckoutRefundAccount] =
     useState<BankAccountInfo | null>(null);
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
@@ -615,6 +635,14 @@ export function ProductDetail({
   }
   const bidDeliveryAddress =
     getBidDeliveryAddressFromState(deliveryAddressState);
+  const checkoutEligibleDeliveryAddresses = getPrioritizedDeliveryAddresses(
+    deliveryAddressState.addresses,
+    deliveryAddressState.defaultAddressIds,
+  ).filter((address) =>
+    availableShippingStoreTypes.length > 0
+      ? availableShippingStoreTypes.includes(address.storeType)
+      : true,
+  );
   const targetTags = getTargetTags(product);
   const productImages = getProductImageUrls(product);
   const visibleProductImageIndex = Math.min(
@@ -636,6 +664,14 @@ export function ProductDetail({
     productStatus === "CANCELLED" || productStatus === "CANCELED";
   const isPurchasableStatus =
     !productStatus || productStatus === "RECRUITING";
+  const hasSelectableOption = auctionOptions.some(
+    (option) =>
+      !getOptionPurchaseOverlayLabel(
+        option,
+        myBids[option.id],
+        product.isApiProduct === true,
+      ),
+  );
   const buncheolId = product.buncheolId ?? product.id;
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
@@ -648,7 +684,10 @@ export function ProductDetail({
     !isHostedProduct &&
     !isDeadlinePassed &&
     !isPaymentWindowPassed &&
-    isPurchasableStatus;
+    isPurchasableStatus &&
+    hasSelectableOption;
+  const isMainBidButtonDisabled =
+    !isPublicPreview && (isBidUnavailable || !canBidProduct);
 
   function getBidUnavailableMessage() {
     if (isHostedProduct) {
@@ -665,6 +704,10 @@ export function ProductDetail({
 
     if (isPaymentWindowPassed) {
       return "입금 시간 확보를 위해 구매가 마감됐어요";
+    }
+
+    if (!hasSelectableOption) {
+      return "구매 가능한 옵션이 없어요";
     }
 
     if (productStatus === "CONFIRMED") {
@@ -1384,6 +1427,16 @@ export function ProductDetail({
         window.clearTimeout(sheetCloseFallbackTimerRef.current);
       }
 
+      if (checkoutAddressSheetEnterAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(
+          checkoutAddressSheetEnterAnimationFrameRef.current,
+        );
+      }
+
+      if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
+        window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
+      }
+
       if (checkoutCopyToastTimerRef.current !== null) {
         window.clearTimeout(checkoutCopyToastTimerRef.current);
       }
@@ -1391,6 +1444,11 @@ export function ProductDetail({
   }, []);
 
   function handleBack() {
+    if (isCheckoutAddressSheetOpen) {
+      closeCheckoutAddressSheet();
+      return;
+    }
+
     if (isSheetOpen) {
       closeSheet();
       return;
@@ -1634,6 +1692,61 @@ export function ProductDetail({
     sheetCloseFallbackTimerRef.current = window.setTimeout(() => {
       finishCloseSheet();
     }, 260);
+  }
+
+  function finishCloseCheckoutAddressSheet() {
+    if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
+      window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
+      checkoutAddressSheetCloseFallbackTimerRef.current = null;
+    }
+
+    setIsCheckoutAddressSheetOpen(false);
+    setIsCheckoutAddressSheetClosing(false);
+  }
+
+  function closeCheckoutAddressSheet() {
+    if (checkoutAddressSheetEnterAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(
+        checkoutAddressSheetEnterAnimationFrameRef.current,
+      );
+      checkoutAddressSheetEnterAnimationFrameRef.current = null;
+    }
+
+    setIsCheckoutAddressSheetClosing(true);
+    setIsCheckoutAddressSheetEntered(false);
+
+    if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
+      window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
+    }
+
+    checkoutAddressSheetCloseFallbackTimerRef.current = window.setTimeout(() => {
+      finishCloseCheckoutAddressSheet();
+    }, 260);
+  }
+
+  function openCheckoutAddressSheet() {
+    if (checkoutEligibleDeliveryAddresses.length === 0) {
+      router.push(getAddressManagementHref(true));
+      return;
+    }
+
+    if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
+      window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
+      checkoutAddressSheetCloseFallbackTimerRef.current = null;
+    }
+
+    setCheckoutDeliveryAddress(
+      (current) =>
+        current ?? bidDeliveryAddress ?? checkoutEligibleDeliveryAddresses[0] ?? null,
+    );
+    setIsCheckoutAddressSheetOpen(true);
+    setIsCheckoutAddressSheetClosing(false);
+
+    checkoutAddressSheetEnterAnimationFrameRef.current =
+      window.requestAnimationFrame(() => {
+        checkoutAddressSheetEnterAnimationFrameRef.current = null;
+        setIsCheckoutAddressSheetEntered(true);
+      });
   }
 
   async function copyCheckoutText(value: string, label: string) {
@@ -1940,7 +2053,7 @@ export function ProductDetail({
                     >
                       <div
                         className={`flex min-w-0 items-center gap-3 ${
-                          overlayLabel ? "opacity-45" : ""
+                          overlayLabel ? "opacity-65" : ""
                         }`}
                       >
                         <OptionAvatar option={option} size="md" />
@@ -1949,13 +2062,13 @@ export function ProductDetail({
                             {option.label}
                           </p>
                           <p className="mt-0.5 text-[12px] font-semibold text-black/35">
-                            구매 가능 옵션
+                            {overlayLabel ? "선택할 수 없는 옵션" : "구매 가능 옵션"}
                           </p>
                         </div>
                       </div>
                       <div
                         className={`shrink-0 text-right ${
-                          overlayLabel ? "opacity-45" : ""
+                          overlayLabel ? "opacity-65" : ""
                         }`}
                       >
                         <p className="text-[11px] font-semibold text-black/35">
@@ -1966,7 +2079,7 @@ export function ProductDetail({
                         </p>
                       </div>
                       {overlayLabel ? (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
                           <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                             {overlayLabel}
                           </span>
@@ -1980,12 +2093,14 @@ export function ProductDetail({
           </section>
         </div>
 
-        <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
+        <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
           <button
             type="button"
             className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
-            disabled={isBidUnavailable || (!isPublicPreview && !canBidProduct)}
-            onClick={handleBidButtonClick}
+            disabled={isMainBidButtonDisabled}
+            onClick={
+              isMainBidButtonDisabled ? undefined : handleBidButtonClick
+            }
           >
             {isPublicPreview
               ? "로그인 후 구매하기"
@@ -2076,7 +2191,7 @@ export function ProductDetail({
                         >
                           <div
                             className={`flex items-start justify-between gap-3 ${
-                              overlayLabel ? "opacity-45" : ""
+                              overlayLabel ? "opacity-65" : ""
                             }`}
                           >
                             <div className="flex min-w-0 items-center gap-3">
@@ -2128,7 +2243,7 @@ export function ProductDetail({
                                 : "선택"}
                           </button>
                           {overlayLabel ? (
-                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
                               <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                                 {overlayLabel}
                               </span>
@@ -2200,14 +2315,14 @@ export function ProductDetail({
                         </div>
                         <button
                           className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/55"
-                          onClick={() =>
-                            router.push(
-                              getAddressManagementHref(!checkoutDeliveryAddress),
-                            )
-                          }
+                          onClick={openCheckoutAddressSheet}
                           type="button"
                         >
-                          {checkoutDeliveryAddress ? "변경" : "추가"}
+                          {checkoutDeliveryAddress
+                            ? "변경"
+                            : checkoutEligibleDeliveryAddresses.length > 0
+                              ? "선택"
+                              : "추가"}
                         </button>
                       </div>
                     </div>
@@ -2395,6 +2510,135 @@ export function ProductDetail({
                   </div>
                 )
               ) : null}
+            </section>
+          </div>
+        ) : null}
+
+        {isCheckoutAddressSheetOpen ? (
+          <div
+            className={`bid-sheet-backdrop fixed inset-0 z-50 flex items-end ${
+              isCheckoutAddressSheetEntered && !isCheckoutAddressSheetClosing
+                ? "bid-sheet-backdrop-active"
+                : ""
+            }`}
+          >
+            <button
+              aria-label="배송지 선택 닫기"
+              className="absolute inset-0 cursor-default"
+              onClick={closeCheckoutAddressSheet}
+              type="button"
+            />
+            <section
+              className={`bid-sheet-panel relative mx-auto flex h-[72dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+                isCheckoutAddressSheetEntered && !isCheckoutAddressSheetClosing
+                  ? "bid-sheet-panel-active"
+                  : ""
+              }`}
+              onTransitionEnd={(event) => {
+                if (
+                  isCheckoutAddressSheetClosing &&
+                  event.currentTarget === event.target &&
+                  event.propertyName === "transform"
+                ) {
+                  finishCloseCheckoutAddressSheet();
+                }
+              }}
+            >
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
+                    배송지 선택
+                  </h2>
+                  <p className="mt-1 text-[13px] font-medium text-black/45">
+                    이번 결제에 사용할 배송지를 골라 주세요.
+                  </p>
+                </div>
+                <button
+                  aria-label="닫기"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                  onClick={closeCheckoutAddressSheet}
+                  type="button"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+
+              <div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                {checkoutEligibleDeliveryAddresses.map((address) => {
+                  const isDefault =
+                    address.id ===
+                    deliveryAddressState.defaultAddressIds[address.storeType];
+                  const isSelected =
+                    address.id ===
+                    (checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id);
+
+                  return (
+                    <button
+                      className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
+                        isSelected
+                          ? "border-[#d8d8d8] bg-[#ececec]"
+                          : "border-[#ededed] bg-white"
+                      }`}
+                      key={address.id}
+                      onClick={() => setCheckoutDeliveryAddress(address)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1 pr-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                isSelected || isDefault
+                                  ? "bg-black text-white"
+                                  : "bg-[#f3f3f3] text-black/45"
+                              }`}
+                            >
+                              {getConvenienceStoreLabel(address.storeType)}
+                            </span>
+                            {address.alias ? (
+                              <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                                {address.alias}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                            {address.branchName}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
+                            {address.address}
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
+                            isSelected
+                              ? "bg-black text-white"
+                              : "bg-[#f3f3f3] text-black/45"
+                          }`}
+                        >
+                          {isSelected ? "선택됨" : "선택"}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+
+                <button
+                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  onClick={() => router.push(getAddressManagementHref(true))}
+                  type="button"
+                >
+                  + 새 배송지 추가
+                </button>
+              </div>
+
+              <button
+                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold text-white"
+                onClick={closeCheckoutAddressSheet}
+                type="button"
+              >
+                이 배송지로 받기
+              </button>
             </section>
           </div>
         ) : null}
