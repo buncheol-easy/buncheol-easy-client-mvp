@@ -1,6 +1,7 @@
 const allowedImageHosts = new Set([
   "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
   "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
 ]);
 const allowedPathPrefix = "/idol-groups/";
 

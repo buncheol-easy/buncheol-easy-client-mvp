@@ -5,7 +5,7 @@ import type {
 import type { ProductCardItem } from "@/components/ProductCard";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
-const defaultApiBaseUrl = "https://buncheoleasy.com";
+const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
 const legacyApiBaseUrlPattern = /^https?:\/\/13\.124\.248\.60(?:\/v1)?$/;
 const thumbnailDetailFetchConcurrency = 4;
 const thumbnailDetailFetchLimit = 24;
@@ -3886,10 +3886,12 @@ export async function requestPopularGroups(): Promise<ApiGroup[]> {
     throw new Error(await parseErrorMessage(response));
   }
 
-  return getBuncheolList(await readJsonBody(response))
+  const groups = getBuncheolList(await readJsonBody(response))
     .filter(isRecord)
     .map(getApiGroupFromRecord)
     .filter((group): group is ApiGroup => group !== null);
+
+  return groups.length > 0 ? groups : requestGroups("");
 }
 
 export async function requestGroupsByMemberKeyword(
