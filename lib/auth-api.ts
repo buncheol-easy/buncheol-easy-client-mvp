@@ -3694,20 +3694,15 @@ export async function requestDeliveryTrackingRegistration(
   deliveryId: string,
   trackingNumber: string,
 ) {
-  async function sendTrackingRequest(method: "PATCH" | "POST") {
-    return fetch(`${getVersionedApiBaseUrl()}/deliveries/${deliveryId}/tracking`, {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/deliveries/${deliveryId}/tracking`,
+    {
       body: JSON.stringify({ trackingNumber }),
       credentials: "include",
       headers: getJsonHeaders(accessToken),
-      method,
-    });
-  }
-
-  let response = await sendTrackingRequest("PATCH");
-
-  if (!response.ok && [404, 405].includes(response.status)) {
-    response = await sendTrackingRequest("POST");
-  }
+      method: "PATCH",
+    },
+  );
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
