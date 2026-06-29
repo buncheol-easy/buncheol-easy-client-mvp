@@ -858,94 +858,121 @@ export function ProductDetail({
       }
 
       try {
-        for (const { bidAmount, option } of submittedBids) {
-          const buncheolMemberId = Number(option.buncheolMemberId ?? option.id);
+        const checkoutRequestItems = submittedBids.map(
+          ({ bidAmount, option }) => {
+            const buncheolMemberId = Number(
+              option.buncheolMemberId ?? option.id,
+            );
 
-          if (!Number.isFinite(buncheolMemberId)) {
-            throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
-          }
-
-          const result = await participateBuncheol(accessToken, buncheolId, {
-            buncheolMemberId,
-            refundAccount,
-            shippingAddressId,
-          });
-
-          let paymentDetail:
-            | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
-            | null = null;
-
-          if (
-            result.participationId &&
-            (!result.hostBankAccount ||
-              result.paymentAmount === null ||
-              !result.paymentDueAt)
-          ) {
-            try {
-              paymentDetail = await requestParticipationPaymentDetail(
-                accessToken,
-                result.participationId,
-              );
-            } catch {
-              paymentDetail = null;
+            if (!Number.isFinite(buncheolMemberId)) {
+              throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
             }
+
+            return {
+              bidAmount,
+              buncheolMemberId,
+              option,
+            };
+          },
+        );
+        const result = await participateBuncheol(accessToken, buncheolId, {
+          buncheolMemberIds: checkoutRequestItems.map(
+            (item) => item.buncheolMemberId,
+          ),
+          refundAccount,
+          shippingAddressId,
+        });
+        const resultParticipationIds =
+          result.participationIds.length > 0
+            ? result.participationIds
+            : result.participationId
+              ? [result.participationId]
+              : [];
+
+        if (resultParticipationIds.length < checkoutRequestItems.length) {
+          throw new Error("참여 결과를 확인할 수 없어요.");
+        }
+
+        const firstParticipationId = resultParticipationIds[0] ?? "";
+        let paymentDetail:
+          | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
+          | null = null;
+
+        if (
+          firstParticipationId &&
+          (!result.hostBankAccount ||
+            result.paymentAmount === null ||
+            !result.paymentDueAt)
+        ) {
+          try {
+            paymentDetail = await requestParticipationPaymentDetail(
+              accessToken,
+              firstParticipationId,
+            );
+          } catch {
+            paymentDetail = null;
           }
+        }
 
-          const nextBidAmount =
-            result.bidAmount || paymentDetail?.bidAmount || bidAmount;
-          const nextShippingFee =
-            result.shippingFee ??
-            paymentDetail?.shippingFee ??
-            (result.paymentAmount !== null && result.paymentAmount !== undefined
-              ? Math.max(result.paymentAmount - nextBidAmount, 0)
-              : estimatedShippingFee);
-          const nextPaymentAmount =
-            result.paymentAmount ??
-            paymentDetail?.paymentAmount ??
-            nextBidAmount + nextShippingFee;
+        const hostBankAccount =
+          result.hostBankAccount ?? paymentDetail?.hostBankAccount ?? null;
 
-          if (result.participationId) {
+        if (hostBankAccount) {
+          checkoutHostBankAccount ??= hostBankAccount;
+          bankAccountKeys.add(getBankAccountKey(hostBankAccount));
+        }
+
+        const totalBidAmount = checkoutRequestItems.reduce(
+          (sum, item) => sum + item.bidAmount,
+          0,
+        );
+        const totalPaymentAmount =
+          result.paymentAmount ??
+          paymentDetail?.paymentAmount ??
+          totalBidAmount + estimatedShippingFee;
+        const sharedShippingFee = Math.max(
+          totalPaymentAmount - totalBidAmount,
+          0,
+        );
+        const sharedPaymentDueAt =
+          result.paymentDueAt ?? paymentDetail?.paymentDueAt;
+        const sharedParticipationStatus =
+          result.participationStatus ||
+          paymentDetail?.paymentStatus ||
+          "AWAITING_PAYMENT";
+
+        checkoutRequestItems.forEach(({ bidAmount, option }, index) => {
+          const participationId = resultParticipationIds[index] ?? "";
+          const nextShippingFee = index === 0 ? sharedShippingFee : 0;
+          const nextPaymentAmount = bidAmount + nextShippingFee;
+
+          if (participationId) {
             writeCachedParticipationPayment({
-              bidAmount: nextBidAmount,
-              hostBankAccount:
-                result.hostBankAccount ?? paymentDetail?.hostBankAccount ?? null,
-              participationId: result.participationId,
-              participationStatus:
-                result.participationStatus ||
-                paymentDetail?.paymentStatus ||
-                "AWAITING_PAYMENT",
+              bidAmount,
+              hostBankAccount,
+              participationId,
+              participationStatus: sharedParticipationStatus,
               paymentAmount: nextPaymentAmount,
-              paymentDueAt: result.paymentDueAt ?? paymentDetail?.paymentDueAt,
+              paymentDueAt: sharedPaymentDueAt,
               shippingFee: nextShippingFee,
             });
           }
 
-          const hostBankAccount =
-            result.hostBankAccount ?? paymentDetail?.hostBankAccount ?? null;
-
-          if (hostBankAccount) {
-            checkoutHostBankAccount ??= hostBankAccount;
-            bankAccountKeys.add(getBankAccountKey(hostBankAccount));
-          }
-
           participationResults.set(option.id, {
-            bidAmount: nextBidAmount,
-            participationId: result.participationId,
+            bidAmount,
+            participationId,
           });
 
           paymentItems.push({
-            bidAmount: nextBidAmount,
+            bidAmount,
             option,
-            participationId: result.participationId,
+            participationId,
             paymentAmount: nextPaymentAmount,
-            paymentDueAt: result.paymentDueAt ?? paymentDetail?.paymentDueAt,
-            participationStatus:
-              result.participationStatus ||
-              paymentDetail?.paymentStatus ||
-              "AWAITING_PAYMENT",
+            paymentDueAt: sharedPaymentDueAt,
+            participationStatus: sharedParticipationStatus,
             shippingFee: nextShippingFee,
           });
-        }
+        });
 
         if (bankAccountKeys.size > 1) {
           throw new Error(

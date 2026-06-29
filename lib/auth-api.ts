@@ -108,7 +108,7 @@ export type UpdateBuncheolRequest = {
 };
 
 export type ParticipateBuncheolRequest = {
-  buncheolMemberId: number;
+  buncheolMemberIds: number[];
   refundAccount: BankAccountInfo;
   shippingAddressId: number;
 };
@@ -119,6 +119,7 @@ export type ParticipationCheckoutResponse = {
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   participationId: string;
+  participationIds: string[];
   participationStatus: string;
   shippingFee?: number | null;
 };
@@ -3085,6 +3086,15 @@ export async function participateBuncheol(
     throw new Error("참여 결과를 확인할 수 없어요.");
   }
 
+  const participationIds = getStringListValue(data, [
+    "participationIds",
+    "ids",
+  ]);
+  const participationId =
+    getStringValue(data, ["participationId", "id"]) ||
+    participationIds[0] ||
+    "";
+
   return {
     bidAmount:
       getNumberValue(data, [
@@ -3124,7 +3134,8 @@ export async function participateBuncheol(
         "paymentDeadline",
         "dueAt",
       ]) ?? null,
-    participationId: getStringValue(data, ["participationId", "id"]),
+    participationId,
+    participationIds,
     participationStatus:
       getOptionalStringValue(data, ["participationStatus", "status"]) ??
       "AWAITING_PAYMENT",
