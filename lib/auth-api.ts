@@ -2045,7 +2045,6 @@ function getBuncheolManagementDeliveryFromRecord(
     (deliveryRecord
       ? getOptionalStringValue(deliveryRecord, [
           "deliveryId",
-          "id",
           "deliverySnapshotId",
           "trackingDeliveryId",
           "shipmentId",
