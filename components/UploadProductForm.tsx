@@ -1750,10 +1750,26 @@ export function UploadProductForm({
                             src={coverPhoto.url}
                           />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-[15px] font-semibold text-white/70">
-                            사진 추가
-                          </div>
+                          <>
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
+                            <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
+                            <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
+                            <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
+                                Photo Upload
+                              </p>
+                              <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
+                                사진 업로드
+                              </p>
+                            </div>
+                          </>
                         )}
+
+                        {coverPhoto ? (
+                          <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
+                            대표 사진
+                          </span>
+                        ) : null}
 
                         <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
                           <PlusIcon />
@@ -1779,7 +1795,10 @@ export function UploadProductForm({
                         />
                       </label>
 
-                      <div className="relative z-10 mt-3 grid grid-cols-5 gap-2">
+                      <p className="mt-5 text-[12px] font-semibold text-black/40">
+                        사진을 눌러 대표 사진을 변경할 수 있어요.
+                      </p>
+                      <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
                         {photos.map((photo) => {
                           const isCover = photo.id === coverPhoto?.id;
 
@@ -1788,22 +1807,29 @@ export function UploadProductForm({
                               className="relative"
                               key={photo.id}
                             >
-                              <button
-                                aria-label={`${photo.name} 대표 사진으로 설정`}
-                                className="relative aspect-square w-full overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]"
-                                onClick={() => setCoverPhotoId(photo.id)}
-                                type="button"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  alt={photo.name}
-                                  className="h-full w-full object-cover"
-                                  src={photo.url}
-                                />
+                              <div className="relative aspect-square overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]">
+                                <button
+                                  aria-label={`${photo.name} 대표 사진으로 설정`}
+                                  className="h-full w-full"
+                                  onClick={() => setCoverPhotoId(photo.id)}
+                                  type="button"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    alt={photo.name}
+                                    className="h-full w-full object-cover"
+                                    src={photo.url}
+                                  />
+                                </button>
                                 {isCover ? (
-                                  <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
+                                  <>
+                                    <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
+                                    <span className="absolute bottom-1 left-1 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                                      대표
+                                    </span>
+                                  </>
                                 ) : null}
-                              </button>
+                              </div>
                               <button
                                 aria-label="사진 삭제"
                                 className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white shadow-[0_6px_14px_rgba(0,0,0,0.22)]"
