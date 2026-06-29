@@ -51,10 +51,13 @@ type AdminPaymentRecord = {
   buncheolTitle: string;
   confirmedAt?: string | null;
   delivery?: BuncheolManagementDelivery | null;
+  deliveries: BuncheolManagementDelivery[];
   groupName: string;
   memberName: string;
+  memberNames: string[];
   participantNickname: string;
   participationId: string;
+  participationIds: string[];
   paymentDueAt?: string | null;
   rawStatus: string;
   refundAccount?: BankAccountInfo | null;
@@ -166,13 +169,26 @@ function getRefundAccountLabel(refundAccount: BankAccountInfo | null | undefined
     .join(" ");
 }
 
+function getUniqueValues(values: Array<string | undefined | null>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function getMemberSummary(memberNames: string[]) {
+  if (memberNames.length === 0) return "-";
+  if (memberNames.length === 1) return memberNames[0];
+
+  return `${memberNames[0]} 외 ${memberNames.length - 1}개`;
+}
+
 function getSearchText(record: AdminPaymentRecord) {
   return [
     record.participationId,
+    ...record.participationIds,
     record.buncheolId,
     record.buncheolTitle,
     record.groupName,
     record.memberName,
+    ...record.memberNames,
     record.participantNickname,
     record.refundAccount?.account,
     record.refundAccount?.bank,
@@ -193,6 +209,103 @@ function getRecordSortTime(record: AdminPaymentRecord) {
   const source = record.confirmedAt ?? record.paymentDueAt;
   const time = source ? new Date(source).getTime() : 0;
   return Number.isNaN(time) ? 0 : time;
+}
+
+function getPaymentGroupKey(record: AdminPaymentRecord) {
+  return [
+    record.buncheolId,
+    record.participantNickname,
+    record.refundAccount?.account ?? "",
+    record.refundAccount?.holder ?? "",
+    record.paymentDueAt ?? "",
+    record.status,
+  ].join("|");
+}
+
+function getDeliveryKey(delivery: BuncheolManagementDelivery) {
+  return [
+    delivery.deliveryId ?? "",
+    delivery.shippingMethod ?? "",
+    delivery.storeName ?? "",
+    delivery.receiverNickname ?? "",
+    delivery.receiverPhoneNumber ?? "",
+  ].join("|");
+}
+
+function mergeDeliveries(records: AdminPaymentRecord[]) {
+  const deliveries = records
+    .flatMap((record) =>
+      record.deliveries.length > 0
+        ? record.deliveries
+        : record.delivery
+          ? [record.delivery]
+          : [],
+    )
+    .filter((delivery): delivery is BuncheolManagementDelivery => Boolean(delivery));
+  const deliveriesByKey = new Map<string, BuncheolManagementDelivery>();
+
+  deliveries.forEach((delivery) => {
+    deliveriesByKey.set(getDeliveryKey(delivery), delivery);
+  });
+
+  return [...deliveriesByKey.values()];
+}
+
+function mergeRawStatuses(records: AdminPaymentRecord[]) {
+  const rawStatuses = getUniqueValues(records.map((record) => record.rawStatus));
+
+  return rawStatuses.join(" / ");
+}
+
+function getRecordDeliveryIds(record: AdminPaymentRecord) {
+  return getUniqueValues(record.deliveries.map((delivery) => delivery.deliveryId));
+}
+
+function getDeliveryBatchId(record: AdminPaymentRecord) {
+  return getRecordDeliveryIds(record).join("|") || record.participationId;
+}
+
+function groupPaymentRecords(records: AdminPaymentRecord[]) {
+  const recordsByGroup = new Map<string, AdminPaymentRecord[]>();
+
+  records.forEach((record) => {
+    const key = getPaymentGroupKey(record);
+    const groupRecords = recordsByGroup.get(key) ?? [];
+
+    groupRecords.push(record);
+    recordsByGroup.set(key, groupRecords);
+  });
+
+  return [...recordsByGroup.values()].flatMap((groupRecords) => {
+    const primaryRecord = groupRecords[0];
+
+    if (!primaryRecord) {
+      return [];
+    }
+
+    const memberNames = getUniqueValues(
+      groupRecords.flatMap((record) => record.memberNames),
+    );
+    const participationIds = getUniqueValues(
+      groupRecords.flatMap((record) => record.participationIds),
+    );
+    const deliveries = mergeDeliveries(groupRecords);
+
+    return [
+      {
+        ...primaryRecord,
+        amount: groupRecords.reduce((sum, record) => sum + record.amount, 0),
+        confirmedAt: groupRecords.find((record) => record.confirmedAt)?.confirmedAt,
+        deliveries,
+        delivery: deliveries[0] ?? null,
+        memberName: getMemberSummary(memberNames),
+        memberNames,
+        participationId: participationIds[0] ?? primaryRecord.participationId,
+        participationIds,
+        rawStatus: mergeRawStatuses(groupRecords),
+      } satisfies AdminPaymentRecord,
+    ];
+  });
 }
 
 async function readAdminJsonResponse<T>(
@@ -301,10 +414,13 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
       buncheolTitle: detail.title,
       confirmedAt: participant.confirmedAt,
       delivery: participant.delivery,
+      deliveries: participant.delivery ? [participant.delivery] : [],
       groupName: detail.groupName,
       memberName: participant.memberName,
+      memberNames: [participant.memberName],
       participantNickname: participant.participantNickname,
       participationId: participant.participationId,
+      participationIds: [participant.participationId],
       paymentDueAt: participant.dueAt,
       rawStatus: participant.status,
       refundAccount: participant.refundAccount,
@@ -322,6 +438,7 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
     const rawStatus =
       winner.paymentStatus ||
       (winner.paymentConfirmedAt ? "CONFIRMED" : "AWAITING_PAYMENT");
+    const delivery = toDeliveryFromWinner(option);
 
     records.push({
       amount: winner.paymentAmount ?? winner.bidAmount ?? 0,
@@ -329,12 +446,15 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
       buncheolStatus: detail.status,
       buncheolTitle: detail.title,
       confirmedAt: winner.paymentConfirmedAt,
-      delivery: toDeliveryFromWinner(option),
+      delivery,
+      deliveries: delivery ? [delivery] : [],
       groupName: detail.groupName,
       memberName: option.memberName,
+      memberNames: [option.memberName],
       participantNickname:
         winner.depositorName ?? winner.receiverNickname ?? "참여자",
       participationId: winner.participationId,
+      participationIds: [winner.participationId],
       paymentDueAt: winner.paymentDueAt,
       rawStatus,
       refundAccount: null,
@@ -435,7 +555,9 @@ export function AdminPaymentsDashboard() {
         },
         [],
       );
-      const nextRecords = details.flatMap(getRecordsFromManagementDetail);
+      const nextRecords = groupPaymentRecords(
+        details.flatMap(getRecordsFromManagementDetail),
+      );
       const failedCount = managementResults.filter(
         (result) => result.status === "rejected",
       ).length;
@@ -516,15 +638,24 @@ export function AdminPaymentsDashboard() {
       selectedRecord.delivery?.trackingNumber ??
       "")
     : "";
+  const selectedDeliveryIds = selectedRecord
+    ? getRecordDeliveryIds(selectedRecord)
+    : [];
+  const selectedDeliveryBatchId = selectedRecord
+    ? getDeliveryBatchId(selectedRecord)
+    : "";
+  const selectedHasTrackingNumber = Boolean(
+    selectedRecord?.deliveries.some((delivery) => delivery.trackingNumber),
+  );
   const canConfirmSelectedPayment =
     Boolean(selectedRecord) &&
     selectedRecord?.status === "AWAITING_CONFIRMATION" &&
     Object.values(selectedVerification).every(Boolean) &&
     confirmingParticipationId !== selectedRecord?.participationId;
   const canRegisterTracking = Boolean(
-    selectedRecord?.delivery?.deliveryId &&
+    selectedDeliveryIds.length > 0 &&
       selectedTrackingValue.trim() &&
-      registeringDeliveryId !== selectedRecord.delivery.deliveryId,
+      registeringDeliveryId !== selectedDeliveryBatchId,
   );
   const verificationItems: Array<{
     key: VerificationKey;
@@ -574,9 +705,13 @@ export function AdminPaymentsDashboard() {
         return;
       }
 
-      await requestPaymentConfirmation(accessToken, record.participationId, {
-        ignoreConflict: true,
-      });
+      await Promise.all(
+        record.participationIds.map((participationId) =>
+          requestPaymentConfirmation(accessToken, participationId, {
+            ignoreConflict: true,
+          }),
+        ),
+      );
       await loadRecords("입금 확인이 완료됐어요.");
     } catch (error: unknown) {
       setMessage(
@@ -590,14 +725,15 @@ export function AdminPaymentsDashboard() {
   }
 
   async function registerTrackingNumber(record: AdminPaymentRecord) {
-    const deliveryId = record.delivery?.deliveryId;
+    const deliveryIds = getRecordDeliveryIds(record);
+    const deliveryBatchId = getDeliveryBatchId(record);
     const trackingNumber = (
       trackingInputs[record.participationId] ??
       record.delivery?.trackingNumber ??
       ""
     ).trim();
 
-    if (!deliveryId) {
+    if (deliveryIds.length === 0) {
       setMessage("운송장을 등록할 배송 ID가 없어요.");
       return;
     }
@@ -607,7 +743,7 @@ export function AdminPaymentsDashboard() {
       return;
     }
 
-    setRegisteringDeliveryId(deliveryId);
+    setRegisteringDeliveryId(deliveryBatchId);
 
     try {
       const accessToken = await getAdminDashboardAccessToken();
@@ -617,10 +753,14 @@ export function AdminPaymentsDashboard() {
         return;
       }
 
-      await requestDeliveryTrackingRegistration(
-        accessToken,
-        deliveryId,
-        trackingNumber,
+      await Promise.all(
+        deliveryIds.map((deliveryId) =>
+          requestDeliveryTrackingRegistration(
+            accessToken,
+            deliveryId,
+            trackingNumber,
+          ),
+        ),
       );
       await loadRecords("운송장 번호를 등록했어요.");
     } catch (error: unknown) {
@@ -815,7 +955,7 @@ export function AdminPaymentsDashboard() {
                       </p>
                     </div>
                     <p className="max-w-[10rem] truncate text-right font-mono text-[11px] font-semibold text-white/45">
-                      {selectedRecord.participationId}
+                      {selectedRecord.participationIds.join(", ")}
                     </p>
                   </div>
                   <div className="mt-2 grid gap-1 text-[12px] font-semibold text-white/55">
@@ -829,6 +969,12 @@ export function AdminPaymentsDashboard() {
                       <span>옵션</span>
                       <span className="truncate text-right">
                         {selectedRecord.memberName}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span>참여</span>
+                      <span className="truncate text-right">
+                        {selectedRecord.participationIds.length}건 묶음
                       </span>
                     </div>
                   </div>
@@ -910,6 +1056,8 @@ export function AdminPaymentsDashboard() {
                     {[
                       ["분철", selectedRecord.buncheolTitle],
                       ["옵션", selectedRecord.memberName],
+                      ["참여 수", `${selectedRecord.participationIds.length}건`],
+                      ["참여 ID", selectedRecord.participationIds.join(", ")],
                       ["운영 상태", getStatusLabel(selectedRecord.status)],
                       ["분철 상태", getBuncheolStatusLabel(selectedRecord.buncheolStatus)],
                       ["결제 상태", selectedRecord.rawStatus || "-"],
@@ -1006,9 +1154,9 @@ export function AdminPaymentsDashboard() {
                           onClick={() => registerTrackingNumber(selectedRecord)}
                           type="button"
                         >
-                          {registeringDeliveryId === selectedRecord.delivery.deliveryId
+                          {registeringDeliveryId === selectedDeliveryBatchId
                             ? "등록 중"
-                            : selectedRecord.delivery.trackingNumber
+                            : selectedHasTrackingNumber
                               ? "운송장 수정"
                               : "운송장 등록"}
                         </button>
