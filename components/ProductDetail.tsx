@@ -244,12 +244,12 @@ function getBidBaseline(option: ProductOption) {
   return getStartingBid(option);
 }
 
-function isDeadlineClosed(deadline: string) {
+function isDeadlineClosed(deadline: string, now = Date.now()) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
   return (
     !Number.isNaN(deadlineDate.getTime()) &&
-    deadlineDate.getTime() <= Date.now()
+    deadlineDate.getTime() <= now
   );
 }
 
@@ -390,6 +390,7 @@ export function ProductDetail({
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
+  const [deadlineTick, setDeadlineTick] = useState(() => Date.now());
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
@@ -471,7 +472,7 @@ export function ProductDetail({
   }% + ${productImageDragOffset}px)`;
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
-  const isDeadlinePassed = isDeadlineClosed(product.deadline);
+  const isDeadlinePassed = isDeadlineClosed(product.deadline, deadlineTick);
   const productStatus = product.status?.toUpperCase();
   const isCancelledProduct =
     productStatus === "CANCELLED" || productStatus === "CANCELED";
@@ -533,6 +534,19 @@ export function ProductDetail({
 
     return `/profile/addresses?${params.toString()}`;
   }
+
+  useEffect(() => {
+    if (isDeadlineClosed(product.deadline)) {
+      setDeadlineTick(Date.now());
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setDeadlineTick(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [product.deadline]);
 
   useEffect(() => {
     setIsLiked(product.liked === true);
@@ -928,6 +942,7 @@ export function ProductDetail({
           error instanceof Error ? error.message : "구매를 시작하지 못했어요.";
         const isForbidden =
           error instanceof ApiRequestError && error.status === 403;
+        const didDeadlinePass = isDeadlineClosed(product.deadline);
         const isHostParticipationBlocked =
           errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
           errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
@@ -941,6 +956,8 @@ export function ProductDetail({
           setCheckoutError(
             "내가 연 분철은 구매할 수 없어요. 구매 계정으로 전환해 주세요.",
           );
+        } else if (didDeadlinePass) {
+          setCheckoutError("구매 기한이 지났어요.");
         } else if (isForbidden) {
           setCheckoutError(
             "구매 권한이 없어요. 테스트 리모콘에서 구매 계정으로 다시 전환한 뒤 시도해 주세요.",
