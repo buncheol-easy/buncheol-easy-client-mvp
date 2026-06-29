@@ -161,6 +161,36 @@ function getDeliveryStatusLabel(status: string | undefined) {
   return status;
 }
 
+function getAdminDeliveryStatusLabel(record: AdminPaymentRecord) {
+  if (record.delivery) {
+    return getDeliveryStatusLabel(record.delivery.status);
+  }
+
+  if (record.status === "CONFIRMED") {
+    return record.buncheolStatus === "RECRUITING"
+      ? "진행 확정 전"
+      : "배송 정보 없음";
+  }
+
+  if (record.status === "AWAITING_CONFIRMATION") {
+    return "입금 확인 전";
+  }
+
+  return "-";
+}
+
+function getMissingDeliveryMessage(record: AdminPaymentRecord) {
+  if (record.status === "CONFIRMED" && record.buncheolStatus === "RECRUITING") {
+    return "입금 확인은 완료됐지만 분철이 아직 진행 확정 전이라 배송 정보가 생성되지 않았어요. 진행 확정 후 운송장 등록이 가능해요.";
+  }
+
+  if (record.status === "CONFIRMED") {
+    return "입금 확인은 완료됐지만 운송장 등록에 필요한 배송 정보가 응답에 없어 지금은 등록할 수 없어요.";
+  }
+
+  return "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요.";
+}
+
 function getRefundAccountLabel(refundAccount: BankAccountInfo | null | undefined) {
   if (!refundAccount?.account) return "-";
 
@@ -1079,6 +1109,8 @@ export function AdminPaymentsDashboard() {
                       ["운영 상태", getStatusLabel(selectedRecord.status)],
                       ["분철 상태", getBuncheolStatusLabel(selectedRecord.buncheolStatus)],
                       ["결제 상태", selectedRecord.rawStatus || "-"],
+                      ["배송 상태", getAdminDeliveryStatusLabel(selectedRecord)],
+                      ["운송장", selectedRecord.delivery?.trackingNumber || "-"],
                       ["기한", formatDateTime(selectedRecord.paymentDueAt)],
                       ["확인", formatDateTime(selectedRecord.confirmedAt)],
                       ["환불", getRefundAccountLabel(selectedRecord.refundAccount)],
@@ -1123,7 +1155,7 @@ export function AdminPaymentsDashboard() {
                               ? getDeliveryStatusLabel(selectedRecord.delivery.status)
                               : "결제 요청 배송지"
                             : isSelectedPaymentConfirmed
-                              ? "운송장 입력 대기"
+                              ? getAdminDeliveryStatusLabel(selectedRecord)
                               : "결제 요청 배송지 확인 필요"}
                         </p>
                       </div>
@@ -1197,9 +1229,7 @@ export function AdminPaymentsDashboard() {
                       </div>
                     ) : (
                       <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold leading-5 text-black/45">
-                        {isSelectedPaymentConfirmed
-                          ? "입금 확인은 완료됐지만 운송장 등록에 필요한 배송 정보가 응답에 없어 지금은 등록할 수 없어요."
-                          : "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요."}
+                        {getMissingDeliveryMessage(selectedRecord)}
                       </p>
                     )}
                   </section>
