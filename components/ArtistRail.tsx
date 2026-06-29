@@ -268,7 +268,7 @@ export function ArtistRail({
             <button
               className={`motion-icon-button absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.12)] ${
                 item.favorited === true
-                  ? "bg-[#D7FF5F] text-black"
+                  ? "bg-[#DDE7B8] text-black"
                   : "bg-white/90 text-black"
               }`}
               onClick={() => onFavoriteToggle(item)}
@@ -279,7 +279,7 @@ export function ArtistRail({
             </button>
           ) : null}
           {isSelected ? (
-            <span className="absolute -bottom-1 -right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_5px_14px_rgba(215,255,95,0.3)] ring-2 ring-white">
+            <span className="absolute -bottom-1 -right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#DDE7B8] text-black shadow-[0_5px_14px_rgba(120,132,82,0.24)] ring-2 ring-white">
               <CheckIcon />
             </span>
           ) : null}
@@ -309,7 +309,7 @@ export function ArtistRail({
             <div
                 className={`motion-icon-button flex aspect-square items-center justify-center rounded-[1.25rem] border text-black/35 ${
                   leadingItem.active
-                    ? "border-[#D7FF5F] bg-[#D7FF5F] text-black shadow-[0_8px_22px_rgba(215,255,95,0.24)]"
+                    ? "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.2)]"
                     : "border-black/10 bg-[#ededeb]"
                 }`}
               >

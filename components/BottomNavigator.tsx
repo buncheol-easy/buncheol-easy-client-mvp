@@ -38,7 +38,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
               <span
                 className={`motion-icon-button inline-flex h-9 w-9 items-center justify-center rounded-full ${
                   isActive
-                    ? "bg-[#D7FF5F] text-black shadow-[0_8px_24px_rgba(215,255,95,0.28)]"
+                    ? "bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]"
                     : "bg-transparent"
                 }`}
               >

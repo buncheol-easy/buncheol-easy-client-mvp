@@ -414,7 +414,7 @@ export function ProductCard({ item }: ProductCardProps) {
           <p
             className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
               isPurchasable
-                ? "bg-[#D7FF5F] text-black shadow-[0_6px_18px_rgba(215,255,95,0.28)]"
+                ? "bg-[#DDE7B8] text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)]"
                 : "bg-black/40 text-white/75"
             }`}
           >
@@ -432,7 +432,7 @@ export function ProductCard({ item }: ProductCardProps) {
             aria-label={isLiked ? "찜 해제" : "찜하기"}
             className={`motion-icon-button absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
               isLiked
-                ? "bg-[#D7FF5F] text-black shadow-[0_10px_24px_rgba(215,255,95,0.32)]"
+                ? "bg-[#DDE7B8] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
                 : "bg-white/95 text-black/45"
             } disabled:opacity-60`}
             disabled={isBookmarkPending}
@@ -446,7 +446,7 @@ export function ProductCard({ item }: ProductCardProps) {
       <div>
         {availableMemberNames.length > 0 ? (
           <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
-            <span className="shrink-0 rounded-full bg-[#D7FF5F]/70 px-2 py-0.5 text-black/70">
+            <span className="shrink-0 rounded-full bg-[#E7ECD7] px-2 py-0.5 text-black/65">
               옵션 {availableMemberNames.length}개
             </span>
             <span className="shrink-0 text-black/15">·</span>

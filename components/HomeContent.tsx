@@ -46,7 +46,7 @@ const HOME_BANNERS = [
     badge: "PAY",
     caption: "Transfer Guide",
     gradient:
-      "bg-[linear-gradient(135deg,#111111_0%,#28320f_46%,#D7FF5F_100%)]",
+      "bg-[linear-gradient(135deg,#111111_0%,#2f371f_50%,#AAB67C_100%)]",
   },
   {
     href: "/board/shipping-method-filter?from=home",
@@ -55,7 +55,7 @@ const HOME_BANNERS = [
     badge: "CU·GS",
     caption: "Address Match",
     gradient:
-      "bg-[linear-gradient(135deg,#111827_0%,#3a4b18_48%,#D7FF5F_100%)]",
+      "bg-[linear-gradient(135deg,#111827_0%,#3d4728_50%,#AAB67C_100%)]",
   },
   {
     href: "/board/closed-bid-status?from=home",
@@ -64,7 +64,7 @@ const HOME_BANNERS = [
     badge: "BID",
     caption: "Winning Status",
     gradient:
-      "bg-[linear-gradient(135deg,#18181b_0%,#4a4f19_48%,#D7FF5F_100%)]",
+      "bg-[linear-gradient(135deg,#18181b_0%,#464a2b_50%,#AAB67C_100%)]",
   },
 ] as const;
 
@@ -568,7 +568,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_28%,rgba(255,255,255,0.7),transparent_22%)]" />
                   <div className="absolute bottom-4 left-4 h-[82px] w-[62px] rotate-[-10deg] rounded-[0.85rem] border border-white/25 bg-black shadow-[0_12px_24px_rgba(0,0,0,0.24)]" />
                   <div className="absolute bottom-4 left-[4.8rem] h-[96px] w-[70px] rotate-[7deg] rounded-[0.85rem] border border-white/40 bg-white/85 shadow-[0_12px_24px_rgba(0,0,0,0.16)]" />
-                  <div className="absolute right-4 top-4 rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                  <div className="absolute right-4 top-4 rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                     {banner.badge}
                   </div>
                   <div className="absolute bottom-3 right-3 rounded-xl border border-black/10 bg-white/90 px-2.5 py-2 backdrop-blur">
@@ -590,7 +590,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 aria-label={`${index + 1}번째 광고판 보기`}
                 className={`motion-pill h-2 rounded-full ${
                   activeBannerIndex === index
-                    ? "w-6 bg-[#D7FF5F] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_6px_16px_rgba(215,255,95,0.45)]"
+                    ? "w-6 bg-[#CFE86B] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_6px_16px_rgba(120,132,82,0.3)]"
                     : "w-2 bg-zinc-300"
                 }`}
                 key={banner.href}

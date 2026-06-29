@@ -109,8 +109,8 @@ export function AppHeader({ tone = "dark" }: AppHeaderProps) {
           aria-label="소식함"
           className={`motion-icon-button app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
             isDarkTone
-              ? "border-[#D7FF5F] bg-[#D7FF5F] text-black shadow-[0_8px_22px_rgba(215,255,95,0.28)]"
-              : "border-[#D7FF5F] bg-[#D7FF5F] text-black shadow-[0_8px_22px_rgba(215,255,95,0.22)]"
+              ? "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.24)]"
+              : "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.18)]"
           }`}
           href="/board"
         >

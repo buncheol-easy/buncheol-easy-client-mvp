@@ -1938,7 +1938,7 @@ export function ProfileContent({
         className="min-h-0 flex-1 overflow-y-auto bg-[#f7f7f7] px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
-        <section className="rounded-[1.15rem] bg-black p-4 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#D7FF5F]/20">
+        <section className="rounded-[1.15rem] bg-black p-4 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#AAB67C]/35">
           {authState.isLoggedIn ? (
             <div className="flex items-center gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1964,7 +1964,7 @@ export function ProfileContent({
 
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-[#D7FF5F]">참여중</p>
+              <p className="text-[11px] font-medium text-[#DDE7B8]">참여중</p>
               <p className="mt-1 text-[19px] font-semibold">
                 {isBidEntriesLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
@@ -1974,7 +1974,7 @@ export function ProfileContent({
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-[#D7FF5F]">개최</p>
+              <p className="text-[11px] font-medium text-[#DDE7B8]">개최</p>
               <p className="mt-1 text-[19px] font-semibold">
                 {isHostedProductsLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
@@ -1984,7 +1984,7 @@ export function ProfileContent({
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-[#D7FF5F]">찜</p>
+              <p className="text-[11px] font-medium text-[#DDE7B8]">찜</p>
               <p className="mt-1 text-[19px] font-semibold">
                 {isBookmarkedProductCountLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
@@ -2013,7 +2013,7 @@ export function ProfileContent({
                 className={`shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
                   hasSettlementAccount
                     ? "bg-[#f4f4f4] text-black/55"
-                    : "bg-[#D7FF5F] text-black shadow-[0_8px_20px_rgba(215,255,95,0.28)]"
+                    : "bg-[#CFE86B] text-black shadow-[0_8px_20px_rgba(120,132,82,0.22)]"
                 }`}
                 onClick={startSettlementAccountEdit}
                 type="button"
@@ -2106,7 +2106,7 @@ export function ProfileContent({
                   </button>
                 ) : null}
                 <button
-                  className="h-10 flex-1 rounded-full bg-[#D7FF5F] text-[14px] font-semibold text-black shadow-[0_8px_20px_rgba(215,255,95,0.24)] disabled:bg-black/20 disabled:text-white"
+                  className="h-10 flex-1 rounded-full bg-[#CFE86B] text-[14px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.2)] disabled:bg-black/20 disabled:text-white"
                   disabled={
                     !canSaveSettlementAccount ||
                     isSavingSettlementAccount ||
@@ -2133,7 +2133,7 @@ export function ProfileContent({
                     예금주 {settlementAccount.accountHolder}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[11px] font-semibold text-black">
+                <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
                   저장됨
                 </span>
               </div>
@@ -2152,7 +2152,7 @@ export function ProfileContent({
                   등록하면 개최한 분철 정산금을 받을 수 있어요.
                 </span>
               </span>
-              <span className="shrink-0 rounded-full bg-[#D7FF5F] px-3 py-2 text-[12px] font-semibold text-black">
+              <span className="shrink-0 rounded-full bg-[#CFE86B] px-3 py-2 text-[12px] font-semibold text-black">
                 등록
               </span>
             </button>
@@ -2203,7 +2203,7 @@ export function ProfileContent({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[11px] font-semibold text-black">
+                        <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
                           {convenienceStoreTypeLabels[storeType]}
                         </span>
                         <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
@@ -2652,8 +2652,8 @@ export function ProfileContent({
               </p>
             </div>
 
-            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white ring-1 ring-[#D7FF5F]/25">
-              <p className="text-[12px] font-semibold text-[#D7FF5F]">
+            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white ring-1 ring-[#AAB67C]/35">
+              <p className="text-[12px] font-semibold text-[#DDE7B8]">
                 현재 상태
               </p>
               <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
@@ -2681,7 +2681,7 @@ export function ProfileContent({
                   </p>
                 </div>
                 <button
-                  className="h-9 shrink-0 rounded-full bg-[#D7FF5F] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(215,255,95,0.22)] disabled:bg-black/10 disabled:text-black/30"
+                  className="h-9 shrink-0 rounded-full bg-[#DDE7B8] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.18)] disabled:bg-black/10 disabled:text-black/30"
                   disabled={!selectedPaymentBankAccount}
                   onClick={() =>
                     selectedPaymentBankAccount
@@ -2703,7 +2703,7 @@ export function ProfileContent({
                 <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                   <p
                     aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-[#D7FF5F] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)]"
+                    className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]"
                     role="status"
                   >
                     {paymentCopyToast}
@@ -2717,7 +2717,7 @@ export function ProfileContent({
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     {paymentDeliveryAddress ? (
-                      <span className="rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[11px] font-semibold text-black">
+                      <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
                         {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
                     ) : null}
@@ -2761,7 +2761,7 @@ export function ProfileContent({
             </div>
 
             <button
-              className="mt-4 h-14 w-full rounded-full bg-[#D7FF5F] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)] disabled:bg-black/20 disabled:text-white/70"
+              className="mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white/70"
               disabled={!selectedPaymentBankAccount}
               onClick={closePaymentSheet}
               type="button"

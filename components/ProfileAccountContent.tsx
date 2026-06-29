@@ -404,11 +404,11 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
           </div>
         ) : (
           <>
-            <section className="rounded-[1.2rem] bg-black px-5 py-5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#D7FF5F]/20">
+            <section className="rounded-[1.2rem] bg-black px-5 py-5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#AAB67C]/35">
               <div className="flex items-center gap-4">
                 <ProviderIconBadge provider={profile?.provider} />
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-[#D7FF5F]">
+                  <p className="text-[13px] font-semibold text-[#DDE7B8]">
                     연결된 계정
                   </p>
                   <p className="mt-1 truncate text-[18px] font-semibold tracking-[-0.05em] text-white">
@@ -468,7 +468,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
               </div>
               <button
                 aria-label={isSaveFeedbackVisible ? "저장 완료" : undefined}
-                className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-[#D7FF5F] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(215,255,95,0.26)] transition-colors disabled:bg-black/20 disabled:text-white"
+                className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.22)] transition-colors disabled:bg-black/20 disabled:text-white"
                 disabled={!canSave || isSaving || isLoading}
                 onClick={saveProfile}
                 type="button"
@@ -476,7 +476,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                 {isSaving ? (
                   "저장 중"
                 ) : isSaveFeedbackVisible ? (
-                  <span className="flex h-6 w-6 scale-125 items-center justify-center rounded-full bg-black text-[#D7FF5F] transition-transform">
+                  <span className="flex h-6 w-6 scale-125 items-center justify-center rounded-full bg-black text-[#DDE7B8] transition-transform">
                     <CheckIcon />
                   </span>
                 ) : (

@@ -607,7 +607,7 @@ export function AddressManagementContent({
                     />
                   </label>
                   <button
-                    className="mt-3 h-11 w-full rounded-full bg-[#D7FF5F] text-[14px] font-semibold text-black shadow-[0_10px_24px_rgba(215,255,95,0.24)] disabled:bg-black/20 disabled:text-white"
+                    className="mt-3 h-11 w-full rounded-full bg-[#CFE86B] text-[14px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)] disabled:bg-black/20 disabled:text-white"
                     disabled={
                       !isFormOpen ||
                       !newAddressBranchName.trim() ||
