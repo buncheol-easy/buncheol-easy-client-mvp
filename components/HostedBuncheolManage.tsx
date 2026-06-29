@@ -122,17 +122,6 @@ function getBuncheolStatusLabel(detail: BuncheolManagementDetail) {
   return detail.status;
 }
 
-function getBuncheolStatusClass(detail: BuncheolManagementDetail) {
-  if (detail.status === "CONFIRMED") {
-    return "bg-black text-white";
-  }
-
-  if (detail.status === "CANCELLED" || detail.status === "CANCELED") {
-    return "bg-[#f1f1f1] text-black/45";
-  }
-
-  return "bg-[#f1f1f1] text-black/55";
-}
 function isPastDateTime(value: string | undefined) {
   if (!value) {
     return false;
@@ -191,18 +180,18 @@ function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
   }
 
   if (winner.paymentConfirmedAt || isPaymentConfirmedStatus(winner.paymentStatus)) {
-    return "결제 확인 완료";
+    return "입금 확인 완료";
   }
 
   if (isPaymentAwaitingStatus(winner.paymentStatus)) {
-    return "결제 대기";
+    return "입금 대기";
   }
 
   if (isPaymentReportedStatus(winner.paymentStatus)) {
-    return "결제 확인 대기";
+    return "입금 확인 대기";
   }
 
-  return winner.paymentStatus ?? "결제 대기";
+  return winner.paymentStatus ?? "입금 대기";
 }
 
 function getParticipantsByOptionId(
@@ -420,6 +409,31 @@ export function HostedBuncheolManage({
   const confirmedProgressLabel = minHeadcount
     ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
     : `${confirmedCount}\uba85`;
+  const confirmedProgressPercent = minHeadcount
+    ? Math.min(100, Math.round((confirmedCount / minHeadcount) * 100))
+    : participantCount > 0
+      ? 100
+      : 0;
+  const awaitingPaymentCount =
+    detail?.options.filter((option) =>
+      isPaymentAwaitingStatus(option.winner?.paymentStatus),
+    ).length ?? 0;
+  const deliveryReadyCount =
+    detail?.options.filter((option) => {
+      const isPaymentConfirmed =
+        isPaymentConfirmedStatus(option.winner?.paymentStatus) ||
+        Boolean(option.winner?.paymentConfirmedAt);
+
+      return (
+        isPaymentConfirmed &&
+        Boolean(option.winner?.deliveryId) &&
+        !option.winner?.trackingNumber
+      );
+    }).length ?? 0;
+  const trackingCompletedCount =
+    detail?.options.filter((option) =>
+      Boolean(option.winner?.trackingNumber),
+    ).length ?? 0;
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -549,7 +563,7 @@ export function HostedBuncheolManage({
             </button>
             <div className="min-w-0 flex-1 text-right">
               <p className="text-[12px] font-semibold text-black/35">
-                개최 분철 관리
+                공동구매 운영
               </p>
               <h1 className="truncate text-[22px] font-semibold tracking-[-0.06em]">
                 {detail.title}
@@ -565,32 +579,64 @@ export function HostedBuncheolManage({
             </p>
           ) : null}
 
-          <section className="rounded-[1rem] border border-black/10 px-4 py-4">
+          <section className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
+            <div className="bg-black px-4 py-4 text-white">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    Group Buy
+                  </p>
+                  <p className="mt-1 truncate text-[20px] font-semibold tracking-[-0.06em]">
+                    {detail.purchaseSite || "구매처 미입력"}
+                  </p>
+                  <p className="mt-1 text-[13px] font-semibold text-white/55">
+                    {detail.groupName}
+                  </p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${
+                    detail.status === "CONFIRMED"
+                      ? "bg-white text-black"
+                      : "bg-white/12 text-white/75"
+                  }`}
+                >
+                  {getBuncheolStatusLabel(detail)}
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-[12px] font-semibold text-white/55">
+                  <span>입금 확인</span>
+                  <span>{confirmedProgressLabel}</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/15">
+                  <div
+                    className="h-full rounded-full bg-white transition-[width]"
+                    style={{ width: `${confirmedProgressPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="px-4 py-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[13px] font-semibold text-black/40">
-                  {detail.groupName}
+                  운영 요약
                 </p>
-                <p className="mt-1 truncate text-[19px] font-semibold tracking-[-0.05em]">
-                  {detail.purchaseSite || "구매처 미입력"}
+                <p className="mt-1 text-[14px] font-semibold text-black/55">
+                  입금 확인 후 운송장 등록까지 한 곳에서 처리해요.
                 </p>
               </div>
-              <span
-                className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${getBuncheolStatusClass(
-                  detail,
-                )}`}
-              >
-                {getBuncheolStatusLabel(detail)}
-              </span>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+              <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">{"\uc635\uc158"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
                   {`${memberCount}\uac1c`}
                 </p>
               </div>
-              <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+              <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
                   {"\ucd5c\uc18c \uc9c4\ud589 \uc778\uc6d0"}
                 </p>
@@ -598,21 +644,37 @@ export function HostedBuncheolManage({
                   {minHeadcount ? `${minHeadcount}\uba85` : "-"}
                 </p>
               </div>
-              <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+              <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">{"\ucc38\uc5ec"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
                   {`${participantCount}\uba85`}
                 </p>
               </div>
-              <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+              <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
-                  {"\uacb0\uc81c \ud655\uc778"}
+                  {"\uc785\uae08 \ub300\uae30"}
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {confirmedProgressLabel}
+                  {`${awaitingPaymentCount}\uba85`}
                 </p>
               </div>
-              <div className="col-span-2 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+              <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">
+                  운송장 대기
+                </p>
+                <p className="mt-1 text-[15px] font-semibold">
+                  {`${deliveryReadyCount}건`}
+                </p>
+              </div>
+              <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">
+                  운송장 완료
+                </p>
+                <p className="mt-1 text-[15px] font-semibold">
+                  {`${trackingCompletedCount}건`}
+                </p>
+              </div>
+              <div className="col-span-2 rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
                   {"\ubaa8\uc9d1 \uae30\ud55c"}
                 </p>
@@ -621,15 +683,16 @@ export function HostedBuncheolManage({
                 </p>
               </div>
             </div>
+            </div>
           </section>
 
           <section className="mt-6">
             <div className="mb-3">
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                옵션별 결제 관리
+                옵션별 주문 관리
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/40">
-                참여자 결제를 확인하고 배송 정보를 이어서 관리해요.
+                공동구매 옵션별로 입금 확인과 운송장 등록을 이어서 처리해요.
               </p>
             </div>
 
@@ -650,7 +713,6 @@ export function HostedBuncheolManage({
                 );
                 const isConfirming =
                   confirmingPaymentId === option.winner?.participationId;
-                const winnerBidAmount = getWinnerBidAmount(option);
                 const shippingMethodLabel = getShippingMethodLabel(
                   option.winner?.shippingMethod,
                 );
@@ -678,14 +740,31 @@ export function HostedBuncheolManage({
                   (isPaymentAwaiting ||
                     isPaymentConfirmed ||
                     hasPaymentReport(option));
+                const optionPurchaseAmount = getHighestBidAmount(option);
+                const paymentAmount = getWinnerBidAmount(option);
+                const hasOrder = Boolean(option.winner);
+                const isTrackingRegistered = Boolean(
+                  option.winner?.trackingNumber || deliveryState.isShipped,
+                );
+                const paymentStatusLabel = getPaymentStatusLabel(
+                  option.winner ?? null,
+                );
+                const paymentStatusClass = isPaymentConfirmed
+                  ? "bg-black text-white"
+                  : hasOrder
+                    ? "bg-[#eeeeee] text-black/60"
+                    : "bg-[#f7f7f7] text-black/40";
 
                 return (
                   <article
-                    className="rounded-[1rem] border border-black/10 px-4 py-4"
+                    className={`overflow-hidden rounded-[1.05rem] border bg-white shadow-[0_10px_28px_rgba(0,0,0,0.035)] ${
+                      hasOrder ? "border-black/10" : "border-dashed border-black/10"
+                    }`}
                     key={optionId}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-[0.85rem] bg-[#f1f1f1]">
+                    <div className="px-4 pb-4 pt-4">
+                    <div className="flex items-start gap-3">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[1rem] bg-[#f1f1f1] ring-1 ring-black/[0.04]">
                         {option.memberImage ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -703,21 +782,23 @@ export function HostedBuncheolManage({
                           참여 {option.participationCount}명
                         </p>
                       </div>
-                      <span className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-1.5 text-[12px] font-semibold text-black/45">
-                        {getPaymentStatusLabel(option.winner ?? null)}
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold ${paymentStatusClass}`}
+                      >
+                        {paymentStatusLabel}
                       </span>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-                        <p className="text-[11px] font-medium text-black/35">
+                    <div className="mt-4 grid grid-cols-[1.15fr_0.85fr] gap-2">
+                      <div className="rounded-[0.9rem] bg-black px-3 py-3 text-white">
+                        <p className="text-[11px] font-medium text-white/45">
                           상품 금액
                         </p>
-                        <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                          {formatWonAmount(getHighestBidAmount(option))}
+                        <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em]">
+                          {formatWonAmount(optionPurchaseAmount)}
                         </p>
                       </div>
-                      <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+                      <div className="rounded-[0.9rem] bg-[#f7f7f7] px-3 py-3">
                         <p className="text-[11px] font-medium text-black/35">
                           참여
                         </p>
@@ -727,28 +808,60 @@ export function HostedBuncheolManage({
                       </div>
                     </div>
 
-                    <div className="mt-4 border-t border-black/10 pt-4">
+                    <div className="mt-3 grid grid-cols-3 gap-1.5 text-center">
+                      <span
+                        className={`rounded-full px-2 py-1.5 text-[11px] font-semibold ${
+                          hasOrder
+                            ? "bg-black text-white"
+                            : "bg-[#f7f7f7] text-black/35"
+                        }`}
+                      >
+                        주문
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-1.5 text-[11px] font-semibold ${
+                          isPaymentConfirmed
+                            ? "bg-black text-white"
+                            : "bg-[#f7f7f7] text-black/35"
+                        }`}
+                      >
+                        입금 확인
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-1.5 text-[11px] font-semibold ${
+                          isTrackingRegistered
+                            ? "bg-black text-white"
+                            : "bg-[#f7f7f7] text-black/35"
+                        }`}
+                      >
+                        배송 등록
+                      </span>
+                    </div>
+
+                    </div>
+
+                    <div className="border-t border-black/10 px-4 py-4">
                       {(
                         <>
                           {shouldShowPaymentRecord ? (
-                            <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
+                            <div className="rounded-[0.9rem] border border-black/[0.06] bg-white px-3 py-3 shadow-[0_8px_20px_rgba(0,0,0,0.025)]">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="text-[11px] font-medium text-black/35">
-                                    결제 확인
+                                    입금 확인
                                   </p>
                                   <div className="mt-2 space-y-1">
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
-                                        구매자
+                                        주문자
                                       </span>
                                       {option.winner?.depositorName ?? "-"}
                                     </p>
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
-                                        금액
+                                        입금액
                                       </span>
-                                      {formatWonAmount(winnerBidAmount)}
+                                      {formatWonAmount(paymentAmount)}
                                     </p>
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
@@ -774,10 +887,10 @@ export function HostedBuncheolManage({
                                   type="button"
                                 >
                                   {isPaymentConfirmed
-                                    ? "결제 확인 완료"
+                                    ? "입금 확인 완료"
                                     : isConfirming
                                       ? "확인 중"
-                                      : "결제 확인"}
+                                      : "입금 확인"}
                                 </button>
                               </div>
                               {option.winner?.paymentConfirmedAt ? (
@@ -792,13 +905,13 @@ export function HostedBuncheolManage({
                           ) : (
                             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
                               <p className="text-[11px] font-medium text-black/35">
-                                결제 확인
+                                입금 확인
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
                                 {option.winner
                                   ? isPaymentDuePassed
-                                    ? "결제 기한이 지났어요."
-                                    : "구매자 입금을 기다리고 있어요."
+                                    ? "입금 기한이 지났어요."
+                                    : "주문자 입금을 기다리고 있어요."
                                   : "아직 참여자가 없어요."}
                               </p>
                               {option.winner?.paymentDueAt ? (

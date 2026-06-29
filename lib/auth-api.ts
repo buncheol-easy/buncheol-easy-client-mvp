@@ -206,6 +206,10 @@ export type BuncheolMember = {
   myRank?: number;
   name: string;
   participantCount: number;
+  purchasePaymentConfirmedAt?: string;
+  purchasePaymentDueAt?: string;
+  purchasePaymentStatus?: string;
+  purchaseParticipationId?: string;
   topBidAmounts: number[];
 };
 
@@ -1604,6 +1608,105 @@ function getBuncheolSummaryFromRecord(
   };
 }
 
+function getBuncheolMemberPurchaseStateFromRecord(
+  record: Record<string, unknown>,
+) {
+  const nestedCandidates = [
+    record.winner,
+    record.paymentRequest,
+    record.paymentReport,
+    record.pendingPayment,
+    record.pendingWinner,
+    record.payment,
+    record.currentParticipation,
+    record.participation,
+  ]
+    .map(getNestedData)
+    .filter(isRecord);
+  const participantCandidate = getNestedRecordListValue(record, [
+    "participants",
+    "participations",
+    "paymentParticipants",
+    "paymentRequests",
+    "payments",
+  ]).find((candidate) => {
+    const status = getOptionalStringValue(candidate, [
+      "paymentStatus",
+      "participationStatus",
+      "status",
+    ]);
+
+    return Boolean(
+      status ||
+        getOptionalStringValue(candidate, ["paymentConfirmedAt"]) ||
+        getOptionalStringValue(candidate, [
+          "paymentDueAt",
+          "paymentDeadline",
+          "dueAt",
+        ]) ||
+        getOptionalStringValue(candidate, [
+          "participationId",
+          "winnerParticipationId",
+          "paymentParticipationId",
+          "id",
+        ]),
+    );
+  });
+  const hasDirectPaymentState = Boolean(
+    getOptionalStringValue(record, [
+      "paymentStatus",
+      "participationStatus",
+      "paymentConfirmedAt",
+      "paymentDueAt",
+      "paymentDeadline",
+      "dueAt",
+      "participationId",
+      "winnerParticipationId",
+      "paymentParticipationId",
+    ]),
+  );
+  const source =
+    nestedCandidates[0] ?? participantCandidate ?? (hasDirectPaymentState ? record : null);
+
+  if (!source) {
+    return {};
+  }
+
+  const purchasePaymentConfirmedAt = getOptionalStringValue(source, [
+    "paymentConfirmedAt",
+    "confirmedAt",
+  ]);
+  const purchasePaymentDueAt = getOptionalStringValue(source, [
+    "paymentDueAt",
+    "paymentDeadline",
+    "dueAt",
+  ]);
+  const purchaseParticipationId = getOptionalStringValue(source, [
+    "participationId",
+    "winnerParticipationId",
+    "paymentParticipationId",
+    "id",
+  ]);
+  const purchasePaymentStatus =
+    getOptionalStringValue(source, [
+      "paymentStatus",
+      "participationStatus",
+      "status",
+    ]) ??
+    (purchasePaymentConfirmedAt
+      ? "CONFIRMED"
+      : purchasePaymentDueAt || purchaseParticipationId
+        ? "AWAITING_PAYMENT"
+        : undefined);
+
+  return {
+    purchasePaymentConfirmedAt,
+    purchasePaymentDueAt,
+    purchasePaymentStatus,
+    purchaseParticipationId,
+  };
+}
+
 function getBuncheolMemberFromRecord(
   record: Record<string, unknown>,
 ): BuncheolMember | null {
@@ -1659,6 +1762,7 @@ function getBuncheolMemberFromRecord(
   ])
     .map((value) => Number(value.replace(/[^0-9]/g, "")))
     .filter((value) => Number.isFinite(value) && value > 0);
+  const purchaseState = getBuncheolMemberPurchaseStateFromRecord(record);
 
   return {
     id,
@@ -1689,6 +1793,7 @@ function getBuncheolMemberFromRecord(
         "activeParticipationCount",
         "activeParticipantCount",
       ]) ?? 0,
+    ...purchaseState,
   };
 }
 
@@ -2750,6 +2855,10 @@ export function toProductDetailItem(
       myRank: member.myRank,
       participantCount: member.participantCount,
       price: formattedPrice,
+      purchasePaymentConfirmedAt: member.purchasePaymentConfirmedAt,
+      purchasePaymentDueAt: member.purchasePaymentDueAt,
+      purchasePaymentStatus: member.purchasePaymentStatus,
+      purchaseParticipationId: member.purchaseParticipationId,
       startingBid: formattedPrice,
       topBids: ["-", "-", "-"] as [string, string, string],
     } satisfies ProductOption;

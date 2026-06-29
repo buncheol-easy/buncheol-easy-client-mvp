@@ -7,6 +7,10 @@ export type ProductOption = {
   myBidAmount?: number;
   myParticipationId?: string;
   myRank?: number;
+  purchasePaymentConfirmedAt?: string;
+  purchasePaymentDueAt?: string;
+  purchasePaymentStatus?: string;
+  purchaseParticipationId?: string;
   label: string;
   price: string;
   startingBid?: string;

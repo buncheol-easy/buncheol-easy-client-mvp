@@ -17,11 +17,14 @@ import {
   deleteBuncheol,
   participateBuncheol,
   requestBuncheolDetail,
+  requestBuncheolManagement,
   requestParticipationPaymentDetail,
   removeBuncheolBookmark,
   requestShippingAddresses,
   requestUserProfile,
+  toProductDetailItem,
   type BankAccountInfo,
+  type BuncheolManagementOption,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
@@ -238,7 +241,7 @@ function getStartingBid(option: ProductOption) {
 }
 
 function getOptionPriceLabel() {
-  return "가격";
+  return "구매가";
 }
 
 function getBidBaseline(option: ProductOption) {
@@ -345,6 +348,129 @@ function getMyBidsFromOptions(options: ProductOption[]) {
   }, {});
 }
 
+function isConfirmedOptionPurchase(option: ProductOption) {
+  const status = option.purchasePaymentStatus?.toUpperCase();
+
+  return Boolean(
+    option.purchasePaymentConfirmedAt ||
+      status === "CONFIRMED" ||
+      status === "PAYMENT_CONFIRMED" ||
+      status === "PAID",
+  );
+}
+
+function isInactiveOptionPurchaseStatus(status: string | undefined) {
+  return [
+    "CANCELLED",
+    "CANCELED",
+    "EXPIRED",
+    "FAILED",
+    "REFUNDED",
+    "REJECTED",
+  ].includes(status?.toUpperCase() ?? "");
+}
+
+function hasOptionPurchaseState(option: ProductOption) {
+  if (isInactiveOptionPurchaseStatus(option.purchasePaymentStatus)) {
+    return false;
+  }
+
+  return Boolean(
+    option.purchaseParticipationId ||
+      option.purchasePaymentStatus ||
+      option.purchasePaymentConfirmedAt ||
+      option.purchasePaymentDueAt,
+  );
+}
+
+function getOptionPurchaseOverlayLabel(
+  option: ProductOption,
+  myBid?: number,
+  shouldUseParticipantCount = false,
+) {
+  const isConfirmed = isConfirmedOptionPurchase(option);
+
+  if (myBid) {
+    return isConfirmed ? "내 구매 완료" : "내 결제 대기 중";
+  }
+
+  if (hasOptionPurchaseState(option)) {
+    return isConfirmed ? "구매 완료" : "결제 대기 중";
+  }
+
+  if (shouldUseParticipantCount && option.participantCount > 0) {
+    return "결제 대기 중";
+  }
+
+  return null;
+}
+
+function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
+  const winner = option.winner;
+
+  if (
+    winner?.participationId ||
+    winner?.paymentStatus ||
+    winner?.paymentConfirmedAt ||
+    winner?.paymentDueAt
+  ) {
+    return {
+      purchasePaymentConfirmedAt: winner.paymentConfirmedAt ?? undefined,
+      purchasePaymentDueAt: winner.paymentDueAt ?? undefined,
+      purchasePaymentStatus:
+        winner.paymentStatus ??
+        (winner.paymentConfirmedAt ? "CONFIRMED" : "AWAITING_PAYMENT"),
+      purchaseParticipationId: winner.participationId ?? undefined,
+    };
+  }
+
+  const participant = option.participants?.find(
+    (item) => !isInactiveOptionPurchaseStatus(item.status),
+  );
+
+  if (!participant) {
+    return {};
+  }
+
+  return {
+    purchasePaymentDueAt: participant.dueAt ?? undefined,
+    purchasePaymentStatus: participant.status || "AWAITING_PAYMENT",
+    purchaseParticipationId: participant.participationId,
+  };
+}
+
+function mergeManagementOptionPurchaseStates(
+  options: ProductOption[],
+  managementOptions: BuncheolManagementOption[],
+) {
+  const optionsById = new Map(
+    managementOptions.map((option) => [option.buncheolMemberId, option]),
+  );
+  const optionsByName = new Map(
+    managementOptions.map((option) => [option.memberName, option]),
+  );
+
+  return options.map((option) => {
+    const managementOption =
+      optionsById.get(option.buncheolMemberId ?? option.id) ??
+      optionsByName.get(option.label);
+
+    if (!managementOption) {
+      return option;
+    }
+
+    return {
+      ...option,
+      ...getManagementOptionPurchaseState(managementOption),
+      participantCount: Math.max(
+        option.participantCount,
+        managementOption.participationCount,
+        managementOption.participants?.length ?? 0,
+      ),
+    };
+  });
+}
+
 export function ProductDetail({
   backHref,
   product,
@@ -405,13 +531,19 @@ export function ProductDetail({
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
       .filter(
-        (option) => bidAmounts[option.id] === "selected" && !myBids[option.id],
+        (option) =>
+          bidAmounts[option.id] === "selected" &&
+          !getOptionPurchaseOverlayLabel(
+            option,
+            myBids[option.id],
+            product.isApiProduct === true,
+          ),
       )
       .map((option) => ({
         bidAmount: priceToNumber(getBidBaseline(option)),
         option,
       }));
-  }, [auctionOptions, bidAmounts, myBids]);
+  }, [auctionOptions, bidAmounts, myBids, product.isApiProduct]);
 
   const activeBidCount = selectedCheckoutItems.length;
 
@@ -423,8 +555,20 @@ export function ProductDetail({
   }, [selectedCheckoutItems]);
 
   const sortedAuctionOptions = [...auctionOptions].sort((left, right) => {
-    const leftHasBid = Boolean(myBids[left.id]);
-    const rightHasBid = Boolean(myBids[right.id]);
+    const leftHasBid = Boolean(
+      getOptionPurchaseOverlayLabel(
+        left,
+        myBids[left.id],
+        product.isApiProduct === true,
+      ),
+    );
+    const rightHasBid = Boolean(
+      getOptionPurchaseOverlayLabel(
+        right,
+        myBids[right.id],
+        product.isApiProduct === true,
+      ),
+    );
 
     if (leftHasBid === rightHasBid) {
       return 0;
@@ -596,13 +740,43 @@ export function ProductDetail({
     }
 
     let isCancelled = false;
+    const accessToken = authState.accessToken;
 
     setIsHostedByMeFromApi(product.isHostedByMe === true);
 
-    requestBuncheolDetail(authState.accessToken, buncheolId)
-      .then((detail) => {
-        if (!isCancelled) {
-          setIsHostedByMeFromApi(detail.isHostedByMe === true);
+    requestBuncheolDetail(accessToken, buncheolId)
+      .then(async (detail) => {
+        if (isCancelled) {
+          return;
+        }
+
+        const isHosted = detail.isHostedByMe === true;
+        const refreshedProduct = toProductDetailItem(detail);
+        setIsHostedByMeFromApi(isHosted);
+        setAuctionOptions(refreshedProduct.options);
+        setMyBids(getMyBidsFromOptions(refreshedProduct.options));
+        setBidAmounts({});
+
+        if (!isHosted && product.isHostedByMe !== true) {
+          return;
+        }
+
+        try {
+          const managementDetail = await requestBuncheolManagement(
+            accessToken,
+            buncheolId,
+          );
+
+          if (!isCancelled) {
+            setAuctionOptions((currentOptions) =>
+              mergeManagementOptionPurchaseStates(
+                currentOptions,
+                managementDetail.options,
+              ),
+            );
+          }
+        } catch {
+          // Detail data still renders; management state is only a host-side overlay hint.
         }
       })
       .catch(() => {
@@ -622,6 +796,19 @@ export function ProductDetail({
   ]);
 
   function togglePurchaseOption(optionId: string) {
+    const option = auctionOptions.find((item) => item.id === optionId);
+
+    if (
+      !option ||
+      getOptionPurchaseOverlayLabel(
+        option,
+        myBids[optionId],
+        product.isApiProduct === true,
+      )
+    ) {
+      return;
+    }
+
     setBidAmounts((current) => {
       if (current[optionId] === "selected") {
         const nextAmounts = { ...current };
@@ -1726,33 +1913,68 @@ export function ProductDetail({
             </div>
 
             <div className="mt-8 border-t border-black/10 pt-6">
-              <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
-                옵션 선택
-              </h2>
-              <div className="mt-4 grid gap-3">
-                {auctionOptions.map((option) => (
-                  <div
-                    key={option.id}
-                    className="rounded-[0.9rem] border border-black/10 px-4 py-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <OptionAvatar option={option} size="sm" />
-                        <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                          {option.label}
+              <div className="flex items-end justify-between gap-3">
+                <h2 className="text-[18px] font-semibold">
+                  옵션 선택
+                </h2>
+                <p className="text-[12px] font-semibold text-black/35">
+                  {auctionOptions.length.toLocaleString("ko-KR")}개 옵션
+                </p>
+              </div>
+              <div className="mt-4 grid gap-2.5">
+                {auctionOptions.map((option) => {
+                  const overlayLabel = getOptionPurchaseOverlayLabel(
+                    option,
+                    myBids[option.id],
+                    product.isApiProduct === true,
+                  );
+
+                  return (
+                    <div
+                      key={option.id}
+                      className={`relative flex min-h-[76px] items-center justify-between gap-3 overflow-hidden rounded-[0.9rem] border px-4 py-3 shadow-[0_8px_22px_rgba(0,0,0,0.035)] ${
+                        overlayLabel
+                          ? "border-black/10 bg-[#f7f7f7]"
+                          : "border-black/10 bg-white"
+                      }`}
+                    >
+                      <div
+                        className={`flex min-w-0 items-center gap-3 ${
+                          overlayLabel ? "opacity-45" : ""
+                        }`}
+                      >
+                        <OptionAvatar option={option} size="md" />
+                        <div className="min-w-0">
+                          <p className="truncate text-[16px] font-semibold">
+                            {option.label}
+                          </p>
+                          <p className="mt-0.5 text-[12px] font-semibold text-black/35">
+                            구매 가능 옵션
+                          </p>
+                        </div>
+                      </div>
+                      <div
+                        className={`shrink-0 text-right ${
+                          overlayLabel ? "opacity-45" : ""
+                        }`}
+                      >
+                        <p className="text-[11px] font-semibold text-black/35">
+                          {getOptionPriceLabel()}
+                        </p>
+                        <p className="mt-0.5 text-[16px] font-semibold">
+                          {getBidBaseline(option)}
                         </p>
                       </div>
+                      {overlayLabel ? (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+                          <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                            {overlayLabel}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
-                      <p className="text-[11px] font-medium text-black/35">
-                        가격
-                      </p>
-                      <p className="mt-1 text-[15px] font-semibold tracking-[-0.04em]">
-                        {getBidBaseline(option)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </section>
@@ -1835,17 +2057,28 @@ export function ProductDetail({
                     {sortedAuctionOptions.map((option) => {
                       const myBid = myBids[option.id];
                       const isSelected = bidAmounts[option.id] === "selected";
+                      const overlayLabel = getOptionPurchaseOverlayLabel(
+                        option,
+                        myBid,
+                        product.isApiProduct === true,
+                      );
 
                       return (
                         <div
                           key={option.id}
-                          className={`rounded-[0.9rem] border px-4 py-3 ${
-                            myBid || isSelected
+                          className={`relative overflow-hidden rounded-[0.9rem] border px-4 py-3 ${
+                            overlayLabel
+                              ? "border-black/10 bg-[#f7f7f7]"
+                              : isSelected
                               ? "border-black bg-[#f2f2f0]"
                               : "border-black/10 bg-white"
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-3">
+                          <div
+                            className={`flex items-start justify-between gap-3 ${
+                              overlayLabel ? "opacity-45" : ""
+                            }`}
+                          >
                             <div className="flex min-w-0 items-center gap-3">
                               <OptionAvatar option={option} size="lg" />
                               <div className="min-w-0">
@@ -1878,18 +2111,29 @@ export function ProductDetail({
 
                           <button
                             className={`mt-3 h-12 w-full rounded-[0.8rem] text-[14px] font-semibold transition-colors ${
-                              myBid
+                              overlayLabel
                                 ? "bg-black/10 text-black/35"
                                 : isSelected
                                   ? "bg-black text-white"
                                   : "bg-[#f7f7f7] text-black/55"
                             }`}
-                            disabled={Boolean(myBid)}
+                            disabled={Boolean(overlayLabel)}
                             onClick={() => togglePurchaseOption(option.id)}
                             type="button"
                           >
-                            {myBid ? "구매 진행 중" : isSelected ? "선택 해제" : "선택"}
+                            {overlayLabel
+                              ? "선택 불가"
+                              : isSelected
+                                ? "선택 해제"
+                                : "선택"}
                           </button>
+                          {overlayLabel ? (
+                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+                              <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                                {overlayLabel}
+                              </span>
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
