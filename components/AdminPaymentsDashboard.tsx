@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -550,6 +551,9 @@ export function AdminPaymentsDashboard() {
   const [registeringDeliveryId, setRegisteringDeliveryId] = useState<
     string | null
   >(null);
+  const paymentConfirmRefreshTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   const loadRecords = useCallback(async (successMessage?: string) => {
     setIsLoading(true);
@@ -618,6 +622,17 @@ export function AdminPaymentsDashboard() {
     }
   }, []);
 
+  function schedulePaymentConfirmRefresh() {
+    if (paymentConfirmRefreshTimeoutRef.current) {
+      clearTimeout(paymentConfirmRefreshTimeoutRef.current);
+    }
+
+    paymentConfirmRefreshTimeoutRef.current = setTimeout(() => {
+      paymentConfirmRefreshTimeoutRef.current = null;
+      void loadRecords();
+    }, 700);
+  }
+
   useEffect(() => {
     if (!authState.isLoggedIn) {
       setIsLoading(false);
@@ -628,6 +643,14 @@ export function AdminPaymentsDashboard() {
 
     void loadRecords();
   }, [authState.accessToken, authState.isLoggedIn, loadRecords]);
+
+  useEffect(() => {
+    return () => {
+      if (paymentConfirmRefreshTimeoutRef.current) {
+        clearTimeout(paymentConfirmRefreshTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const filteredRecords = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
@@ -745,6 +768,7 @@ export function AdminPaymentsDashboard() {
         ),
       );
       await loadRecords("입금 확인이 완료됐어요.");
+      schedulePaymentConfirmRefresh();
     } catch (error: unknown) {
       setMessage(
         error instanceof Error
