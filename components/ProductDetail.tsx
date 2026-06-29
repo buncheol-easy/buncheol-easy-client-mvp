@@ -72,6 +72,7 @@ const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const kstOffsetHours = 9;
+const paymentDueWindowMs = 30 * 60 * 1000;
 
 type CheckoutSheetStep = "options" | "confirm" | "payment";
 
@@ -250,6 +251,15 @@ function isDeadlineClosed(deadline: string, now = Date.now()) {
   return (
     !Number.isNaN(deadlineDate.getTime()) &&
     deadlineDate.getTime() <= now
+  );
+}
+
+function isPaymentWindowClosed(deadline: string, now = Date.now()) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  return (
+    !Number.isNaN(deadlineDate.getTime()) &&
+    deadlineDate.getTime() - now <= paymentDueWindowMs
   );
 }
 
@@ -473,6 +483,10 @@ export function ProductDetail({
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
   const isDeadlinePassed = isDeadlineClosed(product.deadline, deadlineTick);
+  const isPaymentWindowPassed = isPaymentWindowClosed(
+    product.deadline,
+    deadlineTick,
+  );
   const productStatus = product.status?.toUpperCase();
   const isCancelledProduct =
     productStatus === "CANCELLED" || productStatus === "CANCELED";
@@ -489,6 +503,7 @@ export function ProductDetail({
     !isBidUnavailable &&
     !isHostedProduct &&
     !isDeadlinePassed &&
+    !isPaymentWindowPassed &&
     isPurchasableStatus;
 
   function getBidUnavailableMessage() {
@@ -502,6 +517,10 @@ export function ProductDetail({
 
     if (isDeadlinePassed) {
       return "구매 기한이 지났어요";
+    }
+
+    if (isPaymentWindowPassed) {
+      return "입금 시간 확보를 위해 구매가 마감됐어요";
     }
 
     if (productStatus === "CONFIRMED") {
@@ -536,7 +555,7 @@ export function ProductDetail({
   }
 
   useEffect(() => {
-    if (isDeadlineClosed(product.deadline)) {
+    if (isPaymentWindowClosed(product.deadline)) {
       setDeadlineTick(Date.now());
       return;
     }
@@ -943,6 +962,7 @@ export function ProductDetail({
         const isForbidden =
           error instanceof ApiRequestError && error.status === 403;
         const didDeadlinePass = isDeadlineClosed(product.deadline);
+        const didPaymentWindowPass = isPaymentWindowClosed(product.deadline);
         const isHostParticipationBlocked =
           errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
           errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
@@ -958,6 +978,8 @@ export function ProductDetail({
           );
         } else if (didDeadlinePass) {
           setCheckoutError("구매 기한이 지났어요.");
+        } else if (didPaymentWindowPass) {
+          setCheckoutError("입금 시간 확보를 위해 구매가 마감됐어요.");
         } else if (isForbidden) {
           setCheckoutError(
             "구매 권한이 없어요. 테스트 리모콘에서 구매 계정으로 다시 전환한 뒤 시도해 주세요.",

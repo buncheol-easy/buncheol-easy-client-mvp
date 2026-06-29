@@ -586,20 +586,58 @@ export function UploadProductForm({
     photos.find((photo) => photo.id === coverPhotoId) ?? photos[0] ?? null;
   const isApiEditMode =
     Boolean(editProductId) && !String(editProductId).startsWith("uploaded-");
-  const canSubmit = isApiEditMode
-    ? photos.length > 0 && title.trim().length > 0
-    : photos.length > 0 &&
-      title.trim().length > 0 &&
-      purchaseSource.trim().length > 0 &&
-      targetMembers.length > 0 &&
-      targetMembers.every((member) =>
-        isHundredWonAmount(parsePriceInput(memberMinimumPrices[member.id] ?? "")),
-      ) &&
-      isValidMinHeadcount(minHeadcount, targetMembers.length) &&
-      selectedShipping.length > 0 &&
-      selectedShipping.every((option) =>
-        isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
-      );
+  const submitBlockReason = (() => {
+    if (photos.length === 0) {
+      return "사진을 1장 이상 올려 주세요.";
+    }
+
+    if (!title.trim()) {
+      return "상품명을 입력해 주세요.";
+    }
+
+    if (isApiEditMode) {
+      return "";
+    }
+
+    if (!purchaseSource.trim()) {
+      return "구매처를 입력해 주세요.";
+    }
+
+    if (targetMembers.length === 0) {
+      return "그룹과 멤버를 선택해 주세요.";
+    }
+
+    if (
+      targetMembers.some(
+        (member) =>
+          !isHundredWonAmount(
+            parsePriceInput(memberMinimumPrices[member.id] ?? ""),
+          ),
+      )
+    ) {
+      return "옵션 가격을 100원 단위로 입력해 주세요.";
+    }
+
+    if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
+      return `최소 진행 인원을 1-${targetMembers.length}명으로 입력해 주세요.`;
+    }
+
+    if (selectedShipping.length === 0) {
+      return "배송 방법을 선택해 주세요.";
+    }
+
+    if (
+      selectedShipping.some(
+        (option) =>
+          !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
+      )
+    ) {
+      return "배송비를 100원 단위로 입력해 주세요.";
+    }
+
+    return "";
+  })();
+  const canSubmit = submitBlockReason === "";
   useEffect(() => {
     return () => {
       if (photoLimitToastTimeoutRef.current) {
@@ -2594,6 +2632,11 @@ export function UploadProductForm({
             >
               {isEditMode ? "수정 완료" : "등록하기"}
             </button>
+            {!canSubmit && submitBlockReason ? (
+              <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/45">
+                {submitBlockReason}
+              </p>
+            ) : null}
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
                 {submitError}
