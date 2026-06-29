@@ -283,6 +283,20 @@ async function dataUrlToFile(dataUrl: string, fileName: string) {
   });
 }
 
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.addEventListener("load", () => {
+      resolve(String(reader.result));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error);
+    });
+    reader.readAsDataURL(blob);
+  });
+}
+
 function createUploadedProductId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `uploaded-${crypto.randomUUID()}`;
@@ -340,6 +354,48 @@ function compressImageDataUrl(
 
 function canExportImageThroughCanvas(imageUrl: string) {
   return imageUrl.startsWith("data:") || imageUrl.startsWith("blob:");
+}
+
+const editableImageProxyHosts = new Set([
+  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+]);
+
+function getEditableImageFetchUrl(imageUrl: string) {
+  try {
+    const parsedImageUrl = new URL(imageUrl);
+
+    if (
+      parsedImageUrl.protocol === "https:" &&
+      editableImageProxyHosts.has(parsedImageUrl.hostname) &&
+      parsedImageUrl.pathname.startsWith("/buncheols/")
+    ) {
+      return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
+
+async function imageUrlToUploadFile(imageUrl: string, fileName: string) {
+  if (canExportImageThroughCanvas(imageUrl)) {
+    return dataUrlToFile(imageUrl, fileName);
+  }
+
+  const response = await fetch(getEditableImageFetchUrl(imageUrl));
+
+  if (!response.ok) {
+    throw new Error("Image fetch failed");
+  }
+
+  const blob = await response.blob();
+  const dataUrl = await blobToDataUrl(blob);
+  const compressedDataUrl = await compressImageDataUrl(dataUrl);
+
+  return dataUrlToFile(compressedDataUrl, fileName);
 }
 
 async function writeApiProductPreview(product: ProductDetailItem) {
@@ -478,6 +534,7 @@ export function UploadProductForm({
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
+  const formScrollRef = useRef<HTMLFormElement | null>(null);
   const photoLimitToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -1452,23 +1509,6 @@ export function UploadProductForm({
             .map((photo) => photo.existingImageId)
             .filter((imageId): imageId is number => typeof imageId === "number")
         : undefined;
-      const hasUntrackedExistingPhoto =
-        isApiEditMode &&
-        orderedPhotos.some((photo, index) => {
-          const imageUrl = storedPhotoUrls[index] ?? photo.url;
-
-          return (
-            typeof photo.existingImageId !== "number" &&
-            !canExportImageThroughCanvas(imageUrl)
-          );
-        });
-
-      if (hasUntrackedExistingPhoto) {
-        setSubmitError(
-          "기존 사진 정보를 확인하지 못했어요. 사진을 삭제한 뒤 다시 업로드해 주세요.",
-        );
-        return;
-      }
 
       let imageFiles: File[];
 
@@ -1481,13 +1521,12 @@ export function UploadProductForm({
           .filter(
             ({ imageUrl, photo }) =>
               !isApiEditMode ||
-              (typeof photo.existingImageId !== "number" &&
-                canExportImageThroughCanvas(imageUrl)),
+              (typeof photo.existingImageId !== "number" && Boolean(imageUrl)),
           );
 
         imageFiles = await Promise.all(
           uploadablePhotos.map(({ imageUrl }, index) =>
-            dataUrlToFile(imageUrl, `buncheol-${index + 1}.jpg`),
+            imageUrlToUploadFile(imageUrl, `buncheol-${index + 1}.jpg`),
           ),
         );
       } catch {
@@ -1615,6 +1654,11 @@ export function UploadProductForm({
 
   const apiEditIsWaiting =
     isApiEditMode && (isApiEditLoading || (!editingProduct && !submitError));
+
+  useEffect(() => {
+    formScrollRef.current?.scrollTo({ left: 0, top: 0 });
+  }, [apiEditIsWaiting, editProductId, isApiEditMode]);
+
   const apiEditShippingRows = selectedShipping.map((option) => {
     const price = shippingPrices[option] ?? "";
 
@@ -1683,6 +1727,7 @@ export function UploadProductForm({
                   event.preventDefault();
                   void handleSubmit();
                 }}
+                ref={formScrollRef}
               >
                 {apiEditIsWaiting ? (
                   <div className="flex min-h-[52vh] flex-col items-center justify-center px-6 text-center">
@@ -1989,6 +2034,7 @@ export function UploadProductForm({
             <form
               className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-6"
               onSubmit={(event) => event.preventDefault()}
+              ref={formScrollRef}
             >
           <section className="px-4 pt-4">
             <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">

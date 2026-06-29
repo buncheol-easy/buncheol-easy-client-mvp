@@ -3,7 +3,7 @@ const allowedImageHosts = new Set([
   "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
   "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
 ]);
-const allowedPathPrefix = "/idol-groups/";
+const allowedPathPrefixes = ["/idol-groups/", "/buncheols/"];
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -24,7 +24,9 @@ export async function GET(request: Request) {
   if (
     parsedImageUrl.protocol !== "https:" ||
     !allowedImageHosts.has(parsedImageUrl.hostname) ||
-    !parsedImageUrl.pathname.startsWith(allowedPathPrefix)
+    !allowedPathPrefixes.some((prefix) =>
+      parsedImageUrl.pathname.startsWith(prefix),
+    )
   ) {
     return new Response("Image url is not allowed", { status: 400 });
   }
