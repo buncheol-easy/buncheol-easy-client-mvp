@@ -633,16 +633,46 @@ export function ProductDetail({
       null
     );
   }
+  function getCheckoutEligibleDeliveryAddressesFromState(
+    addressState: typeof deliveryAddressState,
+  ) {
+    return getPrioritizedDeliveryAddresses(
+      addressState.addresses,
+      addressState.defaultAddressIds,
+    ).filter((address) =>
+      availableShippingStoreTypes.length > 0
+        ? availableShippingStoreTypes.includes(address.storeType)
+        : true,
+    );
+  }
+  function getPreferredDeliveryAddressFromState(
+    addressState: typeof deliveryAddressState,
+    preferredAddressId?: string | null,
+  ) {
+    const eligibleAddresses =
+      getCheckoutEligibleDeliveryAddressesFromState(addressState);
+    const preferredAddress = preferredAddressId
+      ? eligibleAddresses.find((address) => address.id === preferredAddressId)
+      : null;
+
+    return (
+      preferredAddress ??
+      getBidDeliveryAddressFromState(addressState) ??
+      eligibleAddresses[0] ??
+      null
+    );
+  }
+  async function syncDeliveryAddressState(accessToken: string) {
+    const addresses = await requestShippingAddresses(accessToken);
+    const nextAddressState = getDeliveryAddressStateFromSyncedAddresses(addresses);
+
+    writeDeliveryAddressState(nextAddressState);
+    return nextAddressState;
+  }
   const bidDeliveryAddress =
     getBidDeliveryAddressFromState(deliveryAddressState);
-  const checkoutEligibleDeliveryAddresses = getPrioritizedDeliveryAddresses(
-    deliveryAddressState.addresses,
-    deliveryAddressState.defaultAddressIds,
-  ).filter((address) =>
-    availableShippingStoreTypes.length > 0
-      ? availableShippingStoreTypes.includes(address.storeType)
-      : true,
-  );
+  const checkoutEligibleDeliveryAddresses =
+    getCheckoutEligibleDeliveryAddressesFromState(deliveryAddressState);
   const targetTags = getTargetTags(product);
   const productImages = getProductImageUrls(product);
   const visibleProductImageIndex = Math.min(
@@ -951,20 +981,19 @@ export function ProductDetail({
         return;
       }
 
+      const preferredAddressId =
+        checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null;
       let nextBidDeliveryAddress = checkoutDeliveryAddress ?? bidDeliveryAddress;
 
-      if (!nextBidDeliveryAddress) {
-        try {
-          const addresses = await requestShippingAddresses(accessToken);
-          const nextAddressState =
-            getDeliveryAddressStateFromSyncedAddresses(addresses);
+      try {
+        const nextAddressState = await syncDeliveryAddressState(accessToken);
 
-          writeDeliveryAddressState(nextAddressState);
-          nextBidDeliveryAddress =
-            getBidDeliveryAddressFromState(nextAddressState);
-        } catch {
-          nextBidDeliveryAddress = null;
-        }
+        nextBidDeliveryAddress = getPreferredDeliveryAddressFromState(
+          nextAddressState,
+          preferredAddressId,
+        );
+      } catch {
+        nextBidDeliveryAddress = checkoutDeliveryAddress ?? bidDeliveryAddress;
       }
 
       const shippingAddressId = Number(nextBidDeliveryAddress?.id);
@@ -1042,20 +1071,19 @@ export function ProductDetail({
 
       setIsBidSubmitPending(true);
 
+      const preferredAddressId =
+        checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null;
       let nextBidDeliveryAddress = checkoutDeliveryAddress ?? bidDeliveryAddress;
 
-      if (!nextBidDeliveryAddress) {
-        try {
-          const addresses = await requestShippingAddresses(accessToken);
-          const nextAddressState =
-            getDeliveryAddressStateFromSyncedAddresses(addresses);
+      try {
+        const nextAddressState = await syncDeliveryAddressState(accessToken);
 
-          writeDeliveryAddressState(nextAddressState);
-          nextBidDeliveryAddress =
-            getBidDeliveryAddressFromState(nextAddressState);
-        } catch {
-          nextBidDeliveryAddress = null;
-        }
+        nextBidDeliveryAddress = getPreferredDeliveryAddressFromState(
+          nextAddressState,
+          preferredAddressId,
+        );
+      } catch {
+        nextBidDeliveryAddress = checkoutDeliveryAddress ?? bidDeliveryAddress;
       }
 
       const shippingAddressId = Number(nextBidDeliveryAddress?.id);
@@ -1724,8 +1752,25 @@ export function ProductDetail({
     }, 260);
   }
 
-  function openCheckoutAddressSheet() {
-    if (checkoutEligibleDeliveryAddresses.length === 0) {
+  async function openCheckoutAddressSheet() {
+    let nextAddressState = deliveryAddressState;
+
+    if (product.isApiProduct && authState.isLoggedIn) {
+      const accessToken = await getFreshAccessToken();
+
+      if (accessToken) {
+        try {
+          nextAddressState = await syncDeliveryAddressState(accessToken);
+        } catch {
+          nextAddressState = deliveryAddressState;
+        }
+      }
+    }
+
+    const nextEligibleDeliveryAddresses =
+      getCheckoutEligibleDeliveryAddressesFromState(nextAddressState);
+
+    if (nextEligibleDeliveryAddresses.length === 0) {
       router.push(getAddressManagementHref(true));
       return;
     }
@@ -1735,9 +1780,25 @@ export function ProductDetail({
       checkoutAddressSheetCloseFallbackTimerRef.current = null;
     }
 
+    const preferredAddressId =
+      checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null;
+
     setCheckoutDeliveryAddress(
-      (current) =>
-        current ?? bidDeliveryAddress ?? checkoutEligibleDeliveryAddresses[0] ?? null,
+      (current) => {
+        const currentAddress = current
+          ? nextEligibleDeliveryAddresses.find(
+              (address) => address.id === current.id,
+            )
+          : null;
+
+        return (
+          currentAddress ??
+          getPreferredDeliveryAddressFromState(
+            nextAddressState,
+            preferredAddressId,
+          )
+        );
+      },
     );
     setIsCheckoutAddressSheetOpen(true);
     setIsCheckoutAddressSheetClosing(false);
@@ -2114,7 +2175,7 @@ export function ProductDetail({
 
         {isSheetOpen ? (
           <div
-            className={`bid-sheet-backdrop absolute inset-0 z-10 flex items-end ${
+            className={`bid-sheet-backdrop absolute inset-0 z-40 flex items-end ${
               isSheetEntered && !isSheetClosing ? "bid-sheet-backdrop-active" : ""
             }`}
           >
@@ -2315,7 +2376,7 @@ export function ProductDetail({
                         </div>
                         <button
                           className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/55"
-                          onClick={openCheckoutAddressSheet}
+                          onClick={() => void openCheckoutAddressSheet()}
                           type="button"
                         >
                           {checkoutDeliveryAddress
@@ -2405,14 +2466,14 @@ export function ProductDetail({
                                 <p className="truncate text-[13px] font-semibold tracking-[-0.04em]">
                                   {item.option.label}
                                 </p>
-                                <p className="mt-0.5 text-[11px] font-medium text-black/40">
+                                <p className="hidden">
                                   {item.shippingFee > 0
                                     ? `배송비 ${formatPrice(item.shippingFee)} 포함`
                                     : "묶음 배송비 0원"}
                                 </p>
                               </div>
                               <span className="shrink-0 text-[13px] font-semibold tracking-[-0.04em]">
-                                {formatPrice(item.paymentAmount)}
+                                {formatPrice(item.bidAmount)}
                               </span>
                             </div>
                           ))}

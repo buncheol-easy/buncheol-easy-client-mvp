@@ -143,12 +143,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
-  const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] = useState(
-    () =>
-      skipEnterAnimation ||
-      takeShouldSkipHomeEnter() ||
-      getStoredHomeScrollTop() !== null,
-  );
+  const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
+    useState(skipEnterAnimation);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
@@ -271,7 +267,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
   useLayoutEffect(() => {
     const storedScrollTop = getStoredHomeScrollTop();
-    const shouldSkip = skipEnterAnimation || shouldSkipEnterAnimation;
+    const shouldSkip =
+      skipEnterAnimation ||
+      takeShouldSkipHomeEnter() ||
+      storedScrollTop !== null;
     const shouldStartWithHiddenHeader =
       storedScrollTop !== null &&
       storedScrollTop > SCROLL_HIDE_START;
@@ -325,7 +324,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         window.clearTimeout(restoreTimer);
       }
     };
-  }, [skipEnterAnimation, shouldSkipEnterAnimation]);
+  }, [skipEnterAnimation]);
 
   useEffect(() => {
     let isActive = true;

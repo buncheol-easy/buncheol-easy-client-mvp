@@ -108,7 +108,8 @@ export type UpdateBuncheolRequest = {
 };
 
 export type ParticipateBuncheolRequest = {
-  buncheolMemberIds: number[];
+  buncheolMemberId?: number;
+  buncheolMemberIds?: number[];
   refundAccount: BankAccountInfo;
   shippingAddressId: number;
 };
@@ -3388,8 +3389,24 @@ export async function participateBuncheol(
   buncheolId: string,
   body: ParticipateBuncheolRequest,
 ) {
+  const buncheolMemberIds =
+    body.buncheolMemberIds && body.buncheolMemberIds.length > 0
+      ? body.buncheolMemberIds
+      : typeof body.buncheolMemberId === "number"
+        ? [body.buncheolMemberId]
+        : [];
+
+  if (buncheolMemberIds.length === 0) {
+    throw new Error("구매할 옵션을 확인하지 못했어요.");
+  }
+
+  const requestBody = {
+    buncheolMemberIds,
+    refundAccount: body.refundAccount,
+    shippingAddressId: body.shippingAddressId,
+  };
   const requestInit: RequestInit = {
-    body: JSON.stringify(body),
+    body: JSON.stringify(requestBody),
     credentials: "include",
     headers: getJsonHeaders(accessToken),
     method: "POST",

@@ -20,6 +20,7 @@ export type ProductCardItem = {
   productId?: string;
   title: string;
   member: string;
+  availableMemberNames?: string[];
   optionCount?: number;
   targetMembers?: string[];
   uploadedAt?: string;
@@ -46,11 +47,15 @@ const soonDeadlineDays = 7;
 const millisecondsPerHour = 60 * 60 * 1000;
 
 function getTargetTags(item: ProductCardItem) {
-  const tags = item.targetMembers ?? [item.member];
-
-  return tags
-    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
+  return getUniqueMemberNames(item.targetMembers ?? [item.member])
     .map((tag) => `#${tag}`);
+}
+
+function getUniqueMemberNames(names: string[]) {
+  return names
+    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 }
 
 function parseKoreaDateTime(value: string) {
@@ -181,24 +186,50 @@ function getReadableDeadlineBadge(deadline: string) {
   };
 }
 
+function isPurchasableCardStatus(status: string | undefined) {
+  const normalizedStatus = status?.trim().toUpperCase();
+
+  if (!normalizedStatus) {
+    return true;
+  }
+
+  return normalizedStatus === "RECRUITING" || normalizedStatus === "PUBLIC_PREVIEW";
+}
+
+function isCardDeadlineOpen(deadline: string) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  return Number.isNaN(deadlineDate.getTime())
+    ? true
+    : deadlineDate.getTime() > Date.now();
+}
+
+function isProductCardPurchasable(item: ProductCardItem) {
+  return isPurchasableCardStatus(item.status) && isCardDeadlineOpen(item.deadline);
+}
+
 function getProductCardBadge(item: ProductCardItem) {
-  const status = item.status?.toUpperCase();
-
-  if (status === "CANCELLED" || status === "CANCELED") {
-    return {
-      label: "취소됨",
-      value: null,
-    };
+  if (!isProductCardPurchasable(item)) {
+    return { label: "모집 종료", value: null };
   }
 
-  if (status === "CONFIRMED") {
-    return {
-      label: "CONFIRMED",
-      value: null,
-    };
+  return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
+}
+
+function getAvailableMemberNames(item: ProductCardItem) {
+  if (!isProductCardPurchasable(item)) {
+    return [];
   }
 
-  return getReadableDeadlineBadge(item.deadline);
+  return getUniqueMemberNames(
+    item.availableMemberNames && item.availableMemberNames.length > 0
+      ? item.availableMemberNames
+      : item.targetMembers ?? [item.member],
+  );
+}
+
+function getAvailableMemberSummary(memberNames: string[]) {
+  return memberNames.join(" · ");
 }
 
 function isRecentlyUploaded(uploadedAt?: string) {
@@ -233,6 +264,9 @@ export function ProductCard({ item }: ProductCardProps) {
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
+  const availableMemberNames = getAvailableMemberNames(item);
+  const shouldPeekOptionRail = availableMemberNames.length > 3;
+  const availableMemberSummary = getAvailableMemberSummary(availableMemberNames);
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
@@ -322,7 +356,7 @@ export function ProductCard({ item }: ProductCardProps) {
   return (
     <Link
       href={`/products/${productId}`}
-      className="block space-y-3"
+      className="block space-y-2"
       prefetch={false}
       onClick={(event) => {
         writePublicBuncheolCard(item);
@@ -376,7 +410,7 @@ export function ProductCard({ item }: ProductCardProps) {
           </div>
         ) : null}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
-          <p className="inline-flex rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/75 backdrop-blur-sm">
+          <p className="inline-flex rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white/75 backdrop-blur-sm">
             {deadlineBadge.label}
           </p>
           {deadlineBadge.value ? (
@@ -401,9 +435,38 @@ export function ProductCard({ item }: ProductCardProps) {
       </div>
 
       <div>
-        <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
-          {targetTags.join(" ")}
-        </p>
+        {availableMemberNames.length > 0 ? (
+          <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
+            <span className="shrink-0 text-black/30">
+              옵션 {availableMemberNames.length}개
+            </span>
+            <span className="shrink-0 text-black/15">·</span>
+            <div className="relative min-w-0 flex-1">
+              <div
+                className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                  shouldPeekOptionRail ? "product-card-option-rail" : ""
+                }`}
+              >
+                <div
+                  className={`flex w-max ${
+                    shouldPeekOptionRail
+                      ? "product-card-option-rail__track"
+                      : ""
+                  }`}
+                >
+                  <span className="text-black/50">{availableMemberSummary}</span>
+                </div>
+              </div>
+              {shouldPeekOptionRail ? (
+                <span className="pointer-events-none absolute bottom-0 right-0 top-0 w-6 bg-gradient-to-l from-white via-white/95 to-transparent" />
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+            {targetTags.join(" ")}
+          </p>
+        )}
         <p className="line-clamp-2 text-[15px] leading-6 tracking-[-0.04em] text-black">
           {item.title}
         </p>

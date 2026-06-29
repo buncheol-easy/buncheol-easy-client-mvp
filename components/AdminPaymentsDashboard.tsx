@@ -51,11 +51,13 @@ type AdminPaymentRecord = {
   buncheolStatus: string;
   buncheolTitle: string;
   confirmedAt?: string | null;
+  confirmedCount?: number;
   delivery?: BuncheolManagementDelivery | null;
   deliveries: BuncheolManagementDelivery[];
   groupName: string;
   memberName: string;
   memberNames: string[];
+  minHeadcount?: number;
   participantNickname: string;
   participationId: string;
   participationIds: string[];
@@ -168,6 +170,10 @@ function getAdminDeliveryStatusLabel(record: AdminPaymentRecord) {
   }
 
   if (record.status === "CONFIRMED") {
+    if (isWaitingForMinimumHeadcount(record)) {
+      return "진행 확정 전";
+    }
+
     return "배송 정보 대기";
   }
 
@@ -178,8 +184,29 @@ function getAdminDeliveryStatusLabel(record: AdminPaymentRecord) {
   return "-";
 }
 
+function isWaitingForMinimumHeadcount(record: AdminPaymentRecord) {
+  const normalizedBuncheolStatus = record.buncheolStatus.trim().toUpperCase();
+
+  return (
+    normalizedBuncheolStatus === "RECRUITING" &&
+    typeof record.minHeadcount === "number" &&
+    typeof record.confirmedCount === "number" &&
+    record.confirmedCount < record.minHeadcount
+  );
+}
+
 function getMissingDeliveryMessage(record: AdminPaymentRecord) {
   if (record.status === "CONFIRMED") {
+    if (isWaitingForMinimumHeadcount(record)) {
+      const progressText =
+        typeof record.confirmedCount === "number" &&
+        typeof record.minHeadcount === "number"
+          ? ` 현재 ${record.confirmedCount}/${record.minHeadcount}명 입금 확인됐어요.`
+          : "";
+
+      return `입금 확인은 완료됐지만 아직 최소 진행 인원에 도달하지 않았어요.${progressText} 진행 확정 후 배송 정보가 생성돼요.`;
+    }
+
     return "입금 확인은 완료됐지만 배송 정보가 아직 응답에 없어요. 배송 정보가 내려오면 이곳에서 운송장을 등록할 수 있어요.";
   }
 
@@ -442,11 +469,13 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
       buncheolStatus: detail.status,
       buncheolTitle: detail.title,
       confirmedAt: participant.confirmedAt,
+      confirmedCount: detail.confirmedCount,
       delivery: participant.delivery,
       deliveries: participant.delivery ? [participant.delivery] : [],
       groupName: detail.groupName,
       memberName: participant.memberName,
       memberNames: [participant.memberName],
+      minHeadcount: detail.minHeadcount,
       participantNickname: participant.participantNickname,
       participationId: participant.participationId,
       participationIds: [participant.participationId],
@@ -475,11 +504,13 @@ function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
       buncheolStatus: detail.status,
       buncheolTitle: detail.title,
       confirmedAt: winner.paymentConfirmedAt,
+      confirmedCount: detail.confirmedCount,
       delivery,
       deliveries: delivery ? [delivery] : [],
       groupName: detail.groupName,
       memberName: option.memberName,
       memberNames: [option.memberName],
+      minHeadcount: detail.minHeadcount,
       participantNickname:
         winner.depositorName ?? winner.receiverNickname ?? "참여자",
       participationId: winner.participationId,
@@ -551,9 +582,9 @@ export function AdminPaymentsDashboard() {
   const [registeringDeliveryId, setRegisteringDeliveryId] = useState<
     string | null
   >(null);
-  const paymentConfirmRefreshTimeoutRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  const paymentConfirmRefreshTimeoutRefs = useRef<
+    Array<ReturnType<typeof setTimeout>>
+  >([]);
 
   const loadRecords = useCallback(async (successMessage?: string) => {
     setIsLoading(true);
@@ -622,15 +653,21 @@ export function AdminPaymentsDashboard() {
     }
   }, []);
 
-  function schedulePaymentConfirmRefresh() {
-    if (paymentConfirmRefreshTimeoutRef.current) {
-      clearTimeout(paymentConfirmRefreshTimeoutRef.current);
-    }
+  const clearPaymentConfirmRefreshes = useCallback(() => {
+    paymentConfirmRefreshTimeoutRefs.current.forEach((timeoutId) => {
+      clearTimeout(timeoutId);
+    });
+    paymentConfirmRefreshTimeoutRefs.current = [];
+  }, []);
 
-    paymentConfirmRefreshTimeoutRef.current = setTimeout(() => {
-      paymentConfirmRefreshTimeoutRef.current = null;
-      void loadRecords();
-    }, 700);
+  function schedulePaymentConfirmRefresh() {
+    clearPaymentConfirmRefreshes();
+
+    paymentConfirmRefreshTimeoutRefs.current = [700, 2000, 5000].map((delay) =>
+      setTimeout(() => {
+        void loadRecords();
+      }, delay),
+    );
   }
 
   useEffect(() => {
@@ -646,11 +683,9 @@ export function AdminPaymentsDashboard() {
 
   useEffect(() => {
     return () => {
-      if (paymentConfirmRefreshTimeoutRef.current) {
-        clearTimeout(paymentConfirmRefreshTimeoutRef.current);
-      }
+      clearPaymentConfirmRefreshes();
     };
-  }, []);
+  }, [clearPaymentConfirmRefreshes]);
 
   const filteredRecords = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
