@@ -2031,19 +2031,19 @@ export function ProfileContent({
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
             <div
-              className={`mt-4 rounded-[1rem] bg-[#f7f7f7] px-3 py-3 ${
+              className={`mt-3 rounded-[1rem] bg-[#f7f7f7] px-2.5 py-2.5 ${
                 isSettlementAccountPanelExiting
                   ? "settlement-account-panel-exit"
                   : "settlement-account-panel-enter"
               }`}
             >
-              <div className="grid gap-3">
-                <label className="block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
-                  <span className="text-[13px] font-semibold text-black/45">
+              <div className="grid gap-2">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     은행
                   </span>
                   <input
-                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
+                    className="mt-0.5 h-7 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2055,12 +2055,12 @@ export function ProfileContent({
                     value={settlementAccountForm.bankName}
                   />
                 </label>
-                <label className="block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
-                  <span className="text-[13px] font-semibold text-black/45">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     계좌번호
                   </span>
                   <input
-                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
+                    className="mt-0.5 h-7 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     inputMode="numeric"
                     maxLength={60}
                     onChange={(event) =>
@@ -2073,12 +2073,12 @@ export function ProfileContent({
                     value={settlementAccountForm.accountNumber}
                   />
                 </label>
-                <label className="block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
-                  <span className="text-[13px] font-semibold text-black/45">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     예금주
                   </span>
                   <input
-                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
+                    className="mt-0.5 h-7 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2092,12 +2092,12 @@ export function ProfileContent({
                 </label>
               </div>
 
-              <div className="mt-4 flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-2">
                 {hasSettlementAccount ||
                 isSettlementAccountFormDirty ||
                 isEditingSettlementAccount ? (
                   <button
-                    className="h-11 flex-1 rounded-full bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
+                    className="h-10 flex-1 rounded-full bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
                     disabled={isSettlementAccountPanelExiting}
                     onClick={cancelSettlementAccountEdit}
                     type="button"
@@ -2106,7 +2106,7 @@ export function ProfileContent({
                   </button>
                 ) : null}
                 <button
-                  className="h-11 flex-1 rounded-full bg-[#D7FF5F] text-[14px] font-semibold text-black shadow-[0_8px_20px_rgba(215,255,95,0.24)] disabled:bg-black/20 disabled:text-white"
+                  className="h-10 flex-1 rounded-full bg-[#D7FF5F] text-[14px] font-semibold text-black shadow-[0_8px_20px_rgba(215,255,95,0.24)] disabled:bg-black/20 disabled:text-white"
                   disabled={
                     !canSaveSettlementAccount ||
                     isSavingSettlementAccount ||
