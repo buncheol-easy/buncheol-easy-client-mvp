@@ -1391,6 +1391,36 @@ function normalizeImageUrl(imageUrl: string) {
   return trimmedImageUrl;
 }
 
+const proxiedGroupImageHosts = new Set([
+  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+]);
+const groupImagePathPrefix = "/idol-groups/";
+
+function getProxiedGroupImageUrl(imageUrl: string | undefined) {
+  if (!imageUrl) {
+    return undefined;
+  }
+
+  const normalizedImageUrl = normalizeImageUrl(imageUrl);
+
+  try {
+    const parsedImageUrl = new URL(normalizedImageUrl);
+
+    if (
+      proxiedGroupImageHosts.has(parsedImageUrl.hostname) &&
+      parsedImageUrl.pathname.startsWith(groupImagePathPrefix)
+    ) {
+      return `/api/group-image?url=${encodeURIComponent(normalizedImageUrl)}`;
+    }
+  } catch {
+    return normalizedImageUrl;
+  }
+
+  return normalizedImageUrl;
+}
+
 function getImageUrl(value: unknown) {
   if (typeof value === "string" || typeof value === "number") {
     return normalizeImageUrl(String(value));
@@ -3761,6 +3791,14 @@ function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null
   const groupRecord = isRecord(nestedGroup) ? nestedGroup : record;
   const id = getStringValue(groupRecord, ["id", "groupId"]);
   const name = getStringValue(groupRecord, ["name", "groupName"]);
+  const imageUrl = getProxiedGroupImageUrl(
+    getOptionalStringValue(groupRecord, [
+      "image",
+      "imageUrl",
+      "thumbnailUrl",
+      "profileImageUrl",
+    ]),
+  );
 
   if (!id || !name) {
     return null;
@@ -3783,12 +3821,7 @@ function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null
         "isFavorited",
       ]) ??
       undefined,
-    imageUrl: getOptionalStringValue(groupRecord, [
-      "image",
-      "imageUrl",
-      "thumbnailUrl",
-      "profileImageUrl",
-    ]),
+    imageUrl,
   } satisfies ApiGroup;
 }
 
@@ -3799,6 +3832,14 @@ function getApiGroupMemberFromRecord(
   const memberRecord = isRecord(nestedMember) ? nestedMember : record;
   const id = getStringValue(memberRecord, ["id", "memberId"]);
   const name = getStringValue(memberRecord, ["name", "memberName"]);
+  const imageUrl = getProxiedGroupImageUrl(
+    getOptionalStringValue(memberRecord, [
+      "image",
+      "imageUrl",
+      "thumbnailUrl",
+      "profileImageUrl",
+    ]),
+  );
 
   if (!id || !name) {
     return null;
@@ -3807,12 +3848,7 @@ function getApiGroupMemberFromRecord(
   return {
     id,
     name,
-    imageUrl: getOptionalStringValue(memberRecord, [
-      "image",
-      "imageUrl",
-      "thumbnailUrl",
-      "profileImageUrl",
-    ]),
+    imageUrl,
   };
 }
 

@@ -88,6 +88,7 @@ function getKoreaCalendar(date: Date) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getDeadlineBadge(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
@@ -134,6 +135,52 @@ function getDeadlineBadge(deadline: string) {
   };
 }
 
+function getReadableDeadlineBadge(deadline: string) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return {
+      label: "마감",
+      value: deadline,
+    };
+  }
+
+  const now = new Date();
+
+  if (deadlineDate.getTime() <= now.getTime()) {
+    return {
+      label: "마감",
+      value: null,
+    };
+  }
+
+  const deadlineCalendar = getKoreaCalendar(deadlineDate);
+  const nowCalendar = getKoreaCalendar(now);
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const remainingDays = Math.round(
+    (deadlineCalendar.getTime() - nowCalendar.getTime()) / millisecondsPerDay,
+  );
+
+  if (remainingDays === 0) {
+    return {
+      label: "오늘 마감",
+      value: "D-DAY",
+    };
+  }
+
+  if (remainingDays <= soonDeadlineDays) {
+    return {
+      label: "마감 임박",
+      value: `D-${remainingDays}`,
+    };
+  }
+
+  return {
+    label: `D-${remainingDays}`,
+    value: `${deadlineCalendar.getUTCMonth() + 1}월 ${deadlineCalendar.getUTCDate()}일`,
+  };
+}
+
 function isRecentlyUploaded(uploadedAt?: string) {
   if (!uploadedAt) {
     return false;
@@ -165,7 +212,7 @@ export function ProductCard({ item }: ProductCardProps) {
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
-  const deadlineBadge = getDeadlineBadge(item.deadline);
+  const deadlineBadge = getReadableDeadlineBadge(item.deadline);
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
