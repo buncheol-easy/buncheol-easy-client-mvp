@@ -264,6 +264,7 @@ export function ProductCard({ item }: ProductCardProps) {
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
+  const isPurchasable = isProductCardPurchasable(item);
   const availableMemberNames = getAvailableMemberNames(item);
   const shouldPeekOptionRail = availableMemberNames.length > 3;
   const availableMemberSummary = getAvailableMemberSummary(availableMemberNames);
@@ -356,7 +357,7 @@ export function ProductCard({ item }: ProductCardProps) {
   return (
     <Link
       href={`/products/${productId}`}
-      className="block space-y-2"
+      className="motion-card block space-y-2"
       prefetch={false}
       onClick={(event) => {
         writePublicBuncheolCard(item);
@@ -391,7 +392,7 @@ export function ProductCard({ item }: ProductCardProps) {
       }}
     >
       <div
-        className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br ${item.tone}`}
+        className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br shadow-[0_12px_28px_rgba(0,0,0,0.08)] ${item.tone}`}
       >
         {item.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -410,7 +411,13 @@ export function ProductCard({ item }: ProductCardProps) {
           </div>
         ) : null}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
-          <p className="inline-flex rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white/75 backdrop-blur-sm">
+          <p
+            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
+              isPurchasable
+                ? "bg-[#D7FF5F] text-black shadow-[0_6px_18px_rgba(215,255,95,0.28)]"
+                : "bg-black/40 text-white/75"
+            }`}
+          >
             {deadlineBadge.label}
           </p>
           {deadlineBadge.value ? (
@@ -423,8 +430,10 @@ export function ProductCard({ item }: ProductCardProps) {
           <button
             type="button"
             aria-label={isLiked ? "찜 해제" : "찜하기"}
-            className={`absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 ${
-              isLiked ? "bg-black text-white" : "bg-white/95 text-black/45"
+            className={`motion-icon-button absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
+              isLiked
+                ? "bg-[#D7FF5F] text-black shadow-[0_10px_24px_rgba(215,255,95,0.32)]"
+                : "bg-white/95 text-black/45"
             } disabled:opacity-60`}
             disabled={isBookmarkPending}
             onClick={handleBookmarkClick}
@@ -437,7 +446,7 @@ export function ProductCard({ item }: ProductCardProps) {
       <div>
         {availableMemberNames.length > 0 ? (
           <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
-            <span className="shrink-0 text-black/30">
+            <span className="shrink-0 rounded-full bg-[#D7FF5F]/70 px-2 py-0.5 text-black/70">
               옵션 {availableMemberNames.length}개
             </span>
             <span className="shrink-0 text-black/15">·</span>
@@ -450,7 +459,7 @@ export function ProductCard({ item }: ProductCardProps) {
                 <div
                   className={`flex w-max ${
                     shouldPeekOptionRail
-                      ? "product-card-option-rail__track"
+                      ? "product-card-option-rail__track motion-carousel__hint"
                       : ""
                   }`}
                 >

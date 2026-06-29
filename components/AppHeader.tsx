@@ -82,7 +82,7 @@ export function AppHeader({ tone = "dark" }: AppHeaderProps) {
       <div className="app-header__inner flex items-center gap-3">
         <button
           aria-label="분철이지 홈"
-          className="app-header__title relative -ml-2 h-10 w-[106px] shrink-0"
+          className="motion-icon-button app-header__title relative -ml-2 h-10 w-[106px] shrink-0 rounded-[0.75rem]"
           onClick={handleLogoClick}
           type="button"
         >
@@ -96,7 +96,7 @@ export function AppHeader({ tone = "dark" }: AppHeaderProps) {
           />
         </button>
         <a
-          className="app-header__search flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black"
+          className="motion-card app-header__search flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black shadow-[0_8px_20px_rgba(0,0,0,0.08)]"
           href="/search"
           onClick={handleSearchClick}
         >
@@ -107,10 +107,10 @@ export function AppHeader({ tone = "dark" }: AppHeaderProps) {
         </a>
         <Link
           aria-label="소식함"
-          className={`app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
+          className={`motion-icon-button app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
             isDarkTone
-              ? "border-white/20 bg-white/10 text-white"
-              : "border-black/10 bg-black/[0.04] text-black"
+              ? "border-[#D7FF5F] bg-[#D7FF5F] text-black shadow-[0_8px_22px_rgba(215,255,95,0.28)]"
+              : "border-[#D7FF5F] bg-[#D7FF5F] text-black shadow-[0_8px_22px_rgba(215,255,95,0.22)]"
           }`}
           href="/board"
         >

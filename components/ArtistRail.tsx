@@ -244,7 +244,7 @@ export function ArtistRail({
       >
         <div className="relative">
           <button
-            className="w-[65px] text-left"
+            className="motion-card w-[65px] text-left"
             onClick={() => onItemClick?.(item)}
             type="button"
           >
@@ -266,7 +266,11 @@ export function ArtistRail({
           </button>
           {onFavoriteToggle && item.type !== "member" ? (
             <button
-              className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-black shadow-[0_4px_12px_rgba(0,0,0,0.12)]"
+              className={`motion-icon-button absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.12)] ${
+                item.favorited === true
+                  ? "bg-[#D7FF5F] text-black"
+                  : "bg-white/90 text-black"
+              }`}
               onClick={() => onFavoriteToggle(item)}
               type="button"
               aria-label={item.favorited ? "최애 그룹 삭제" : "최애 그룹 등록"}
@@ -275,7 +279,7 @@ export function ArtistRail({
             </button>
           ) : null}
           {isSelected ? (
-            <span className="absolute -bottom-1 -right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black text-white shadow-[0_5px_14px_rgba(0,0,0,0.22)] ring-2 ring-white">
+            <span className="absolute -bottom-1 -right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_5px_14px_rgba(215,255,95,0.3)] ring-2 ring-white">
               <CheckIcon />
             </span>
           ) : null}
@@ -301,11 +305,11 @@ export function ArtistRail({
       {leadingItem ? (
         <>
           <div className="flex-shrink-0">
-            <button className="min-w-[65px]" onClick={onLeadingClick} type="button">
-              <div
-                className={`flex aspect-square items-center justify-center rounded-[1.25rem] border text-black/35 ${
+          <button className="min-w-[65px]" onClick={onLeadingClick} type="button">
+            <div
+                className={`motion-icon-button flex aspect-square items-center justify-center rounded-[1.25rem] border text-black/35 ${
                   leadingItem.active
-                    ? "border-black bg-black text-white"
+                    ? "border-[#D7FF5F] bg-[#D7FF5F] text-black shadow-[0_8px_22px_rgba(215,255,95,0.24)]"
                     : "border-black/10 bg-[#ededeb]"
                 }`}
               >
@@ -345,7 +349,7 @@ export function ArtistRail({
       ) : null}
 
       <div
-        className="flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="motion-carousel flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         ref={scrollContainerRef}
       >
         {scrollItems.map(renderItem)}

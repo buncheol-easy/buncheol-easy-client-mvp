@@ -718,6 +718,33 @@ export function ProductDetail({
     hasSelectableOption;
   const isMainBidButtonDisabled =
     !isPublicPreview && (isBidUnavailable || !canBidProduct);
+  const optionParticipationCount = auctionOptions.reduce(
+    (sum, option) => sum + Math.max(0, option.participantCount),
+    0,
+  );
+  const parsedProductParticipationCount = Number.parseInt(product.reviews, 10);
+  const currentParticipationCount = Math.max(
+    optionParticipationCount,
+    Number.isNaN(parsedProductParticipationCount)
+      ? 0
+      : parsedProductParticipationCount,
+  );
+  const minHeadcount =
+    typeof product.minHeadcount === "number" && product.minHeadcount > 0
+      ? product.minHeadcount
+      : null;
+  const participationTargetCount = minHeadcount ?? auctionOptions.length;
+  const participationProgressRatio =
+    participationTargetCount > 0
+      ? Math.min(1, currentParticipationCount / participationTargetCount)
+      : 0;
+  const participationProgressPercent = `${Math.round(
+    participationProgressRatio * 100,
+  )}%`;
+  const remainingHeadcount =
+    minHeadcount !== null
+      ? Math.max(0, minHeadcount - currentParticipationCount)
+      : null;
 
   function getBidUnavailableMessage() {
     if (isHostedProduct) {
@@ -1910,7 +1937,7 @@ export function ProductDetail({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="product-detail-action mr-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
+              className="product-detail-action motion-icon-button mr-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-black text-white"
               onClick={handleBack}
               aria-label="이전 화면"
             >
@@ -1938,15 +1965,19 @@ export function ProductDetail({
               </button>
             ) : null}
             {!canEditProduct ? (
-            <button
-              type="button"
-              className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black"
-              aria-label={isLiked ? "찜 해제" : "찜하기"}
-              disabled={isBookmarkPending}
-              onClick={handleBookmarkClick}
-            >
-              <HeartIcon filled={isLiked} />
-            </button>
+              <button
+                type="button"
+                className={`product-detail-action motion-icon-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 ${
+                  isLiked
+                    ? "bg-[#D7FF5F] text-black shadow-[0_8px_22px_rgba(215,255,95,0.28)]"
+                    : "bg-white text-black"
+                }`}
+                aria-label={isLiked ? "찜 해제" : "찜하기"}
+                disabled={isBookmarkPending}
+                onClick={handleBookmarkClick}
+              >
+                <HeartIcon filled={isLiked} />
+              </button>
             ) : null}
           </div>
         </header>
@@ -2014,7 +2045,16 @@ export function ProductDetail({
                   </div>
                 </>
               )}
-              <div className="absolute left-5 top-5 rounded-full bg-black px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-white">
+              <div
+                className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
+                  isPurchasableStatus &&
+                  !isCancelledProduct &&
+                  !isDeadlinePassed &&
+                  !isPaymentWindowPassed
+                    ? "bg-[#D7FF5F] text-black"
+                    : "bg-black/75 text-white backdrop-blur"
+                }`}
+              >
                 {product.badge}
               </div>
             </div>
@@ -2028,28 +2068,50 @@ export function ProductDetail({
             <h1 className="mt-4 line-clamp-2 text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
               {product.title}
             </h1>
-            <div className="mt-7 grid grid-cols-2 gap-3">
-              <div className="col-span-2 rounded-[0.9rem] border border-black/10 px-4 py-3">
-                <p className="text-[12px] font-medium text-black/45">구매처</p>
-                <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                  {product.purchaseSource ?? "공식 판매처"}
-                </p>
+            <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
+              <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
+                <div className="min-w-0 px-4 py-3.5">
+                  <p className="text-[12px] font-medium text-black/45">구매처</p>
+                  <p className="mt-1 truncate text-[16px] font-semibold tracking-[-0.04em]">
+                    {product.purchaseSource ?? "공식 판매처"}
+                  </p>
+                </div>
+                <div className="min-w-0 px-4 py-3.5">
+                  <p className="text-[12px] font-medium text-black/45">
+                    구매 기한
+                  </p>
+                  <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em]">
+                    {product.deadline}
+                  </p>
+                </div>
               </div>
-              <div className="col-span-2 rounded-[0.9rem] border border-black/10 px-4 py-3">
-                <p className="text-[12px] font-medium text-black/45">구매 기한</p>
-                <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                  {product.deadline}
-                </p>
-              </div>
-              <div className="col-span-2 rounded-[0.9rem] border border-black/10 px-4 py-3">
-                <p className="text-[12px] font-medium text-black/45">
-                  분철 유지 기준
-                </p>
-                <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                  {typeof product.minHeadcount === "number" &&
-                  product.minHeadcount > 0
-                    ? `${product.minHeadcount.toLocaleString("ko-KR")}명 이상`
-                    : "개최자 확인"}
+              <div className="px-4 py-4">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-[12px] font-medium text-black/45">
+                      참여 현황
+                    </p>
+                    <p className="mt-1 text-[22px] font-semibold tracking-[-0.06em]">
+                      현재 {currentParticipationCount.toLocaleString("ko-KR")}
+                      {minHeadcount !== null
+                        ? `/${minHeadcount.toLocaleString("ko-KR")}`
+                        : ""}
+                      명
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-[#D7FF5F] transition-[width] duration-500"
+                    style={{ width: participationProgressPercent }}
+                  />
+                </div>
+                <p className="mt-2 text-[12px] font-semibold text-black/40">
+                  {remainingHeadcount === null
+                    ? "개최자가 정한 진행 기준을 확인하고 있어요."
+                    : remainingHeadcount > 0
+                      ? `기준까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요.`
+                      : "진행 기준을 채웠어요."}
                 </p>
               </div>
             </div>
@@ -2082,7 +2144,7 @@ export function ProductDetail({
                 상품 설명
               </h2>
               <p className="mt-3 text-[15px] leading-7 tracking-[-0.04em] text-black/65">
-                {product.description}
+                {product.description.trim() || "상품 설명이 없어요."}
               </p>
             </div>
 
@@ -2157,7 +2219,7 @@ export function ProductDetail({
         <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
           <button
             type="button"
-            className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+            className="h-14 w-full rounded-full bg-[#D7FF5F] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)] disabled:bg-black/20 disabled:text-white"
             disabled={isMainBidButtonDisabled}
             onClick={
               isMainBidButtonDisabled ? undefined : handleBidButtonClick
@@ -2219,7 +2281,7 @@ export function ProductDetail({
                 </div>
                 <button
                   type="button"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                  className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
                   onClick={closeSheet}
                   aria-label="닫기"
                 >
@@ -2246,7 +2308,7 @@ export function ProductDetail({
                             overlayLabel
                               ? "border-black/10 bg-[#f7f7f7]"
                               : isSelected
-                              ? "border-black bg-[#f2f2f0]"
+                              ? "border-[#D7FF5F] bg-[#F5FFD4]"
                               : "border-black/10 bg-white"
                           }`}
                         >
@@ -2263,7 +2325,7 @@ export function ProductDetail({
                                     {option.label}
                                   </p>
                                   {myBid ? (
-                                    <span className="shrink-0 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                                    <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2 py-0.5 text-[10px] font-semibold text-black">
                                       구매 진행 중
                                     </span>
                                   ) : null}
@@ -2290,7 +2352,7 @@ export function ProductDetail({
                               overlayLabel
                                 ? "bg-black/10 text-black/35"
                                 : isSelected
-                                  ? "bg-black text-white"
+                                  ? "bg-[#D7FF5F] text-black"
                                   : "bg-[#f7f7f7] text-black/55"
                             }`}
                             disabled={Boolean(overlayLabel)}
@@ -2326,7 +2388,7 @@ export function ProductDetail({
 
                   <button
                     type="button"
-                    className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+                    className="mt-4 h-14 w-full rounded-full bg-[#D7FF5F] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)] disabled:bg-black/20 disabled:text-white"
                     disabled={
                       activeBidCount === 0 || isBidSubmitPending || !canBidProduct
                     }
@@ -2388,7 +2450,7 @@ export function ProductDetail({
                       </div>
                     </div>
 
-                    <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white">
+                    <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#D7FF5F]/25">
                       <div className="flex items-center justify-between text-[13px] font-semibold text-white/60">
                         <span>상품 금액</span>
                         <span>{formatPrice(totalBidAmount)}</span>
@@ -2399,7 +2461,7 @@ export function ProductDetail({
                       </div>
                       <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
                         <span className="text-[14px] font-semibold text-white/70">총 예상 금액</span>
-                        <span className="text-[22px] font-semibold tracking-[-0.05em]">
+                        <span className="text-[22px] font-semibold tracking-[-0.05em] text-[#D7FF5F]">
                           {formatPrice(estimatedCheckoutTotal)}
                         </span>
                       </div>
@@ -2424,7 +2486,7 @@ export function ProductDetail({
                       이전
                     </button>
                     <button
-                      className="h-14 rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+                      className="h-14 rounded-full bg-[#D7FF5F] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)] disabled:bg-black/20 disabled:text-white"
                       disabled={
                         isBidSubmitPending ||
                         activeBidCount === 0 ||
@@ -2496,7 +2558,7 @@ export function ProductDetail({
                             </p>
                           </div>
                           <button
-                            className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
+                            className="h-9 shrink-0 rounded-full bg-[#D7FF5F] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(215,255,95,0.22)] disabled:bg-black/10 disabled:text-black/30"
                             disabled={!checkoutPaymentSummary.hostBankAccount}
                             onClick={() =>
                               checkoutPaymentSummary.hostBankAccount
@@ -2513,14 +2575,14 @@ export function ProductDetail({
                         </div>
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                            <p className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]">
+                            <p className="soft-panel-enter rounded-full bg-[#D7FF5F] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)]">
                               {checkoutCopyToast}
                             </p>
                           </div>
                         ) : null}
                       </div>
 
-                      <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white">
+                      <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#D7FF5F]/25">
                         <div className="flex items-center justify-between text-[13px] font-semibold text-white/60">
                           <span>상품 금액</span>
                           <span>{formatPrice(checkoutPaymentSummary.productAmount)}</span>
@@ -2531,7 +2593,7 @@ export function ProductDetail({
                         </div>
                         <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
                           <span className="text-[14px] font-semibold text-white/70">총 입금액</span>
-                          <span className="text-[23px] font-semibold tracking-[-0.05em]">
+                          <span className="text-[23px] font-semibold tracking-[-0.05em] text-[#D7FF5F]">
                             {formatPrice(checkoutPaymentSummary.totalAmount)}
                           </span>
                         </div>
@@ -2550,7 +2612,7 @@ export function ProductDetail({
 
                     <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
                       <button
-                        className="h-14 rounded-full bg-black text-[16px] font-semibold tracking-[-0.04em] text-white"
+                        className="h-14 rounded-full bg-[#D7FF5F] text-[16px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)]"
                         onClick={closeSheet}
                         type="button"
                       >
@@ -2617,7 +2679,7 @@ export function ProductDetail({
                 </div>
                 <button
                   aria-label="닫기"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                  className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
                   onClick={closeCheckoutAddressSheet}
                   type="button"
                 >
@@ -2638,7 +2700,7 @@ export function ProductDetail({
                     <button
                       className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
                         isSelected
-                          ? "border-[#d8d8d8] bg-[#ececec]"
+                          ? "border-[#D7FF5F] bg-[#F5FFD4]"
                           : "border-[#ededed] bg-white"
                       }`}
                       key={address.id}
@@ -2651,7 +2713,7 @@ export function ProductDetail({
                             <span
                               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                                 isSelected || isDefault
-                                  ? "bg-black text-white"
+                                  ? "bg-[#D7FF5F] text-black"
                                   : "bg-[#f3f3f3] text-black/45"
                               }`}
                             >
@@ -2673,7 +2735,7 @@ export function ProductDetail({
                         <span
                           className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                             isSelected
-                              ? "bg-black text-white"
+                              ? "bg-[#D7FF5F] text-black"
                               : "bg-[#f3f3f3] text-black/45"
                           }`}
                         >
@@ -2694,7 +2756,7 @@ export function ProductDetail({
               </div>
 
               <button
-                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold text-white"
+                className="mt-3 h-12 w-full rounded-full bg-[#D7FF5F] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(215,255,95,0.24)]"
                 onClick={closeCheckoutAddressSheet}
                 type="button"
               >

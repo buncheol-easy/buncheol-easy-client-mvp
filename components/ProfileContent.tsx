@@ -30,6 +30,7 @@ import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   deleteBuncheol,
   deleteShippingAddress,
+  requestBookmarkedBuncheols,
   requestBuncheolDetail,
   requestLogout,
   requestMyHostedBuncheols,
@@ -683,6 +684,9 @@ export function ProfileContent({
   const [apiHostedProducts, setApiHostedProducts] = useState<
     ProductDetailItem[] | null
   >(null);
+  const [bookmarkedProductCount, setBookmarkedProductCount] = useState<
+    number | null
+  >(null);
   const [hostedProductMessage, setHostedProductMessage] = useState("");
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
@@ -691,6 +695,8 @@ export function ProfileContent({
   const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
   const isHostedProductsLoading =
     authState.isLoggedIn && apiHostedProducts === null;
+  const isBookmarkedProductCountLoading =
+    authState.isLoggedIn && bookmarkedProductCount === null;
   const allBids: ProfileBidEntry[] = useMemo(
     () => (authState.isLoggedIn ? apiBidEntries ?? [] : []),
     [apiBidEntries, authState.isLoggedIn],
@@ -758,7 +764,6 @@ export function ProfileContent({
     settlementAccountForm.accountHolder.trim().length <= 50 &&
     settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
 
-  const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
   const selectedPaymentBid =
     activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
@@ -890,6 +895,7 @@ export function ProfileContent({
     if (!authState.isLoggedIn || !authState.accessToken) {
       setApiBidEntries([]);
       setApiHostedProducts([]);
+      setBookmarkedProductCount(0);
       setHostedProductMessage("");
       return;
     }
@@ -898,6 +904,7 @@ export function ProfileContent({
 
     setApiBidEntries(null);
     setApiHostedProducts(null);
+    setBookmarkedProductCount(null);
     setHostedProductMessage("");
 
     async function loadApiProfileLists() {
@@ -907,14 +914,16 @@ export function ProfileContent({
         if (isActive) {
           setApiBidEntries([]);
           setApiHostedProducts([]);
+          setBookmarkedProductCount(0);
         }
 
         return;
       }
 
-      const [participations, buncheols] = await Promise.allSettled([
+      const [participations, buncheols, bookmarks] = await Promise.allSettled([
         requestMyParticipations(accessToken),
         requestMyHostedBuncheols(accessToken),
+        requestBookmarkedBuncheols(accessToken),
       ]);
 
       if (!isActive) {
@@ -943,12 +952,19 @@ export function ProfileContent({
       } else {
         setApiHostedProducts([]);
       }
+
+      if (bookmarks.status === "fulfilled") {
+        setBookmarkedProductCount(bookmarks.value.length);
+      } else {
+        setBookmarkedProductCount(0);
+      }
     }
 
     loadApiProfileLists().catch(() => {
       if (isActive) {
         setApiBidEntries([]);
         setApiHostedProducts([]);
+        setBookmarkedProductCount(0);
       }
     });
 
@@ -1919,10 +1935,10 @@ export function ProfileContent({
       </header>
 
       <main
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        className="min-h-0 flex-1 overflow-y-auto bg-[#f7f7f7] px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
-        <section className="rounded-[1.15rem] bg-black p-4 text-white">
+        <section className="rounded-[1.15rem] bg-black p-4 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#D7FF5F]/20">
           {authState.isLoggedIn ? (
             <div className="flex items-center gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1948,7 +1964,7 @@ export function ProfileContent({
 
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">참여중</p>
+              <p className="text-[11px] font-medium text-[#D7FF5F]">참여중</p>
               <p className="mt-1 text-[19px] font-semibold">
                 {isBidEntriesLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
@@ -1958,26 +1974,30 @@ export function ProfileContent({
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">참여</p>
+              <p className="text-[11px] font-medium text-[#D7FF5F]">개최</p>
               <p className="mt-1 text-[19px] font-semibold">
-                {isBidEntriesLoading ? (
+                {isHostedProductsLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
                 ) : (
-                  highestRankCount
+                  hostedProducts.length
                 )}
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">찜</p>
+              <p className="text-[11px] font-medium text-[#D7FF5F]">찜</p>
               <p className="mt-1 text-[19px] font-semibold">
-                {0}
+                {isBookmarkedProductCountLoading ? (
+                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
+                ) : (
+                  bookmarkedProductCount ?? 0
+                )}
               </p>
             </div>
           </div>
         </section>
 
-        <section className="mt-5 border-t border-black/10 pt-5">
-          <div className="flex items-end justify-between gap-3">
+        <section className="mt-5 rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 정산 계좌
@@ -1990,7 +2010,11 @@ export function ProfileContent({
             !isEditingSettlementAccount &&
             !isSettlementAccountPanelExiting ? (
               <button
-                className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55"
+                className={`shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
+                  hasSettlementAccount
+                    ? "bg-[#f4f4f4] text-black/55"
+                    : "bg-[#D7FF5F] text-black shadow-[0_8px_20px_rgba(215,255,95,0.28)]"
+                }`}
                 onClick={startSettlementAccountEdit}
                 type="button"
               >
@@ -2007,19 +2031,19 @@ export function ProfileContent({
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
             <div
-              className={`mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4 ${
+              className={`mt-4 rounded-[1rem] bg-[#f7f7f7] px-3 py-3 ${
                 isSettlementAccountPanelExiting
                   ? "settlement-account-panel-exit"
                   : "settlement-account-panel-enter"
               }`}
             >
               <div className="grid gap-3">
-                <label className="block">
+                <label className="block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
                   <span className="text-[13px] font-semibold text-black/45">
                     은행
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2031,12 +2055,12 @@ export function ProfileContent({
                     value={settlementAccountForm.bankName}
                   />
                 </label>
-                <label className="block">
+                <label className="block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
                   <span className="text-[13px] font-semibold text-black/45">
                     계좌번호
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     inputMode="numeric"
                     maxLength={60}
                     onChange={(event) =>
@@ -2049,12 +2073,12 @@ export function ProfileContent({
                     value={settlementAccountForm.accountNumber}
                   />
                 </label>
-                <label className="block">
+                <label className="block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
                   <span className="text-[13px] font-semibold text-black/45">
                     예금주
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2073,7 +2097,7 @@ export function ProfileContent({
                 isSettlementAccountFormDirty ||
                 isEditingSettlementAccount ? (
                   <button
-                    className="h-11 flex-1 rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
+                    className="h-11 flex-1 rounded-full bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
                     disabled={isSettlementAccountPanelExiting}
                     onClick={cancelSettlementAccountEdit}
                     type="button"
@@ -2082,7 +2106,7 @@ export function ProfileContent({
                   </button>
                 ) : null}
                 <button
-                  className="h-11 flex-1 rounded-full bg-black text-[14px] font-semibold text-white disabled:bg-black/20"
+                  className="h-11 flex-1 rounded-full bg-[#D7FF5F] text-[14px] font-semibold text-black shadow-[0_8px_20px_rgba(215,255,95,0.24)] disabled:bg-black/20 disabled:text-white"
                   disabled={
                     !canSaveSettlementAccount ||
                     isSavingSettlementAccount ||
@@ -2096,27 +2120,27 @@ export function ProfileContent({
               </div>
             </div>
           ) : hasSettlementAccount ? (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+            <div className="mt-4 rounded-[1rem] bg-black px-4 py-4 text-white shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-black/45">
+                  <p className="text-[13px] font-semibold text-white/50">
                     {settlementAccount.bankName}
                   </p>
                   <p className="mt-1 break-all text-[17px] font-semibold tracking-[-0.04em]">
                     {settlementAccount.accountNumber}
                   </p>
-                  <p className="mt-1 text-[13px] font-medium text-black/45">
+                  <p className="mt-1 text-[13px] font-medium text-white/50">
                     예금주 {settlementAccount.accountHolder}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[11px] font-semibold text-black">
                   저장됨
                 </span>
               </div>
             </div>
           ) : (
             <button
-              className="mt-4 flex w-full items-center justify-between rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5 text-left"
+              className="mt-4 flex w-full items-center justify-between rounded-[1rem] border border-dashed border-black/15 bg-[#f8f8f8] px-4 py-5 text-left"
               onClick={startSettlementAccountEdit}
               type="button"
             >
@@ -2128,26 +2152,31 @@ export function ProfileContent({
                   등록하면 개최한 분철 정산금을 받을 수 있어요.
                 </span>
               </span>
-              <span className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/55">
+              <span className="shrink-0 rounded-full bg-[#D7FF5F] px-3 py-2 text-[12px] font-semibold text-black">
                 등록
               </span>
             </button>
           )}
 
           {settlementAccountMessage ? (
-            <p className="mt-2 text-[13px] font-semibold text-black/45">
+            <p className="mt-3 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/45">
               {settlementAccountMessage}
             </p>
           ) : null}
         </section>
 
-        <section className="mt-5 border-t border-black/10 pt-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-              기본 배송지
-            </h2>
+        <section className="mt-4 rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                기본 배송지
+              </h2>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                결제할 때 바로 사용할 지점을 확인해요.
+              </p>
+            </div>
             <Link
-              className="text-[13px] font-semibold text-black/45"
+              className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[13px] font-semibold text-black/55"
               href={
                 authState.isLoggedIn
                   ? "/profile/addresses"
@@ -2164,25 +2193,33 @@ export function ProfileContent({
 
               return (
                 <div
-                  className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4"
+                  className={`rounded-[1rem] border px-4 py-4 ${
+                    address
+                      ? "border-black/10 bg-[#f7f7f7]"
+                      : "border-dashed border-black/15 bg-white"
+                  }`}
                   key={storeType}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
-                      기본
-                    </span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                      {convenienceStoreTypeLabels[storeType]}
-                    </span>
-                    <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                      {!authState.isLoggedIn ? (
-                        "로그인 후 이용할 수 있어요"
-                      ) : isDefaultAddressLoading ? (
-                        <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
-                      ) : (
-                        address?.branchName ?? "등록된 배송지가 없어요"
-                      )}
-                    </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[11px] font-semibold text-black">
+                          {convenienceStoreTypeLabels[storeType]}
+                        </span>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                          {address ? "기본" : "미등록"}
+                        </span>
+                      </div>
+                      <p className="mt-3 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                        {!authState.isLoggedIn ? (
+                          "로그인 후 이용할 수 있어요"
+                        ) : isDefaultAddressLoading ? (
+                          <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
+                        ) : (
+                          address?.branchName ?? "등록된 배송지가 없어요"
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </div>
               );
@@ -2526,24 +2563,22 @@ export function ProfileContent({
 
         {authState.isLoggedIn ? (
           <Link
-            className="mt-6 block border-t border-black/10 pt-5"
+            className="mt-4 block rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]"
             href="/profile/account"
             onClick={rememberScrollPosition}
           >
-            <div className="rounded-[1rem] bg-[#f7f7f7] px-4 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
-                    회원 정보
-                  </h2>
-                  <p className="mt-1 truncate text-[13px] font-medium text-black/40">
-                    닉네임, 로그인 계정 관리
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/45">
-                  수정
-                </span>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
+                  회원 정보
+                </h2>
+                <p className="mt-1 truncate text-[13px] font-medium text-black/40">
+                  닉네임, 로그인 계정 관리
+                </p>
               </div>
+              <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[12px] font-semibold text-black/45">
+                수정
+              </span>
             </div>
             {userProfileMessage ? (
               <p className="mt-2 text-[13px] font-semibold text-black/45">
@@ -2552,7 +2587,7 @@ export function ProfileContent({
             ) : null}
           </Link>
         ) : null}
-        <div className="-mx-4 -mb-6 mt-6">
+        <div className="relative -mx-4 -mb-6 mt-6 bg-[#f7f7f7] after:pointer-events-none after:absolute after:left-0 after:right-0 after:top-full after:h-[100dvh] after:bg-[#f7f7f7]">
           <BusinessFooter variant="compact" />
         </div>
       </main>
@@ -2599,7 +2634,7 @@ export function ProfileContent({
               </div>
               <button
                 aria-label="닫기"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
                 onClick={closePaymentSheet}
                 type="button"
               >
@@ -2617,8 +2652,8 @@ export function ProfileContent({
               </p>
             </div>
 
-            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white">
-              <p className="text-[12px] font-semibold text-white/55">
+            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white ring-1 ring-[#D7FF5F]/25">
+              <p className="text-[12px] font-semibold text-[#D7FF5F]">
                 현재 상태
               </p>
               <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
@@ -2646,7 +2681,7 @@ export function ProfileContent({
                   </p>
                 </div>
                 <button
-                  className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
+                  className="h-9 shrink-0 rounded-full bg-[#D7FF5F] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(215,255,95,0.22)] disabled:bg-black/10 disabled:text-black/30"
                   disabled={!selectedPaymentBankAccount}
                   onClick={() =>
                     selectedPaymentBankAccount
@@ -2668,7 +2703,7 @@ export function ProfileContent({
                 <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                   <p
                     aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                    className="soft-panel-enter rounded-full bg-[#D7FF5F] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)]"
                     role="status"
                   >
                     {paymentCopyToast}
@@ -2682,7 +2717,7 @@ export function ProfileContent({
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     {paymentDeliveryAddress ? (
-                      <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
+                      <span className="rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[11px] font-semibold text-black">
                         {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
                     ) : null}
@@ -2726,7 +2761,7 @@ export function ProfileContent({
             </div>
 
             <button
-              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
+              className="mt-4 h-14 w-full rounded-full bg-[#D7FF5F] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(215,255,95,0.28)] disabled:bg-black/20 disabled:text-white/70"
               disabled={!selectedPaymentBankAccount}
               onClick={closePaymentSheet}
               type="button"
@@ -2787,7 +2822,7 @@ export function ProfileContent({
               </div>
               <button
                 aria-label="닫기"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
                 onClick={closeAddressSheet}
                 type="button"
               >
@@ -2818,10 +2853,10 @@ export function ProfileContent({
                     className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
                       addressSheetMode === "select"
                         ? isSelected
-                          ? "border-[#d8d8d8] bg-[#ececec]"
+                          ? "border-[#D7FF5F] bg-[#F5FFD4]"
                           : "border-[#ededed] bg-white"
                         : isDefault
-                        ? "border-[#d8d8d8] bg-[#ececec]"
+                        ? "border-[#D7FF5F] bg-[#F5FFD4]"
                         : "border-[#ededed] bg-white"
                     }`}
                     key={address.id}
@@ -2857,12 +2892,12 @@ export function ProfileContent({
                             className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                               addressSheetMode === "select"
                                 ? isSelected
-                                  ? "bg-black text-white"
+                                  ? "bg-[#D7FF5F] text-black"
                                   : isDefault
-                                  ? "bg-black text-white"
+                                  ? "bg-[#D7FF5F] text-black"
                                   : "bg-white text-black/45"
                                 : isDefault
-                                ? "bg-black text-white"
+                                ? "bg-[#D7FF5F] text-black"
                                 : "bg-white text-black/45"
                             }`}
                           >
@@ -2886,7 +2921,7 @@ export function ProfileContent({
                         <span
                         className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                           isSelected
-                            ? "bg-black text-white"
+                            ? "bg-[#D7FF5F] text-black"
                             : "bg-white text-black/45"
                         }`}
                         >
@@ -2894,7 +2929,7 @@ export function ProfileContent({
                         </span>
                       ) : isDefault ? (
                         <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                          <span className="inline-flex h-8 items-center rounded-full bg-black px-2.5 text-[12px] font-semibold text-white transition-colors duration-300 ease-out">
+                          <span className="inline-flex h-8 items-center rounded-full bg-[#D7FF5F] px-2.5 text-[12px] font-semibold text-black transition-colors duration-300 ease-out">
                             기본
                           </span>
                         </div>

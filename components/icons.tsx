@@ -2,7 +2,7 @@ export function SearchIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-6 w-6"
+      className="motion-icon h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -18,7 +18,7 @@ export function BellIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-6 w-6"
+      className="motion-icon h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -37,7 +37,7 @@ export function BackIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-7 w-7"
+      className="motion-icon h-7 w-7"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -52,7 +52,7 @@ export function CloseIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-4 w-4"
+      className="motion-icon h-4 w-4"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -67,7 +67,7 @@ export function CheckIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-3.5 w-3.5"
+      className="motion-icon h-3.5 w-3.5"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -86,7 +86,7 @@ export function HeartIcon({ filled = false }: { filled?: boolean }) {
   return (
     <svg
       aria-hidden="true"
-      className="h-5 w-5"
+      className="motion-icon h-5 w-5"
       fill={filled ? "currentColor" : "none"}
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -105,7 +105,7 @@ export function EditIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-5 w-5"
+      className="motion-icon h-5 w-5"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -125,7 +125,7 @@ export function BidIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-6 w-6"
+      className="motion-icon h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -149,7 +149,7 @@ export function HomeIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-6 w-6"
+      className="motion-icon h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -168,7 +168,7 @@ export function PlusIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-6 w-6"
+      className="motion-icon h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -183,7 +183,7 @@ export function ProfileIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-6 w-6"
+      className="motion-icon h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -199,7 +199,7 @@ export function StarIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-4 w-4"
+      className="motion-icon h-4 w-4"
       fill="currentColor"
       viewBox="0 0 24 24"
     >
