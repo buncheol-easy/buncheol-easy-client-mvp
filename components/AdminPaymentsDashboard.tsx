@@ -262,13 +262,7 @@ function getRecordDeliveryIds(record: AdminPaymentRecord) {
 }
 
 function getRecordTrackingTargetIds(record: AdminPaymentRecord) {
-  const deliveryIds = getRecordDeliveryIds(record);
-
-  if (deliveryIds.length > 0) {
-    return deliveryIds;
-  }
-
-  return record.status === "CONFIRMED" ? record.participationIds : [];
+  return getRecordDeliveryIds(record);
 }
 
 function getTrackingBatchId(record: AdminPaymentRecord) {
@@ -1195,59 +1189,11 @@ export function AdminPaymentsDashboard() {
                         )}
                       </div>
                     ) : (
-                      <div className="mt-3 grid gap-2 text-[13px] font-semibold">
-                        <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
-                          <p className="text-[12px] text-black/40">배송지</p>
-                          <p className="mt-0.5 truncate">
-                            배송지 정보 확인 중
-                          </p>
-                        </div>
-                        <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2">
-                          <p className="text-[12px] text-black/40">연락처</p>
-                          <p className="mt-0.5 truncate">-</p>
-                        </div>
-                        {isSelectedPaymentConfirmed ? (
-                          <>
-                            <label className="grid gap-1.5">
-                              <span className="text-[12px] font-semibold text-black/40">
-                                운송장 번호
-                              </span>
-                              <input
-                                className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
-                                onChange={(event) => {
-                                  const nextTrackingNumber =
-                                    event.currentTarget.value;
-
-                                  setTrackingInputs((current) => ({
-                                    ...current,
-                                    [selectedRecord.participationId]:
-                                      nextTrackingNumber,
-                                  }));
-                                }}
-                                placeholder="운송장 번호 입력"
-                                value={selectedTrackingValue}
-                              />
-                            </label>
-                            <button
-                              className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-                              disabled={!canRegisterTracking}
-                              onClick={() => registerTrackingNumber(selectedRecord)}
-                              type="button"
-                            >
-                              {registeringDeliveryId === selectedTrackingBatchId
-                                ? "등록 중"
-                                : selectedHasTrackingNumber
-                                  ? "운송장 수정"
-                                  : "운송장 등록"}
-                            </button>
-                          </>
-                        ) : (
-                          <p className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[12px] font-semibold leading-5 text-black/45">
-                            결제 요청 배송지가 응답에 없어 확인할 수 없어요.
-                            입금 확인 전에도 배송지가 필요해요.
-                          </p>
-                        )}
-                      </div>
+                      <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold leading-5 text-black/45">
+                        {isSelectedPaymentConfirmed
+                          ? "입금 확인은 완료됐지만 운송장 등록에 필요한 배송 정보가 응답에 없어 지금은 등록할 수 없어요."
+                          : "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요."}
+                      </p>
                     )}
                   </section>
                 ) : null}
