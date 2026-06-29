@@ -2853,10 +2853,10 @@ export function ProfileContent({
                     className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
                       addressSheetMode === "select"
                         ? isSelected
-                          ? "border-[#D7FF5F] bg-[#F5FFD4]"
+                          ? "border-[#D7FF5F]/55 bg-[#FAFFE9]"
                           : "border-[#ededed] bg-white"
                         : isDefault
-                        ? "border-[#D7FF5F] bg-[#F5FFD4]"
+                        ? "border-[#D7FF5F]/55 bg-[#FAFFE9]"
                         : "border-[#ededed] bg-white"
                     }`}
                     key={address.id}
@@ -2892,12 +2892,12 @@ export function ProfileContent({
                             className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                               addressSheetMode === "select"
                                 ? isSelected
-                                  ? "bg-[#D7FF5F] text-black"
+                                  ? "bg-[#EFFFB8] text-black"
                                   : isDefault
-                                  ? "bg-[#D7FF5F] text-black"
+                                  ? "bg-[#EFFFB8] text-black"
                                   : "bg-white text-black/45"
                                 : isDefault
-                                ? "bg-[#D7FF5F] text-black"
+                                ? "bg-[#EFFFB8] text-black"
                                 : "bg-white text-black/45"
                             }`}
                           >
@@ -2921,7 +2921,7 @@ export function ProfileContent({
                         <span
                         className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                           isSelected
-                            ? "bg-[#D7FF5F] text-black"
+                            ? "bg-[#EFFFB8] text-black"
                             : "bg-white text-black/45"
                         }`}
                         >
@@ -2929,7 +2929,7 @@ export function ProfileContent({
                         </span>
                       ) : isDefault ? (
                         <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                          <span className="inline-flex h-8 items-center rounded-full bg-[#D7FF5F] px-2.5 text-[12px] font-semibold text-black transition-colors duration-300 ease-out">
+                          <span className="inline-flex h-8 items-center rounded-full bg-[#EFFFB8] px-2.5 text-[12px] font-semibold text-black transition-colors duration-300 ease-out">
                             기본
                           </span>
                         </div>

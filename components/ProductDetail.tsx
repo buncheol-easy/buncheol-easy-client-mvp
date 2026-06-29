@@ -2308,7 +2308,7 @@ export function ProductDetail({
                             overlayLabel
                               ? "border-black/10 bg-[#f7f7f7]"
                               : isSelected
-                              ? "border-[#D7FF5F] bg-[#F5FFD4]"
+                              ? "border-[#D7FF5F]/55 bg-[#FAFFE9]"
                               : "border-black/10 bg-white"
                           }`}
                         >
@@ -2700,7 +2700,7 @@ export function ProductDetail({
                     <button
                       className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
                         isSelected
-                          ? "border-[#D7FF5F] bg-[#F5FFD4]"
+                          ? "border-[#D7FF5F]/55 bg-[#FAFFE9]"
                           : "border-[#ededed] bg-white"
                       }`}
                       key={address.id}
@@ -2713,7 +2713,7 @@ export function ProductDetail({
                             <span
                               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                                 isSelected || isDefault
-                                  ? "bg-[#D7FF5F] text-black"
+                                  ? "bg-[#EFFFB8] text-black"
                                   : "bg-[#f3f3f3] text-black/45"
                               }`}
                             >
@@ -2735,7 +2735,7 @@ export function ProductDetail({
                         <span
                           className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                             isSelected
-                              ? "bg-[#D7FF5F] text-black"
+                              ? "bg-[#EFFFB8] text-black"
                               : "bg-[#f3f3f3] text-black/45"
                           }`}
                         >

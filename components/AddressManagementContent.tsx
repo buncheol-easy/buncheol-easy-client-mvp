@@ -478,7 +478,7 @@ export function AddressManagementContent({
                 <div
                   className={`w-full rounded-[1rem] border px-4 py-4 text-left transition-colors ${
                     isDefault
-                      ? "border-[#D7FF5F] bg-[#F5FFD4]"
+                      ? "border-[#D7FF5F]/55 bg-[#FAFFE9]"
                       : "border-black/10 bg-[#f7f7f7]"
                   }`}
                   key={address.id}
@@ -489,7 +489,7 @@ export function AddressManagementContent({
                         <span
                           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                             isDefault
-                              ? "bg-[#D7FF5F] text-black"
+                              ? "bg-[#EFFFB8] text-black"
                               : "bg-white text-black/55"
                           }`}
                         >
@@ -507,7 +507,7 @@ export function AddressManagementContent({
                       </div>
                     {isDefault ? (
                       <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                        <span className="inline-flex h-8 items-center rounded-full bg-[#D7FF5F] px-2.5 text-[12px] font-semibold text-black">
+                        <span className="inline-flex h-8 items-center rounded-full bg-[#EFFFB8] px-2.5 text-[12px] font-semibold text-black">
                           기본
                         </span>
                       </div>
