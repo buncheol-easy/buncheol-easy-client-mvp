@@ -118,6 +118,10 @@ function getInitials(value: string) {
     .toUpperCase();
 }
 
+function getMemberLookupKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
 function getMemberTone(seed: string) {
   const tones = [
     "from-zinc-950 via-zinc-600 to-zinc-200",
@@ -818,20 +822,57 @@ export function UploadProductForm({
           setIsApiEditLoading(true);
           setSubmitError("");
           requestBuncheolDetail(accessToken, editProductId)
-            .then((detail) => {
+            .then(async (detail) => {
               const apiProduct = toProductDetailItem(detail);
+              const memberPresentationByName = new Map<
+                string,
+                { imageUrl?: string; initials: string; tone: string }
+              >();
+
+              try {
+                const [matchedGroup] = rankGroupSearchResults(
+                  await requestGroups(apiProduct.era),
+                  apiProduct.era,
+                  1,
+                );
+
+                if (matchedGroup) {
+                  const groupMembers = await requestGroupMembers(matchedGroup.id);
+
+                  groupMembers.forEach((member) => {
+                    memberPresentationByName.set(
+                      getMemberLookupKey(member.name),
+                      {
+                        imageUrl: member.imageUrl,
+                        initials: getInitials(member.name),
+                        tone: getMemberTone(member.id),
+                      },
+                    );
+                  });
+                }
+              } catch {
+                memberPresentationByName.clear();
+              }
+
               const apiGroup: IdolGroup = {
                 id: `api-edit-${editProductId}`,
                 name: apiProduct.era,
                 label: apiProduct.era,
                 aliases: [apiProduct.era],
-                members: apiProduct.options.map((option) => ({
-                  id: option.buncheolMemberId ?? option.id,
-                  imageUrl: option.imageUrl,
-                  name: option.label,
-                  initials: getInitials(option.label),
-                  tone: getMemberTone(option.id),
-                })),
+                members: apiProduct.options.map((option) => {
+                  const presentation = memberPresentationByName.get(
+                    getMemberLookupKey(option.label),
+                  );
+
+                  return {
+                    id: option.buncheolMemberId ?? option.id,
+                    imageUrl: option.imageUrl ?? presentation?.imageUrl,
+                    name: option.label,
+                    initials:
+                      presentation?.initials ?? getInitials(option.label),
+                    tone: presentation?.tone ?? getMemberTone(option.id),
+                  };
+                }),
               };
 
               setRemoteGroups((current) => [apiGroup, ...current]);
