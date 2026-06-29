@@ -140,7 +140,7 @@ function getReadableDeadlineBadge(deadline: string) {
 
   if (Number.isNaN(deadlineDate.getTime())) {
     return {
-      label: "마감",
+      label: "DATE",
       value: deadline,
     };
   }
@@ -149,7 +149,7 @@ function getReadableDeadlineBadge(deadline: string) {
 
   if (deadlineDate.getTime() <= now.getTime()) {
     return {
-      label: "마감",
+      label: "CLOSED",
       value: null,
     };
   }
@@ -163,22 +163,42 @@ function getReadableDeadlineBadge(deadline: string) {
 
   if (remainingDays === 0) {
     return {
-      label: "오늘 마감",
+      label: "ENDS TODAY",
       value: "D-DAY",
     };
   }
 
   if (remainingDays <= soonDeadlineDays) {
     return {
-      label: "마감 임박",
+      label: "DUE SOON",
       value: `D-${remainingDays}`,
     };
   }
 
   return {
     label: `D-${remainingDays}`,
-    value: `${deadlineCalendar.getUTCMonth() + 1}월 ${deadlineCalendar.getUTCDate()}일`,
+    value: `${deadlineCalendar.getUTCMonth() + 1}.${deadlineCalendar.getUTCDate()}`,
   };
+}
+
+function getProductCardBadge(item: ProductCardItem) {
+  const status = item.status?.toUpperCase();
+
+  if (status === "CANCELLED" || status === "CANCELED") {
+    return {
+      label: "취소됨",
+      value: null,
+    };
+  }
+
+  if (status === "CONFIRMED") {
+    return {
+      label: "CONFIRMED",
+      value: null,
+    };
+  }
+
+  return getReadableDeadlineBadge(item.deadline);
 }
 
 function isRecentlyUploaded(uploadedAt?: string) {
@@ -212,7 +232,7 @@ export function ProductCard({ item }: ProductCardProps) {
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
-  const deadlineBadge = getReadableDeadlineBadge(item.deadline);
+  const deadlineBadge = getProductCardBadge(item);
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
