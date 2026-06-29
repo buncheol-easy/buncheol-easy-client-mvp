@@ -472,6 +472,11 @@ export function ProductDetail({
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
   const isDeadlinePassed = isDeadlineClosed(product.deadline);
+  const productStatus = product.status?.toUpperCase();
+  const isCancelledProduct =
+    productStatus === "CANCELLED" || productStatus === "CANCELED";
+  const isPurchasableStatus =
+    !productStatus || productStatus === "RECRUITING";
   const buncheolId = product.buncheolId ?? product.id;
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
@@ -483,7 +488,27 @@ export function ProductDetail({
     !isBidUnavailable &&
     !isHostedProduct &&
     !isDeadlinePassed &&
-    (!product.status || product.status === "RECRUITING");
+    isPurchasableStatus;
+
+  function getBidUnavailableMessage() {
+    if (isHostedProduct) {
+      return "내가 연 분철은 구매할 수 없어요";
+    }
+
+    if (isCancelledProduct) {
+      return "취소된 분철이에요";
+    }
+
+    if (isDeadlinePassed) {
+      return "구매 기한이 지났어요";
+    }
+
+    if (productStatus === "CONFIRMED") {
+      return "진행 확정된 분철이에요";
+    }
+
+    return "지금은 구매할 수 없는 분철이에요";
+  }
 
   function getProductDetailReturnHref() {
     const fallbackHref = `/products/${encodeURIComponent(buncheolId)}`;
@@ -643,13 +668,7 @@ export function ProductDetail({
     }
 
     if (!canBidProduct) {
-      window.alert(
-        isHostedProduct
-          ? "내가 연 분철은 구매할 수 없어요."
-          : isDeadlinePassed
-            ? "구매 기한이 지나 구매할 수 없어요."
-            : "지금은 구매할 수 없는 분철이에요.",
-      );
+      window.alert(getBidUnavailableMessage());
       return;
     }
 
@@ -731,13 +750,7 @@ export function ProductDetail({
     }
 
     if (!canBidProduct) {
-      window.alert(
-        isHostedProduct
-          ? "내가 연 분철은 구매할 수 없어요."
-          : isDeadlinePassed
-          ? "구매 기한이 지나 구매할 수 없어요."
-          : "지금은 구매할 수 없는 분철이에요.",
-      );
+      window.alert(getBidUnavailableMessage());
       return;
     }
 
@@ -1689,11 +1702,9 @@ export function ProductDetail({
               ? "로그인 후 구매하기"
               : isBidUnavailable
                 ? "구매하기"
-              : isHostedProduct
-                ? "내가 연 분철은 구매할 수 없어요"
-              : canBidProduct
-                ? "구매하기"
-              : "마감된 분철이에요"}
+                : canBidProduct
+                  ? "구매하기"
+                  : getBidUnavailableMessage()}
           </button>
         </div>
 
