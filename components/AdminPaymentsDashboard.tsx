@@ -167,9 +167,7 @@ function getAdminDeliveryStatusLabel(record: AdminPaymentRecord) {
   }
 
   if (record.status === "CONFIRMED") {
-    return record.buncheolStatus === "RECRUITING"
-      ? "진행 확정 전"
-      : "배송 정보 없음";
+    return "배송 정보 대기";
   }
 
   if (record.status === "AWAITING_CONFIRMATION") {
@@ -180,12 +178,8 @@ function getAdminDeliveryStatusLabel(record: AdminPaymentRecord) {
 }
 
 function getMissingDeliveryMessage(record: AdminPaymentRecord) {
-  if (record.status === "CONFIRMED" && record.buncheolStatus === "RECRUITING") {
-    return "입금 확인은 완료됐지만 분철이 아직 진행 확정 전이라 배송 정보가 생성되지 않았어요. 진행 확정 후 운송장 등록이 가능해요.";
-  }
-
   if (record.status === "CONFIRMED") {
-    return "입금 확인은 완료됐지만 운송장 등록에 필요한 배송 정보가 응답에 없어 지금은 등록할 수 없어요.";
+    return "입금 확인은 완료됐지만 배송 정보가 아직 응답에 없어요. 배송 정보가 내려오면 이곳에서 운송장을 등록할 수 있어요.";
   }
 
   return "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요.";
