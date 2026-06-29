@@ -647,6 +647,10 @@ export function AdminPaymentsDashboard() {
   const selectedHasTrackingNumber = Boolean(
     selectedRecord?.deliveries.some((delivery) => delivery.trackingNumber),
   );
+  const isSelectedPaymentConfirmed = selectedRecord?.status === "CONFIRMED";
+  const shouldShowShippingSection =
+    selectedRecord?.status === "AWAITING_CONFIRMATION" ||
+    selectedRecord?.status === "CONFIRMED";
   const canConfirmSelectedPayment =
     Boolean(selectedRecord) &&
     selectedRecord?.status === "AWAITING_CONFIRMATION" &&
@@ -1045,6 +1049,9 @@ export function AdminPaymentsDashboard() {
                           ? "입금 확인 처리"
                           : "대조 체크를 완료해 주세요"}
                     </button>
+                    <p className="mt-2 text-[12px] font-semibold leading-5 text-black/40">
+                      입금 확인을 완료하면 이 화면에서 운송장 번호를 이어서 등록해요.
+                    </p>
                   </section>
                 ) : null}
 
@@ -1094,15 +1101,19 @@ export function AdminPaymentsDashboard() {
                   </section>
                 ) : null}
 
-                {selectedRecord.status === "CONFIRMED" ? (
+                {shouldShowShippingSection ? (
                   <section className="mt-2.5 rounded-[1rem] border border-black/10 p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-[15px] font-semibold">배송 정보</p>
                         <p className="mt-1 text-[12px] font-semibold text-black/40">
                           {selectedRecord.delivery
-                            ? getDeliveryStatusLabel(selectedRecord.delivery.status)
-                            : "운송장 입력 대기"}
+                            ? isSelectedPaymentConfirmed
+                              ? getDeliveryStatusLabel(selectedRecord.delivery.status)
+                              : "결제 요청 배송지"
+                            : isSelectedPaymentConfirmed
+                              ? "운송장 입력 대기"
+                              : "결제 요청 배송지 확인 필요"}
                         </p>
                       </div>
                       {selectedRecord.delivery?.shippingMethod ? (
@@ -1131,40 +1142,50 @@ export function AdminPaymentsDashboard() {
                               .join(" · ") || "-"}
                           </p>
                         </div>
-                        <label className="grid gap-1.5">
-                          <span className="text-[12px] font-semibold text-black/40">
-                            운송장 번호
-                          </span>
-                          <input
-                            className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
-                            onChange={(event) =>
-                              setTrackingInputs((current) => ({
-                                ...current,
-                                [selectedRecord.participationId]:
-                                  event.currentTarget.value,
-                              }))
-                            }
-                            placeholder="운송장 번호 입력"
-                            value={selectedTrackingValue}
-                          />
-                        </label>
-                        <button
-                          className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-                          disabled={!canRegisterTracking}
-                          onClick={() => registerTrackingNumber(selectedRecord)}
-                          type="button"
-                        >
-                          {registeringDeliveryId === selectedDeliveryBatchId
-                            ? "등록 중"
-                            : selectedHasTrackingNumber
-                              ? "운송장 수정"
-                              : "운송장 등록"}
-                        </button>
+                        {isSelectedPaymentConfirmed ? (
+                          <>
+                            <label className="grid gap-1.5">
+                              <span className="text-[12px] font-semibold text-black/40">
+                                운송장 번호
+                              </span>
+                              <input
+                                className="h-11 rounded-[0.8rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+                                onChange={(event) =>
+                                  setTrackingInputs((current) => ({
+                                    ...current,
+                                    [selectedRecord.participationId]:
+                                      event.currentTarget.value,
+                                  }))
+                                }
+                                placeholder="운송장 번호 입력"
+                                value={selectedTrackingValue}
+                              />
+                            </label>
+                            <button
+                              className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
+                              disabled={!canRegisterTracking}
+                              onClick={() => registerTrackingNumber(selectedRecord)}
+                              type="button"
+                            >
+                              {registeringDeliveryId === selectedDeliveryBatchId
+                                ? "등록 중"
+                                : selectedHasTrackingNumber
+                                  ? "운송장 수정"
+                                  : "운송장 등록"}
+                            </button>
+                          </>
+                        ) : (
+                          <p className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[12px] font-semibold leading-5 text-black/45">
+                            배송지는 결제 요청 시 고정됐어요. 입금 확인 후 이
+                            화면에서 운송장 번호를 등록해요.
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold text-black/45">
-                        운송장 입력은 이 관리자 화면에서 진행해요. 다만 이 건은
-                        배송지가 확인되지 않아 지금은 등록할 수 없어요.
+                        {isSelectedPaymentConfirmed
+                          ? "입금 확인은 완료됐지만 운송장 등록에 필요한 배송 정보가 없어 지금은 등록할 수 없어요."
+                          : "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요."}
                       </p>
                     )}
                   </section>

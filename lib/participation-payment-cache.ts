@@ -1,4 +1,5 @@
 import type { BankAccountInfo } from "@/lib/auth-api";
+import type { DeliveryAddress } from "@/lib/mock-delivery-addresses";
 
 const participationPaymentCacheKey = "buncheol-participation-payment-cache";
 const maxCachedPaymentCount = 40;
@@ -10,6 +11,7 @@ export type CachedParticipationPayment = {
   participationStatus?: string;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
+  shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
 };
 

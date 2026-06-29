@@ -315,6 +315,7 @@ export type MyParticipation = {
   paymentDueAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
+  shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
 };
@@ -950,7 +951,15 @@ function getUserShippingAddress(body: unknown): UserShippingAddress | null {
     getConvenienceStoreType(data.storeName) ??
     getConvenienceStoreType(data.branchName);
 
-  const id = getStringValue(data, ["id", "shippingAddressId", "addressId"]);
+  const id = getStringValue(data, [
+    "id",
+    "shippingAddressId",
+    "addressId",
+    "shippingAddressSnapshotId",
+    "addressSnapshotId",
+    "deliveryId",
+    "deliverySnapshotId",
+  ]);
   const branchName = getStringValue(data, [
     "branchName",
     "storeName",
@@ -3163,10 +3172,23 @@ export async function requestMyParticipations(accessToken: string) {
       const buncheolMember = isRecord(buncheolMemberRecord)
         ? buncheolMemberRecord
         : null;
+      const shippingAddressRecord =
+        getNestedData(record.shippingAddressSnapshot) ??
+        getNestedData(record.shippingAddress) ??
+        getNestedData(record.shippingAddressInfo) ??
+        getNestedData(record.addressSnapshot) ??
+        getNestedData(record.address) ??
+        getNestedData(record.delivery) ??
+        getNestedData(record.deliverySnapshot) ??
+        getNestedData(record.deliveryInfo);
+      const shippingAddress = shippingAddressRecord
+        ? getUserShippingAddress(shippingAddressRecord)
+        : null;
       const deliveryRecord =
         getNestedData(record.delivery) ??
         getNestedData(record.deliverySnapshot) ??
         getNestedData(record.shippingAddressSnapshot) ??
+        getNestedData(record.shippingAddress) ??
         getNestedData(record.deliveryInfo);
       const delivery = isRecord(deliveryRecord) ? deliveryRecord : null;
       const participationId = getStringValue(record, [
@@ -3341,6 +3363,7 @@ export async function requestMyParticipations(accessToken: string) {
                 "bankAccount",
               ])
             : null),
+        shippingAddress,
         shippingFee: getOptionalNumberValue(record, ["shippingFee"]) ?? null,
         trackingNumber:
           getOptionalStringValue(record, [

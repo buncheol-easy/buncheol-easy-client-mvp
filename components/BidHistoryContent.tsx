@@ -11,7 +11,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { MouseEvent } from "react";
-import { CheckIcon, CloseIcon } from "@/components/icons";
+import { CloseIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
@@ -45,6 +45,7 @@ import {
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
   type ConvenienceStoreType,
+  type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductDetailItem } from "@/lib/mock-products";
 import {
@@ -262,6 +263,7 @@ type BidRecord = {
   paymentDueAt?: string | null;
   createdAt?: string | null;
   participationStatus?: string;
+  shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
@@ -490,6 +492,8 @@ function getBidRecordFromParticipation(
     productId: participation.buncheolId,
     participationStatus,
     rank: rank > 0 ? rank : 0,
+    shippingAddress:
+      participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
     shippingFee: participation.shippingFee ?? cachedPayment?.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
     hostBankAccount:
@@ -681,10 +685,6 @@ export function BidHistoryContent({
     (bid) =>
       isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
   );
-  const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
-    deliveryAddresses,
-    defaultAddressIds,
-  );
   const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
     deliveryAddresses,
     defaultAddressIds,
@@ -709,7 +709,10 @@ export function BidHistoryContent({
     eligiblePaymentAddresses.find(
       (address) => address.id === selectedPaymentAddressId,
     ) ?? null;
+  const lockedPaymentDeliveryAddress =
+    selectedPaymentBid?.shippingAddress ?? null;
   const paymentDeliveryAddress =
+    lockedPaymentDeliveryAddress ??
     selectedEligiblePaymentAddress ??
     eligiblePaymentAddresses[0] ??
     null;
@@ -720,24 +723,6 @@ export function BidHistoryContent({
     : 0;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
-  const visiblePaymentStoreTypes =
-    isApiPaymentStoreTypePending
-      ? []
-      : availablePaymentStoreTypes.length > 0
-      ? availablePaymentStoreTypes
-      : [
-          ...new Set(
-            eligiblePaymentAddresses.map((address) => address.storeType),
-          ),
-        ];
-  const paymentVisibleAddresses = visiblePaymentStoreTypes.map((storeType) => ({
-    storeType,
-    address:
-      paymentDeliveryAddress?.storeType === storeType
-        ? paymentDeliveryAddress
-        : defaultDeliveryAddresses[storeType],
-  }));
-
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNow(new Date());
@@ -1175,6 +1160,7 @@ export function BidHistoryContent({
             participationStatus: paymentDetail.paymentStatus,
             paymentAmount: paymentDetail.paymentAmount,
             paymentDueAt: paymentDetail.paymentDueAt,
+            shippingAddress: selectedBid.shippingAddress ?? null,
             shippingFee: paymentDetail.shippingFee,
           });
 
@@ -1324,20 +1310,6 @@ export function BidHistoryContent({
       addressReturnStateKey,
       JSON.stringify(returnState),
     );
-  }
-
-  function openAddressSheet() {
-    if (addressSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(addressSheetCloseTimerRef.current);
-      addressSheetCloseTimerRef.current = null;
-    }
-
-    setIsAddressSheetOpen(true);
-    setIsAddressSheetClosing(false);
-
-    window.requestAnimationFrame(() => {
-      setIsAddressSheetEntered(true);
-    });
   }
 
   function closeAddressSheet() {
@@ -2090,91 +2062,32 @@ export function BidHistoryContent({
               ) : null}
             </div>
 
-            <div className="mt-4 space-y-2">
-              {paymentVisibleAddresses.map(({ storeType, address }) => {
-                const isSelected = address?.id === paymentDeliveryAddress?.id;
-
-                return address ? (
-                  <button
-                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-[background-color,border-color,transform] duration-300 ease-out ${
-                      isSelected
-                        ? "border-[#d8d8d8] bg-[#ececec]"
-                        : "border-[#ededed] bg-white"
-                    }`}
-                    key={storeType}
-                    onClick={() => setSelectedPaymentAddressId(address.id)}
-                    type="button"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
-                              isSelected
-                                ? "bg-black text-white"
-                                : "bg-white text-black/45"
-                            }`}
-                          >
-                            {getConvenienceStoreLabel(storeType)}
-                          </span>
-                          {address.alias ? (
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
-                                "bg-black/10 text-black/60"
-                              }`}
-                            >
-                              {address.alias}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
-                        </p>
-                      </div>
-                      <span
-                        className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors duration-300 ease-out ${
-                          isSelected
-                            ? "bg-black text-white"
-                            : "bg-white text-black/45"
-                        }`}
-                      >
-                        <span className="flex items-center gap-1">
-                          <span
-                            className={`inline-flex h-3.5 w-3.5 items-center justify-center transition-opacity duration-300 ease-out ${
-                              isSelected ? "opacity-100" : "opacity-0"
-                            }`}
-                          >
-                            <CheckIcon />
-                          </span>
-                          <span>선택</span>
-                        </span>
+            <div className="mt-4 rounded-[0.95rem] border-[1.5px] border-[#d8d8d8] bg-[#ececec] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {paymentDeliveryAddress ? (
+                      <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
+                        {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
-                    </div>
-                  </button>
-                ) : (
-                  <div
-                    className="rounded-[0.95rem] bg-[#f3f4f6] px-4 py-3"
-                    key={storeType}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                        {getConvenienceStoreLabel(storeType)}
-                      </span>
-                      <p className="text-[14px] font-semibold tracking-[-0.04em] text-black/45">
-                        기본 배송지가 없어요
-                      </p>
-                    </div>
+                    ) : null}
+                    <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                      배송지 고정
+                    </span>
                   </div>
-                );
-              })}
+                  <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                    {paymentDeliveryAddress?.branchName ??
+                      "결제 요청 배송지 확인 중"}
+                  </p>
+                </div>
+                <span className="inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white px-3 text-[12px] font-semibold text-black/45">
+                  변경 불가
+                </span>
+              </div>
+              <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
+                결제 요청 후 배송지는 변경할 수 없어요.
+              </p>
             </div>
-            <button
-              className="mt-2 h-11 w-full rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
-              onClick={openAddressSheet}
-              type="button"
-            >
-              다른 배송지 선택
-            </button>
 
             </div>
 

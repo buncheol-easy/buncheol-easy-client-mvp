@@ -954,6 +954,7 @@ export function ProductDetail({
               participationStatus: sharedParticipationStatus,
               paymentAmount: nextPaymentAmount,
               paymentDueAt: sharedPaymentDueAt,
+              shippingAddress: nextBidDeliveryAddress,
               shippingFee: nextShippingFee,
             });
           }
