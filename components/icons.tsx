@@ -191,6 +191,21 @@ export function PlusIcon() {
   );
 }
 
+export function MinusIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="motion-icon h-6 w-6"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.55"
+    >
+      <path d="M6.25 12h11.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function ProfileIcon() {
   return (
     <svg
