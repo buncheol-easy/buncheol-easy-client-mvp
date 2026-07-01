@@ -264,9 +264,15 @@ export function ProductCard({ item }: ProductCardProps) {
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
   const isPurchasable = isProductCardPurchasable(item);
+  const hasAvailableMemberNames = Array.isArray(item.availableMemberNames);
   const availableMemberNames = getAvailableMemberNames(item);
+  const shouldShowAvailableMembers =
+    hasAvailableMemberNames || availableMemberNames.length > 0;
   const shouldPeekOptionRail = availableMemberNames.length > 3;
-  const availableMemberSummary = getAvailableMemberSummary(availableMemberNames);
+  const availableMemberSummary =
+    availableMemberNames.length > 0
+      ? getAvailableMemberSummary(availableMemberNames)
+      : "남은 옵션 없음";
   const minHeadcount =
     typeof item.minHeadcount === "number" && item.minHeadcount > 0
       ? item.minHeadcount
@@ -447,10 +453,10 @@ export function ProductCard({ item }: ProductCardProps) {
       </div>
 
       <div>
-        {availableMemberNames.length > 0 ? (
+        {shouldShowAvailableMembers ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
-              옵션 {availableMemberNames.length}개
+              가능 옵션 {availableMemberNames.length}개
             </span>
             {minHeadcount ? (
               <span className="shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-black/42">
