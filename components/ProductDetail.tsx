@@ -2503,7 +2503,7 @@ export function ProductDetail({
 
               {checkoutStep === "options" ? (
                 <>
-                  <div className="mt-5 max-h-[38dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="mt-4 max-h-[38dvh] space-y-2.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const myBid = myBids[option.id];
                       const isSelected = bidAmounts[option.id] === "selected";
@@ -2516,7 +2516,7 @@ export function ProductDetail({
                       return (
                         <div
                           key={option.id}
-                          className={`relative overflow-hidden rounded-[0.9rem] border px-4 py-3 ${
+                          className={`relative overflow-hidden rounded-[0.9rem] border px-3.5 py-2.5 ${
                             overlayLabel
                               ? "border-black/10 bg-[#f7f7f7]"
                               : isSelected
@@ -2525,12 +2525,12 @@ export function ProductDetail({
                           }`}
                         >
                           <div
-                            className={`flex items-start justify-between gap-3 ${
+                            className={`flex items-center justify-between gap-3 ${
                               overlayLabel ? "opacity-65" : ""
                             }`}
                           >
                             <div className="flex min-w-0 items-center gap-3">
-                              <OptionAvatar option={option} size="lg" />
+                              <OptionAvatar option={option} size="md" />
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
@@ -2560,7 +2560,7 @@ export function ProductDetail({
                           </div>
 
                           <button
-                            className={`mt-3 h-12 w-full rounded-[0.8rem] text-[14px] font-semibold transition-colors ${
+                            className={`mt-2 h-9 w-full rounded-[0.75rem] text-[13px] font-semibold transition-colors ${
                               overlayLabel
                                 ? "bg-black/10 text-black/35"
                                 : isSelected
