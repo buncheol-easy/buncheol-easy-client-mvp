@@ -272,11 +272,7 @@ export function ProductCard({ item }: ProductCardProps) {
   const availableMemberSummary =
     availableMemberNames.length > 0
       ? getAvailableMemberSummary(availableMemberNames)
-      : "남은 옵션 없음";
-  const minHeadcount =
-    typeof item.minHeadcount === "number" && item.minHeadcount > 0
-      ? item.minHeadcount
-      : null;
+      : "";
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
@@ -455,35 +451,44 @@ export function ProductCard({ item }: ProductCardProps) {
       <div>
         {shouldShowAvailableMembers ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
-            <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
-              가능 옵션 {availableMemberNames.length}개
-            </span>
-            {minHeadcount ? (
-              <span className="shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-black/42">
-                최소 {minHeadcount}명
-              </span>
-            ) : null}
-            <span className="shrink-0 text-black/15">·</span>
-            <div className="relative min-w-0 flex-1">
-              <div
-                className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-                  shouldPeekOptionRail ? "product-card-option-rail" : ""
+            {availableMemberNames.length > 0 ? (
+              <>
+                <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
+                  가능 옵션 {availableMemberNames.length}개
+                </span>
+                <span className="shrink-0 text-black/15">·</span>
+                <div className="relative min-w-0 flex-1">
+                  <div
+                    className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                      shouldPeekOptionRail ? "product-card-option-rail" : ""
+                    }`}
+                  >
+                    <div
+                      className={`flex w-max ${
+                        shouldPeekOptionRail
+                          ? "product-card-option-rail__track motion-carousel__hint"
+                          : ""
+                      }`}
+                    >
+                      <span className="text-black/58">{availableMemberSummary}</span>
+                    </div>
+                  </div>
+                  {shouldPeekOptionRail ? (
+                    <span className="pointer-events-none absolute bottom-0 right-0 top-0 w-7 bg-gradient-to-l from-white via-white/95 to-transparent" />
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 ring-1 ring-black/5 ${
+                  isPurchasable
+                    ? "bg-[#f2f2f2] text-black/45"
+                    : "bg-black/5 text-black/38"
                 }`}
               >
-                <div
-                  className={`flex w-max ${
-                    shouldPeekOptionRail
-                      ? "product-card-option-rail__track motion-carousel__hint"
-                      : ""
-                  }`}
-                >
-                  <span className="text-black/58">{availableMemberSummary}</span>
-                </div>
-              </div>
-              {shouldPeekOptionRail ? (
-                <span className="pointer-events-none absolute bottom-0 right-0 top-0 w-7 bg-gradient-to-l from-white via-white/95 to-transparent" />
-              ) : null}
-            </div>
+                남은 옵션 없음
+              </span>
+            )}
           </div>
         ) : (
           <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
