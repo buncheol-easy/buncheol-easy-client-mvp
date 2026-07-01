@@ -2189,22 +2189,22 @@ export function ProfileContent({
               배송지 관리
             </Link>
           </div>
-          <div className="mt-2.5 grid gap-2.5">
+          <div className="mt-2.5 grid gap-1.5">
             {(["gs25", "cu"] as const).map((storeType) => {
               const address = defaultDeliveryAddresses[storeType];
 
               return (
                 <div
-                  className={`rounded-[0.95rem] border px-3.5 py-3 ${
+                  className={`rounded-[0.9rem] border px-3.5 py-2.5 ${
                     address
                       ? "border-black/10 bg-[#f7f7f7]"
                       : "border-dashed border-black/15 bg-white"
                   }`}
                   key={storeType}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                  <div className="flex min-h-9 items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <div className="flex shrink-0 items-center gap-2">
                         <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
                           {convenienceStoreTypeLabels[storeType]}
                         </span>
@@ -2212,7 +2212,7 @@ export function ProfileContent({
                           {address ? "기본" : "미등록"}
                         </span>
                       </div>
-                      <p className="mt-2.5 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                      <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                         {!authState.isLoggedIn ? (
                           "로그인 후 이용할 수 있어요"
                         ) : isDefaultAddressLoading ? (
