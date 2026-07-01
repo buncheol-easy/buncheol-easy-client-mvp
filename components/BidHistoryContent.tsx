@@ -1644,7 +1644,7 @@ export function BidHistoryContent({
       </header>
 
       <div className="shrink-0 px-4 pb-4">
-        <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
+        <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f4f5ef] p-1.5 ring-1 ring-black/[0.03]">
           {(
             [
               ["joined", "참여한 분철"],
@@ -1656,7 +1656,9 @@ export function BidHistoryContent({
             return (
               <button
                 className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive ? "bg-black text-white" : "text-black/45"
+                  isActive
+                    ? "bg-black text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
+                    : "text-black/45"
                 }`}
                 key={value}
                 onClick={() => setMode(value)}
@@ -1686,7 +1688,7 @@ export function BidHistoryContent({
               <button
                 className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${
                   isActive
-                    ? "border-black bg-black text-white"
+                    ? "border-[#CFE86B] bg-[#E4F6A5] text-black shadow-[0_8px_18px_rgba(215,255,95,0.22)]"
                     : "border-black/10 bg-[#f7f7f7] text-black/45"
                 }`}
                 key={value}
@@ -1716,7 +1718,7 @@ export function BidHistoryContent({
               <button
                 className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${
                   isActive
-                    ? "border-black bg-black text-white"
+                    ? "border-[#CFE86B] bg-[#E4F6A5] text-black shadow-[0_8px_18px_rgba(215,255,95,0.22)]"
                     : "border-black/10 bg-[#f7f7f7] text-black/45"
                 }`}
                 key={value}
@@ -1741,7 +1743,7 @@ export function BidHistoryContent({
           {mode === "joined" ? (
             <div className="space-y-3">
             {historyMessage ? (
-              <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+              <div className="rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-4">
                 <p className="text-[14px] font-semibold text-black/45">
                   {historyMessage}
                 </p>
@@ -1750,7 +1752,7 @@ export function BidHistoryContent({
             {isBidRecordsLoading ? (
               <BidHistoryListSkeleton />
             ) : records.length === 0 ? (
-              <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+              <div className="rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                 <p className="text-[14px] font-semibold text-black/70">
                   {authState.isLoggedIn
                     ? "표시할 참여 분철이 없습니다."
@@ -1776,7 +1778,7 @@ export function BidHistoryContent({
               const shippingAddressLabel = getBidRecordShippingAddressLabel(bid);
               return (
                 <article
-                  className="rounded-[1rem] border border-black/10 px-4 py-4"
+                  className="rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
                   key={bid.id}
                 >
                   <div className="flex items-start gap-3">
@@ -1814,7 +1816,7 @@ export function BidHistoryContent({
                         <span
                           className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
                             bid.rank === 1
-                              ? "bg-black text-white"
+                              ? "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
                               : "bg-[#f1f1f1] text-black/55"
                           }`}
                         >
@@ -1824,7 +1826,7 @@ export function BidHistoryContent({
 
                       <div className="mt-4 grid gap-2">
                         <div className="grid grid-cols-2 gap-2">
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
                             <p className="text-[11px] font-medium text-black/35">
                               상품 금액
                             </p>
@@ -1832,7 +1834,7 @@ export function BidHistoryContent({
                               {formatPrice(bid.amount)}
                             </p>
                           </div>
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
                             <p className="text-[11px] font-medium text-black/35">
                               모집 기한
                             </p>
@@ -1841,7 +1843,7 @@ export function BidHistoryContent({
                             </p>
                           </div>
                         </div>
-                        <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
+                        <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
                           <p className="text-[11px] font-medium text-black/35">
                             배송지
                           </p>
@@ -1851,9 +1853,9 @@ export function BidHistoryContent({
                         </div>
                       </div>
 
-                      <div className="mt-4 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
+                      <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
                         <div className="relative">
-                          <div className="absolute left-[12.5%] right-[12.5%] top-[9px] h-px bg-black/10" />
+                          <div className="absolute left-[12.5%] right-[12.5%] top-[9px] h-px bg-[#CAD6A0]" />
                           <div className="relative grid grid-cols-4 gap-1">
                             {progressSteps.map((step) => (
                               <div
@@ -1863,7 +1865,7 @@ export function BidHistoryContent({
                                 <span
                                   className={`h-[18px] w-[18px] rounded-full border-2 ${
                                     step.isActive
-                                      ? "border-black bg-black"
+                                      ? "border-[#CFE86B] bg-[#D7FF5F]"
                                       : "border-[#dedede] bg-white"
                                   }`}
                                 />
@@ -1940,7 +1942,7 @@ export function BidHistoryContent({
                         </div>
                         {isPaymentReady ? (
                           <button
-                            className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
+                            className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                             onClick={() => openPaymentSheet(bid.id)}
                             type="button"
                           >
@@ -1949,7 +1951,7 @@ export function BidHistoryContent({
                         ) : null}
                       </div>
                       {bid.deliveryId && isPaymentConfirmed ? (
-                        <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
+                        <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-[11px] font-medium text-black/35">
@@ -1962,7 +1964,7 @@ export function BidHistoryContent({
                               </p>
                             </div>
                             {bid.trackingNumber ? (
-                              <span className="shrink-0 rounded-full bg-black/10 px-3 py-2 text-[12px] font-semibold text-black/45">
+                              <span className="shrink-0 rounded-full bg-[#E4F6A5] px-3 py-2 text-[12px] font-semibold text-black/65">
                                 운송장 등록
                               </span>
                             ) : null}
@@ -1978,7 +1980,7 @@ export function BidHistoryContent({
           ) : (
             <div className="space-y-3">
               {hostedMessage ? (
-                <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                <div className="rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-4">
                   <p className="text-[14px] font-semibold text-black/45">
                     {hostedMessage}
                   </p>
@@ -1987,7 +1989,7 @@ export function BidHistoryContent({
               {isHostedProductsLoading ? (
                 <BidHistoryListSkeleton />
               ) : hostedRecords.length === 0 ? (
-                <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
+                <div className="rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                   <p className="text-[14px] font-semibold text-black/70">
                     {authState.isLoggedIn
                       ? "표시할 개최 분철이 없습니다."
@@ -2015,7 +2017,7 @@ export function BidHistoryContent({
 
                 return (
                   <article
-                    className="rounded-[1rem] border border-black/[0.08] bg-white p-3 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-black/[0.015]"
+                    className="rounded-[1rem] border border-black/[0.08] bg-white p-3 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
                     key={product.id}
                   >
                     <Link
@@ -2049,7 +2051,7 @@ export function BidHistoryContent({
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
                               isClosed
                                 ? "bg-[#f3f3f3] text-black/50"
-                                : "bg-black text-white"
+                                : "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
                             }`}
                           >
                             {isCancelled ? "취소" : isClosed ? "모집 종료" : "모집중"}
@@ -2059,13 +2061,13 @@ export function BidHistoryContent({
                           {product.member} · {product.era}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-1.5">
-                          <span className="rounded-full bg-[#f6f6f6] px-2.5 py-1 text-[12px] font-semibold text-black/55">
+                          <span className="rounded-full bg-[#E4F6A5] px-2.5 py-1 text-[12px] font-semibold text-black/70">
                             옵션 {optionCount}개
                           </span>
-                          <span className="rounded-full bg-[#f6f6f6] px-2.5 py-1 text-[12px] font-semibold text-black/55">
+                          <span className="rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                             참여 {participantCount}명
                           </span>
-                          <span className="max-w-full truncate rounded-full bg-[#f6f6f6] px-2.5 py-1 text-[12px] font-semibold text-black/55">
+                          <span className="max-w-full truncate rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                             마감 {product.deadline}
                           </span>
                         </div>
@@ -2075,7 +2077,7 @@ export function BidHistoryContent({
                     <div className="mt-3 flex justify-end gap-2 border-t border-black/[0.08] pt-3">
                       {product.isApiProduct ? (
                       <Link
-                        className="inline-flex h-9 min-w-[88px] items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold text-white"
+                        className="inline-flex h-9 min-w-[88px] items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                         href={`/products/${product.buncheolId ?? product.id}/manage`}
                         onClick={rememberBidHistoryManageEntry}
                       >
@@ -2164,8 +2166,8 @@ export function BidHistoryContent({
               </p>
             </div>
 
-            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white">
-              <p className="text-[12px] font-semibold text-white/55">
+            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
+              <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
                 현재 상태
               </p>
               <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
@@ -2193,7 +2195,7 @@ export function BidHistoryContent({
                   </p>
                 </div>
                 <button
-                  className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
+                  className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-[#D7FF5F] disabled:bg-black/10 disabled:text-black/30"
                   disabled={!selectedPaymentBankAccount}
                   onClick={() =>
                     selectedPaymentBankAccount
@@ -2224,16 +2226,16 @@ export function BidHistoryContent({
               ) : null}
             </div>
 
-            <div className="mt-4 rounded-[0.95rem] border-[1.5px] border-[#d8d8d8] bg-[#ececec] px-4 py-3">
+            <div className="mt-4 rounded-[0.95rem] border-[1.5px] border-[#DDE7B8] bg-[#F7FAEE] px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     {paymentDeliveryAddress ? (
-                      <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
+                      <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F]">
                         {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                    <span className="rounded-full bg-[#E4F6A5] px-2.5 py-1 text-[11px] font-semibold text-black/65">
                       배송지 고정
                     </span>
                   </div>
@@ -2273,7 +2275,7 @@ export function BidHistoryContent({
             </div>
 
             <button
-              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
+              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
               disabled={!selectedPaymentBankAccount}
               onClick={closePaymentSheet}
               type="button"
@@ -2348,7 +2350,7 @@ export function BidHistoryContent({
                   <div
                     className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
                       isSelected
-                        ? "border-[#d8d8d8] bg-[#ececec]"
+                        ? "border-[#DDE7B8] bg-[#F7FAEE] shadow-[0_8px_18px_rgba(215,255,95,0.14)]"
                         : "border-[#ededed] bg-white"
                     }`}
                     key={address.id}
@@ -2368,9 +2370,9 @@ export function BidHistoryContent({
                           <span
                             className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                               isSelected
-                                ? "bg-black text-white"
+                                ? "bg-black text-[#D7FF5F]"
                                 : isDefault
-                                ? "bg-black text-white"
+                                ? "bg-black text-[#D7FF5F]"
                                 : "bg-white text-black/45"
                             }`}
                           >
@@ -2393,7 +2395,7 @@ export function BidHistoryContent({
                       <span
                         className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                           isSelected
-                            ? "bg-black text-white"
+                            ? "bg-black text-[#D7FF5F]"
                             : "bg-white text-black/45"
                         }`}
                       >
@@ -2422,7 +2424,7 @@ export function BidHistoryContent({
             </div>
 
             <button
-              className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold text-white"
+              className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold text-[#D7FF5F]"
               onClick={closeAddressSheet}
               type="button"
             >
