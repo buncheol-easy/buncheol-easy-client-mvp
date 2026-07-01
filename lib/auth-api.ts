@@ -182,6 +182,7 @@ export type RecentSearchKeyword = {
 
 export type BuncheolSummary = {
   activeParticipationCount?: number;
+  availableMemberNames?: string[];
   bookmarkId?: string;
   bookmarked?: boolean;
   createdAt?: string;
@@ -191,6 +192,7 @@ export type BuncheolSummary = {
   isHostedByMe?: boolean;
   memberNames: string[];
   memberSlotCount?: number;
+  minHeadcount?: number | null;
   status: BuncheolStatus;
   thumbnailUrl?: string;
   title: string;
@@ -1292,7 +1294,7 @@ export async function deleteShippingAddress(
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 }
 
@@ -1562,6 +1564,17 @@ function getBuncheolSummaryFromRecord(
     "members",
     "buncheolMembers",
   ]);
+  const availableMemberNameKeys = [
+    "availableMemberNames",
+    "availableMembers",
+    "availableBuncheolMembers",
+  ];
+  const hasAvailableMemberNames = availableMemberNameKeys.some((key) =>
+    Array.isArray(record[key]),
+  );
+  const availableMemberNames = hasAvailableMemberNames
+    ? getStringListValue(record, availableMemberNameKeys)
+    : undefined;
   const singleMemberName = getOptionalStringValue(record, [
     "memberName",
     "representativeMemberName",
@@ -1590,6 +1603,7 @@ function getBuncheolSummaryFromRecord(
         : singleMemberName
         ? [singleMemberName]
         : [],
+    availableMemberNames,
     activeParticipationCount: getOptionalNumberValue(record, [
       "activeParticipationCount",
       "participantCount",
@@ -1607,6 +1621,7 @@ function getBuncheolSummaryFromRecord(
       "buncheolMemberCount",
       "memberCount",
     ]),
+    minHeadcount: getOptionalNumberValue(record, ["minHeadcount"]),
   };
 }
 
@@ -2933,6 +2948,8 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     productId: summary.id,
     title: summary.title,
     member: getMemberLabel(summary.memberNames),
+    availableMemberNames: summary.availableMemberNames,
+    minHeadcount: summary.minHeadcount,
     targetMembers: summary.memberNames,
     uploadedAt: formatKoreaDateTime(summary.createdAt),
     era: summary.groupName,

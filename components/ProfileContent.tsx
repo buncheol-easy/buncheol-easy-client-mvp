@@ -28,6 +28,7 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
+  ApiRequestError,
   deleteBuncheol,
   deleteShippingAddress,
   requestBookmarkedBuncheols,
@@ -103,6 +104,26 @@ function getEmptySettlementAccountState(): SettlementAccountState {
 
 function sanitizeAccountNumber(value: string) {
   return value.replace(/[^\d-]/g, "");
+}
+
+function getDeliveryAddressDeleteErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError && error.status === 409) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  if (
+    error instanceof Error &&
+    (error.message.includes("USR-030") ||
+      error.message.includes(
+        "SHIPPING_ADDRESS_DELETE_BLOCKED_BY_ACTIVE_PARTICIPATION",
+      ))
+  ) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "배송지를 삭제하지 못했어요.";
 }
 
 function getSettlementAccountState(profile: UserProfile | null) {
@@ -1866,11 +1887,7 @@ export function ProfileContent({
           );
         }
       } catch (error) {
-        setUserProfileMessage(
-          error instanceof Error
-            ? error.message
-            : "배송지를 삭제하지 못했어요.",
-        );
+        setUserProfileMessage(getDeliveryAddressDeleteErrorMessage(error));
       }
 
       return;

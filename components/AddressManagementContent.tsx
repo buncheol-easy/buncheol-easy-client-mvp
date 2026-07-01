@@ -12,6 +12,7 @@ import {
 import { BackIcon, CloseIcon } from "@/components/icons";
 import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
+  ApiRequestError,
   createShippingAddress,
   deleteShippingAddress,
   requestShippingAddresses,
@@ -47,6 +48,26 @@ type AddressManagementContentProps = {
   openFormOnEntry?: boolean;
   returnHref?: string | null;
 };
+
+function getDeliveryAddressDeleteErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError && error.status === 409) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  if (
+    error instanceof Error &&
+    (error.message.includes("USR-030") ||
+      error.message.includes(
+        "SHIPPING_ADDRESS_DELETE_BLOCKED_BY_ACTIVE_PARTICIPATION",
+      ))
+  ) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "배송지를 삭제하지 못했어요.";
+}
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -369,11 +390,7 @@ export function AddressManagementContent({
         await deleteShippingAddress(accessToken, addressId);
         await syncDeliveryAddresses(accessToken);
       } catch (error) {
-        setAddressMessage(
-          error instanceof Error
-            ? error.message
-            : "배송지를 삭제하지 못했어요.",
-        );
+        setAddressMessage(getDeliveryAddressDeleteErrorMessage(error));
       } finally {
         setDeletingAddressIds((current) =>
           current.filter((currentAddressId) => currentAddressId !== addressId),

@@ -21,6 +21,7 @@ export type ProductCardItem = {
   title: string;
   member: string;
   availableMemberNames?: string[];
+  minHeadcount?: number | null;
   optionCount?: number;
   targetMembers?: string[];
   uploadedAt?: string;
@@ -217,10 +218,12 @@ function getProductCardBadge(item: ProductCardItem) {
 }
 
 function getAvailableMemberNames(item: ProductCardItem) {
+  if (Array.isArray(item.availableMemberNames)) {
+    return getUniqueMemberNames(item.availableMemberNames);
+  }
+
   return getUniqueMemberNames(
-    item.availableMemberNames && item.availableMemberNames.length > 0
-      ? item.availableMemberNames
-      : item.targetMembers ?? [item.member],
+    item.targetMembers ?? [item.member],
   );
 }
 
@@ -264,6 +267,10 @@ export function ProductCard({ item }: ProductCardProps) {
   const availableMemberNames = getAvailableMemberNames(item);
   const shouldPeekOptionRail = availableMemberNames.length > 3;
   const availableMemberSummary = getAvailableMemberSummary(availableMemberNames);
+  const minHeadcount =
+    typeof item.minHeadcount === "number" && item.minHeadcount > 0
+      ? item.minHeadcount
+      : null;
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
@@ -445,6 +452,11 @@ export function ProductCard({ item }: ProductCardProps) {
             <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
               옵션 {availableMemberNames.length}개
             </span>
+            {minHeadcount ? (
+              <span className="shrink-0 rounded-full bg-black/5 px-2 py-0.5 text-black/42">
+                최소 {minHeadcount}명
+              </span>
+            ) : null}
             <span className="shrink-0 text-black/15">·</span>
             <div className="relative min-w-0 flex-1">
               <div
