@@ -10,7 +10,12 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { BackIcon, CloseIcon, PlusIcon, SearchIcon } from "@/components/icons";
+import {
+  BackIcon,
+  CloseIcon,
+  PlusIcon,
+  SearchIcon,
+} from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   readUploadedProduct,
@@ -664,6 +669,15 @@ export function UploadProductForm({
     photos.find((photo) => photo.id === coverPhotoId) ?? photos[0] ?? null;
   const isApiEditMode =
     Boolean(editProductId) && !String(editProductId).startsWith("uploaded-");
+  const numericMinHeadcount = Number(minHeadcount);
+  const selectedMinHeadcount =
+    Number.isFinite(numericMinHeadcount) && numericMinHeadcount > 0
+      ? Math.min(numericMinHeadcount, Math.max(1, targetMembers.length))
+      : targetMembers.length;
+  const minHeadcountProgress =
+    targetMembers.length > 0
+      ? Math.round((selectedMinHeadcount / targetMembers.length) * 100)
+      : 0;
   const submitBlockReason = (() => {
     if (photos.length === 0) {
       return "사진을 1장 이상 올려 주세요.";
@@ -2453,14 +2467,14 @@ export function UploadProductForm({
                     </p>
                   )}
                 {targetMembers.length > 0 ? (
-                  <label className="mt-4 block rounded-[0.9rem] border border-black/10 px-4 py-4">
+                  <label className="mt-4 block rounded-[1rem] border border-black/10 bg-white px-4 py-4 shadow-[0_10px_24px_rgba(0,0,0,0.04)]">
                     <span className="text-[13px] font-semibold text-black/45">
                       최소 진행 인원
                     </span>
-                    <div className="mt-2 flex h-13 items-center rounded-[0.85rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
+                    <div className="mt-3 flex h-14 items-center rounded-full bg-black px-5 shadow-[0_10px_22px_rgba(0,0,0,0.12)] focus-within:ring-2 focus-within:ring-[#D7FF5F]">
                       <input
                         aria-label="최소 진행 인원"
-                        className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/55"
+                        className="min-w-0 flex-1 bg-transparent text-[22px] font-bold tracking-[-0.04em] text-[#D7FF5F] outline-none placeholder:text-[#D7FF5F]/35 disabled:text-[#D7FF5F]/55"
                         disabled={isApiEditMode}
                         inputMode="numeric"
                         max={targetMembers.length}
@@ -2470,9 +2484,38 @@ export function UploadProductForm({
                         type="text"
                         value={minHeadcount}
                       />
-                      <span className="shrink-0 text-[13px] font-semibold text-black/45">
+                      <span className="shrink-0 text-[13px] font-semibold text-white/60">
                         / {targetMembers.length}명
                       </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-4 gap-2">
+                      {Array.from({ length: targetMembers.length }, (_, index) => {
+                        const headcount = index + 1;
+                        const isSelected = headcount === selectedMinHeadcount;
+
+                        return (
+                          <button
+                            aria-label={`최소 진행 인원 ${headcount}명`}
+                            className={`motion-pill h-10 rounded-full text-[13px] font-bold transition-[background-color,color,box-shadow,transform] ${
+                              isSelected
+                                ? "bg-[#D7FF5F] text-black shadow-[0_8px_18px_rgba(190,230,70,0.36)]"
+                                : "bg-[#f7f7f7] text-black/45"
+                            }`}
+                            disabled={isApiEditMode}
+                            key={`min-headcount-${headcount}`}
+                            onClick={() => updateMinHeadcount(String(headcount))}
+                            type="button"
+                          >
+                            {headcount}명
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/8">
+                      <div
+                        className="h-full rounded-full bg-[#D7FF5F] shadow-[0_0_12px_rgba(215,255,95,0.65)] transition-[width] duration-300"
+                        style={{ width: `${minHeadcountProgress}%` }}
+                      />
                     </div>
                   </label>
                 ) : null}
