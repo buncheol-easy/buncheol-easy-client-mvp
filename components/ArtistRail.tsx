@@ -304,14 +304,14 @@ export function ArtistRail({
     <div className="flex items-start gap-3">
       {leadingItem ? (
         <>
-          <div className="w-[58px] flex-shrink-0">
+          <div className="w-[65px] flex-shrink-0">
             <button
               className="motion-card flex w-full flex-col items-center text-center"
               onClick={onLeadingClick}
               type="button"
             >
               <div
-                className={`motion-icon-button flex h-12 w-12 items-center justify-center rounded-full border transition-[background-color,border-color,box-shadow,transform] duration-200 ${
+                className={`motion-icon-button flex h-[65px] w-[65px] items-center justify-center rounded-full border transition-[background-color,border-color,box-shadow,transform] duration-200 ${
                   leadingItem.active
                     ? "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_20px_rgba(120,132,82,0.2)]"
                     : "border-black/8 bg-white text-black/55 shadow-[0_6px_18px_rgba(0,0,0,0.06)]"
@@ -325,7 +325,7 @@ export function ArtistRail({
                   <PlusIcon />
                 )}
               </div>
-              <p className="mt-2 w-full text-[12px] font-semibold leading-[1.15] tracking-[-0.03em] text-black/80">
+              <p className="mt-2 w-full text-[13px] font-semibold leading-[1.15] tracking-[-0.03em] text-black/80">
                 {leadingItem.label}
               </p>
               {leadingItem.subLabel ? (
