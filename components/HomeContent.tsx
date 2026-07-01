@@ -586,6 +586,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         </section>
 
         <section className="px-4">
+          <div className="mb-6">
           {isGroupLoading ? (
             <HomeArtistRailSkeleton />
           ) : (
@@ -597,6 +598,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             onLeadingClick={() => openGroupSearch()}
           />
           )}
+          </div>
 
           {groupMessage ? (
             <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
