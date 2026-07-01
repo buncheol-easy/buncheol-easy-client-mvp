@@ -19,6 +19,7 @@ import { HomeContent } from "@/components/HomeContent";
 import { CloseIcon } from "@/components/icons";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
+import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { SearchHeader } from "@/components/SearchHeader";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 import {
@@ -902,21 +903,7 @@ export function SearchExperience({
   }
 
   function renderSearchResultSkeleton() {
-    return (
-      <div aria-label="검색 결과를 불러오는 중" className="grid grid-cols-2 gap-3" role="status">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            className="overflow-hidden rounded-[1rem] border border-black/10 bg-white p-3"
-            key={`search-result-skeleton-${index}`}
-          >
-            <div className="aspect-square animate-pulse rounded-[0.85rem] bg-black/8" />
-            <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
-            <div className="mt-2 h-3 w-3/5 animate-pulse rounded-full bg-black/8" />
-            <div className="mt-4 h-8 animate-pulse rounded-full bg-black/8" />
-          </div>
-        ))}
-      </div>
-    );
+    return <ProductGridSkeleton ariaLabel="검색 결과를 불러오는 중" />;
   }
 
   return (

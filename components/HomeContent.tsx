@@ -15,6 +15,7 @@ import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
+import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import {
   addFavoriteGroup,
   removeFavoriteGroup,
@@ -114,24 +115,6 @@ function HomeArtistRailSkeleton() {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function HomeProductGridSkeleton() {
-  return (
-    <div
-      aria-label="추천 상품을 불러오는 중"
-      className="grid grid-cols-2 gap-x-4 gap-y-7 pb-6"
-      role="status"
-    >
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div key={`home-product-skeleton-${index}`}>
-          <div className="aspect-square animate-pulse rounded-[1.35rem] bg-black/8" />
-          <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
-          <div className="mt-2 h-3 w-2/3 animate-pulse rounded-full bg-black/8" />
-        </div>
-      ))}
     </div>
   );
 }
@@ -640,7 +623,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               </div>
             ) : null}
             {isListingLoading ? (
-              <HomeProductGridSkeleton />
+              <ProductGridSkeleton
+                ariaLabel="추천 상품을 불러오는 중"
+                count={6}
+              />
             ) : (
               <ProductGrid items={listings} />
             )}
