@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, HeartIcon, PlusIcon, ProfileIcon } from "@/components/icons";
+import { CheckIcon, HeartIcon, PlusIcon } from "@/components/icons";
 
 export type ArtistRailItem = {
   apiId?: string;
@@ -304,29 +304,28 @@ export function ArtistRail({
     <div className="flex items-start gap-3">
       {leadingItem ? (
         <>
-          <div className="flex-shrink-0">
-          <button className="min-w-[65px]" onClick={onLeadingClick} type="button">
-            <div
-                className={`motion-icon-button flex aspect-square items-center justify-center rounded-[1.25rem] border text-black/35 ${
+          <div className="w-[58px] flex-shrink-0">
+            <button
+              className="motion-card flex w-full flex-col items-center text-center"
+              onClick={onLeadingClick}
+              type="button"
+            >
+              <div
+                className={`motion-icon-button flex h-12 w-12 items-center justify-center rounded-full border transition-[background-color,border-color,box-shadow,transform] duration-200 ${
                   leadingItem.active
-                    ? "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.2)]"
-                    : "border-black/10 bg-[#ededeb]"
+                    ? "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_20px_rgba(120,132,82,0.2)]"
+                    : "border-black/8 bg-white text-black/55 shadow-[0_6px_18px_rgba(0,0,0,0.06)]"
                 }`}
               >
                 {leadingItem.icon === "all" ? (
-                  <span className="text-[18px] font-semibold tracking-[-0.06em]">
+                  <span className="text-[13px] font-semibold tracking-[-0.03em]">
                     All
                   </span>
                 ) : (
-                  <div className="relative h-10 w-10">
-                    <ProfileIcon />
-                    <div className="absolute -bottom-1 -right-2">
-                      <PlusIcon />
-                    </div>
-                  </div>
+                  <PlusIcon />
                 )}
               </div>
-              <p className="mt-2 text-[14px] font-medium tracking-[-0.03em]">
+              <p className="mt-2 w-full text-[12px] font-semibold leading-[1.15] tracking-[-0.03em] text-black/80">
                 {leadingItem.label}
               </p>
               {leadingItem.subLabel ? (

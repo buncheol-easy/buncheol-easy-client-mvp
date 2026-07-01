@@ -102,11 +102,11 @@ function HomeArtistRailSkeleton() {
       className="flex items-start gap-3"
       role="status"
     >
-      <div className="flex-shrink-0">
-        <div className="h-[65px] w-[65px] animate-pulse rounded-[1.25rem] bg-black/8" />
-        <div className="mt-2 h-4 w-[54px] animate-pulse rounded-full bg-black/8" />
+      <div className="w-[58px] flex-shrink-0">
+        <div className="mx-auto h-12 w-12 animate-pulse rounded-full bg-black/8" />
+        <div className="mx-auto mt-2 h-3 w-[48px] animate-pulse rounded-full bg-black/8" />
       </div>
-      <div className="my-2 w-px self-stretch bg-black/10" />
+      <div className="my-2 w-px self-stretch bg-black/8" />
       <div className="flex min-w-0 flex-1 gap-4 overflow-hidden pb-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <div className="min-w-[65px]" key={`home-artist-skeleton-${index}`}>
