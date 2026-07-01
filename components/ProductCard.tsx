@@ -217,10 +217,6 @@ function getProductCardBadge(item: ProductCardItem) {
 }
 
 function getAvailableMemberNames(item: ProductCardItem) {
-  if (!isProductCardPurchasable(item)) {
-    return [];
-  }
-
   return getUniqueMemberNames(
     item.availableMemberNames && item.availableMemberNames.length > 0
       ? item.availableMemberNames
@@ -445,14 +441,14 @@ export function ProductCard({ item }: ProductCardProps) {
 
       <div>
         {availableMemberNames.length > 0 ? (
-          <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
-            <span className="shrink-0 rounded-full bg-[#E7ECD7] px-2 py-0.5 text-black/65">
+          <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
+            <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
               옵션 {availableMemberNames.length}개
             </span>
             <span className="shrink-0 text-black/15">·</span>
             <div className="relative min-w-0 flex-1">
               <div
-                className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
                   shouldPeekOptionRail ? "product-card-option-rail" : ""
                 }`}
               >
@@ -463,11 +459,11 @@ export function ProductCard({ item }: ProductCardProps) {
                       : ""
                   }`}
                 >
-                  <span className="text-black/50">{availableMemberSummary}</span>
+                  <span className="text-black/58">{availableMemberSummary}</span>
                 </div>
               </div>
               {shouldPeekOptionRail ? (
-                <span className="pointer-events-none absolute bottom-0 right-0 top-0 w-6 bg-gradient-to-l from-white via-white/95 to-transparent" />
+                <span className="pointer-events-none absolute bottom-0 right-0 top-0 w-7 bg-gradient-to-l from-white via-white/95 to-transparent" />
               ) : null}
             </div>
           </div>
