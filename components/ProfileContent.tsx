@@ -2165,7 +2165,7 @@ export function ProfileContent({
           ) : null}
         </section>
 
-        <section className="mt-4 rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+        <section className="mt-4 rounded-[1.2rem] border border-black/10 bg-white p-3.5 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
@@ -2187,13 +2187,13 @@ export function ProfileContent({
               배송지 관리
             </Link>
           </div>
-          <div className="mt-3 grid gap-3">
+          <div className="mt-2.5 grid gap-2.5">
             {(["gs25", "cu"] as const).map((storeType) => {
               const address = defaultDeliveryAddresses[storeType];
 
               return (
                 <div
-                  className={`rounded-[1rem] border px-4 py-4 ${
+                  className={`rounded-[0.95rem] border px-3.5 py-3 ${
                     address
                       ? "border-black/10 bg-[#f7f7f7]"
                       : "border-dashed border-black/15 bg-white"
@@ -2210,7 +2210,7 @@ export function ProfileContent({
                           {address ? "기본" : "미등록"}
                         </span>
                       </div>
-                      <p className="mt-3 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                      <p className="mt-2.5 truncate text-[15px] font-semibold tracking-[-0.04em]">
                         {!authState.isLoggedIn ? (
                           "로그인 후 이용할 수 있어요"
                         ) : isDefaultAddressLoading ? (
