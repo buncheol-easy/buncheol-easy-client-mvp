@@ -2468,14 +2468,9 @@ export function UploadProductForm({
                   )}
                 {targetMembers.length > 0 ? (
                   <label className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-[13px] font-semibold text-black/45">
-                        최소 진행 인원
-                      </span>
-                      <span className="rounded-full bg-[#F3FFC6] px-3 py-1 text-[13px] font-bold text-black ring-1 ring-[#CDEB55]">
-                        총 {targetMembers.length}명
-                      </span>
-                    </div>
+                    <span className="text-[13px] font-semibold text-black/45">
+                      최소 진행 인원
+                    </span>
                     <div className="mt-4 grid grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] p-2">
                       <button
                         aria-label="최소 진행 인원 줄이기"
