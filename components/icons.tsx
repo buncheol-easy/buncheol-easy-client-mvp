@@ -91,7 +91,9 @@ export function HeartIcon({ filled = false }: { filled?: boolean }) {
   return (
     <svg
       aria-hidden="true"
-      className="motion-icon h-5 w-5"
+      className={`motion-icon h-5 w-5 ${
+        filled ? "motion-icon-swap-enter" : ""
+      }`}
       fill={filled ? "currentColor" : "none"}
       viewBox="0 0 24 24"
       stroke="currentColor"

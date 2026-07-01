@@ -537,17 +537,33 @@ body.is-pwa-standalone {
   }
 }
 
-@keyframes motion-icon-pop {
+@keyframes motion-icon-swap {
   0% {
-    transform: scale(0.94);
+    filter: blur(1.8px);
+    opacity: 0.62;
+    transform: scale(0.74);
   }
 
-  62% {
-    transform: scale(1.035);
+  56% {
+    filter: blur(0);
+    opacity: 1;
+    transform: scale(1.08);
   }
 
   100% {
+    filter: blur(0);
+    opacity: 0.92;
     transform: scale(1);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(120%);
   }
 }
 
@@ -587,11 +603,13 @@ body.is-pwa-standalone {
 }
 
 .motion-icon {
+  filter: blur(0);
   opacity: 0.92;
   shape-rendering: geometricPrecision;
   stroke-linecap: round;
   stroke-linejoin: round;
   transition:
+    filter 180ms var(--motion-snap),
     fill 180ms var(--motion-snap),
     opacity 180ms var(--motion-snap),
     stroke 180ms var(--motion-snap),
@@ -640,7 +658,29 @@ body.is-pwa-standalone {
 
 .motion-icon-button:active .motion-icon,
 .motion-icon-button:active svg {
-  animation: motion-icon-pop 220ms var(--motion-soft) both;
+  animation: motion-icon-swap 260ms var(--motion-pop) both;
+}
+
+.motion-icon-swap-enter {
+  animation: motion-icon-swap 300ms var(--motion-pop) both;
+}
+
+.skeleton-surface {
+  overflow: hidden;
+  position: relative;
+}
+
+.skeleton-surface::after {
+  animation: skeleton-shimmer 1300ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.46) 42%,
+    transparent 76%
+  );
+  content: "";
+  inset: 0;
+  position: absolute;
 }
 
 .motion-pill {
