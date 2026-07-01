@@ -2164,7 +2164,7 @@ export function UploadProductForm({
                 </span>
               ) : null}
 
-              <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+              <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                 <PlusIcon />
               </span>
               {photoLimitToast ? (
@@ -2238,7 +2238,7 @@ export function UploadProductForm({
               })}
 
               {photos.length < maxPhotos ? (
-                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-black/15 bg-[#f7f7f7] text-black/25">
+                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45">
                   <PlusIcon />
                   <span className="mt-1 text-[11px] font-semibold text-black/35">
                     ({photos.length}/{maxPhotos})
@@ -2579,7 +2579,7 @@ export function UploadProductForm({
                       <button
                         className={`flex min-h-12 w-full items-center justify-between rounded-[0.8rem] px-4 text-left ${
                           isSelected
-                            ? "bg-black text-white"
+                            ? "bg-black text-white ring-2 ring-[#CDEB55]"
                             : "bg-[#f7f7f7] text-black"
                         }`}
                         disabled={isApiEditMode}
@@ -2592,7 +2592,7 @@ export function UploadProductForm({
                         <span
                           className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${
                             isSelected
-                              ? "border-white bg-white text-black"
+                              ? "border-[#D7FF5F] bg-[#D7FF5F] text-black"
                               : "border-black/15"
                           }`}
                         >
@@ -2786,7 +2786,7 @@ export function UploadProductForm({
             </div>
 
             <button
-              className="mt-8 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
               disabled={!canSubmit}
               onClick={handleSubmit}
               type="button"
