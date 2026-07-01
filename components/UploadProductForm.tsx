@@ -2464,48 +2464,48 @@ export function UploadProductForm({
                   )}
                 {targetMembers.length > 0 ? (
                   <label className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
-                    <span className="text-[13px] font-semibold text-black/45">
-                      최소 진행 인원
-                    </span>
-                    <div className="mt-3 flex h-12 items-center rounded-[0.85rem] bg-[#f7f7f7] px-4 focus-within:ring-1 focus-within:ring-black/20">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-semibold text-black/45">
+                        최소 진행 인원
+                      </span>
+                      <span className="rounded-full bg-[#F3FFC6] px-3 py-1 text-[13px] font-bold text-black ring-1 ring-[#CDEB55]">
+                        {selectedMinHeadcount} / {targetMembers.length}명
+                      </span>
+                    </div>
+                    <div className="mt-4 rounded-[0.85rem] bg-[#f7f7f7] px-4 py-4">
                       <input
                         aria-label="최소 진행 인원"
-                        className="min-w-0 flex-1 bg-transparent text-[20px] font-bold tracking-[-0.04em] text-black outline-none placeholder:text-black/25 disabled:text-black/55"
+                        className="h-2 w-full accent-[#CDEB55]"
                         disabled={isApiEditMode}
-                        inputMode="numeric"
                         max={targetMembers.length}
                         min={1}
                         onChange={(event) => updateMinHeadcount(event.currentTarget.value)}
-                        placeholder={String(targetMembers.length)}
-                        type="text"
-                        value={minHeadcount}
+                        step={1}
+                        type="range"
+                        value={selectedMinHeadcount}
                       />
-                      <span className="shrink-0 text-[13px] font-semibold text-black/45">
-                        / {targetMembers.length}명
-                      </span>
-                    </div>
-                    <div className="mt-3 grid grid-cols-4 gap-2">
-                      {Array.from({ length: targetMembers.length }, (_, index) => {
-                        const headcount = index + 1;
-                        const isSelected = headcount === selectedMinHeadcount;
+                      <div className="mt-3 flex items-center justify-between text-[12px] font-semibold text-black/35">
+                        {Array.from({ length: targetMembers.length }, (_, index) => {
+                          const headcount = index + 1;
 
-                        return (
-                          <button
-                            aria-label={`최소 진행 인원 ${headcount}명`}
-                            className={`motion-pill h-10 rounded-full text-[13px] font-bold transition-[background-color,color,box-shadow,transform] ${
-                              isSelected
-                                ? "border border-[#CDEB55] bg-[#F3FFC6] text-black shadow-[0_4px_10px_rgba(190,230,70,0.16)]"
-                                : "border border-transparent bg-[#f7f7f7] text-black/45"
-                            }`}
-                            disabled={isApiEditMode}
-                            key={`min-headcount-${headcount}`}
-                            onClick={() => updateMinHeadcount(String(headcount))}
-                            type="button"
-                          >
-                            {headcount}명
-                          </button>
-                        );
-                      })}
+                          return (
+                            <button
+                              aria-label={`최소 진행 인원 ${headcount}명`}
+                              className={`h-7 min-w-7 rounded-full px-2 transition-colors ${
+                                headcount === selectedMinHeadcount
+                                  ? "bg-black text-[#D7FF5F]"
+                                  : "text-black/35"
+                              }`}
+                              disabled={isApiEditMode}
+                              key={`min-headcount-${headcount}`}
+                              onClick={() => updateMinHeadcount(String(headcount))}
+                              type="button"
+                            >
+                              {headcount}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </label>
                 ) : null}
