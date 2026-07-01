@@ -37,6 +37,25 @@ export function getConvenienceStoreLabel(storeType: ConvenienceStoreType) {
   return convenienceStoreTypeLabels[storeType];
 }
 
+function cleanBrokenDeliveryAddressText(value: string | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+  const withoutBrokenPrefix = trimmedValue.replace(/^[?\uFFFD\s]+/, "").trim();
+
+  if (!withoutBrokenPrefix || /^[?\uFFFD]+$/.test(withoutBrokenPrefix)) {
+    return "";
+  }
+
+  return withoutBrokenPrefix;
+}
+
+export function getDeliveryAddressDisplayAlias(address: DeliveryAddress) {
+  return cleanBrokenDeliveryAddressText(address.alias);
+}
+
+export function getDeliveryAddressDisplayBranchName(address: DeliveryAddress) {
+  return cleanBrokenDeliveryAddressText(address.branchName) || address.branchName;
+}
+
 export function getConvenienceStoreTypeFromShippingName(
   shippingName: string,
 ): ConvenienceStoreType | null {

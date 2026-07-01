@@ -69,6 +69,8 @@ import {
   convenienceStoreTypeLabels,
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
+  getDeliveryAddressDisplayAlias,
+  getDeliveryAddressDisplayBranchName,
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
@@ -2842,6 +2844,9 @@ export function ProfileContent({
                   ? eligiblePaymentAddresses
                   : manageAddressSnapshot
               ).map((address) => {
+                const displayAlias = getDeliveryAddressDisplayAlias(address);
+                const displayBranchName =
+                  getDeliveryAddressDisplayBranchName(address);
                 const isDefault =
                   address.id === defaultAddressIds[address.storeType];
                 const isSelected =
@@ -2850,7 +2855,7 @@ export function ProfileContent({
 
                 return (
                   <div
-                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
+                    className={`w-full rounded-[0.9rem] border-[1.5px] px-3.5 py-2.5 text-left transition-colors ${
                       addressSheetMode === "select"
                         ? isSelected
                           ? "border-[#C8D4A5] bg-[#F3F5EA]"
@@ -2903,18 +2908,18 @@ export function ProfileContent({
                           >
                             {getConvenienceStoreLabel(address.storeType)}
                           </span>
-                          {address.alias ? (
+                          {displayAlias ? (
                             <span
                               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                                 "bg-black/10 text-black/60"
                               }`}
                             >
-                              {address.alias}
+                              {displayAlias}
                             </span>
                           ) : null}
                         </div>
                         <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
+                          {displayBranchName}
                         </p>
                       </div>
                       {addressSheetMode === "select" ? (
@@ -3087,7 +3092,7 @@ export function ProfileContent({
               */}
               <div className="idol-selection-enter" key="address-add-link">
                 <Link
-                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  className="flex h-14 w-full items-center justify-center rounded-[0.9rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
                   href="/profile/addresses?openAdd=1&returnTo=profile"
                   onNavigate={rememberAddressAddReturn}
                 >

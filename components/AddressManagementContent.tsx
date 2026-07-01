@@ -35,6 +35,8 @@ import {
 import {
   convenienceStoreTypes,
   convenienceStoreTypeLabels,
+  getDeliveryAddressDisplayAlias,
+  getDeliveryAddressDisplayBranchName,
   getConvenienceStoreLabel,
   getPrioritizedDeliveryAddresses,
   type ConvenienceStoreType,
@@ -476,12 +478,15 @@ export function AddressManagementContent({
               </div>
             ) : null}
             {visibleAddresses.map((address) => {
+              const displayAlias = getDeliveryAddressDisplayAlias(address);
+              const displayBranchName =
+                getDeliveryAddressDisplayBranchName(address);
               const isDefault =
                 address.id === defaultAddressIds[address.storeType];
 
               return (
                 <div
-                  className={`w-full rounded-[1rem] border px-4 py-4 text-left transition-colors ${
+                  className={`w-full rounded-[0.9rem] border px-3.5 py-3 text-left transition-colors ${
                     isDefault
                       ? "border-[#C8D4A5] bg-[#F3F5EA]"
                       : "border-black/10 bg-[#f7f7f7]"
@@ -500,14 +505,14 @@ export function AddressManagementContent({
                         >
                           {getConvenienceStoreLabel(address.storeType)}
                         </span>
-                        {address.alias ? (
+                        {displayAlias ? (
                           <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
-                            {address.alias}
+                            {displayAlias}
                           </span>
                         ) : null}
                       </div>
-                        <p className="mt-3 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
+                        <p className="mt-2.5 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                          {displayBranchName}
                         </p>
                       </div>
                     {isDefault ? (
@@ -526,7 +531,7 @@ export function AddressManagementContent({
                           기본 설정
                         </button>
                         <button
-                          aria-label={`${getConvenienceStoreLabel(address.storeType)} ${address.branchName} 배송지 삭제`}
+                          aria-label={`${getConvenienceStoreLabel(address.storeType)} ${displayBranchName} 배송지 삭제`}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10"
                           disabled={deletingAddressIds.includes(address.id)}
                           onClick={() => deleteDeliveryAddress(address.id)}
@@ -544,7 +549,7 @@ export function AddressManagementContent({
             {canManageAddresses ? (
               isFormOpen ? (
               <div
-                className="idol-selection-enter rounded-[1rem] bg-[#f7f7f7] px-3 pb-3 pt-4"
+                className="idol-selection-enter rounded-[0.95rem] bg-[#f7f7f7] px-3 pb-3 pt-3.5"
                 key="address-form"
               >
                   <div className="flex items-start justify-between gap-3 px-1">
@@ -565,7 +570,7 @@ export function AddressManagementContent({
                       닫기
                     </button>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2 rounded-[0.85rem] bg-white p-1 ring-1 ring-black/10">
+                  <div className="mt-3 grid grid-cols-2 gap-2 rounded-[0.85rem] bg-white p-1 ring-1 ring-black/10">
                     {convenienceStoreTypes.map((storeType) => (
                       <button
                         className={`h-10 rounded-[0.7rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
@@ -585,7 +590,7 @@ export function AddressManagementContent({
                       </button>
                     ))}
                   </div>
-                  <label className="mt-3 block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <label className="mt-2.5 block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
                     <span className="text-[12px] font-semibold text-black/45">
                       별칭
                     </span>
@@ -597,7 +602,7 @@ export function AddressManagementContent({
                       value={newAddressAlias}
                     />
                   </label>
-                  <label className="mt-2 block rounded-[0.9rem] bg-white px-3 py-3 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <label className="mt-2 block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
                     <span className="text-[12px] font-semibold text-black/45">
                       지점명
                     </span>
