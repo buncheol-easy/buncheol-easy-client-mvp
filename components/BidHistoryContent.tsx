@@ -1657,7 +1657,7 @@ export function BidHistoryContent({
               <button
                 className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
                   isActive
-                    ? "bg-black text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
+                    ? "bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
                     : "text-black/45"
                 }`}
                 key={value}
