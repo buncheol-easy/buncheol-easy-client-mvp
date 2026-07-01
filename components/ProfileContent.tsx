@@ -2589,7 +2589,7 @@ export function ProfileContent({
             ) : null}
           </Link>
         ) : null}
-        <div className="relative -mx-4 -mb-6 mt-6 bg-[#f7f7f7] after:pointer-events-none after:absolute after:left-0 after:right-0 after:top-full after:h-[100dvh] after:bg-[#f7f7f7]">
+        <div className="relative -mx-4 -mb-6 mt-6 bg-[#f7f7f7]">
           <BusinessFooter variant="compact" />
         </div>
       </main>
