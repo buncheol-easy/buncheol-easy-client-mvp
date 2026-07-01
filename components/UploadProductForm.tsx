@@ -1812,7 +1812,7 @@ export function UploadProductForm({
                 ) : (
                   <>
                     <section className="px-4 pt-4">
-                      <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
+                      <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
                         {coverPhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -1822,11 +1822,11 @@ export function UploadProductForm({
                           />
                         ) : (
                           <>
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
-                            <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
-                            <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
-                            <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.72),transparent_24%),radial-gradient(circle_at_16%_78%,rgba(255,255,255,0.24),transparent_30%)]" />
+                            <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
+                            <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
+                            <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
                                 Photo Upload
                               </p>
                               <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
@@ -1842,7 +1842,7 @@ export function UploadProductForm({
                           </span>
                         ) : null}
 
-                        <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+                        <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                           <PlusIcon />
                         </span>
                         {photoLimitToast ? (
@@ -1914,7 +1914,7 @@ export function UploadProductForm({
                         })}
 
                         {photos.length < maxPhotos ? (
-                          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-black/15 bg-[#f7f7f7] text-black/25">
+                          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45 shadow-[0_8px_18px_rgba(120,132,82,0.08)]">
                             <PlusIcon />
                             <span className="mt-1 text-[11px] font-semibold text-black/35">
                               ({photos.length}/{maxPhotos})
@@ -2134,7 +2134,7 @@ export function UploadProductForm({
               ref={formScrollRef}
             >
           <section className="px-4 pt-4">
-            <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
+            <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
               {coverPhoto ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -2144,11 +2144,11 @@ export function UploadProductForm({
                 />
               ) : (
                 <>
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
-                  <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
-                  <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
-                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.72),transparent_24%),radial-gradient(circle_at_16%_78%,rgba(255,255,255,0.24),transparent_30%)]" />
+                  <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
+                  <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
+                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
                       Photo Upload
                     </p>
                     <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
