@@ -1061,10 +1061,29 @@ export function ProductDetail({
 
         const isHosted = detail.isHostedByMe === true;
         const refreshedProduct = toProductDetailItem(detail);
+        const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
         setIsHostedByMeFromApi(isHosted);
         setAuctionOptions(refreshedProduct.options);
-        setMyBids(getMyBidsFromOptions(refreshedProduct.options));
-        setBidAmounts({});
+        setMyBids(refreshedMyBids);
+        setBidAmounts((current) =>
+          refreshedProduct.options.reduce<Record<string, string>>(
+            (nextAmounts, option) => {
+              if (
+                current[option.id] === "selected" &&
+                !getOptionPurchaseOverlayLabel(
+                  option,
+                  refreshedMyBids[option.id],
+                  product.isApiProduct === true,
+                )
+              ) {
+                nextAmounts[option.id] = "selected";
+              }
+
+              return nextAmounts;
+            },
+            {},
+          ),
+        );
 
         if (!isHosted && product.isHostedByMe !== true) {
           return;
