@@ -28,7 +28,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className="h-full antialiased" suppressHydrationWarning>
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      <body
+        className="desktop-web-shell min-h-full flex flex-col"
+        suppressHydrationWarning
+      >
         <DisplayModeClassSync />
         <Suspense fallback={null}>
           <SystemChromeColorSync />
