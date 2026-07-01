@@ -539,15 +539,15 @@ body.is-pwa-standalone {
 
 @keyframes motion-icon-pop {
   0% {
-    transform: scale(0.88) rotate(-4deg);
+    transform: scale(0.94);
   }
 
   62% {
-    transform: scale(1.08) rotate(2deg);
+    transform: scale(1.035);
   }
 
   100% {
-    transform: scale(1) rotate(0);
+    transform: scale(1);
   }
 }
 
@@ -587,6 +587,8 @@ body.is-pwa-standalone {
 }
 
 .motion-icon {
+  opacity: 0.92;
+  shape-rendering: geometricPrecision;
   stroke-linecap: round;
   stroke-linejoin: round;
   transition:
@@ -622,7 +624,7 @@ body.is-pwa-standalone {
 
 .motion-icon-button:is(:hover, :focus-visible)::after {
   inset: 0;
-  opacity: 0.08;
+  opacity: 0.06;
   transform: translate(0, 0) scale(1);
 }
 
@@ -633,12 +635,12 @@ body.is-pwa-standalone {
 
 .motion-icon-button:is(:hover, :focus-visible) .motion-icon,
 .motion-icon-button:is(:hover, :focus-visible) svg {
-  transform: scale(1.08);
+  transform: scale(1.035);
 }
 
 .motion-icon-button:active .motion-icon,
 .motion-icon-button:active svg {
-  animation: motion-icon-pop 360ms var(--motion-soft) both;
+  animation: motion-icon-pop 220ms var(--motion-soft) both;
 }
 
 .motion-pill {

@@ -406,6 +406,11 @@ export function AddressManagementContent({
       return;
     }
 
+    if (returnHref) {
+      router.replace(returnHref);
+      return;
+    }
+
     const historyIndex = getHistoryIndex();
 
     if (historyIndex !== null && historyIndex > 0) {
@@ -413,7 +418,7 @@ export function AddressManagementContent({
       return;
     }
 
-    router.replace(returnHref ?? "/profile");
+    router.replace("/profile");
   }
 
   return (

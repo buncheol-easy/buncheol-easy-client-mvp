@@ -35,6 +35,7 @@ import {
   subscribeDeliveryAddressState,
   writeDeliveryAddressState,
 } from "@/lib/delivery-address-store";
+import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
@@ -74,6 +75,8 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
+const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
+  "buncheol-checkout-address-return-state";
 const kstOffsetHours = 9;
 const paymentDueWindowMs = 30 * 60 * 1000;
 
@@ -104,6 +107,13 @@ type CheckoutPaymentSummary = {
   totalAmount: number;
 };
 
+type CheckoutAddressReturnState = {
+  createdAt: number;
+  optionIds: string[];
+  productId: string;
+  reopenAddressSheet: boolean;
+};
+
 type ProductHistoryState = {
   idx?: unknown;
   [PRODUCT_PROFILE_ENTRY_STATE_KEY]?: unknown;
@@ -115,11 +125,11 @@ function ProductEditIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-5 w-5"
+      className="motion-icon h-5 w-5"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
       <path
         d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"
@@ -135,16 +145,16 @@ function ProductDeleteIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="h-5 w-5"
+      className="motion-icon h-5 w-5"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
-      <path d="M6 7h12" strokeLinecap="round" />
-      <path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7" />
+      <path d="M6.25 7.25h11.5" strokeLinecap="round" />
+      <path d="M9.5 7.25V6a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 6v1.25" />
       <path
-        d="M8 10v7.2A2.8 2.8 0 0 0 10.8 20h2.4A2.8 2.8 0 0 0 16 17.2V10"
+        d="M8.7 10.25v6.65a2.35 2.35 0 0 0 2.35 2.35h1.9a2.35 2.35 0 0 0 2.35-2.35v-6.65"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -501,6 +511,7 @@ export function ProductDetail({
     getInitialDeliveryAddressState,
   );
   const didNavigateBack = useRef(false);
+  const didRestoreCheckoutAddressReturnRef = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
@@ -776,21 +787,64 @@ export function ProductDetail({
     return "지금은 구매할 수 없는 분철이에요";
   }
 
-  function getProductDetailReturnHref() {
+  function getProductDetailReturnHref(
+    options: { restoreCheckoutAddressSheet?: boolean } = {},
+  ) {
     const fallbackHref = `/products/${encodeURIComponent(buncheolId)}`;
 
     if (typeof window === "undefined") {
       return fallbackHref;
     }
 
-    const currentHref = `${window.location.pathname}${window.location.search}`;
+    const params = new URLSearchParams(window.location.search);
+
+    if (options.restoreCheckoutAddressSheet) {
+      params.set("checkoutStep", "confirm");
+      params.set("addressSheet", "1");
+    }
+
+    const query = params.toString();
+    const currentHref = `${window.location.pathname}${query ? `?${query}` : ""}`;
 
     return currentHref.startsWith("/products/") ? currentHref : fallbackHref;
   }
 
-  function getAddressManagementHref(openAdd = false) {
+  function getSelectedCheckoutOptionIds() {
+    return auctionOptions
+      .filter(
+        (option) =>
+          bidAmounts[option.id] === "selected" &&
+          !getOptionPurchaseOverlayLabel(
+            option,
+            myBids[option.id],
+            product.isApiProduct === true,
+          ),
+      )
+      .map((option) => option.id);
+  }
+
+  function rememberCheckoutAddressReturnState(reopenAddressSheet = true) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      CHECKOUT_ADDRESS_RETURN_STATE_KEY,
+      JSON.stringify({
+        createdAt: Date.now(),
+        optionIds: getSelectedCheckoutOptionIds(),
+        productId: buncheolId,
+        reopenAddressSheet,
+      } satisfies CheckoutAddressReturnState),
+    );
+  }
+
+  function getAddressManagementHref(
+    openAdd = false,
+    options: { restoreCheckoutAddressSheet?: boolean } = {},
+  ) {
     const params = new URLSearchParams({
-      returnTo: getProductDetailReturnHref(),
+      returnTo: getProductDetailReturnHref(options),
     });
 
     if (openAdd) {
@@ -798,6 +852,17 @@ export function ProductDetail({
     }
 
     return `/profile/addresses?${params.toString()}`;
+  }
+
+  function navigateToAddressManagement(
+    openAdd = false,
+    options: { restoreCheckoutAddressSheet?: boolean } = {},
+  ) {
+    if (options.restoreCheckoutAddressSheet) {
+      rememberCheckoutAddressReturnState(true);
+    }
+
+    router.push(getAddressManagementHref(openAdd, options));
   }
 
   useEffect(() => {
@@ -829,6 +894,167 @@ export function ProductDetail({
     setCheckoutError("");
     setCheckoutCopyToast("");
   }, [product.id, product.isHostedByMe, product.options]);
+
+  useEffect(() => {
+    if (
+      didRestoreCheckoutAddressReturnRef.current ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const rawState = window.sessionStorage.getItem(
+      CHECKOUT_ADDRESS_RETURN_STATE_KEY,
+    );
+
+    if (!rawState) {
+      return;
+    }
+
+    let returnState: CheckoutAddressReturnState | null = null;
+
+    try {
+      const parsedState = JSON.parse(rawState) as Partial<CheckoutAddressReturnState>;
+
+      if (
+        parsedState &&
+        parsedState.productId === buncheolId &&
+        Array.isArray(parsedState.optionIds)
+      ) {
+        returnState = {
+          createdAt:
+            typeof parsedState.createdAt === "number"
+              ? parsedState.createdAt
+              : Date.now(),
+          optionIds: parsedState.optionIds.filter(
+            (optionId): optionId is string => typeof optionId === "string",
+          ),
+          productId: parsedState.productId,
+          reopenAddressSheet: parsedState.reopenAddressSheet !== false,
+        };
+      }
+    } catch {
+      returnState = null;
+    }
+
+    window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
+
+    if (!returnState || Date.now() - returnState.createdAt > 30 * 60 * 1000) {
+      return;
+    }
+
+    didRestoreCheckoutAddressReturnRef.current = true;
+
+    const restorableOptionIds = returnState.optionIds.filter((optionId) => {
+      const option = auctionOptions.find((item) => item.id === optionId);
+
+      return (
+        option &&
+        !getOptionPurchaseOverlayLabel(
+          option,
+          myBids[option.id],
+          product.isApiProduct === true,
+        )
+      );
+    });
+
+    if (restorableOptionIds.length > 0) {
+      setBidAmounts(
+        restorableOptionIds.reduce<Record<string, string>>((amounts, optionId) => {
+          amounts[optionId] = "selected";
+          return amounts;
+        }, {}),
+      );
+    }
+
+    setCheckoutStep("confirm");
+    setCheckoutPaymentSummary(null);
+    setCheckoutError("");
+    setCheckoutCopyToast("");
+    setIsSheetOpen(true);
+    setIsSheetClosing(false);
+
+    sheetEnterAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      sheetEnterAnimationFrameRef.current = null;
+      setIsSheetEntered(true);
+    });
+
+    const lastAddedAddressId = window.sessionStorage.getItem(
+      lastAddedDeliveryAddressIdKey,
+    );
+
+    if (lastAddedAddressId) {
+      window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
+    }
+
+    const restoreAddressSheet = async () => {
+      let nextAddressState = deliveryAddressState;
+
+      if (product.isApiProduct && authState.isLoggedIn) {
+        const accessToken = await getFreshAccessToken();
+
+        if (accessToken) {
+          try {
+            nextAddressState = await syncDeliveryAddressState(accessToken);
+          } catch {
+            nextAddressState = deliveryAddressState;
+          }
+        }
+      }
+
+      const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
+        nextAddressState.addresses,
+        nextAddressState.defaultAddressIds,
+      );
+      const eligibleAddresses = getPrioritizedDeliveryAddresses(
+        nextAddressState.addresses,
+        nextAddressState.defaultAddressIds,
+      ).filter((address) =>
+        availableShippingStoreTypes.length > 0
+          ? availableShippingStoreTypes.includes(address.storeType)
+          : true,
+      );
+      const defaultAddress =
+        availableShippingStoreTypes
+          .map((storeType) => defaultDeliveryAddresses[storeType])
+          .find((address) => address !== null) ?? null;
+      const restoredAddress =
+        (lastAddedAddressId
+          ? eligibleAddresses.find((address) => address.id === lastAddedAddressId)
+          : null) ??
+        defaultAddress ??
+        eligibleAddresses[0] ??
+        null;
+
+      setCheckoutDeliveryAddress(restoredAddress);
+
+      if (returnState.reopenAddressSheet && eligibleAddresses.length > 0) {
+        if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
+          window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
+          checkoutAddressSheetCloseFallbackTimerRef.current = null;
+        }
+
+        setIsCheckoutAddressSheetOpen(true);
+        setIsCheckoutAddressSheetClosing(false);
+
+        checkoutAddressSheetEnterAnimationFrameRef.current =
+          window.requestAnimationFrame(() => {
+            checkoutAddressSheetEnterAnimationFrameRef.current = null;
+            setIsCheckoutAddressSheetEntered(true);
+          });
+      }
+    };
+
+    void restoreAddressSheet();
+  }, [
+    auctionOptions,
+    authState.isLoggedIn,
+    availableShippingStoreTypes,
+    buncheolId,
+    deliveryAddressState,
+    myBids,
+    product.isApiProduct,
+  ]);
 
   useEffect(() => {
     if (
@@ -989,8 +1215,15 @@ export function ProductDetail({
       return;
     }
 
+    setDeadlineTick(Date.now());
+
     if (!canBidProduct) {
       window.alert(getBidUnavailableMessage());
+      return;
+    }
+
+    if (isPaymentWindowClosed(product.deadline)) {
+      window.alert("입금 시간 확보를 위해 구매가 마감됐어요");
       return;
     }
 
@@ -1030,7 +1263,9 @@ export function ProductDetail({
       if (!Number.isFinite(shippingAddressId)) {
         window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push(getAddressManagementHref(true));
+        navigateToAddressManagement(true, {
+          restoreCheckoutAddressSheet: true,
+        });
         return;
       }
 
@@ -1070,8 +1305,15 @@ export function ProductDetail({
       return;
     }
 
+    setDeadlineTick(Date.now());
+
     if (!canBidProduct) {
       window.alert(getBidUnavailableMessage());
+      return;
+    }
+
+    if (isPaymentWindowClosed(product.deadline)) {
+      window.alert("입금 시간 확보를 위해 구매가 마감됐어요");
       return;
     }
 
@@ -1120,7 +1362,9 @@ export function ProductDetail({
       if (!Number.isFinite(shippingAddressId)) {
         window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push(getAddressManagementHref(true));
+        navigateToAddressManagement(true, {
+          restoreCheckoutAddressSheet: true,
+        });
         return;
       }
 
@@ -1720,6 +1964,11 @@ export function ProductDetail({
       return;
     }
 
+    if (isPaymentWindowClosed(product.deadline)) {
+      setDeadlineTick(Date.now());
+      return;
+    }
+
     openSheet();
   }
 
@@ -1800,7 +2049,9 @@ export function ProductDetail({
       getCheckoutEligibleDeliveryAddressesFromState(nextAddressState);
 
     if (nextEligibleDeliveryAddresses.length === 0) {
-      router.push(getAddressManagementHref(true));
+      navigateToAddressManagement(true, {
+        restoreCheckoutAddressSheet: true,
+      });
       return;
     }
 
@@ -2751,7 +3002,11 @@ export function ProductDetail({
 
                 <button
                   className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
-                  onClick={() => router.push(getAddressManagementHref(true))}
+                  onClick={() =>
+                    navigateToAddressManagement(true, {
+                      restoreCheckoutAddressSheet: true,
+                    })
+                  }
                   type="button"
                 >
                   + 새 배송지 추가

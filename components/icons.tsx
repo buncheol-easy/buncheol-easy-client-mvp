@@ -6,10 +6,10 @@ export function SearchIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16 16 4.5 4.5" strokeLinecap="round" />
+      <circle cx="10.8" cy="10.8" r="5.6" />
+      <path d="m15.1 15.1 4.2 4.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -22,10 +22,15 @@ export function BellIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
       <path
-        d="M8 17h8m-7 0v-5a3 3 0 1 1 6 0v5m-8 0h10m-6 0a2 2 0 0 0 4 0"
+        d="M7.5 10.5a4.5 4.5 0 0 1 9 0c0 3.4 1.25 4.7 2 5.5h-13c.75-.8 2-2.1 2-5.5Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.2 18.25a2.1 2.1 0 0 0 3.6 0"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -37,13 +42,13 @@ export function BackIcon() {
   return (
     <svg
       aria-hidden="true"
-      className="motion-icon h-7 w-7"
+      className="motion-icon h-6 w-6"
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.7"
+      strokeWidth="1.55"
     >
-      <path d="m15 5-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m14.5 6-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -56,9 +61,9 @@ export function CloseIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="2.4"
+      strokeWidth="1.9"
     >
-      <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+      <path d="m7 7 10 10M17 7 7 17" strokeLinecap="round" />
     </svg>
   );
 }
@@ -71,10 +76,10 @@ export function CheckIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="2.4"
+      strokeWidth="1.9"
     >
       <path
-        d="m5.5 12.5 4 4L18.5 7.5"
+        d="m6.5 12.5 3.6 3.6 7.4-8.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -90,10 +95,10 @@ export function HeartIcon({ filled = false }: { filled?: boolean }) {
       fill={filled ? "currentColor" : "none"}
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth={filled ? "1.45" : "1.55"}
     >
       <path
-        d="M12 20.5s-7-4.5-7-10.5A4.5 4.5 0 0 1 12 6a4.5 4.5 0 0 1 7 4c0 6-7 10.5-7 10.5Z"
+        d="M12 20s-6.5-3.9-6.5-9.1A4.1 4.1 0 0 1 12 7a4.1 4.1 0 0 1 6.5 3.9C18.5 16.1 12 20 12 20Z"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -109,14 +114,14 @@ export function EditIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
       <path
-        d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"
+        d="M5 18.8h3.4L18.6 8.6a2 2 0 0 0-2.8-2.8L5.6 16 5 18.8Z"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="m14.5 7.5 2 2" strokeLinecap="round" />
+      <path d="m14.6 7 2.4 2.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -129,15 +134,15 @@ export function BidIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
       <path
-        d="M8 7h8M8 12h8M8 17h4"
+        d="M7 4.75h10A1.75 1.75 0 0 1 18.75 6.5v11.8l-3.15-1.55L12 18.5l-3.6-1.75-3.15 1.55V6.5A1.75 1.75 0 0 1 7 4.75Z"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M6 3.5h12A1.5 1.5 0 0 1 19.5 5v14.5L16 17.8l-4 1.9-4-1.9-3.5 1.7V5A1.5 1.5 0 0 1 6 3.5Z"
+        d="M8.25 8.2h7.5M8.25 11.9h7.5M8.25 15.6h4.1"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -153,10 +158,15 @@ export function HomeIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
       <path
-        d="M4 10.5 12 4l8 6.5V20H4v-9.5Z"
+        d="M4.5 11.2 12 5.25l7.5 5.95"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.75 10.2v8.55h10.5V10.2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -172,9 +182,9 @@ export function PlusIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
-      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+      <path d="M12 6.25v11.5M6.25 12h11.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -187,10 +197,10 @@ export function ProfileIcon() {
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.55"
     >
-      <circle cx="12" cy="8" r="3.5" />
-      <path d="M5 19a7 7 0 0 1 14 0" strokeLinecap="round" />
+      <circle cx="12" cy="8.6" r="3.15" />
+      <path d="M5.75 18.8c.95-3.15 3.1-4.6 6.25-4.6s5.3 1.45 6.25 4.6" strokeLinecap="round" />
     </svg>
   );
 }
