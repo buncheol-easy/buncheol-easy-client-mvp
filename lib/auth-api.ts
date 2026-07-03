@@ -2145,6 +2145,18 @@ function getBuncheolDetailFromBody(body: unknown) {
 function getBuncheolManagementWinnerFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementWinner {
+  const relatedRecords = [
+    record.paymentRequest,
+    record.paymentReport,
+    record.pendingPayment,
+    record.pendingWinner,
+    record.payment,
+    record.participation,
+    record.participant,
+    record.winner,
+  ]
+    .map(getNestedData)
+    .filter(isRecord);
   const shippingAddressRecord = [
     record.shippingAddressSnapshot,
     record.shippingAddress,
@@ -2156,6 +2168,18 @@ function getBuncheolManagementWinnerFromRecord(
     record.pickupStore,
     record.store,
     record.storeInfo,
+    ...relatedRecords.flatMap((relatedRecord) => [
+      relatedRecord.shippingAddressSnapshot,
+      relatedRecord.shippingAddress,
+      relatedRecord.shippingAddressInfo,
+      relatedRecord.selectedShippingAddress,
+      relatedRecord.selectedAddress,
+      relatedRecord.addressSnapshot,
+      relatedRecord.address,
+      relatedRecord.pickupStore,
+      relatedRecord.store,
+      relatedRecord.storeInfo,
+    ]),
   ]
     .map(getNestedData)
     .find(isRecord);
@@ -2270,6 +2294,18 @@ function getBuncheolManagementWinnerFromRecord(
 function getBuncheolManagementDeliveryFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementDelivery | null {
+  const relatedRecords = [
+    record.paymentRequest,
+    record.paymentReport,
+    record.pendingPayment,
+    record.pendingWinner,
+    record.payment,
+    record.participation,
+    record.participant,
+    record.winner,
+  ]
+    .map(getNestedData)
+    .filter(isRecord);
   const deliveryRecord = [
     record.delivery,
     record.deliverySnapshot,
@@ -2279,6 +2315,16 @@ function getBuncheolManagementDeliveryFromRecord(
     record.shipmentInfo,
     record.shippingDelivery,
     record.shippingSnapshot,
+    ...relatedRecords.flatMap((relatedRecord) => [
+      relatedRecord.delivery,
+      relatedRecord.deliverySnapshot,
+      relatedRecord.deliveryInfo,
+      relatedRecord.deliveryRequest,
+      relatedRecord.shipment,
+      relatedRecord.shipmentInfo,
+      relatedRecord.shippingDelivery,
+      relatedRecord.shippingSnapshot,
+    ]),
   ]
     .map(getNestedData)
     .find(isRecord);
@@ -2299,6 +2345,24 @@ function getBuncheolManagementDeliveryFromRecord(
     record.storeInfo,
     record.addressSnapshot,
     record.address,
+    ...relatedRecords.flatMap((relatedRecord) => [
+      relatedRecord.shippingAddressSnapshot,
+      relatedRecord.shippingAddress,
+      relatedRecord.shippingAddressInfo,
+      relatedRecord.selectedShippingAddress,
+      relatedRecord.selectedAddress,
+      relatedRecord.recipientAddress,
+      relatedRecord.recipient,
+      relatedRecord.receiver,
+      relatedRecord.receiverInfo,
+      relatedRecord.shipping,
+      relatedRecord.shippingInfo,
+      relatedRecord.pickupStore,
+      relatedRecord.store,
+      relatedRecord.storeInfo,
+      relatedRecord.addressSnapshot,
+      relatedRecord.address,
+    ]),
   ]
     .map(getNestedData)
     .find(isRecord);
