@@ -40,6 +40,8 @@ import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
   getDefaultDeliveryAddressesByType,
+  getDeliveryAddressDisplayAlias,
+  getDeliveryAddressDisplayBranchName,
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
@@ -2900,7 +2902,7 @@ export function ProductDetail({
               type="button"
             />
             <section
-              className={`bid-sheet-panel relative mx-auto flex h-[72dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              className={`bid-sheet-panel relative mx-auto flex max-h-[72dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isCheckoutAddressSheetEntered && !isCheckoutAddressSheetClosing
                   ? "bid-sheet-panel-active"
                   : ""
@@ -2935,8 +2937,11 @@ export function ProductDetail({
                 </button>
               </div>
 
-              <div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+              <div className="mt-4 max-h-[42dvh] space-y-2 overflow-y-auto pr-1">
                 {checkoutEligibleDeliveryAddresses.map((address) => {
+                  const displayAlias = getDeliveryAddressDisplayAlias(address);
+                  const displayBranchName =
+                    getDeliveryAddressDisplayBranchName(address);
                   const isDefault =
                     address.id ===
                     deliveryAddressState.defaultAddressIds[address.storeType];
@@ -2946,7 +2951,7 @@ export function ProductDetail({
 
                   return (
                     <button
-                      className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
+                      className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-2.5 text-left transition-colors ${
                         isSelected
                           ? "border-[#C8D4A5] bg-[#F3F5EA]"
                           : "border-[#ededed] bg-white"
@@ -2967,17 +2972,14 @@ export function ProductDetail({
                             >
                               {getConvenienceStoreLabel(address.storeType)}
                             </span>
-                            {address.alias ? (
+                            {displayAlias ? (
                               <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
-                                {address.alias}
+                                {displayAlias}
                               </span>
                             ) : null}
                           </div>
                           <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                            {address.branchName}
-                          </p>
-                          <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
-                            {address.address}
+                            {displayBranchName}
                           </p>
                         </div>
                         <span
@@ -2995,7 +2997,7 @@ export function ProductDetail({
                 })}
 
                 <button
-                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  className="flex h-14 w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
                   onClick={() =>
                     navigateToAddressManagement(true, {
                       restoreCheckoutAddressSheet: true,
