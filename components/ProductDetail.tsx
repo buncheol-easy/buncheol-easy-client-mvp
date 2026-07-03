@@ -689,6 +689,8 @@ export function ProductDetail({
   const productStatus = product.status?.toUpperCase();
   const isCancelledProduct =
     productStatus === "CANCELLED" || productStatus === "CANCELED";
+  const isConfirmedProduct =
+    productStatus === "CONFIRMED" || productStatus === "PAYMENT_CONFIRMED";
   const isPurchasableStatus =
     !productStatus || productStatus === "RECRUITING";
   const hasSelectableOption = auctionOptions.some(
@@ -716,9 +718,12 @@ export function ProductDetail({
     !isPublicPreview && (isBidUnavailable || !canBidProduct);
   const optionParticipationCount = auctionOptions.reduce((sum, option) => {
     const explicitCount = Math.max(0, option.participantCount);
-    const purchaseStateCount = hasOptionPurchaseState(option) ? 1 : 0;
+    const occupiedSlotCount =
+      hasOptionPurchaseState(option) || isUnavailablePurchaseOption(option)
+        ? 1
+        : 0;
 
-    return sum + Math.max(explicitCount, purchaseStateCount);
+    return sum + Math.max(explicitCount, occupiedSlotCount);
   }, 0);
   const parsedProductParticipationCount = Number.parseInt(product.reviews, 10);
   const currentParticipationCount = Math.max(
@@ -733,14 +738,18 @@ export function ProductDetail({
       : null;
   const participationTargetCount = minHeadcount ?? auctionOptions.length;
   const participationProgressRatio =
-    participationTargetCount > 0
+    isConfirmedProduct
+      ? 1
+      : participationTargetCount > 0
       ? Math.min(1, currentParticipationCount / participationTargetCount)
       : 0;
   const participationProgressPercent = `${Math.round(
     participationProgressRatio * 100,
   )}%`;
   const remainingHeadcount =
-    minHeadcount !== null
+    isConfirmedProduct
+      ? 0
+      : minHeadcount !== null
       ? Math.max(0, minHeadcount - currentParticipationCount)
       : null;
 
@@ -2322,11 +2331,17 @@ export function ProductDetail({
                       참여 현황
                     </p>
                     <p className="mt-1 text-[22px] font-semibold tracking-[-0.06em]">
-                      현재 {currentParticipationCount.toLocaleString("ko-KR")}
-                      {minHeadcount !== null
-                        ? `/${minHeadcount.toLocaleString("ko-KR")}`
-                        : ""}
-                      명
+                      {isConfirmedProduct ? (
+                        "진행 확정"
+                      ) : (
+                        <>
+                          현재 {currentParticipationCount.toLocaleString("ko-KR")}
+                          {minHeadcount !== null
+                            ? `/${minHeadcount.toLocaleString("ko-KR")}`
+                            : ""}
+                          명
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -2337,7 +2352,9 @@ export function ProductDetail({
                   />
                 </div>
                 <p className="mt-2 text-[12px] font-semibold text-black/40">
-                  {remainingHeadcount === null
+                  {isConfirmedProduct
+                    ? "마감된 분철이에요. 아래 옵션에서 구매 진행/완료 기록을 확인해요."
+                    : remainingHeadcount === null
                     ? "개최자가 정한 진행 기준을 확인하고 있어요."
                     : remainingHeadcount > 0
                       ? `기준까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요.`
