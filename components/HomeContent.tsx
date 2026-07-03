@@ -531,34 +531,34 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             {HOME_BANNERS.map((banner) => (
               <Link
                 aria-label={`${banner.eyebrow} 공지 상세 보기`}
-                className="motion-card motion-carousel__slide grid w-full flex-none snap-center grid-cols-[minmax(0,0.92fr)_minmax(118px,1.08fr)] overflow-hidden rounded-[1.15rem] border border-black bg-black shadow-[0_18px_40px_rgba(0,0,0,0.12)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                className="motion-card motion-carousel__slide grid w-full flex-none snap-center grid-cols-[minmax(0,1.34fr)_minmax(104px,0.66fr)] overflow-hidden rounded-[1.15rem] border border-black bg-black shadow-[0_18px_40px_rgba(0,0,0,0.12)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 href={banner.href}
                 key={banner.href}
               >
                 <div className="flex min-w-0 items-center px-4 py-4">
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">
                       {banner.eyebrow}
                     </p>
-                    <h2 className="mt-2 whitespace-pre-line text-[17px] font-semibold leading-[1.22] text-white">
+                    <h2 className="mt-2 max-w-[13rem] whitespace-pre-line break-keep text-[clamp(14px,3.55vw,16px)] font-semibold leading-[1.24] text-white">
                       {banner.title}
                     </h2>
                   </div>
                 </div>
                 <div
-                  className={`relative min-h-[112px] min-w-0 overflow-hidden border-l border-white/10 ${banner.gradient}`}
+                  className={`relative min-h-[108px] min-w-0 overflow-hidden border-l border-white/10 ${banner.gradient}`}
                 >
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_28%,rgba(255,255,255,0.7),transparent_22%)]" />
-                  <div className="absolute bottom-4 left-3 h-[78px] w-[58px] rotate-[-10deg] rounded-[0.85rem] border border-white/25 bg-black shadow-[0_12px_24px_rgba(0,0,0,0.24)]" />
-                  <div className="absolute bottom-4 left-[4.35rem] h-[90px] w-[66px] rotate-[7deg] rounded-[0.85rem] border border-white/40 bg-white/85 shadow-[0_12px_24px_rgba(0,0,0,0.16)]" />
-                  <div className="absolute right-3 top-4 rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                  <div className="absolute bottom-4 left-2 h-[70px] w-[52px] rotate-[-10deg] rounded-[0.8rem] border border-white/25 bg-black shadow-[0_12px_24px_rgba(0,0,0,0.24)]" />
+                  <div className="absolute bottom-4 left-[3.75rem] h-[82px] w-[58px] rotate-[7deg] rounded-[0.8rem] border border-white/40 bg-white/85 shadow-[0_12px_24px_rgba(0,0,0,0.16)]" />
+                  <div className="absolute right-2 top-4 rounded-full bg-[#DDE7B8] px-2 py-1 text-[9px] font-semibold tracking-[0.12em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                     {banner.badge}
                   </div>
-                  <div className="absolute bottom-3 right-3 max-w-[7.5rem] rounded-xl border border-black/10 bg-white/90 px-2.5 py-2 backdrop-blur">
-                    <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-black/45">
+                  <div className="absolute bottom-3 right-2 max-w-[6.75rem] rounded-xl border border-black/10 bg-white/90 px-2 py-1.5 backdrop-blur">
+                    <p className="text-[8px] font-medium uppercase tracking-[0.12em] text-black/45">
                       {banner.caption}
                     </p>
-                    <p className="mt-1 text-[12px] font-semibold tracking-[-0.03em]">
+                    <p className="mt-0.5 text-[11px] font-semibold tracking-[-0.03em]">
                       자세히 보기
                     </p>
                   </div>
