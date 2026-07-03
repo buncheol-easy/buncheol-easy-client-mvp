@@ -253,13 +253,13 @@ body.is-pwa-standalone {
   body.desktop-web-shell:has(> main.system-chrome-black) > main,
   body.desktop-web-shell:has(> main.system-chrome-white) > main {
     align-self: center;
-    aspect-ratio: 430 / 820;
+    aspect-ratio: 390 / 844;
     border: 1px solid rgba(17, 17, 17, 0.1);
     border-radius: 30px;
     box-shadow:
       0 28px 80px rgba(17, 17, 17, 0.22),
       0 0 0 12px rgba(255, 255, 255, 0.32);
-    height: min(768px, calc(100dvh - clamp(118px, 16vh, 164px)), calc((100vw - clamp(48px, 7vw, 128px)) * 820 / 430));
+    height: min(748px, calc(100dvh - clamp(176px, 20vh, 224px)), calc((100vw - clamp(48px, 7vw, 128px)) * 844 / 390));
     isolation: isolate;
     justify-self: center;
     min-height: 0;
@@ -289,7 +289,6 @@ body.is-pwa-standalone {
   body.desktop-web-shell:has(> main.system-chrome-black) > main,
   body.desktop-web-shell:has(> main.system-chrome-white) > main {
     justify-self: center;
-    transform: translateY(clamp(-112px, -9vh, -72px));
   }
 
   body.desktop-web-shell:has(> main.system-chrome-black) > .desktop-web-brand,
@@ -297,11 +296,11 @@ body.is-pwa-standalone {
     align-self: center;
     display: flex;
     flex-direction: column;
-    gap: clamp(22px, 3vw, 34px);
+    gap: clamp(16px, 2.2vw, 26px);
     justify-self: end;
     max-width: 560px;
     min-width: 0;
-    padding-block: clamp(10px, 2vh, 24px) 24px;
+    padding-block: clamp(6px, 1.4vh, 14px) 0;
   }
 }
 
@@ -322,7 +321,7 @@ body.is-pwa-standalone {
 }
 
 .desktop-web-brand__title {
-  font-size: clamp(44px, 4.7vw, 68px);
+  font-size: clamp(40px, 4.25vw, 62px);
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1.02;
@@ -331,10 +330,10 @@ body.is-pwa-standalone {
 
 .desktop-web-brand__body {
   color: rgba(17, 17, 17, 0.62);
-  font-size: clamp(16px, 1.4vw, 19px);
+  font-size: clamp(15px, 1.25vw, 18px);
   font-weight: 600;
   line-height: 1.75;
-  margin-top: 22px;
+  margin-top: 18px;
   max-width: 480px;
 }
 
@@ -358,7 +357,7 @@ body.is-pwa-standalone {
 }
 
 .desktop-web-brand__visual {
-  height: 230px;
+  height: 168px;
   max-width: 480px;
   position: relative;
 }
@@ -368,7 +367,7 @@ body.is-pwa-standalone {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 32px;
   content: "";
-  inset: 24px 22px 10px 0;
+  inset: 16px 22px 8px 0;
   position: absolute;
 }
 
@@ -379,14 +378,14 @@ body.is-pwa-standalone {
 }
 
 .desktop-web-brand__card {
-  border-radius: 24px;
-  bottom: 24px;
+  border-radius: 20px;
+  bottom: 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   left: 0;
-  padding: 22px;
-  width: 220px;
+  padding: 18px;
+  width: 190px;
   z-index: 3;
 }
 
@@ -397,19 +396,19 @@ body.is-pwa-standalone {
 
 .desktop-web-brand__card span {
   color: var(--brand-accent);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.2em;
 }
 
 .desktop-web-brand__card strong {
-  font-size: 22px;
+  font-size: 19px;
   letter-spacing: -0.04em;
 }
 
 .desktop-web-brand__thumb {
-  border: 8px solid rgba(255, 255, 255, 0.9);
-  border-radius: 28px;
+  border: 6px solid rgba(255, 255, 255, 0.9);
+  border-radius: 22px;
   overflow: hidden;
 }
 
@@ -418,20 +417,20 @@ body.is-pwa-standalone {
 }
 
 .desktop-web-brand__thumb--front {
-  height: 172px;
-  right: 86px;
+  height: 132px;
+  right: 74px;
   top: 4px;
   transform: rotate(5deg);
-  width: 142px;
+  width: 110px;
   z-index: 2;
 }
 
 .desktop-web-brand__thumb--back {
-  height: 152px;
+  height: 116px;
   right: 0;
-  top: 62px;
+  top: 42px;
   transform: rotate(-8deg);
-  width: 126px;
+  width: 96px;
   z-index: 1;
 }
 
