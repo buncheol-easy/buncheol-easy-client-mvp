@@ -975,10 +975,6 @@ export function ProductDetail({
       lastAddedDeliveryAddressIdKey,
     );
 
-    if (lastAddedAddressId) {
-      window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
-    }
-
     const restoreAddressSheet = async () => {
       let nextAddressState = deliveryAddressState;
 
@@ -1019,6 +1015,10 @@ export function ProductDetail({
         null;
 
       setCheckoutDeliveryAddress(restoredAddress);
+
+      if (lastAddedAddressId) {
+        window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
+      }
 
       if (returnState.reopenAddressSheet && eligibleAddresses.length > 0) {
         if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
@@ -2019,6 +2019,27 @@ export function ProductDetail({
     }, 260);
   }
 
+  function confirmCheckoutAddressSelection() {
+    const selectedAddress =
+      checkoutDeliveryAddress ??
+      bidDeliveryAddress ??
+      checkoutEligibleDeliveryAddresses[0] ??
+      null;
+
+    if (!selectedAddress) {
+      navigateToAddressManagement(true, {
+        restoreCheckoutAddressSheet: true,
+      });
+      return;
+    }
+
+    setCheckoutDeliveryAddress(selectedAddress);
+    setCheckoutStep("confirm");
+    setIsSheetOpen(true);
+    setIsSheetClosing(false);
+    closeCheckoutAddressSheet();
+  }
+
   async function openCheckoutAddressSheet() {
     let nextAddressState = deliveryAddressState;
 
@@ -3011,7 +3032,7 @@ export function ProductDetail({
 
               <button
                 className="mt-3 h-12 w-full rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
-                onClick={closeCheckoutAddressSheet}
+                onClick={confirmCheckoutAddressSelection}
                 type="button"
               >
                 이 배송지로 받기
