@@ -2145,10 +2145,20 @@ function getBuncheolDetailFromBody(body: unknown) {
 function getBuncheolManagementWinnerFromRecord(
   record: Record<string, unknown>,
 ): BuncheolManagementWinner {
-  const shippingAddress = getNestedData(record.shippingAddress);
-  const shippingAddressRecord = isRecord(shippingAddress)
-    ? shippingAddress
-    : null;
+  const shippingAddressRecord = [
+    record.shippingAddressSnapshot,
+    record.shippingAddress,
+    record.shippingAddressInfo,
+    record.selectedShippingAddress,
+    record.selectedAddress,
+    record.addressSnapshot,
+    record.address,
+    record.pickupStore,
+    record.store,
+    record.storeInfo,
+  ]
+    .map(getNestedData)
+    .find(isRecord);
   const bidAmount = getOptionalNumberValue(record, [
     "bidAmount",
     "winningBidAmount",

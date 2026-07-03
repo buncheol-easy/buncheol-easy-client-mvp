@@ -462,28 +462,55 @@ function toDeliveryFromWinner(
 }
 
 function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
+  const deliveryByParticipationId = new Map<string, BuncheolManagementDelivery>();
+  const memberNameByParticipationId = new Map<string, string>();
+
+  detail.options.forEach((option) => {
+    const winner = option.winner;
+    const delivery = toDeliveryFromWinner(option);
+
+    if (!winner?.participationId) return;
+
+    memberNameByParticipationId.set(winner.participationId, option.memberName);
+
+    if (delivery) {
+      deliveryByParticipationId.set(winner.participationId, delivery);
+    }
+  });
+
   const participantRecords = detail.participants.map(
-    (participant): AdminPaymentRecord => ({
-      amount: participant.amount,
-      buncheolId: detail.id,
-      buncheolStatus: detail.status,
-      buncheolTitle: detail.title,
-      confirmedAt: participant.confirmedAt,
-      confirmedCount: detail.confirmedCount,
-      delivery: participant.delivery,
-      deliveries: participant.delivery ? [participant.delivery] : [],
-      groupName: detail.groupName,
-      memberName: participant.memberName,
-      memberNames: [participant.memberName],
-      minHeadcount: detail.minHeadcount,
-      participantNickname: participant.participantNickname,
-      participationId: participant.participationId,
-      participationIds: [participant.participationId],
-      paymentDueAt: participant.dueAt,
-      rawStatus: participant.status,
-      refundAccount: participant.refundAccount,
-      status: normalizePaymentStatus(participant.status, detail.status),
-    }),
+    (participant): AdminPaymentRecord => {
+      const delivery =
+        participant.delivery ??
+        deliveryByParticipationId.get(participant.participationId) ??
+        null;
+      const memberName =
+        participant.memberName ||
+        memberNameByParticipationId.get(participant.participationId) ||
+        "옵션";
+
+      return {
+        amount: participant.amount,
+        buncheolId: detail.id,
+        buncheolStatus: detail.status,
+        buncheolTitle: detail.title,
+        confirmedAt: participant.confirmedAt,
+        confirmedCount: detail.confirmedCount,
+        delivery,
+        deliveries: delivery ? [delivery] : [],
+        groupName: detail.groupName,
+        memberName,
+        memberNames: [memberName],
+        minHeadcount: detail.minHeadcount,
+        participantNickname: participant.participantNickname,
+        participationId: participant.participationId,
+        participationIds: [participant.participationId],
+        paymentDueAt: participant.dueAt,
+        rawStatus: participant.status,
+        refundAccount: participant.refundAccount,
+        status: normalizePaymentStatus(participant.status, detail.status),
+      };
+    },
   );
 
   if (participantRecords.length > 0) return participantRecords;
