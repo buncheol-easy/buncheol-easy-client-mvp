@@ -2207,8 +2207,29 @@ export function ProductDetail({
 
     setCheckoutDeliveryAddress(selectedAddress);
     setCheckoutStep("confirm");
+    setCheckoutPaymentSummary(null);
+    setCheckoutError("");
+    setCheckoutCopyToast("");
+
+    if (sheetCloseFallbackTimerRef.current !== null) {
+      window.clearTimeout(sheetCloseFallbackTimerRef.current);
+      sheetCloseFallbackTimerRef.current = null;
+    }
+
+    if (sheetEnterAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(sheetEnterAnimationFrameRef.current);
+      sheetEnterAnimationFrameRef.current = null;
+    }
+
     setIsSheetOpen(true);
     setIsSheetClosing(false);
+    setIsSheetEntered(false);
+
+    sheetEnterAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      sheetEnterAnimationFrameRef.current = null;
+      setIsSheetEntered(true);
+    });
+
     closeCheckoutAddressSheet();
   }
 
