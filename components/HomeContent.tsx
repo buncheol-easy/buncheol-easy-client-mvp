@@ -660,10 +660,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             {isListingLoading ? (
               <ProductGridSkeleton
                 ariaLabel="추천 상품을 불러오는 중"
-                count={6}
+                count={3}
+                variant="wide"
               />
             ) : (
-              <ProductGrid items={listings} />
+              <ProductGrid items={listings} variant="wide" />
             )}
           </div>
         </section>
