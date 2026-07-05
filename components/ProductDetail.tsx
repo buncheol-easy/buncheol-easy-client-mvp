@@ -2562,7 +2562,7 @@ export function ProductDetail({
 
               {checkoutStep === "options" ? (
                 <>
-                  <div className="mt-4 max-h-[38dvh] space-y-2.5 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const myBid = myBids[option.id];
                       const isSelected = bidAmounts[option.id] === "selected";
@@ -2575,7 +2575,7 @@ export function ProductDetail({
                       return (
                         <div
                           key={option.id}
-                          className={`relative overflow-hidden rounded-[0.9rem] border px-3.5 py-2.5 ${
+                          className={`relative overflow-hidden rounded-[0.85rem] border px-3 py-1.5 ${
                             overlayLabel
                               ? "border-black/10 bg-[#f7f7f7]"
                               : isSelected
@@ -2584,12 +2584,12 @@ export function ProductDetail({
                           }`}
                         >
                           <div
-                            className={`flex items-center justify-between gap-3 ${
+                            className={`flex items-center justify-between gap-2.5 ${
                               overlayLabel ? "opacity-65" : ""
                             }`}
                           >
-                            <div className="flex min-w-0 items-center gap-3">
-                              <OptionAvatar option={option} size="md" />
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <OptionAvatar option={option} size="sm" />
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
@@ -2601,41 +2601,37 @@ export function ProductDetail({
                                     </span>
                                   ) : null}
                                 </div>
-                                <p className="mt-1 text-[13px] font-medium tracking-[-0.04em] text-black/45">
+                                <p className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45">
                                   {myBid
                                     ? `구매 금액 ${formatPrice(myBid)}`
                                     : "구매 가능"}
                                 </p>
                               </div>
                             </div>
-                            <div className="shrink-0 text-right">
-                              <p className="text-[12px] font-medium text-black/45">
-                                {getOptionPriceLabel()}
-                              </p>
-                              <p className="mt-1 text-[15px] font-semibold tracking-[-0.04em]">
+                            <div className="flex shrink-0 items-center gap-2 text-right">
+                              <p className="text-[15px] font-semibold tracking-[-0.04em]">
                                 {getBidBaseline(option)}
                               </p>
+                              <button
+                                className={`h-7 min-w-[52px] rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
+                                  overlayLabel
+                                    ? "bg-black/10 text-black/35"
+                                    : isSelected
+                                      ? "bg-[#DDE7B8] text-black"
+                                      : "bg-[#f7f7f7] text-black/55"
+                                }`}
+                                disabled={Boolean(overlayLabel)}
+                                onClick={() => togglePurchaseOption(option.id)}
+                                type="button"
+                              >
+                                {overlayLabel
+                                  ? "선택 불가"
+                                  : isSelected
+                                    ? "해제"
+                                    : "선택"}
+                              </button>
                             </div>
                           </div>
-
-                          <button
-                            className={`mt-2 h-9 w-full rounded-[0.75rem] text-[13px] font-semibold transition-colors ${
-                              overlayLabel
-                                ? "bg-black/10 text-black/35"
-                                : isSelected
-                                  ? "bg-[#DDE7B8] text-black"
-                                  : "bg-[#f7f7f7] text-black/55"
-                            }`}
-                            disabled={Boolean(overlayLabel)}
-                            onClick={() => togglePurchaseOption(option.id)}
-                            type="button"
-                          >
-                            {overlayLabel
-                              ? "선택 불가"
-                              : isSelected
-                                ? "선택 해제"
-                                : "선택"}
-                          </button>
                           {overlayLabel ? (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
                               <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
