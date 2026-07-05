@@ -1,11 +1,16 @@
 "use client";
 
 import type { MouseEvent } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BellIcon, SearchIcon } from "@/components/icons";
 
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
+
+type AppHeaderProps = {
+  tone?: "dark" | "light";
+};
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -13,9 +18,13 @@ function getHistoryIndex() {
   return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
-export function AppHeader() {
+export function AppHeader({ tone = "dark" }: AppHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const isDarkTone = tone === "dark";
+  const logoSrc = isDarkTone
+    ? "/brand/logo-white.png"
+    : "/brand/logo-black.png";
 
   function rememberSearchEntry() {
     try {
@@ -63,17 +72,31 @@ export function AppHeader() {
   }
 
   return (
-    <header className="app-header shrink-0 border-b border-black bg-black px-5 py-3 text-white">
+    <header
+      className={`app-header shrink-0 border-b px-5 py-3 ${
+        isDarkTone
+          ? "border-black bg-black text-white"
+          : "border-black/10 bg-white text-black"
+      }`}
+    >
       <div className="app-header__inner flex items-center gap-3">
         <button
-          className="app-header__title shrink-0 text-[22px] tracking-[-0.05em]"
+          aria-label="분철이지 홈"
+          className="motion-icon-button app-header__title relative -ml-2 h-10 w-[106px] shrink-0 rounded-[0.75rem]"
           onClick={handleLogoClick}
           type="button"
         >
-          분철이지
+          <Image
+            alt="분철이지"
+            className="object-contain object-left"
+            fill
+            priority
+            sizes="106px"
+            src={logoSrc}
+          />
         </button>
         <a
-          className="app-header__search flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black"
+          className="motion-card app-header__search flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black shadow-[0_8px_20px_rgba(0,0,0,0.08)]"
           href="/search"
           onClick={handleSearchClick}
         >
@@ -84,7 +107,11 @@ export function AppHeader() {
         </a>
         <Link
           aria-label="소식함"
-          className="app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white"
+          className={`motion-icon-button app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
+            isDarkTone
+              ? "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.24)]"
+              : "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.18)]"
+          }`}
           href="/board"
         >
           <BellIcon />

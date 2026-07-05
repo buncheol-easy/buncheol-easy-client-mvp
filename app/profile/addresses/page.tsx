@@ -10,6 +10,24 @@ type AddressManagementPageProps = {
   }>;
 };
 
+function getSafeReturnHref(returnTo: string | string[] | undefined) {
+  const returnTarget = Array.isArray(returnTo) ? returnTo[0] : returnTo;
+
+  if (returnTarget === "bids") {
+    return "/profile/bids";
+  }
+
+  if (returnTarget === "profile") {
+    return "/profile";
+  }
+
+  if (returnTarget?.startsWith("/products/")) {
+    return returnTarget;
+  }
+
+  return null;
+}
+
 export default async function AddressManagementPage({
   searchParams,
 }: AddressManagementPageProps) {
@@ -17,13 +35,7 @@ export default async function AddressManagementPage({
   const openFormOnEntry = Array.isArray(openAdd)
     ? openAdd.includes("1")
     : openAdd === "1";
-  const returnTarget = Array.isArray(returnTo) ? returnTo[0] : returnTo;
-  const returnHref =
-    returnTarget === "bids"
-      ? "/profile/bids"
-      : returnTarget === "profile"
-        ? "/profile"
-        : null;
+  const returnHref = getSafeReturnHref(returnTo);
 
   return (
     <main className="system-chrome-white h-[100dvh] overflow-hidden bg-white text-[#111111]">

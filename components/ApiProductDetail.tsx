@@ -1,20 +1,23 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ProductDetail } from "@/components/ProductDetail";
 import type { ProductCardItem } from "@/components/ProductCard";
 import {
   requestBuncheolDetail,
+  requestBuncheolManagement,
   requestMyHostedBuncheols,
   toProductDetailItem,
+  type BuncheolManagementOption,
 } from "@/lib/auth-api";
 import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { readUploadedProduct } from "@/lib/hosted-products-store";
 import { readPublicBuncheolCard } from "@/lib/public-buncheol-card-store";
-import type { ProductDetailItem } from "@/lib/mock-products";
+import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
 type ApiProductDetailProps = {
   id: string;
@@ -22,6 +25,84 @@ type ApiProductDetailProps = {
   returnQuery?: string;
   returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
 };
+
+function isInactivePurchaseStatus(status: string | undefined) {
+  return [
+    "CANCELLED",
+    "CANCELED",
+    "EXPIRED",
+    "FAILED",
+    "REFUNDED",
+    "REJECTED",
+  ].includes(status?.toUpperCase() ?? "");
+}
+
+function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
+  const winner = option.winner;
+
+  if (
+    winner?.participationId ||
+    winner?.paymentStatus ||
+    winner?.paymentConfirmedAt ||
+    winner?.paymentDueAt
+  ) {
+    return {
+      purchasePaymentConfirmedAt: winner.paymentConfirmedAt ?? undefined,
+      purchasePaymentDueAt: winner.paymentDueAt ?? undefined,
+      purchasePaymentStatus:
+        winner.paymentStatus ??
+        (winner.paymentConfirmedAt ? "CONFIRMED" : "AWAITING_PAYMENT"),
+      purchaseParticipationId: winner.participationId ?? undefined,
+    };
+  }
+
+  const participant = option.participants?.find(
+    (item) => !isInactivePurchaseStatus(item.status),
+  );
+
+  if (!participant) {
+    return {};
+  }
+
+  return {
+    purchasePaymentDueAt: participant.dueAt ?? undefined,
+    purchasePaymentStatus: participant.status || "AWAITING_PAYMENT",
+    purchaseParticipationId: participant.participationId,
+  };
+}
+
+function mergeManagementOptionPurchaseStates(
+  options: [ProductOption, ...ProductOption[]],
+  managementOptions: BuncheolManagementOption[],
+): [ProductOption, ...ProductOption[]] {
+  const optionsById = new Map(
+    managementOptions.map((option) => [option.buncheolMemberId, option]),
+  );
+  const optionsByName = new Map(
+    managementOptions.map((option) => [option.memberName, option]),
+  );
+  const mergedOptions = options.map((option) => {
+    const managementOption =
+      optionsById.get(option.buncheolMemberId ?? option.id) ??
+      optionsByName.get(option.label);
+
+    if (!managementOption) {
+      return option;
+    }
+
+    return {
+      ...option,
+      ...getManagementOptionPurchaseState(managementOption),
+      participantCount: Math.max(
+        option.participantCount,
+        managementOption.participationCount,
+        managementOption.participants?.length ?? 0,
+      ),
+    };
+  });
+
+  return mergedOptions as [ProductOption, ...ProductOption[]];
+}
 
 function toPublicPreviewProduct(
   item: ProductCardItem,
@@ -38,7 +119,7 @@ function toPublicPreviewProduct(
     buncheolId: productId,
     courier: lockedLabel,
     description: requiresLogin
-      ? "로그인 후 입찰과 상세 정보를 확인할 수 있어요."
+      ? "로그인 후 구매와 상세 정보를 확인할 수 있어요."
       : "목록에 공개된 분철 정보를 표시하고 있어요.",
     isApiProduct: true,
     isBidUnavailable: false,
@@ -106,7 +187,26 @@ export function ApiProductDetail({
           return;
         }
 
-        const detailProduct = toProductDetailItem(detail);
+        let detailProduct = toProductDetailItem(detail);
+        const cachedProduct = readUploadedProduct(id);
+        const cachedImageUrls = cachedProduct?.imageUrls?.length
+          ? cachedProduct.imageUrls
+          : cachedProduct?.imageUrl
+            ? [cachedProduct.imageUrl]
+            : [];
+
+        if (
+          cachedImageUrls.length > 0 &&
+          !detailProduct.imageUrl &&
+          (detailProduct.imageUrls?.length ?? 0) === 0
+        ) {
+          detailProduct = {
+            ...detailProduct,
+            imageUrl: cachedImageUrls[0],
+            imageUrls: cachedImageUrls,
+          };
+        }
+
         const detailHostedByMe = detailProduct.isHostedByMe === true;
         let isHostedByMe = detailHostedByMe;
         const shouldVerifyHostedOwnership =
@@ -122,6 +222,24 @@ export function ApiProductDetail({
             );
           } catch {
             isHostedByMe = detailHostedByMe;
+          }
+        }
+
+        if ((isHostedByMe || isHostedView) && accessToken) {
+          try {
+            const managementDetail = await requestBuncheolManagement(
+              accessToken,
+              id,
+            );
+            detailProduct = {
+              ...detailProduct,
+              options: mergeManagementOptionPurchaseStates(
+                detailProduct.options,
+                managementDetail.options,
+              ),
+            };
+          } catch {
+            // The public detail is still usable if host-only management data is unavailable.
           }
         }
 

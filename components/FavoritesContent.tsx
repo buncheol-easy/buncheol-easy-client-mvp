@@ -11,12 +11,14 @@ import {
 import type { MouseEvent } from "react";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
+import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
 import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 type FavoriteFilter = "all" | "favoriteArtist";
 type FavoriteSort = "deadline" | "recent";
@@ -140,24 +142,6 @@ function readStoredFavoritesViewState(keepStoredState: boolean) {
   }
 }
 
-function FavoriteProductGridSkeleton() {
-  return (
-    <div aria-label="찜한 상품을 불러오는 중" className="grid grid-cols-2 gap-3" role="status">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div
-          className="overflow-hidden rounded-[1rem] border border-black/10 bg-white p-3"
-          key={`favorite-product-skeleton-${index}`}
-        >
-          <div className="aspect-square animate-pulse rounded-[0.85rem] bg-black/8" />
-          <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
-          <div className="mt-2 h-3 w-3/5 animate-pulse rounded-full bg-black/8" />
-          <div className="mt-4 h-8 animate-pulse rounded-full bg-black/8" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function FavoritesContent({
   skipEnterAnimation = false,
 }: FavoritesContentProps) {
@@ -225,7 +209,7 @@ export function FavoritesContent({
 
         setApiFavoriteProducts(
           items.map((item, index) => ({
-            ...toProductCardItem(item),
+            ...mergeCachedProductImage(toProductCardItem(item)),
             favoritedOrder: items.length - index,
           })),
         );
@@ -404,7 +388,7 @@ export function FavoritesContent({
               onClick={() => setIsSortOpen((current) => !current)}
               type="button"
             >
-              <span>{sort === "recent" ? "최근 찜한 순" : "마감 임박순"}</span>
+              <span>{sort === "recent" ? "최근 찜한 순" : "모집 임박순"}</span>
               <span
                 className={`h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-current transition-transform ${
                   isSortOpen ? "rotate-180" : ""
@@ -417,7 +401,7 @@ export function FavoritesContent({
                 {(
                   [
                     ["recent", "최근 찜한 순"],
-                    ["deadline", "마감 임박순"],
+                    ["deadline", "모집 임박순"],
                   ] as const
                 ).map(([value, label]) => {
                   const isActive = sort === value;
@@ -444,7 +428,7 @@ export function FavoritesContent({
 
           <div className="mr-1 flex items-center gap-2">
             <span className="text-[12px] font-semibold text-black/45">
-              마감 숨김
+              모집 종료 숨김
             </span>
             <button
               aria-pressed={hideClosed}
@@ -482,7 +466,7 @@ export function FavoritesContent({
             </div>
           ) : null}
           {isFavoriteProductsLoading ? (
-            <FavoriteProductGridSkeleton />
+            <ProductGridSkeleton ariaLabel="찜한 상품을 불러오는 중" />
           ) : filteredProducts.length > 0 ? (
             <ProductGrid items={filteredProducts} />
           ) : (

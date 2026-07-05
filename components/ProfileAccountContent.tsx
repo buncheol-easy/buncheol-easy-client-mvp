@@ -360,8 +360,8 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-white">
-      <header className="shrink-0 px-6 pb-4 pt-6">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#f7f7f7]">
+      <header className="shrink-0 bg-white px-6 pb-4 pt-6">
         <div className="flex items-start justify-between gap-4">
           <button
             aria-label="뒤로가기"
@@ -382,9 +382,9 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-6 pb-8">
+      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
         {!authState.isLoggedIn ? (
-          <div className="mt-6 rounded-[1.1rem] bg-[#f7f7f7] px-5 py-6">
+          <div className="rounded-[1.15rem] bg-white px-5 py-6 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
             <p className="text-[17px] font-semibold tracking-[-0.05em]">
               로그인 후 확인할 수 있어요.
             </p>
@@ -404,36 +404,43 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
           </div>
         ) : (
           <>
-            <section className="rounded-[1.15rem] bg-[#f7f7f7] px-5 py-4">
+            <section className="rounded-[1.2rem] bg-black px-5 py-5 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#AAB67C]/35">
               <div className="flex items-center gap-4">
                 <ProviderIconBadge provider={profile?.provider} />
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-black/40">
+                  <p className="text-[13px] font-semibold text-[#DDE7B8]">
                     연결된 계정
                   </p>
-                  <p className="mt-1 truncate text-[18px] font-semibold tracking-[-0.05em] text-black">
+                  <p className="mt-1 truncate text-[18px] font-semibold tracking-[-0.05em] text-white">
                     {isLoading
                       ? "회원 정보 확인 중"
                       : `${getProviderLabel(profile?.provider)} 로그인`}
                   </p>
-                  <p className="mt-1 truncate text-[13px] font-medium text-black/40">
+                  <p className="mt-1 truncate text-[13px] font-medium text-white/40">
                     {profile?.email || "이메일 정보 없음"}
                   </p>
                 </div>
               </div>
             </section>
 
-            <section className="mt-4 rounded-[1.1rem] border border-black/10 px-4 py-4">
-              <p className="text-[13px] font-semibold text-black/40">
-                기본 정보
-              </p>
+            <section className="mt-4 rounded-[1.2rem] border border-black/10 bg-white px-4 py-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                    기본 정보
+                  </h2>
+                  <p className="mt-1 text-[13px] font-medium text-black/45">
+                    서비스에 표시될 이름과 연락처를 관리해요.
+                  </p>
+                </div>
+              </div>
               <div className="mt-4 grid gap-3">
-                <label className="block">
+                <label className="block rounded-[0.95rem] bg-[#f7f7f7] px-3 py-3 ring-1 ring-black/10 transition focus-within:bg-white focus-within:ring-black/35">
                   <span className="text-[13px] font-semibold text-black/45">
                     닉네임
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.85rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     disabled={isLoading}
                     maxLength={20}
                     onChange={(event) =>
@@ -443,12 +450,12 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                     value={form.nickname}
                   />
                 </label>
-                <label className="block">
+                <label className="block rounded-[0.95rem] bg-[#f7f7f7] px-3 py-3 ring-1 ring-black/10 transition focus-within:bg-white focus-within:ring-black/35">
                   <span className="text-[13px] font-semibold text-black/45">
                     휴대폰 번호
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.85rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     disabled={isLoading}
                     inputMode="numeric"
                     onChange={(event) =>
@@ -461,7 +468,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
               </div>
               <button
                 aria-label={isSaveFeedbackVisible ? "저장 완료" : undefined}
-                className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-black text-[15px] font-semibold text-white transition-colors disabled:bg-black/20"
+                className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.22)] transition-colors disabled:bg-black/20 disabled:text-white"
                 disabled={!canSave || isSaving || isLoading}
                 onClick={saveProfile}
                 type="button"
@@ -469,7 +476,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                 {isSaving ? (
                   "저장 중"
                 ) : isSaveFeedbackVisible ? (
-                  <span className="flex h-6 w-6 scale-125 items-center justify-center rounded-full bg-white text-black transition-transform">
+                  <span className="flex h-6 w-6 scale-125 items-center justify-center rounded-full bg-black text-[#DDE7B8] transition-transform">
                     <CheckIcon />
                   </span>
                 ) : (
@@ -479,12 +486,12 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
             </section>
 
             {message ? (
-              <p className="mt-3 text-[13px] font-semibold text-black/45">
+              <p className="mt-3 rounded-full bg-white px-3 py-2 text-[13px] font-semibold text-black/45 shadow-[0_10px_24px_rgba(0,0,0,0.04)]">
                 {message}
               </p>
             ) : null}
 
-            <section className="mt-6 rounded-[1rem] bg-[#f7f7f7] px-4 py-4">
+            <section className="mt-4 rounded-[1.1rem] border border-black/10 bg-white px-4 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[14px] font-semibold tracking-[-0.04em] text-black/45">

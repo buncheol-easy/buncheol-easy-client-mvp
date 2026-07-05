@@ -3,41 +3,85 @@ import type { ProductCardItem } from "@/components/ProductCard";
 const publicBuncheolCardStoreKey = "buncheol-public-card-cache";
 const maxStoredPublicCards = 80;
 
-function canUseSessionStorage() {
-  return typeof window !== "undefined" && Boolean(window.sessionStorage);
-}
-
-function readStoredCards() {
-  if (!canUseSessionStorage()) {
-    return {};
+function getWritableStorage() {
+  if (typeof window === "undefined") {
+    return null;
   }
 
   try {
-    const rawValue = window.sessionStorage.getItem(publicBuncheolCardStoreKey);
-
-    if (!rawValue) {
-      return {};
+    if (window.localStorage) {
+      return window.localStorage;
     }
-
-    const parsed = JSON.parse(rawValue) as unknown;
-
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, ProductCardItem>)
-      : {};
   } catch {
-    return {};
+    // Fall back to session storage below.
+  }
+
+  try {
+    return window.sessionStorage ?? null;
+  } catch {
+    return null;
   }
 }
 
+function getReadableStorages() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  const storages: Storage[] = [];
+
+  try {
+    if (window.localStorage) {
+      storages.push(window.localStorage);
+    }
+  } catch {
+    // Ignore blocked storage.
+  }
+
+  try {
+    if (window.sessionStorage && !storages.includes(window.sessionStorage)) {
+      storages.push(window.sessionStorage);
+    }
+  } catch {
+    // Ignore blocked storage.
+  }
+
+  return storages;
+}
+
+function readStoredCards() {
+  for (const storage of getReadableStorages()) {
+    try {
+      const rawValue = storage.getItem(publicBuncheolCardStoreKey);
+
+      if (!rawValue) {
+        continue;
+      }
+
+      const parsed = JSON.parse(rawValue) as unknown;
+
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, ProductCardItem>;
+      }
+    } catch {
+      // Try the next storage.
+    }
+  }
+
+  return {};
+}
+
 function writeStoredCards(cards: Record<string, ProductCardItem>) {
-  if (!canUseSessionStorage()) {
+  const storage = getWritableStorage();
+
+  if (!storage) {
     return;
   }
 
   const entries = Object.entries(cards).slice(-maxStoredPublicCards);
 
   try {
-    window.sessionStorage.setItem(
+    storage.setItem(
       publicBuncheolCardStoreKey,
       JSON.stringify(Object.fromEntries(entries)),
     );

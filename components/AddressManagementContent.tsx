@@ -12,6 +12,7 @@ import {
 import { BackIcon, CloseIcon } from "@/components/icons";
 import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
+  ApiRequestError,
   createShippingAddress,
   deleteShippingAddress,
   requestShippingAddresses,
@@ -35,6 +36,8 @@ import {
 import {
   convenienceStoreTypes,
   convenienceStoreTypeLabels,
+  getDeliveryAddressDisplayAlias,
+  getDeliveryAddressDisplayBranchName,
   getConvenienceStoreLabel,
   getPrioritizedDeliveryAddresses,
   type ConvenienceStoreType,
@@ -45,6 +48,26 @@ type AddressManagementContentProps = {
   openFormOnEntry?: boolean;
   returnHref?: string | null;
 };
+
+function getDeliveryAddressDeleteErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError && error.status === 409) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  if (
+    error instanceof Error &&
+    (error.message.includes("USR-030") ||
+      error.message.includes(
+        "SHIPPING_ADDRESS_DELETE_BLOCKED_BY_ACTIVE_PARTICIPATION",
+      ))
+  ) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "배송지를 삭제하지 못했어요.";
+}
 
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
@@ -367,11 +390,7 @@ export function AddressManagementContent({
         await deleteShippingAddress(accessToken, addressId);
         await syncDeliveryAddresses(accessToken);
       } catch (error) {
-        setAddressMessage(
-          error instanceof Error
-            ? error.message
-            : "배송지를 삭제하지 못했어요.",
-        );
+        setAddressMessage(getDeliveryAddressDeleteErrorMessage(error));
       } finally {
         setDeletingAddressIds((current) =>
           current.filter((currentAddressId) => currentAddressId !== addressId),
@@ -406,6 +425,11 @@ export function AddressManagementContent({
       return;
     }
 
+    if (returnHref) {
+      router.replace(returnHref);
+      return;
+    }
+
     const historyIndex = getHistoryIndex();
 
     if (historyIndex !== null && historyIndex > 0) {
@@ -413,12 +437,12 @@ export function AddressManagementContent({
       return;
     }
 
-    router.replace(returnHref ?? "/profile");
+    router.replace("/profile");
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-white">
-      <header className="profile-header shrink-0 px-4 py-3">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#f7f7f7]">
+      <header className="profile-header shrink-0 bg-white px-4 py-3">
         <div className="flex h-10 items-center gap-3">
           <button
             aria-label="이전 화면"
@@ -440,16 +464,29 @@ export function AddressManagementContent({
       </header>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
-        <section className="border-t border-black/10 pt-5">
+        <section className="rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                등록된 배송지
+              </h2>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                상품 배송 방식에 맞는 지점을 저장해요.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3 py-2 text-[12px] font-semibold text-black/45">
+              {visibleAddresses.length}개
+            </span>
+          </div>
           {isAddressListLoading || addressMessage ? (
-            <p className="mb-3 text-[13px] font-semibold text-black/45">
+            <p className="mb-3 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/45">
               {addressMessage || "배송지를 불러오는 중이에요."}
             </p>
           ) : null}
-          <div className="grid gap-2">
+          <div className="grid gap-3">
             {!canManageAddresses ? (
               <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
                 <p className="text-[14px] font-medium text-black/45">
@@ -458,15 +495,18 @@ export function AddressManagementContent({
               </div>
             ) : null}
             {visibleAddresses.map((address) => {
+              const displayAlias = getDeliveryAddressDisplayAlias(address);
+              const displayBranchName =
+                getDeliveryAddressDisplayBranchName(address);
               const isDefault =
                 address.id === defaultAddressIds[address.storeType];
 
               return (
                 <div
-                  className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
+                  className={`w-full rounded-[0.9rem] border px-3.5 py-3 text-left transition-colors ${
                     isDefault
-                      ? "border-[#d8d8d8] bg-[#ececec]"
-                      : "border-[#ededed] bg-white"
+                      ? "border-[#C8D4A5] bg-[#F3F5EA]"
+                      : "border-black/10 bg-[#f7f7f7]"
                   }`}
                   key={address.id}
                 >
@@ -476,25 +516,25 @@ export function AddressManagementContent({
                         <span
                           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                             isDefault
-                              ? "bg-black text-white"
-                              : "bg-white text-black/45"
+                              ? "bg-[#DDE7B8] text-black"
+                              : "bg-white text-black/55"
                           }`}
                         >
                           {getConvenienceStoreLabel(address.storeType)}
                         </span>
-                        {address.alias ? (
+                        {displayAlias ? (
                           <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
-                            {address.alias}
+                            {displayAlias}
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                        {address.branchName}
-                      </p>
-                    </div>
+                        <p className="mt-2.5 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                          {displayBranchName}
+                        </p>
+                      </div>
                     {isDefault ? (
                       <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                        <span className="inline-flex h-8 items-center rounded-full bg-black px-2.5 text-[12px] font-semibold text-white">
+                        <span className="inline-flex h-8 items-center rounded-full bg-[#DDE7B8] px-2.5 text-[12px] font-semibold text-black">
                           기본
                         </span>
                       </div>
@@ -508,7 +548,7 @@ export function AddressManagementContent({
                           기본 설정
                         </button>
                         <button
-                          aria-label={`${getConvenienceStoreLabel(address.storeType)} ${address.branchName} 배송지 삭제`}
+                          aria-label={`${getConvenienceStoreLabel(address.storeType)} ${displayBranchName} 배송지 삭제`}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10"
                           disabled={deletingAddressIds.includes(address.id)}
                           onClick={() => deleteDeliveryAddress(address.id)}
@@ -526,15 +566,20 @@ export function AddressManagementContent({
             {canManageAddresses ? (
               isFormOpen ? (
               <div
-                className="idol-selection-enter rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-[#f7f7f7] px-5 pb-4 pt-5"
+                className="idol-selection-enter rounded-[0.95rem] bg-[#f7f7f7] px-3 pb-3 pt-3.5"
                 key="address-form"
               >
-                  <div className="flex items-center justify-between">
-                    <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                  <div className="flex items-start justify-between gap-3 px-1">
+                    <div>
+                    <p className="text-[15px] font-semibold tracking-[-0.04em]">
                       새 배송지 추가
                     </p>
+                    <p className="mt-1 text-[12px] font-medium text-black/40">
+                      결제할 때 선택할 편의점 지점을 등록해요.
+                    </p>
+                    </div>
                     <button
-                      className="text-[12px] font-semibold text-black/35"
+                      className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/45 ring-1 ring-black/10"
                       disabled={!isFormOpen}
                       onClick={closeForm}
                       type="button"
@@ -542,12 +587,12 @@ export function AddressManagementContent({
                       닫기
                     </button>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2 rounded-[0.8rem] bg-white/80 p-1">
+                  <div className="mt-3 grid grid-cols-2 gap-2 rounded-[0.85rem] bg-white p-1 ring-1 ring-black/10">
                     {convenienceStoreTypes.map((storeType) => (
                       <button
-                        className={`h-9 rounded-[0.65rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
+                        className={`h-10 rounded-[0.7rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
                           newAddressStoreType === storeType
-                            ? "bg-black text-white"
+                            ? "bg-[#DDE7B8] text-black"
                             : "text-black/45"
                         }`}
                         key={storeType}
@@ -562,24 +607,34 @@ export function AddressManagementContent({
                       </button>
                     ))}
                   </div>
-                  <input
-                    className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                    disabled={!isFormOpen}
-                    onChange={(event) => setNewAddressAlias(event.target.value)}
-                    placeholder="별칭 (예: 집, 회사)"
-                    value={newAddressAlias}
-                  />
-                  <input
-                    className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                    disabled={!isFormOpen}
-                    onChange={(event) =>
-                      setNewAddressBranchName(event.target.value)
-                    }
-                    placeholder="편의점 지점명"
-                    value={newAddressBranchName}
-                  />
+                  <label className="mt-2.5 block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                    <span className="text-[12px] font-semibold text-black/45">
+                      별칭
+                    </span>
+                    <input
+                      className="mt-1 h-8 w-full bg-transparent text-[14px] font-semibold outline-none placeholder:text-black/25"
+                      disabled={!isFormOpen}
+                      onChange={(event) => setNewAddressAlias(event.target.value)}
+                      placeholder="집, 회사"
+                      value={newAddressAlias}
+                    />
+                  </label>
+                  <label className="mt-2 block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                    <span className="text-[12px] font-semibold text-black/45">
+                      지점명
+                    </span>
+                    <input
+                      className="mt-1 h-8 w-full bg-transparent text-[14px] font-semibold outline-none placeholder:text-black/25"
+                      disabled={!isFormOpen}
+                      onChange={(event) =>
+                        setNewAddressBranchName(event.target.value)
+                      }
+                      placeholder="GS25 강남점"
+                      value={newAddressBranchName}
+                    />
+                  </label>
                   <button
-                    className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-semibold text-white disabled:bg-black/20"
+                    className="mt-3 h-11 w-full rounded-full bg-[#CFE86B] text-[14px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)] disabled:bg-black/20 disabled:text-white"
                     disabled={
                       !isFormOpen ||
                       !newAddressBranchName.trim() ||
@@ -597,7 +652,7 @@ export function AddressManagementContent({
                 key="address-add-button"
               >
                 <button
-                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[1rem] border border-dashed border-black/15 bg-white text-[14px] font-semibold text-black/45"
                   onClick={openForm}
                   type="button"
                 >

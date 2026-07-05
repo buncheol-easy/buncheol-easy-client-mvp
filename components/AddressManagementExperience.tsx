@@ -52,10 +52,17 @@ export function AddressManagementExperience({
 
   function finishBackNavigation() {
     const historyIndex = getHistoryIndex();
+    const isProductReturn =
+      typeof returnHref === "string" && returnHref.startsWith("/products/");
     const skipEnterKey =
       returnHref === "/profile/bids"
         ? BID_HISTORY_SKIP_ENTER_KEY
         : PROFILE_SKIP_ENTER_KEY;
+
+    if (isProductReturn) {
+      router.replace(returnHref);
+      return;
+    }
 
     window.sessionStorage.setItem(skipEnterKey, "true");
 

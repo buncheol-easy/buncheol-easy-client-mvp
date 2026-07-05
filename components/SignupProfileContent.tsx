@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProfileIcon } from "@/components/icons";
 import { requestNicknameDuplicate, updateUserProfile } from "@/lib/auth-api";
@@ -38,11 +39,19 @@ export function SignupProfileContent() {
   );
   const [nickname, setNickname] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [isAgeConfirmed, setIsAgeConfirmed] = useState(false);
+  const [isTermsAgreed, setIsTermsAgreed] = useState(false);
+  const [isPrivacyAgreed, setIsPrivacyAgreed] = useState(false);
+  const [isMarketingAgreed, setIsMarketingAgreed] = useState(false);
+  const [isKakaoExtraAgreed, setIsKakaoExtraAgreed] = useState(false);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const canSave =
     /^[가-힣A-Za-z0-9]{1,20}$/.test(nickname.trim()) &&
-    /^01\d{8,9}$/.test(phoneNumber.trim());
+    /^01\d{8,9}$/.test(phoneNumber.trim()) &&
+    isAgeConfirmed &&
+    isTermsAgreed &&
+    isPrivacyAgreed;
 
   useEffect(() => {
     if (!authState.isLoggedIn && !authState.accessToken) {
@@ -92,8 +101,8 @@ export function SignupProfileContent() {
   }
 
   return (
-    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] bg-white px-5 text-[#111111]">
-      <div className="mx-auto flex h-full w-full max-w-[430px] flex-col items-center justify-center">
+    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-y-auto bg-white px-5 text-[#111111]">
+      <div className="mx-auto flex min-h-full w-full max-w-[430px] flex-col items-center justify-center py-8">
         <div className="flex h-24 w-24 items-center justify-center rounded-full bg-black text-white shadow-[0_18px_40px_rgba(0,0,0,0.18)]">
           <ProfileIcon />
         </div>
@@ -134,6 +143,90 @@ export function SignupProfileContent() {
                 value={phoneNumber}
               />
             </label>
+          </div>
+
+          <div className="mt-5 rounded-[1rem] bg-[#f7f7f7] px-4 py-4">
+            <div className="space-y-3">
+              <label className="flex items-start gap-3">
+                <input
+                  checked={isAgeConfirmed}
+                  className="mt-0.5 h-4 w-4 accent-black"
+                  onChange={(event) =>
+                    setIsAgeConfirmed(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="text-[13px] font-semibold tracking-[-0.03em] text-black/65">
+                  [필수] 만 14세 이상입니다
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3">
+                <input
+                  checked={isTermsAgreed}
+                  className="mt-0.5 h-4 w-4 accent-black"
+                  onChange={(event) =>
+                    setIsTermsAgreed(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="text-[13px] font-semibold tracking-[-0.03em] text-black/65">
+                  [필수]{" "}
+                  <Link className="underline underline-offset-2" href="/terms">
+                    이용약관
+                  </Link>
+                  에 동의합니다
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3">
+                <input
+                  checked={isPrivacyAgreed}
+                  className="mt-0.5 h-4 w-4 accent-black"
+                  onChange={(event) =>
+                    setIsPrivacyAgreed(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="text-[13px] font-semibold tracking-[-0.03em] text-black/65">
+                  [필수]{" "}
+                  <Link className="underline underline-offset-2" href="/privacy">
+                    개인정보 수집·이용
+                  </Link>
+                  에 동의합니다
+                </span>
+              </label>
+            </div>
+
+            <div className="mt-4 space-y-3 border-t border-black/10 pt-4">
+              <label className="flex items-start gap-3">
+                <input
+                  checked={isMarketingAgreed}
+                  className="mt-0.5 h-4 w-4 accent-black"
+                  onChange={(event) =>
+                    setIsMarketingAgreed(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="text-[13px] font-medium tracking-[-0.03em] text-black/45">
+                  [선택] 마케팅 정보 수신에 동의합니다
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3">
+                <input
+                  checked={isKakaoExtraAgreed}
+                  className="mt-0.5 h-4 w-4 accent-black"
+                  onChange={(event) =>
+                    setIsKakaoExtraAgreed(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span className="text-[13px] font-medium tracking-[-0.03em] text-black/45">
+                  [선택] 카카오 추가정보(이름·성별·연령대·생일) 제공
+                </span>
+              </label>
+            </div>
           </div>
 
           {message ? (

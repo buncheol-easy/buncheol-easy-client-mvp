@@ -7,12 +7,13 @@ export default function BrokerNoticePage() {
   return (
     <PolicyPageContent
       title="통신판매중개자 고지"
+      effectiveDate="2026.6.16"
       description="분철이지의 통신판매중개 서비스 성격과 책임 범위를 정리한 초안입니다."
       sections={[
         {
           title: "중개 서비스 고지",
           items: [
-            "분철이지는 이용자 간 분철 정보 등록, 참여, 입찰 및 거래 관리를 돕는 플랫폼입니다.",
+            "분철이지는 이용자 간 분철 정보 등록, 참여 및 거래 관리를 돕는 플랫폼입니다.",
             "개별 분철 상품의 내용, 가격, 진행, 배송 등은 해당 분철 개최자와 참여자 사이의 거래 조건에 따라 달라질 수 있습니다.",
           ],
         },

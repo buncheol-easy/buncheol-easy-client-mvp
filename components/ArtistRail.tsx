@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, HeartIcon, PlusIcon, ProfileIcon } from "@/components/icons";
+import { CheckIcon, HeartIcon, PlusIcon } from "@/components/icons";
 
 export type ArtistRailItem = {
   apiId?: string;
@@ -31,6 +31,12 @@ type ArtistRailProps = {
   pinFirstItem?: boolean;
   selectedId?: string;
 };
+
+const proxiedImageHosts = new Set([
+  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+]);
 
 function getContrastingColor(image: HTMLImageElement) {
   const canvas = document.createElement("canvas");
@@ -81,7 +87,7 @@ function getProxiedImageUrl(imageUrl: string) {
     const url = new URL(imageUrl);
 
     if (
-      url.hostname === "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com" &&
+      proxiedImageHosts.has(url.hostname) &&
       url.pathname.startsWith("/idol-groups/")
     ) {
       return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;
@@ -91,6 +97,18 @@ function getProxiedImageUrl(imageUrl: string) {
   }
 
   return imageUrl;
+}
+
+function getFallbackInitials(value: string) {
+  const initials = value
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return initials || "G";
 }
 
 export function ArtistImage({
@@ -103,7 +121,24 @@ export function ArtistImage({
   roundedClassName?: string;
 }) {
   const [backgroundColor, setBackgroundColor] = useState("#f1f1f1");
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const displayImageUrl = getProxiedImageUrl(imageUrl);
+  const didImageFail = failedImageUrl === imageUrl;
+
+  if (didImageFail) {
+    return (
+      <>
+        <span
+          className={`absolute inset-0 bg-[#f1f1f1] ${roundedClassName}`}
+        />
+        <span
+          className={`relative flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-200 via-white to-zinc-500 text-[13px] font-semibold tracking-[-0.05em] text-black ${roundedClassName}`}
+        >
+          {getFallbackInitials(name)}
+        </span>
+      </>
+    );
+  }
 
   return (
     <>
@@ -116,6 +151,7 @@ export function ArtistImage({
         alt={name}
         className="relative h-full w-full object-contain p-2 [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.9))_drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]"
         crossOrigin="anonymous"
+        onError={() => setFailedImageUrl(imageUrl)}
         onLoad={(event) => {
           try {
             const color = getContrastingColor(event.currentTarget);
@@ -208,7 +244,7 @@ export function ArtistRail({
       >
         <div className="relative">
           <button
-            className="w-[65px] text-left"
+            className="motion-card w-[65px] text-left"
             onClick={() => onItemClick?.(item)}
             type="button"
           >
@@ -230,7 +266,11 @@ export function ArtistRail({
           </button>
           {onFavoriteToggle && item.type !== "member" ? (
             <button
-              className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-black shadow-[0_4px_12px_rgba(0,0,0,0.12)]"
+              className={`motion-icon-button absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.12)] ${
+                item.favorited === true
+                  ? "bg-[#DDE7B8] text-black"
+                  : "bg-white/90 text-black"
+              }`}
               onClick={() => onFavoriteToggle(item)}
               type="button"
               aria-label={item.favorited ? "최애 그룹 삭제" : "최애 그룹 등록"}
@@ -239,7 +279,7 @@ export function ArtistRail({
             </button>
           ) : null}
           {isSelected ? (
-            <span className="absolute -bottom-1 -right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black text-white shadow-[0_5px_14px_rgba(0,0,0,0.22)] ring-2 ring-white">
+            <span className="absolute -bottom-1 -right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#DDE7B8] text-black shadow-[0_5px_14px_rgba(120,132,82,0.24)] ring-2 ring-white">
               <CheckIcon />
             </span>
           ) : null}
@@ -264,29 +304,28 @@ export function ArtistRail({
     <div className="flex items-start gap-3">
       {leadingItem ? (
         <>
-          <div className="flex-shrink-0">
-            <button className="min-w-[65px]" onClick={onLeadingClick} type="button">
+          <div className="w-[65px] flex-shrink-0">
+            <button
+              className="motion-card flex w-full flex-col items-center text-center"
+              onClick={onLeadingClick}
+              type="button"
+            >
               <div
-                className={`flex aspect-square items-center justify-center rounded-[1.25rem] border text-black/35 ${
+                className={`motion-icon-button flex h-[65px] w-[65px] items-center justify-center rounded-full border transition-[background-color,border-color,box-shadow,transform] duration-200 ${
                   leadingItem.active
-                    ? "border-black bg-black text-white"
-                    : "border-black/10 bg-[#ededeb]"
+                    ? "border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_20px_rgba(120,132,82,0.2)]"
+                    : "border-black/8 bg-white text-black/55 shadow-[0_6px_18px_rgba(0,0,0,0.06)]"
                 }`}
               >
                 {leadingItem.icon === "all" ? (
-                  <span className="text-[18px] font-semibold tracking-[-0.06em]">
+                  <span className="text-[13px] font-semibold tracking-[-0.03em]">
                     All
                   </span>
                 ) : (
-                  <div className="relative h-10 w-10">
-                    <ProfileIcon />
-                    <div className="absolute -bottom-1 -right-2">
-                      <PlusIcon />
-                    </div>
-                  </div>
+                  <PlusIcon />
                 )}
               </div>
-              <p className="mt-2 text-[14px] font-medium tracking-[-0.03em]">
+              <p className="mt-2 w-full text-[13px] font-semibold leading-[1.15] tracking-[-0.03em] text-black/80">
                 {leadingItem.label}
               </p>
               {leadingItem.subLabel ? (
@@ -309,7 +348,7 @@ export function ArtistRail({
       ) : null}
 
       <div
-        className="flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="motion-carousel flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         ref={scrollContainerRef}
       >
         {scrollItems.map(renderItem)}

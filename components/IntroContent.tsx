@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import {
   BackIcon,
   BellIcon,
@@ -452,7 +453,7 @@ function HomeMiniScreen() {
                   최애 굿즈{"\n"}분철을 더 쉽게
                 </h2>
                 <p className="mt-2 text-[10px] font-semibold tracking-[-0.03em] text-white/52">
-                  탐색 · 입찰 · 입금 확인
+                  탐색 · 참여 · 결제 확인
                 </p>
               </div>
             </div>
@@ -954,7 +955,7 @@ function DetailMiniScreen() {
             </p>
           </div>
           <div className="col-span-2 rounded-[0.9rem] border border-black/10 bg-white px-4 py-3">
-            <p className="text-[12px] font-medium text-black/45">입찰 기한</p>
+            <p className="text-[12px] font-medium text-black/45">참여 기한</p>
             <p
               className="mt-1 text-[16px] font-semibold tracking-[-0.04em]"
               suppressHydrationWarning
@@ -991,7 +992,7 @@ function DetailMiniScreen() {
         <section className="mt-7 border-t border-black/10 pt-6">
           <div className="flex items-center justify-between">
             <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
-              옵션별 가격 TOP 3
+              옵션별 가격
             </h2>
             <span className="text-[12px] font-medium text-black/45">
               5개 옵션
@@ -1022,13 +1023,13 @@ function DetailMiniScreen() {
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2">
-                  {prices.map((price, rankIndex) => (
+                  {prices.map((price) => (
                     <div
                       className="rounded-[0.7rem] bg-[#f7f7f7] px-3 py-2"
                       key={price}
                     >
                       <p className="text-[11px] font-semibold text-black/35">
-                        TOP {rankIndex + 1}
+                        가격
                       </p>
                       <p className="mt-1 text-[12px] font-semibold tracking-[-0.04em]">
                         {price}
@@ -1043,7 +1044,7 @@ function DetailMiniScreen() {
       </div>
       <div className="absolute inset-x-0 bottom-0 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
         <div className="rounded-full bg-black py-4 text-center text-[17px] font-semibold text-white">
-          입찰하기
+          참여하기
         </div>
       </div>
     </div>
@@ -1062,7 +1063,7 @@ function PaymentMiniScreen() {
       deadline: "입금 마감 14시간 남음",
       image: "/intro-products/ive-main.png",
       member: "장원영",
-      rank: "1등",
+      rank: "참여",
       status: "입금대기",
       title: "IVE 시즌그리팅 포카",
     },
@@ -1071,7 +1072,7 @@ function PaymentMiniScreen() {
       deadline: "입금 마감 23시간 남음",
       image: "/intro-products/seventeen-main.png",
       member: "정한",
-      rank: "1등",
+      rank: "참여",
       status: "입금대기",
       title: "세븐틴 팬미팅 MD 포카",
     },
@@ -1103,7 +1104,7 @@ function PaymentMiniScreen() {
           History
         </p>
         <h3 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
-          입찰 기록
+          참여 내역
         </h3>
 
         <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
@@ -1146,7 +1147,7 @@ function PaymentMiniScreen() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                         <p className="text-[11px] font-medium text-black/35">
-                          내 입찰가
+                          상품 금액
                         </p>
                         <p className="mt-1 text-[14px] font-semibold">{amount}</p>
                       </div>
@@ -1193,7 +1194,7 @@ function PaymentMiniScreen() {
               배송지 선택
             </p>
             <p className="mt-2 text-[14px] font-medium text-black/45">
-              낙찰 상품을 받을 주소를 확인해 주세요.
+              참여 상품을 받을 주소를 확인해 주세요.
             </p>
           </div>
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-[24px] font-semibold text-white">
@@ -1242,7 +1243,7 @@ function PaymentMiniScreen() {
 
         <div className="mt-4 border-t border-black/10 pt-4">
           <div className="flex justify-between text-[15px] font-medium text-black/45">
-            <span>낙찰가</span>
+            <span>상품 금액</span>
             <span>42,000원</span>
           </div>
           <div className="mt-2 flex justify-between text-[15px] font-medium text-black/45">
@@ -1260,7 +1261,7 @@ function PaymentMiniScreen() {
         </div>
 
         <div className="mt-5 rounded-full bg-black py-4 text-center text-[16px] font-semibold text-white">
-          입금 완료
+          확인했어요
         </div>
       </div>
     </div>
@@ -1403,7 +1404,7 @@ function ManageMiniScreen() {
           <div className="mt-4 grid grid-cols-2 gap-2">
             <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
               <p className="text-[11px] font-medium text-black/35">
-                현 최고가
+                가격
               </p>
               <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                 {amount}
@@ -1422,10 +1423,10 @@ function ManageMiniScreen() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium text-black/35">
-                    입금 요청
+                    결제 확인
                   </p>
                   <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                    {reported ? "입금 완료 요청됨" : "입금 요청 없음"}
+                    {reported ? "결제 확인 완료" : "결제 대기"}
                   </p>
                 </div>
                 <span
@@ -1435,14 +1436,14 @@ function ManageMiniScreen() {
                       : "bg-black/10 text-black/32"
                   }`}
                 >
-                  입금 확인
+                  결제 확인
                 </span>
               </div>
             </div>
 
             <div className="mt-3 rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
               <p className="text-[11px] font-medium text-black/35">
-                수령 배송지
+                배송 정보
               </p>
               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
                 {store}
@@ -1515,19 +1516,19 @@ const featureSections: FeatureSection[] = [
     title: "찾는 멤버까지 빠르게",
   },
   {
-    body: "대표 이미지, 옵션별 입찰 순위, 시작가를 한 화면에서 확인하고 바로 참여해요.",
+    body: "대표 이미지, 옵션별 가격과 참여 상태를 한 화면에서 확인하고 바로 참여해요.",
     eyebrow: "Detail",
     screen: <DetailMiniScreen />,
-    title: "입찰 조건은 선명하게",
+    title: "참여 조건은 선명하게",
   },
   {
-    body: "낙찰 후에는 계좌를 복사하고 입금 완료만 누르면 다음 상태로 넘어가요.",
+    body: "참여 후에는 계좌와 입금 마감 시각을 한 화면에서 확인해요.",
     eyebrow: "Payment",
     screen: <PaymentMiniScreen />,
     title: "송금 흐름도 가볍게",
   },
   {
-    body: "개최자는 입금 요청을 확인하고, 배송 준비까지 같은 화면에서 관리해요.",
+    body: "개최자는 결제 대기 건을 확인하고, 운송장 등록까지 같은 화면에서 이어가요.",
     eyebrow: "Manage",
     screen: <ManageMiniScreen />,
     title: "개최 관리까지 이어서",
@@ -1714,7 +1715,7 @@ export function IntroContent() {
                   쉽게.
                 </h1>
                 <p className="mt-5 max-w-[20rem] text-[15px] font-medium leading-6 tracking-[-0.04em] text-black/54">
-                  찾고, 입찰하고, 입금 확인까지. 분철에 필요한 흐름을 한
+                  찾고, 참여하고, 결제 확인까지. 분철에 필요한 흐름을 한
                   화면 안에서 이어가요.
                 </p>
               </Reveal>
@@ -1740,7 +1741,7 @@ export function IntroContent() {
             </Reveal>
 
             <div className="mt-8 grid gap-3">
-              {["상품 탐색", "옵션 입찰", "입금 신고", "개최자 확인"].map(
+              {["상품 탐색", "옵션 참여", "계좌 입금", "결제 확인"].map(
                 (item, index) => (
                   <Reveal delay={index * 90} direction="up" key={item}>
                     <div className="flex h-16 items-center justify-between rounded-[1.1rem] bg-[#f6f6f6] px-4">
@@ -1815,6 +1816,8 @@ export function IntroContent() {
               </div>
             </Reveal>
           </section>
+
+          <BusinessFooter />
         </div>
       </main>
     </IntroMotionContext.Provider>

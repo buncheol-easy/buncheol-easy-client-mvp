@@ -13,7 +13,7 @@ import {
 } from "react";
 import type { MouseEvent } from "react";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
+import { CloseIcon, ProfileIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
@@ -28,16 +28,15 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
-  cancelBuncheolParticipation,
+  ApiRequestError,
   deleteBuncheol,
   deleteShippingAddress,
-  requestDeliveryReceiptConfirmation,
+  requestBookmarkedBuncheols,
   requestBuncheolDetail,
   requestLogout,
   requestMyHostedBuncheols,
   requestMyParticipations,
   requestParticipationPaymentDetail,
-  requestPaymentReport,
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
@@ -71,12 +70,19 @@ import {
   convenienceStoreTypeLabels,
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
+  getDeliveryAddressDisplayAlias,
+  getDeliveryAddressDisplayBranchName,
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
   type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductDetailItem } from "@/lib/mock-products";
+import {
+  readCachedParticipationPayment,
+  writeCachedParticipationPayment,
+} from "@/lib/participation-payment-cache";
+import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
 function formatPrice(price: number) {
@@ -84,7 +90,7 @@ function formatPrice(price: number) {
 }
 
 const kstOffsetHours = 9;
-const paymentDeadlineDays = 3;
+const paymentDeadlineMinutes = 30;
 const settlementAccountPanelExitMs = 180;
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 
@@ -98,6 +104,26 @@ function getEmptySettlementAccountState(): SettlementAccountState {
 
 function sanitizeAccountNumber(value: string) {
   return value.replace(/[^\d-]/g, "");
+}
+
+function getDeliveryAddressDeleteErrorMessage(error: unknown) {
+  if (error instanceof ApiRequestError && error.status === 409) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  if (
+    error instanceof Error &&
+    (error.message.includes("USR-030") ||
+      error.message.includes(
+        "SHIPPING_ADDRESS_DELETE_BLOCKED_BY_ACTIVE_PARTICIPATION",
+      ))
+  ) {
+    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "배송지를 삭제하지 못했어요.";
 }
 
 function getSettlementAccountState(profile: UserProfile | null) {
@@ -166,7 +192,7 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   const difference = deadlineDate.getTime() - now.getTime();
 
   if (Number.isNaN(deadlineDate.getTime()) || difference <= 0) {
-    return "마감됨";
+    return "기한 지남";
   }
 
   const totalMinutes = Math.ceil(difference / 60000);
@@ -185,21 +211,21 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   return `${minutes}분 남았어요`;
 }
 
-function formatRemainingTime(deadline: string, now: Date) {
-  return formatRemainingTimeFromDate(parseDeadline(deadline), now);
-}
 
 function getPaymentDeadlineDate(
   deadline: string,
   paymentDueAt?: string | null,
+  createdAt?: string | null,
 ) {
   const paymentDeadline = paymentDueAt
     ? new Date(paymentDueAt)
-    : parseDeadline(deadline);
+    : createdAt
+      ? new Date(createdAt)
+      : parseDeadline(deadline);
 
   if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
-    paymentDeadline.setUTCDate(
-      paymentDeadline.getUTCDate() + paymentDeadlineDays,
+    paymentDeadline.setUTCMinutes(
+      paymentDeadline.getUTCMinutes() + paymentDeadlineMinutes,
     );
   }
 
@@ -210,8 +236,13 @@ function formatPaymentRemainingTime(
   deadline: string,
   now: Date,
   paymentDueAt?: string | null,
+  createdAt?: string | null,
 ) {
-  const paymentDeadline = getPaymentDeadlineDate(deadline, paymentDueAt);
+  const paymentDeadline = getPaymentDeadlineDate(
+    deadline,
+    paymentDueAt,
+    createdAt,
+  );
 
   if (Number.isNaN(paymentDeadline.getTime())) {
     return "결제 기한 확인 필요";
@@ -219,7 +250,6 @@ function formatPaymentRemainingTime(
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
-
 const shippingFee = 3200;
 
 type ProfileBidEntry = {
@@ -235,9 +265,11 @@ type ProfileBidEntry = {
   participantCount: number;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
+  createdAt?: string | null;
   participationStatus?: string;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
+  shippingAddress?: DeliveryAddress | null;
   productId: string;
   rank: number;
   courier?: string;
@@ -290,7 +322,7 @@ function isRecruitingStatus(status: string | undefined) {
 }
 
 function isDeletedProductStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "DELETED";
+  return status === "DELETED";
 }
 
 function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
@@ -308,24 +340,30 @@ function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
 
 function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
   return (
-    !bid.paidAt &&
+    !isProfileBidPaymentConfirmed(bid) &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
       (isProfileBidClosed(bid, now) && bid.rank === 1)) &&
     !isProfileBidPaymentExpired(bid, now)
   );
 }
 
-function canRequestProfileBidPaymentReport(bid: ProfileBidEntry, now: Date) {
-  const isRequestableStatus =
-    !bid.participationStatus ||
-    bid.participationStatus === "ACTIVE_BID" ||
-    isPaymentWaitingParticipationStatus(bid.participationStatus);
-
-  return isRequestableStatus && isProfileBidPaymentReady(bid, now);
-}
-
 function isPaymentWaitingParticipationStatus(status: string | undefined) {
   return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
+}
+
+function isPaymentConfirmedParticipationStatus(status: string | undefined) {
+  return status === "CONFIRMED" || status === "PAYMENT_CONFIRMED";
+}
+
+function isProfileBidPaymentConfirmed(bid: ProfileBidEntry) {
+  return (
+    Boolean(bid.paidAt) ||
+    isPaymentConfirmedParticipationStatus(bid.participationStatus)
+  );
+}
+
+function isCancelledParticipationStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "CANCELED";
 }
 
 function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
@@ -334,7 +372,7 @@ function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
     (isProfileBidClosed(bid, now) && bid.rank === 1);
 
   if (
-    bid.paidAt ||
+    isProfileBidPaymentConfirmed(bid) ||
     isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
   ) {
@@ -344,6 +382,7 @@ function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
   const paymentDeadline = getPaymentDeadlineDate(
     bid.deadline,
     bid.paymentDueAt,
+    bid.createdAt,
   );
 
   return (
@@ -354,29 +393,68 @@ function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
 
 function isProfileBidTransferRequested(bid: ProfileBidEntry) {
   return (
-    !bid.paidAt && isTransferPaymentRequestedStatus(bid.participationStatus)
+    !isProfileBidPaymentConfirmed(bid) &&
+    isTransferPaymentRequestedStatus(bid.participationStatus)
   );
 }
 
-function isDeliveryReceiptCompleteStatus(status: string | undefined | null) {
-  return status === "RECEIVED" || status === "RECEIPT_CONFIRMED";
+function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
+  if (isCancelledParticipationStatus(bid.participationStatus)) {
+    return "취소";
+  }
+
+  if (isProfileBidPaymentConfirmed(bid)) {
+    return "결제 완료";
+  }
+
+  if (isProfileBidTransferRequested(bid)) {
+    return "관리자 확인 중";
+  }
+
+  if (isProfileBidPaymentExpired(bid, now)) {
+    return "결제 만료";
+  }
+
+  if (isProfileBidPaymentReady(bid, now)) {
+    return "결제 대기";
+  }
+
+  return isProfileBidClosed(bid, now) ? "모집 종료" : "참여중";
 }
 
-function canConfirmProfileDeliveryReceipt(bid: ProfileBidEntry) {
-  return Boolean(
-    bid.deliveryId &&
-      bid.paidAt &&
-      bid.trackingNumber &&
-      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
-  );
+function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) {
+  if (isCancelledParticipationStatus(bid.participationStatus)) {
+    return "취소된 참여예요.";
+  }
+
+  if (isProfileBidPaymentConfirmed(bid)) {
+    return "관리자가 입금을 확인했어요.";
+  }
+
+  if (isProfileBidTransferRequested(bid)) {
+    return "관리자가 입금을 확인하고 있어요.";
+  }
+
+  if (isProfileBidPaymentExpired(bid, now)) {
+    return "입금 기한이 지나 참여가 취소됐을 수 있어요.";
+  }
+
+  if (isProfileBidPaymentReady(bid, now)) {
+    return `입금 기한까지 ${formatPaymentRemainingTime(
+      bid.deadline,
+      now,
+      bid.paymentDueAt,
+      bid.createdAt,
+    )}`;
+  }
+
+  return isProfileBidClosed(bid, now)
+    ? "모집 종료된 분철이에요."
+    : "진행 중인 참여예요.";
 }
 
 function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
-  return Boolean(
-    bid.deliveryId &&
-      bid.paidAt &&
-      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
-  );
+  return Boolean(bid.deliveryId && isProfileBidPaymentConfirmed(bid));
 }
 
 function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
@@ -429,17 +507,24 @@ function getToneFromId(id: string) {
 function getProfileBidEntryFromParticipation(
   participation: MyParticipation,
 ): ProfileBidEntry {
+  const cachedPayment = readCachedParticipationPayment(
+    participation.participationId,
+  );
+  const participationStatus =
+    participation.participationStatus ||
+    cachedPayment?.participationStatus ||
+    "";
   const rank =
     participation.closedRank ??
-    (isPaymentWaitingParticipationStatus(participation.participationStatus)
-      ? 1
-      : 0);
+    (isPaymentWaitingParticipationStatus(participationStatus) ? 1 : 0);
 
   return {
     id: participation.participationId,
-    amount: participation.bidAmount,
+    amount: cachedPayment?.bidAmount ?? participation.bidAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
-    imageUrl: participation.thumbnailUrl,
+    imageUrl:
+      participation.thumbnailUrl ??
+      getCachedProductImageUrl(participation.buncheolId),
     member: `${participation.buncheolMemberCount}개 옵션`,
     optionLabel: participation.memberName,
     participantCount: 0,
@@ -451,14 +536,20 @@ function getProfileBidEntryFromParticipation(
     buncheolStatus: participation.buncheolStatus,
     deliveryId: participation.deliveryId,
     deliveryStatus: participation.deliveryStatus,
-    paymentAmount: participation.paymentAmount,
-    paymentDueAt: participation.paymentDueAt,
+    paymentAmount:
+      participation.paymentAmount ?? cachedPayment?.paymentAmount ?? null,
+    paymentDueAt:
+      participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
+    createdAt: participation.createdAt,
     productId: participation.buncheolId,
-    participationStatus: participation.participationStatus,
+    participationStatus,
     rank: rank > 0 ? rank : 0,
-    shippingFee: participation.shippingFee,
+    shippingAddress:
+      participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
+    shippingFee: participation.shippingFee ?? cachedPayment?.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
-    hostBankAccount: participation.hostBankAccount,
+    hostBankAccount:
+      participation.hostBankAccount ?? cachedPayment?.hostBankAccount ?? null,
     submittedAt: "",
     title: participation.buncheolTitle,
     tone: getToneFromId(participation.buncheolId),
@@ -490,6 +581,9 @@ async function getProfileBidEntryWithShippingData(
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
 ): ProductDetailItem {
+  const imageUrl =
+    buncheol.thumbnailUrl ?? getCachedProductImageUrl(buncheol.id);
+
   return {
     id: buncheol.id,
     buncheolId: buncheol.id,
@@ -501,14 +595,14 @@ function getHostedProductFromBuncheol(
     era: buncheol.groupName,
     rating: "0.0",
     reviews: String(buncheol.activeParticipationCount),
-    badge: buncheol.status === "RECRUITING" ? "모집중" : "마감",
+    badge: buncheol.status === "RECRUITING" ? "모집중" : buncheol.status === "CONFIRMED" ? "진행확정" : buncheol.status === "CANCELLED" ? "취소" : "모집종료",
     liked: buncheol.bookmarked,
     tone: getToneFromId(buncheol.id),
     courier: "배송 방법 확인 필요",
     deadline: formatApiDateTime(buncheol.deadline),
     description: "",
-    imageUrl: buncheol.thumbnailUrl,
-    imageUrls: buncheol.thumbnailUrl ? [buncheol.thumbnailUrl] : [],
+    imageUrl,
+    imageUrls: imageUrl ? [imageUrl] : [],
     isApiProduct: true,
     options: [
       {
@@ -546,20 +640,12 @@ export function ProfileContent({
 
     return shouldSkip;
   });
-  const [withdrawnBidIds, setWithdrawnBidIds] = useState<string[]>([]);
-  const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
-  const [payingBidId, setPayingBidId] = useState<string | null>(null);
-  const [receivingDeliveryId, setReceivingDeliveryId] = useState<string | null>(
-    null,
-  );
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
-  const [isPaymentReportConfirmOpen, setIsPaymentReportConfirmOpen] =
-    useState(false);
   const addressSyncRequestIdRef = useRef(0);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
@@ -621,6 +707,9 @@ export function ProfileContent({
   const [apiHostedProducts, setApiHostedProducts] = useState<
     ProductDetailItem[] | null
   >(null);
+  const [bookmarkedProductCount, setBookmarkedProductCount] = useState<
+    number | null
+  >(null);
   const [hostedProductMessage, setHostedProductMessage] = useState("");
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
@@ -629,25 +718,26 @@ export function ProfileContent({
   const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
   const isHostedProductsLoading =
     authState.isLoggedIn && apiHostedProducts === null;
+  const isBookmarkedProductCountLoading =
+    authState.isLoggedIn && bookmarkedProductCount === null;
   const allBids: ProfileBidEntry[] = useMemo(
-    () => {
-      const sourceEntries: ProfileBidEntry[] = apiBidEntries ?? [];
-
-      return authState.isLoggedIn
-        ? sourceEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
-        : [];
-    },
-    [apiBidEntries, authState.isLoggedIn, withdrawnBidIds],
+    () => (authState.isLoggedIn ? apiBidEntries ?? [] : []),
+    [apiBidEntries, authState.isLoggedIn],
   );
   const activeBids = useMemo(
     () =>
       allBids.filter((bid) => {
         const isClosed = isProfileBidClosed(bid, now);
 
+        if (isCancelledParticipationStatus(bid.participationStatus)) {
+          return false;
+        }
+
         return (
           !isClosed ||
           isProfileBidPaymentReady(bid, now) ||
           isProfileBidTransferRequested(bid) ||
+          isProfileBidPaymentConfirmed(bid) ||
           shouldKeepProfileDeliveryReachable(bid)
         );
       }),
@@ -655,17 +745,16 @@ export function ProfileContent({
   );
   const shouldRefreshPaymentState = allBids.some(
     (bid) =>
-      bid.participationStatus === "ACTIVE_BID" && isProfileBidClosed(bid, now),
+      isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid),
   );
-  const activeHostedProducts = useMemo(
+  const hostedProducts = useMemo(
     () =>
       authState.isLoggedIn && apiHostedProducts
         ? apiHostedProducts.filter((product) =>
-            !isDeletedProductStatus(product.status) &&
-            isProfileHostedProductActive(product, now),
+            !isDeletedProductStatus(product.status),
           )
         : [],
-    [apiHostedProducts, authState.isLoggedIn, now],
+    [apiHostedProducts, authState.isLoggedIn],
   );
   const settlementAccount = useMemo(
     () => {
@@ -698,12 +787,8 @@ export function ProfileContent({
     settlementAccountForm.accountHolder.trim().length <= 50 &&
     settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
 
-  const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
   const selectedPaymentBid =
     activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
-  const canSelectedPaymentBidReportPayment = selectedPaymentBid
-    ? canRequestProfileBidPaymentReport(selectedPaymentBid, now)
-    : false;
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
@@ -732,7 +817,10 @@ export function ProfileContent({
     eligiblePaymentAddresses.find(
       (address) => address.id === selectedPaymentAddressId,
     ) ?? null;
+  const lockedPaymentDeliveryAddress =
+    selectedPaymentBid?.shippingAddress ?? null;
   const paymentDeliveryAddress =
+    lockedPaymentDeliveryAddress ??
     selectedEligiblePaymentAddress ??
     eligiblePaymentAddresses[0] ??
     null;
@@ -743,23 +831,6 @@ export function ProfileContent({
     : 0;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
-  const visiblePaymentStoreTypes =
-    isApiPaymentStoreTypePending
-      ? []
-      : availablePaymentStoreTypes.length > 0
-      ? availablePaymentStoreTypes
-      : [
-          ...new Set(
-            eligiblePaymentAddresses.map((address) => address.storeType),
-          ),
-        ];
-  const paymentVisibleAddresses = visiblePaymentStoreTypes.map((storeType) => ({
-    storeType,
-    address:
-      paymentDeliveryAddress?.storeType === storeType
-        ? paymentDeliveryAddress
-        : defaultDeliveryAddresses[storeType],
-  }));
   const syncDeliveryAddresses = useCallback(async (
     accessToken: string,
     options: { clearBeforeSync?: boolean } = {},
@@ -847,6 +918,7 @@ export function ProfileContent({
     if (!authState.isLoggedIn || !authState.accessToken) {
       setApiBidEntries([]);
       setApiHostedProducts([]);
+      setBookmarkedProductCount(0);
       setHostedProductMessage("");
       return;
     }
@@ -855,6 +927,7 @@ export function ProfileContent({
 
     setApiBidEntries(null);
     setApiHostedProducts(null);
+    setBookmarkedProductCount(null);
     setHostedProductMessage("");
 
     async function loadApiProfileLists() {
@@ -864,14 +937,16 @@ export function ProfileContent({
         if (isActive) {
           setApiBidEntries([]);
           setApiHostedProducts([]);
+          setBookmarkedProductCount(0);
         }
 
         return;
       }
 
-      const [participations, buncheols] = await Promise.allSettled([
+      const [participations, buncheols, bookmarks] = await Promise.allSettled([
         requestMyParticipations(accessToken),
         requestMyHostedBuncheols(accessToken),
+        requestBookmarkedBuncheols(accessToken),
       ]);
 
       if (!isActive) {
@@ -900,12 +975,19 @@ export function ProfileContent({
       } else {
         setApiHostedProducts([]);
       }
+
+      if (bookmarks.status === "fulfilled") {
+        setBookmarkedProductCount(bookmarks.value.length);
+      } else {
+        setBookmarkedProductCount(0);
+      }
     }
 
     loadApiProfileLists().catch(() => {
       if (isActive) {
         setApiBidEntries([]);
         setApiHostedProducts([]);
+        setBookmarkedProductCount(0);
       }
     });
 
@@ -1226,7 +1308,6 @@ export function ProfileContent({
 
     setIsPaymentSheetOpen(false);
     setIsPaymentSheetClosing(false);
-    setIsPaymentReportConfirmOpen(false);
     setSelectedPaymentBidId(null);
   }
 
@@ -1238,73 +1319,6 @@ export function ProfileContent({
 
     setIsAddressSheetOpen(false);
     setIsAddressSheetClosing(false);
-  }
-
-  async function withdrawBid(bidId: string) {
-    if (!authState.isLoggedIn || withdrawingBidId) {
-      return;
-    }
-
-    setWithdrawingBidId(bidId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await cancelBuncheolParticipation(accessToken, bidId);
-      setWithdrawnBidIds((current) =>
-        current.includes(bidId) ? current : [...current, bidId],
-      );
-      setApiBidEntries((current) =>
-        current ? current.filter((bid) => bid.id !== bidId) : current,
-      );
-      setUserProfileMessage("");
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error ? error.message : "입찰을 철회하지 못했어요.",
-      );
-    } finally {
-      setWithdrawingBidId(null);
-    }
-  }
-
-  async function confirmDeliveryReceipt(bid: ProfileBidEntry) {
-    if (!authState.isLoggedIn || !bid.deliveryId || receivingDeliveryId) {
-      return;
-    }
-
-    setReceivingDeliveryId(bid.deliveryId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestDeliveryReceiptConfirmation(accessToken, bid.deliveryId);
-
-      const participations = await requestMyParticipations(accessToken);
-      const bidEntries = await Promise.all(
-        participations.map((participation) =>
-          getProfileBidEntryWithShippingData(accessToken, participation),
-        ),
-      );
-
-      setApiBidEntries(bidEntries);
-      setUserProfileMessage("배송 수령을 확인했어요.");
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error
-          ? error.message
-          : "배송 수령을 확인하지 못했어요.",
-      );
-    } finally {
-      setReceivingDeliveryId(null);
-    }
   }
 
   function rememberScrollPosition() {
@@ -1454,7 +1468,7 @@ export function ProfileContent({
 
     if (isProfileBidPaymentExpired(selectedBid, new Date())) {
       setUserProfileMessage(
-        "입금 기한이 지나 결제할 수 없어요. 다음 순위로 낙찰이 넘어갔어요.",
+        "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );
       return;
     }
@@ -1503,12 +1517,23 @@ export function ProfileContent({
     setIsPaymentSheetOpen(true);
     setIsPaymentSheetClosing(false);
 
-    if (authState.accessToken) {
+    if (!selectedBid.hostBankAccount && authState.accessToken) {
       requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
         .then((paymentDetail) => {
           if (paymentStoreTypeRequestIdRef.current !== requestId) {
             return;
           }
+
+          writeCachedParticipationPayment({
+            bidAmount: paymentDetail.bidAmount,
+            hostBankAccount: paymentDetail.hostBankAccount,
+            participationId: paymentDetail.participationId,
+            participationStatus: paymentDetail.paymentStatus,
+            paymentAmount: paymentDetail.paymentAmount,
+            paymentDueAt: paymentDetail.paymentDueAt,
+            shippingAddress: selectedBid.shippingAddress ?? null,
+            shippingFee: paymentDetail.shippingFee,
+          });
 
           setApiBidEntries((current) =>
             current
@@ -1537,7 +1562,10 @@ export function ProfileContent({
         .catch(() => {});
     }
 
-    if (shouldLoadApiStoreTypes) {
+    const shouldLoadPaymentBuncheolDetail =
+      shouldLoadApiStoreTypes || !selectedBid.hostBankAccount;
+
+    if (shouldLoadPaymentBuncheolDetail) {
       requestBuncheolDetail(
         authState.isLoggedIn ? authState.accessToken ?? undefined : undefined,
         selectedBid.productId,
@@ -1546,6 +1574,25 @@ export function ProfileContent({
           if (paymentStoreTypeRequestIdRef.current !== requestId) {
             return;
           }
+
+          const product = toProductDetailItem(detail);
+          setApiBidEntries((current) =>
+            current
+              ? current.map((bid) =>
+                  bid.id === selectedBid.id
+                    ? {
+                        ...bid,
+                        courier: product.courier,
+                        hostBankAccount:
+                          bid.hostBankAccount ?? detail.hostBankAccount,
+                        imageUrl: bid.imageUrl ?? product.imageUrl,
+                        shippingMethods:
+                          bid.shippingMethods ?? product.shippingMethods,
+                      }
+                    : bid,
+                )
+              : current,
+          );
 
           const storeTypes = getAvailableConvenienceStoreTypes(
             detail.shippingOptions.map((option) => ({ name: option.method })),
@@ -1598,7 +1645,6 @@ export function ProfileContent({
 
     setIsPaymentSheetClosing(true);
     setIsPaymentSheetEntered(false);
-    setIsPaymentReportConfirmOpen(false);
     paymentSheetCloseTimerRef.current = window.setTimeout(
       finishPaymentSheetClose,
       280,
@@ -1707,105 +1753,8 @@ export function ProfileContent({
     }, 1800);
   }
 
-  function openPaymentReportConfirm() {
-    if (
-      !selectedPaymentBid ||
-      !canSelectedPaymentBidReportPayment ||
-      !paymentDeliveryAddress ||
-      !selectedPaymentBankAccount ||
-      payingBidId
-    ) {
-      return;
-    }
-
-    setIsPaymentReportConfirmOpen(true);
-  }
-
-  async function handleTransferPaymentRequest() {
-    if (
-      !selectedPaymentBid ||
-      !paymentDeliveryAddress ||
-      !selectedPaymentBankAccount ||
-      payingBidId
-    ) {
-      return;
-    }
-
-    if (!canSelectedPaymentBidReportPayment) {
-      setIsPaymentReportConfirmOpen(false);
-      setUserProfileMessage(
-        "입금 완료를 접수할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
-      );
-      closePaymentSheet();
-      return;
-    }
-
-    setPayingBidId(selectedPaymentBid.id);
-    setIsPaymentReportConfirmOpen(false);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestPaymentReport(
-        accessToken,
-        selectedPaymentBid.id,
-        paymentDeliveryAddress.id,
-      );
-      setApiBidEntries((current) =>
-        current
-          ? current.map((bid) =>
-              bid.id === selectedPaymentBid.id
-                ? {
-                    ...bid,
-                    paidAt: null,
-                    participationStatus: "PAYMENT_REPORTED",
-                  }
-                : bid,
-            )
-          : current,
-      );
-      setUserProfileMessage(
-        "입금 확인 요청을 보냈어요. 판매자의 확인을 기다려 주세요.",
-      );
-      closePaymentSheet();
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error
-          ? error.message
-          : "입금 완료를 접수하지 못했어요.",
-      );
-    } finally {
-      setPayingBidId(null);
-    }
-  }
-
   function commitDeliveryAddressState(nextState: StoredDeliveryAddressState) {
     writeDeliveryAddressState(nextState);
-  }
-
-  function openAddressSheet(mode: AddressSheetMode = "manage") {
-    if (addressSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(addressSheetCloseTimerRef.current);
-      addressSheetCloseTimerRef.current = null;
-    }
-
-    if (mode === "manage") {
-      setManageAddressSnapshot(
-        getPrioritizedDeliveryAddresses(deliveryAddresses, defaultAddressIds),
-      );
-    }
-
-    setAddressSheetMode(mode);
-    setIsAddressSheetOpen(true);
-    setIsAddressSheetClosing(false);
-
-    window.requestAnimationFrame(() => {
-      setIsAddressSheetEntered(true);
-    });
   }
 
   function closeAddressSheet() {
@@ -1830,7 +1779,6 @@ export function ProfileContent({
     clearSettlementAccountState();
     setSelectedPaymentBidId(null);
     setSelectedPaymentAddressId(null);
-    setWithdrawnBidIds([]);
     setManageAddressSnapshot([]);
     setIsEditingSettlementAccount(false);
     setUserProfile(null);
@@ -1939,11 +1887,7 @@ export function ProfileContent({
           );
         }
       } catch (error) {
-        setUserProfileMessage(
-          error instanceof Error
-            ? error.message
-            : "배송지를 삭제하지 못했어요.",
-        );
+        setUserProfileMessage(getDeliveryAddressDeleteErrorMessage(error));
       }
 
       return;
@@ -2010,10 +1954,10 @@ export function ProfileContent({
       </header>
 
       <main
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        className="min-h-0 flex-1 overflow-y-auto bg-[#f7f7f7] px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
-        <section className="rounded-[1.15rem] bg-black p-4 text-white">
+        <section className="rounded-[1.15rem] bg-black p-4 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#AAB67C]/35">
           {authState.isLoggedIn ? (
             <div className="flex items-center gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -2039,7 +1983,7 @@ export function ProfileContent({
 
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">참여중</p>
+              <p className="text-[11px] font-medium text-[#DDE7B8]">참여중</p>
               <p className="mt-1 text-[19px] font-semibold">
                 {isBidEntriesLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
@@ -2049,26 +1993,30 @@ export function ProfileContent({
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">1등</p>
+              <p className="text-[11px] font-medium text-[#DDE7B8]">개최</p>
               <p className="mt-1 text-[19px] font-semibold">
-                {isBidEntriesLoading ? (
+                {isHostedProductsLoading ? (
                   <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
                 ) : (
-                  highestRankCount
+                  hostedProducts.length
                 )}
               </p>
             </div>
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">찜</p>
+              <p className="text-[11px] font-medium text-[#DDE7B8]">찜</p>
               <p className="mt-1 text-[19px] font-semibold">
-                {0}
+                {isBookmarkedProductCountLoading ? (
+                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
+                ) : (
+                  bookmarkedProductCount ?? 0
+                )}
               </p>
             </div>
           </div>
         </section>
 
-        <section className="mt-5 border-t border-black/10 pt-5">
-          <div className="flex items-end justify-between gap-3">
+        <section className="mt-5 rounded-[1.2rem] border border-black/10 bg-white p-3.5 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 정산 계좌
@@ -2081,7 +2029,11 @@ export function ProfileContent({
             !isEditingSettlementAccount &&
             !isSettlementAccountPanelExiting ? (
               <button
-                className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55"
+                className={`shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
+                  hasSettlementAccount
+                    ? "bg-[#f4f4f4] text-black/55"
+                    : "bg-[#CFE86B] text-black shadow-[0_8px_20px_rgba(120,132,82,0.22)]"
+                }`}
                 onClick={startSettlementAccountEdit}
                 type="button"
               >
@@ -2098,19 +2050,19 @@ export function ProfileContent({
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
             <div
-              className={`mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4 ${
+              className={`mt-3 rounded-[1rem] bg-[#f7f7f7] px-2 py-2 ${
                 isSettlementAccountPanelExiting
                   ? "settlement-account-panel-exit"
                   : "settlement-account-panel-enter"
               }`}
             >
-              <div className="grid gap-3">
-                <label className="block">
-                  <span className="text-[13px] font-semibold text-black/45">
+              <div className="grid gap-1.5">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     은행
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2122,12 +2074,12 @@ export function ProfileContent({
                     value={settlementAccountForm.bankName}
                   />
                 </label>
-                <label className="block">
-                  <span className="text-[13px] font-semibold text-black/45">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     계좌번호
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     inputMode="numeric"
                     maxLength={60}
                     onChange={(event) =>
@@ -2140,12 +2092,12 @@ export function ProfileContent({
                     value={settlementAccountForm.accountNumber}
                   />
                 </label>
-                <label className="block">
-                  <span className="text-[13px] font-semibold text-black/45">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     예금주
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2159,12 +2111,12 @@ export function ProfileContent({
                 </label>
               </div>
 
-              <div className="mt-4 flex items-center gap-2">
+              <div className="mt-2.5 flex items-center gap-2">
                 {hasSettlementAccount ||
                 isSettlementAccountFormDirty ||
                 isEditingSettlementAccount ? (
                   <button
-                    className="h-11 flex-1 rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
+                    className="h-9 flex-1 rounded-full bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
                     disabled={isSettlementAccountPanelExiting}
                     onClick={cancelSettlementAccountEdit}
                     type="button"
@@ -2173,7 +2125,7 @@ export function ProfileContent({
                   </button>
                 ) : null}
                 <button
-                  className="h-11 flex-1 rounded-full bg-black text-[14px] font-semibold text-white disabled:bg-black/20"
+                  className="h-9 flex-1 rounded-full bg-[#CFE86B] text-[14px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.2)] disabled:bg-black/20 disabled:text-white"
                   disabled={
                     !canSaveSettlementAccount ||
                     isSavingSettlementAccount ||
@@ -2187,27 +2139,27 @@ export function ProfileContent({
               </div>
             </div>
           ) : hasSettlementAccount ? (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+            <div className="mt-4 rounded-[1rem] bg-black px-4 py-4 text-white shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-black/45">
+                  <p className="text-[13px] font-semibold text-white/50">
                     {settlementAccount.bankName}
                   </p>
                   <p className="mt-1 break-all text-[17px] font-semibold tracking-[-0.04em]">
                     {settlementAccount.accountNumber}
                   </p>
-                  <p className="mt-1 text-[13px] font-medium text-black/45">
+                  <p className="mt-1 text-[13px] font-medium text-white/50">
                     예금주 {settlementAccount.accountHolder}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
                   저장됨
                 </span>
               </div>
             </div>
           ) : (
             <button
-              className="mt-4 flex w-full items-center justify-between rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5 text-left"
+              className="mt-4 flex w-full items-center justify-between rounded-[1rem] border border-dashed border-black/15 bg-[#f8f8f8] px-4 py-5 text-left"
               onClick={startSettlementAccountEdit}
               type="button"
             >
@@ -2219,26 +2171,31 @@ export function ProfileContent({
                   등록하면 개최한 분철 정산금을 받을 수 있어요.
                 </span>
               </span>
-              <span className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/55">
+              <span className="shrink-0 rounded-full bg-[#CFE86B] px-3 py-2 text-[12px] font-semibold text-black">
                 등록
               </span>
             </button>
           )}
 
           {settlementAccountMessage ? (
-            <p className="mt-2 text-[13px] font-semibold text-black/45">
+            <p className="mt-3 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/45">
               {settlementAccountMessage}
             </p>
           ) : null}
         </section>
 
-        <section className="mt-5 border-t border-black/10 pt-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-              기본 배송지
-            </h2>
+        <section className="mt-4 rounded-[1.2rem] border border-black/10 bg-white p-3.5 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                기본 배송지
+              </h2>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                결제할 때 바로 사용할 지점을 확인해요.
+              </p>
+            </div>
             <Link
-              className="text-[13px] font-semibold text-black/45"
+              className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[13px] font-semibold text-black/55"
               href={
                 authState.isLoggedIn
                   ? "/profile/addresses"
@@ -2249,31 +2206,39 @@ export function ProfileContent({
               배송지 관리
             </Link>
           </div>
-          <div className="mt-3 grid gap-3">
+          <div className="mt-2.5 grid gap-1.5">
             {(["gs25", "cu"] as const).map((storeType) => {
               const address = defaultDeliveryAddresses[storeType];
 
               return (
                 <div
-                  className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4"
+                  className={`rounded-[0.9rem] border px-3.5 py-2.5 ${
+                    address
+                      ? "border-black/10 bg-[#f7f7f7]"
+                      : "border-dashed border-black/15 bg-white"
+                  }`}
                   key={storeType}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
-                      기본
-                    </span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                      {convenienceStoreTypeLabels[storeType]}
-                    </span>
-                    <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                      {!authState.isLoggedIn ? (
-                        "로그인 후 이용할 수 있어요"
-                      ) : isDefaultAddressLoading ? (
-                        <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
-                      ) : (
-                        address?.branchName ?? "등록된 배송지가 없어요"
-                      )}
-                    </p>
+                  <div className="flex min-h-9 items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
+                          {convenienceStoreTypeLabels[storeType]}
+                        </span>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                          {address ? "기본" : "미등록"}
+                        </span>
+                      </div>
+                      <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                        {!authState.isLoggedIn ? (
+                          "로그인 후 이용할 수 있어요"
+                        ) : isDefaultAddressLoading ? (
+                          <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
+                        ) : (
+                          address?.branchName ?? "등록된 배송지가 없어요"
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </div>
               );
@@ -2285,10 +2250,10 @@ export function ProfileContent({
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                입찰 현황
+                참여 현황
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                등수 확인과 철회를 여기서 관리해요.
+                참여 상태와 결제 진행을 여기서 확인해요.
               </p>
             </div>
             <span className="shrink-0 text-[13px] font-semibold text-black/45">
@@ -2301,16 +2266,10 @@ export function ProfileContent({
           ) : activeBids.length > 0 ? (
             <div className="mt-4 space-y-3">
               {activeBids.map((bid) => {
-                const isClosed = isProfileBidClosed(bid, now);
-                const isPaymentExpired = isProfileBidPaymentExpired(bid, now);
                 const isPaymentReady = isProfileBidPaymentReady(bid, now);
+                const isPaymentConfirmed = isProfileBidPaymentConfirmed(bid);
                 const isTransferRequested =
                   isProfileBidTransferRequested(bid);
-                const isReceivingDelivery =
-                  receivingDeliveryId === bid.deliveryId;
-                const canConfirmDeliveryReceipt =
-                  canConfirmProfileDeliveryReceipt(bid);
-                const remainingTime = formatRemainingTime(bid.deadline, now);
                 return (
                   <article
                     className="rounded-[1rem] border border-black/10 px-4 py-4"
@@ -2355,7 +2314,7 @@ export function ProfileContent({
                                 : "bg-[#f1f1f1] text-black/55"
                             }`}
                           >
-                            {bid.rank}등
+                            참여
                           </span>
                         </div>
 
@@ -2363,7 +2322,7 @@ export function ProfileContent({
                           <div className="grid grid-cols-2 gap-2">
                             <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                               <p className="text-[11px] font-medium text-black/35">
-                                내 입찰가
+                                상품 금액
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
                                 {formatPrice(bid.amount)}
@@ -2374,21 +2333,13 @@ export function ProfileContent({
                                 상태
                               </p>
                               <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {isTransferRequested
-                                  ? "입금 확인 중"
-                                  : isPaymentExpired
-                                  ? "입금 만료"
-                                  : isClosed
-                                  ? bid.rank === 1
-                                    ? "낙찰"
-                                    : "미낙찰"
-                                  : "입찰중"}
+                                {getProfileBidPaymentStatusLabel(bid, now)}
                               </p>
                             </div>
                           </div>
                           <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
                             <p className="text-[11px] font-medium text-black/35">
-                              마감
+                              모집 기한
                             </p>
                             <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
                               {bid.deadline}
@@ -2399,67 +2350,31 @@ export function ProfileContent({
                         <div className="mt-4 flex items-center justify-between gap-3">
                           <div
                             className={`min-w-0 text-[12px] font-medium ${
-                              isPaymentReady || isTransferRequested
+                              isPaymentReady ||
+                              isTransferRequested ||
+                              isPaymentConfirmed
                                 ? "text-black"
                                 : "text-black/35"
                             }`}
                           >
-                            {isClosed
-                              ? isTransferRequested
-                                ? (
-                                  <>
-                                    <p>입금 확인 중이에요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      판매자의 확인을 기다리고 있어요
-                                    </p>
-                                  </>
-                                )
-                                : isPaymentExpired
-                                ? (
-                                  <>
-                                    <p>입금 기한이 지났어요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      다음 순위로 낙찰이 넘어갔어요
-                                    </p>
-                                  </>
-                                )
-                                : isPaymentReady
-                                ? (
-                                  <>
-                                    <p>결제가 필요해요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      결제까지{" "}
-                                      {formatPaymentRemainingTime(
-                                        bid.deadline,
-                                        now,
-                                        bid.paymentDueAt,
-                                      )}
-                                    </p>
-                                  </>
-                                )
-                                : <p>마감된 입찰이에요</p>
-                              : `철회까지 ${remainingTime}`}
+                            <>
+                              <p>{getProfileBidPaymentStatusLabel(bid, now)}</p>
+                              <p className="mt-0.5 text-black/45">
+                                {getProfileBidPaymentStatusDescription(bid, now)}
+                              </p>
+                            </>
                           </div>
-                          {!isClosed ? (
-                            <button
-                              className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55 disabled:text-black/25"
-                              disabled={withdrawingBidId === bid.id}
-                              onClick={() => void withdrawBid(bid.id)}
-                              type="button"
-                            >
-                              철회
-                            </button>
-                          ) : isPaymentReady ? (
+                          {isPaymentReady ? (
                             <button
                               className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
                               onClick={() => openPaymentSheet(bid.id)}
                               type="button"
                             >
-                              결제
+                              결제 정보
                             </button>
                           ) : null}
                         </div>
-                        {bid.deliveryId && bid.paidAt ? (
+                        {bid.deliveryId && isPaymentConfirmed ? (
                           <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
@@ -2472,23 +2387,10 @@ export function ProfileContent({
                                     : "운송장 등록 대기"}
                                 </p>
                               </div>
-                              {isDeliveryReceiptCompleteStatus(
-                                bid.deliveryStatus,
-                              ) ? (
+                              {bid.trackingNumber ? (
                                 <span className="shrink-0 rounded-full bg-black/10 px-3 py-2 text-[12px] font-semibold text-black/45">
-                                  수령 완료
+                                  운송장 등록
                                 </span>
-                              ) : canConfirmDeliveryReceipt ? (
-                                <button
-                                  className="shrink-0 rounded-full bg-black px-3 py-2 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                  disabled={isReceivingDelivery}
-                                  onClick={() =>
-                                    void confirmDeliveryReceipt(bid)
-                                  }
-                                  type="button"
-                                >
-                                  {isReceivingDelivery ? "확인 중" : "수령 확인"}
-                                </button>
                               ) : null}
                             </div>
                           </div>
@@ -2503,7 +2405,7 @@ export function ProfileContent({
             <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
                 {authState.isLoggedIn
-                  ? "참여 중인 입찰이 없습니다."
+                  ? "참여 중인 분철이 없습니다."
                   : "로그인 후 이용할 수 있어요."}
               </p>
             </div>
@@ -2515,16 +2417,16 @@ export function ProfileContent({
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                진행 중인 개최 분철
+                개최한 분철
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                지금 열려 있는 분철만 빠르게 확인해요.
+                결제 확인과 배송 준비를 이어서 확인해요.
               </p>
             </div>
             <span className="shrink-0 text-[13px] font-semibold text-black/45">
               {isHostedProductsLoading
                 ? "확인 중"
-                : `${activeHostedProducts.length}개`}
+                : `${hostedProducts.length}개`}
             </span>
           </div>
 
@@ -2536,10 +2438,12 @@ export function ProfileContent({
 
           {isHostedProductsLoading ? (
             <ProfileListSkeleton />
-          ) : activeHostedProducts.length > 0 ? (
+          ) : hostedProducts.length > 0 ? (
             <div className="mt-4 space-y-3">
-              {activeHostedProducts.map((product) => {
+              {hostedProducts.map((product) => {
                 const isClosed = !isProfileHostedProductActive(product, now);
+                const isCancelled =
+                  product.status === "CANCELLED" || product.status === "CANCELED";
                 const optionCount =
                   product.optionCount ??
                   product.targetMembers?.length ??
@@ -2591,7 +2495,7 @@ export function ProfileContent({
                                 : "bg-black text-white"
                             }`}
                           >
-                            {isClosed ? "마감" : "모집중"}
+                            {isCancelled ? "취소" : isClosed ? "모집 종료" : "모집중"}
                           </span>
                         </div>
 
@@ -2617,13 +2521,13 @@ export function ProfileContent({
                               상태
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {isClosed ? "정산 대기" : "진행중"}
+                              {isCancelled ? "취소" : isClosed ? "모집 종료" : "진행 중"}
                             </p>
                           </div>
                         </div>
 
                         <p className="mt-3 truncate text-[12px] font-medium text-black/40">
-                          마감 {product.deadline}
+                          모집 기한 {product.deadline}
                         </p>
                       </div>
                       </article>
@@ -2661,7 +2565,7 @@ export function ProfileContent({
               href="/upload"
             >
               <p className="text-[14px] font-semibold text-black/70">
-                진행 중인 개최 분철이 없습니다.
+                개최한 분철이 없습니다.
               </p>
               <p className="mt-1 text-[13px] font-medium text-black/40">
                 상품 등록으로 첫 분철을 열어보세요.
@@ -2678,24 +2582,22 @@ export function ProfileContent({
 
         {authState.isLoggedIn ? (
           <Link
-            className="mt-6 block border-t border-black/10 pt-5"
+            className="mt-4 block rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]"
             href="/profile/account"
             onClick={rememberScrollPosition}
           >
-            <div className="rounded-[1rem] bg-[#f7f7f7] px-4 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
-                    회원 정보
-                  </h2>
-                  <p className="mt-1 truncate text-[13px] font-medium text-black/40">
-                    닉네임, 로그인 계정 관리
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/45">
-                  수정
-                </span>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
+                  회원 정보
+                </h2>
+                <p className="mt-1 truncate text-[13px] font-medium text-black/40">
+                  닉네임, 로그인 계정 관리
+                </p>
               </div>
+              <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[12px] font-semibold text-black/45">
+                수정
+              </span>
             </div>
             {userProfileMessage ? (
               <p className="mt-2 text-[13px] font-semibold text-black/45">
@@ -2704,8 +2606,8 @@ export function ProfileContent({
             ) : null}
           </Link>
         ) : null}
-        <div className="-mx-4 -mb-6 mt-6">
-          <BusinessFooter />
+        <div className="relative -mx-4 -mb-6 mt-6 bg-[#f7f7f7]">
+          <BusinessFooter variant="compact" />
         </div>
       </main>
 
@@ -2718,7 +2620,7 @@ export function ProfileContent({
           }`}
         >
           <button
-            aria-label="입금 정보 닫기"
+            aria-label="결제 정보 닫기"
             className="absolute inset-0 cursor-default"
             onClick={closePaymentSheet}
             type="button"
@@ -2743,15 +2645,15 @@ export function ProfileContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  입금 정보
+                  결제 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  계좌와 배송지를 확인한 뒤 입금 완료를 눌러 주세요.
+                  계좌와 금액을 확인한 뒤 기한 내 입금해 주세요.
                 </p>
               </div>
               <button
                 aria-label="닫기"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
                 onClick={closePaymentSheet}
                 type="button"
               >
@@ -2769,6 +2671,17 @@ export function ProfileContent({
               </p>
             </div>
 
+            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white ring-1 ring-[#AAB67C]/35">
+              <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                현재 상태
+              </p>
+              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
+                {getProfileBidPaymentStatusLabel(selectedPaymentBid, now)}
+              </p>
+              <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
+                {getProfileBidPaymentStatusDescription(selectedPaymentBid, now)}
+              </p>
+            </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -2787,7 +2700,7 @@ export function ProfileContent({
                   </p>
                 </div>
                 <button
-                  className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
+                  className="h-9 shrink-0 rounded-full bg-[#DDE7B8] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.18)] disabled:bg-black/10 disabled:text-black/30"
                   disabled={!selectedPaymentBankAccount}
                   onClick={() =>
                     selectedPaymentBankAccount
@@ -2803,13 +2716,13 @@ export function ProfileContent({
                 </button>
               </div>
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                송금 후 입금 완료를 눌러 주세요.
+                송금 후 관리자가 입금을 확인하면 참여가 확정돼요.
               </p>
               {paymentCopyToast ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                   <p
                     aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                    className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]"
                     role="status"
                   >
                     {paymentCopyToast}
@@ -2818,97 +2731,38 @@ export function ProfileContent({
               ) : null}
             </div>
 
-            <div className="mt-4 space-y-2">
-              {paymentVisibleAddresses.map(({ storeType, address }) => {
-                const isSelected = address?.id === paymentDeliveryAddress?.id;
-
-                return address ? (
-                  <button
-                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-[background-color,border-color,transform] duration-300 ease-out ${
-                      isSelected
-                        ? "border-[#d8d8d8] bg-[#ececec]"
-                        : "border-[#ededed] bg-white"
-                    }`}
-                    key={storeType}
-                    onClick={() => selectPaymentAddress(address.id)}
-                    type="button"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
-                              isSelected
-                                ? "bg-black text-white"
-                                : "bg-white text-black/45"
-                            }`}
-                          >
-                            {getConvenienceStoreLabel(storeType)}
-                          </span>
-                          {address.alias ? (
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
-                                "bg-black/10 text-black/60"
-                              }`}
-                            >
-                              {address.alias}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
-                        </p>
-                      </div>
-                        <span
-                          className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors duration-300 ease-out ${
-                            isSelected
-                              ? "bg-black text-white"
-                              : "bg-white text-black/45"
-                          }`}
-                        >
-                          <span className="flex items-center gap-1">
-                            <span
-                              className={`inline-flex h-3.5 w-3.5 items-center justify-center transition-opacity duration-300 ease-out ${
-                                isSelected ? "opacity-100" : "opacity-0"
-                              }`}
-                            >
-                              <CheckIcon />
-                            </span>
-                            <span>선택</span>
-                          </span>
-                        </span>
-                    </div>
-                  </button>
-                ) : (
-                  <div
-                    className="rounded-[0.95rem] bg-[#f3f4f6] px-4 py-3"
-                    key={storeType}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                        {getConvenienceStoreLabel(storeType)}
+            <div className="mt-4 rounded-[0.95rem] border-[1.5px] border-[#d8d8d8] bg-[#ececec] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {paymentDeliveryAddress ? (
+                      <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
+                        {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
-                      <p className="text-[14px] font-semibold tracking-[-0.04em] text-black/45">
-                        기본 배송지가 없어요
-                      </p>
-                    </div>
+                    ) : null}
+                    <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                      배송지 고정
+                    </span>
                   </div>
-                );
-              })}
+                  <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                    {paymentDeliveryAddress?.branchName ??
+                      "결제 요청 배송지 확인 중"}
+                  </p>
+                </div>
+                <span className="inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white px-3 text-[12px] font-semibold text-black/45">
+                  변경 불가
+                </span>
+              </div>
+              <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
+                결제 요청 후 배송지는 변경할 수 없어요.
+              </p>
             </div>
-            <button
-              className="mt-2 h-11 w-full rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
-              onClick={() => openAddressSheet("select")}
-              type="button"
-            >
-              다른 배송지 선택
-            </button>
 
             </div>
 
             <div className="shrink-0 border-t border-black/10 bg-white pt-4">
               <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
-                <span>낙찰가</span>
+                <span>상품 금액</span>
                 <span>{formatPrice(selectedPaymentBid.amount)}</span>
               </div>
               <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
@@ -2926,53 +2780,13 @@ export function ProfileContent({
             </div>
 
             <button
-              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
-              disabled={
-                !paymentDeliveryAddress ||
-                !selectedPaymentBankAccount ||
-                !canSelectedPaymentBidReportPayment ||
-                payingBidId === selectedPaymentBid.id
-              }
-              onClick={openPaymentReportConfirm}
+              className="mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white/70"
+              disabled={!selectedPaymentBankAccount}
+              onClick={closePaymentSheet}
               type="button"
             >
-              입금 완료
+              확인했어요
             </button>
-
-            {isPaymentReportConfirmOpen ? (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-t-[1.4rem] bg-black/35 px-5">
-                <section className="w-full rounded-[1.1rem] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-                  <h3 className="text-[22px] font-semibold tracking-[-0.06em]">
-                    입금을 완료하셨나요?
-                  </h3>
-                  <p className="mt-2 text-[14px] font-medium leading-6 text-black/50">
-                    송금 후에만 입금 완료 버튼을 눌러주세요. 허위 신고 시
-                    서비스 이용이 제한될 수 있습니다.
-                  </p>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    <button
-                      className="h-12 rounded-full bg-[#f5f5f5] text-[15px] font-semibold text-black/45"
-                      onClick={() => setIsPaymentReportConfirmOpen(false)}
-                      type="button"
-                    >
-                      취소
-                    </button>
-                    <button
-                      className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-                      disabled={
-                        !selectedPaymentBankAccount ||
-                        !canSelectedPaymentBidReportPayment ||
-                        payingBidId === selectedPaymentBid.id
-                      }
-                      onClick={() => void handleTransferPaymentRequest()}
-                      type="button"
-                    >
-                      입금 완료
-                    </button>
-                  </div>
-                </section>
-              </div>
-            ) : null}
           </section>
         </div>
       ) : null}
@@ -3027,7 +2841,7 @@ export function ProfileContent({
               </div>
               <button
                 aria-label="닫기"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
                 onClick={closeAddressSheet}
                 type="button"
               >
@@ -3047,6 +2861,9 @@ export function ProfileContent({
                   ? eligiblePaymentAddresses
                   : manageAddressSnapshot
               ).map((address) => {
+                const displayAlias = getDeliveryAddressDisplayAlias(address);
+                const displayBranchName =
+                  getDeliveryAddressDisplayBranchName(address);
                 const isDefault =
                   address.id === defaultAddressIds[address.storeType];
                 const isSelected =
@@ -3055,13 +2872,13 @@ export function ProfileContent({
 
                 return (
                   <div
-                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
+                    className={`w-full rounded-[0.9rem] border-[1.5px] px-3.5 py-2.5 text-left transition-colors ${
                       addressSheetMode === "select"
                         ? isSelected
-                          ? "border-[#d8d8d8] bg-[#ececec]"
+                          ? "border-[#C8D4A5] bg-[#F3F5EA]"
                           : "border-[#ededed] bg-white"
                         : isDefault
-                        ? "border-[#d8d8d8] bg-[#ececec]"
+                        ? "border-[#C8D4A5] bg-[#F3F5EA]"
                         : "border-[#ededed] bg-white"
                     }`}
                     key={address.id}
@@ -3097,36 +2914,36 @@ export function ProfileContent({
                             className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                               addressSheetMode === "select"
                                 ? isSelected
-                                  ? "bg-black text-white"
+                                  ? "bg-[#DDE7B8] text-black"
                                   : isDefault
-                                  ? "bg-black text-white"
+                                  ? "bg-[#DDE7B8] text-black"
                                   : "bg-white text-black/45"
                                 : isDefault
-                                ? "bg-black text-white"
+                                ? "bg-[#DDE7B8] text-black"
                                 : "bg-white text-black/45"
                             }`}
                           >
                             {getConvenienceStoreLabel(address.storeType)}
                           </span>
-                          {address.alias ? (
+                          {displayAlias ? (
                             <span
                               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                                 "bg-black/10 text-black/60"
                               }`}
                             >
-                              {address.alias}
+                              {displayAlias}
                             </span>
                           ) : null}
                         </div>
                         <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
+                          {displayBranchName}
                         </p>
                       </div>
                       {addressSheetMode === "select" ? (
                         <span
                         className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                           isSelected
-                            ? "bg-black text-white"
+                            ? "bg-[#DDE7B8] text-black"
                             : "bg-white text-black/45"
                         }`}
                         >
@@ -3134,7 +2951,7 @@ export function ProfileContent({
                         </span>
                       ) : isDefault ? (
                         <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                          <span className="inline-flex h-8 items-center rounded-full bg-black px-2.5 text-[12px] font-semibold text-white transition-colors duration-300 ease-out">
+                          <span className="inline-flex h-8 items-center rounded-full bg-[#DDE7B8] px-2.5 text-[12px] font-semibold text-black transition-colors duration-300 ease-out">
                             기본
                           </span>
                         </div>
@@ -3292,7 +3109,7 @@ export function ProfileContent({
               */}
               <div className="idol-selection-enter" key="address-add-link">
                 <Link
-                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  className="flex h-14 w-full items-center justify-center rounded-[0.9rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
                   href="/profile/addresses?openAdd=1&returnTo=profile"
                   onNavigate={rememberAddressAddReturn}
                 >

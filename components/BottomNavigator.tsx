@@ -36,8 +36,10 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
           const content = (
             <>
               <span
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${
-                  isActive ? "bg-white text-black" : "bg-transparent"
+                className={`motion-icon-button inline-flex h-9 w-9 items-center justify-center rounded-full ${
+                  isActive
+                    ? "bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]"
+                    : "bg-transparent"
                 }`}
               >
                 {item.label === "Home" ? (
@@ -53,7 +55,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
                 )}
               </span>
               <span className="bottom-navigator__label hidden max-w-full truncate">
-                {item.label === "Bids" ? "입찰" : item.label}
+                {item.label === "Bids" ? "참여" : item.label}
               </span>
             </>
           );

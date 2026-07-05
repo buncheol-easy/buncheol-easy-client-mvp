@@ -20,6 +20,8 @@ export type ProductCardItem = {
   productId?: string;
   title: string;
   member: string;
+  availableMemberNames?: string[];
+  minHeadcount?: number | null;
   optionCount?: number;
   targetMembers?: string[];
   uploadedAt?: string;
@@ -46,11 +48,15 @@ const soonDeadlineDays = 7;
 const millisecondsPerHour = 60 * 60 * 1000;
 
 function getTargetTags(item: ProductCardItem) {
-  const tags = item.targetMembers ?? [item.member];
-
-  return tags
-    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
+  return getUniqueMemberNames(item.targetMembers ?? [item.member])
     .map((tag) => `#${tag}`);
+}
+
+function getUniqueMemberNames(names: string[]) {
+  return names
+    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 }
 
 function parseKoreaDateTime(value: string) {
@@ -88,12 +94,13 @@ function getKoreaCalendar(date: Date) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getDeadlineBadge(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
   if (Number.isNaN(deadlineDate.getTime())) {
     return {
-      label: "마감",
+      label: "모집 기한",
       value: deadline,
     };
   }
@@ -102,7 +109,7 @@ function getDeadlineBadge(deadline: string) {
 
   if (deadlineDate.getTime() <= now.getTime()) {
     return {
-      label: "Closed",
+      label: "?? ??",
       value: null,
     };
   }
@@ -116,14 +123,14 @@ function getDeadlineBadge(deadline: string) {
 
   if (remainingDays === 0) {
     return {
-      label: "오늘 마감",
+      label: "오늘 종료",
       value: "D-DAY",
     };
   }
 
   if (remainingDays <= soonDeadlineDays) {
     return {
-      label: "마감 임박",
+      label: "모집 임박",
       value: `D-${remainingDays}`,
     };
   }
@@ -132,6 +139,96 @@ function getDeadlineBadge(deadline: string) {
     label: `D-${remainingDays}`,
     value: `${deadlineCalendar.getUTCMonth() + 1}월 ${deadlineCalendar.getUTCDate()}일`,
   };
+}
+
+function getReadableDeadlineBadge(deadline: string) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return {
+      label: "DATE",
+      value: deadline,
+    };
+  }
+
+  const now = new Date();
+
+  if (deadlineDate.getTime() <= now.getTime()) {
+    return {
+      label: "CLOSED",
+      value: null,
+    };
+  }
+
+  const deadlineCalendar = getKoreaCalendar(deadlineDate);
+  const nowCalendar = getKoreaCalendar(now);
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const remainingDays = Math.round(
+    (deadlineCalendar.getTime() - nowCalendar.getTime()) / millisecondsPerDay,
+  );
+
+  if (remainingDays === 0) {
+    return {
+      label: "ENDS TODAY",
+      value: "D-DAY",
+    };
+  }
+
+  if (remainingDays <= soonDeadlineDays) {
+    return {
+      label: "DUE SOON",
+      value: `D-${remainingDays}`,
+    };
+  }
+
+  return {
+    label: `D-${remainingDays}`,
+    value: `${deadlineCalendar.getUTCMonth() + 1}.${deadlineCalendar.getUTCDate()}`,
+  };
+}
+
+function isPurchasableCardStatus(status: string | undefined) {
+  const normalizedStatus = status?.trim().toUpperCase();
+
+  if (!normalizedStatus) {
+    return true;
+  }
+
+  return normalizedStatus === "RECRUITING" || normalizedStatus === "PUBLIC_PREVIEW";
+}
+
+function isCardDeadlineOpen(deadline: string) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  return Number.isNaN(deadlineDate.getTime())
+    ? true
+    : deadlineDate.getTime() > Date.now();
+}
+
+function isProductCardPurchasable(item: ProductCardItem) {
+  return isPurchasableCardStatus(item.status) && isCardDeadlineOpen(item.deadline);
+}
+
+function getProductCardBadge(item: ProductCardItem) {
+  if (!isProductCardPurchasable(item)) {
+    return { label: "모집 종료", value: null };
+  }
+
+  return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
+}
+
+function getAvailableMemberNames(item: ProductCardItem) {
+  if (Array.isArray(item.availableMemberNames)) {
+    return getUniqueMemberNames(item.availableMemberNames);
+  }
+
+  return getUniqueMemberNames(
+    item.targetMembers ?? [item.member],
+  );
+}
+
+function getAvailableMemberSummary(memberNames: string[]) {
+  return memberNames.join(" · ");
 }
 
 function isRecentlyUploaded(uploadedAt?: string) {
@@ -165,7 +262,17 @@ export function ProductCard({ item }: ProductCardProps) {
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
-  const deadlineBadge = getDeadlineBadge(item.deadline);
+  const deadlineBadge = getProductCardBadge(item);
+  const isPurchasable = isProductCardPurchasable(item);
+  const hasAvailableMemberNames = Array.isArray(item.availableMemberNames);
+  const availableMemberNames = getAvailableMemberNames(item);
+  const shouldShowAvailableMembers =
+    hasAvailableMemberNames || availableMemberNames.length > 0;
+  const shouldPeekOptionRail = availableMemberNames.length > 3;
+  const availableMemberSummary =
+    availableMemberNames.length > 0
+      ? getAvailableMemberSummary(availableMemberNames)
+      : "";
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
@@ -255,7 +362,7 @@ export function ProductCard({ item }: ProductCardProps) {
   return (
     <Link
       href={`/products/${productId}`}
-      className="block space-y-3"
+      className="motion-card block space-y-2"
       prefetch={false}
       onClick={(event) => {
         writePublicBuncheolCard(item);
@@ -290,7 +397,7 @@ export function ProductCard({ item }: ProductCardProps) {
       }}
     >
       <div
-        className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br ${item.tone}`}
+        className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br shadow-[0_12px_28px_rgba(0,0,0,0.08)] ${item.tone}`}
       >
         {item.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -309,7 +416,13 @@ export function ProductCard({ item }: ProductCardProps) {
           </div>
         ) : null}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
-          <p className="inline-flex rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/75 backdrop-blur-sm">
+          <p
+            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
+              isPurchasable
+                ? "bg-[#DDE7B8] text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)]"
+                : "bg-black/40 text-white/75"
+            }`}
+          >
             {deadlineBadge.label}
           </p>
           {deadlineBadge.value ? (
@@ -322,8 +435,10 @@ export function ProductCard({ item }: ProductCardProps) {
           <button
             type="button"
             aria-label={isLiked ? "찜 해제" : "찜하기"}
-            className={`absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 ${
-              isLiked ? "bg-black text-white" : "bg-white/95 text-black/45"
+            className={`motion-icon-button absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
+              isLiked
+                ? "bg-[#DDE7B8] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
+                : "bg-white/95 text-black/45"
             } disabled:opacity-60`}
             disabled={isBookmarkPending}
             onClick={handleBookmarkClick}
@@ -334,9 +449,52 @@ export function ProductCard({ item }: ProductCardProps) {
       </div>
 
       <div>
-        <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
-          {targetTags.join(" ")}
-        </p>
+        {shouldShowAvailableMembers ? (
+          <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
+            {availableMemberNames.length > 0 ? (
+              <>
+                <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
+                  가능 옵션
+                </span>
+                <span className="shrink-0 text-black/15">·</span>
+                <div className="relative min-w-0 flex-1">
+                  <div
+                    className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                      shouldPeekOptionRail ? "product-card-option-rail" : ""
+                    }`}
+                  >
+                    <div
+                      className={`flex w-max ${
+                        shouldPeekOptionRail
+                          ? "product-card-option-rail__track motion-carousel__hint"
+                          : ""
+                      }`}
+                    >
+                      <span className="text-black/58">{availableMemberSummary}</span>
+                    </div>
+                  </div>
+                  {shouldPeekOptionRail ? (
+                    <span className="pointer-events-none absolute bottom-0 right-0 top-0 w-7 bg-gradient-to-l from-white via-white/95 to-transparent" />
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 ring-1 ring-black/5 ${
+                  isPurchasable
+                    ? "bg-[#f2f2f2] text-black/45"
+                    : "bg-black/5 text-black/38"
+                }`}
+              >
+                남은 옵션 없음
+              </span>
+            )}
+          </div>
+        ) : (
+          <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+            {targetTags.join(" ")}
+          </p>
+        )}
         <p className="line-clamp-2 text-[15px] leading-6 tracking-[-0.04em] text-black">
           {item.title}
         </p>
