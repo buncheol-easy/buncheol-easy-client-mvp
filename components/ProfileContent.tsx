@@ -457,6 +457,160 @@ function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
   return Boolean(bid.deliveryId && isProfileBidPaymentConfirmed(bid));
 }
 
+function getProfileUniqueLabels(labels: string[]) {
+  return [...new Set(labels.map((label) => label.trim()).filter(Boolean))];
+}
+
+function formatProfileGroupedOptionLabel(labels: string[]) {
+  const uniqueLabels = getProfileUniqueLabels(labels);
+
+  if (uniqueLabels.length === 0) {
+    return "멤버 확인 필요";
+  }
+
+  if (uniqueLabels.length === 1) {
+    return uniqueLabels[0];
+  }
+
+  return `${uniqueLabels[0]} 외 ${uniqueLabels.length - 1}개`;
+}
+
+function getProfileBidGroupPriority(bid: ProfileBidEntry, now: Date) {
+  if (isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid)) {
+    return 4;
+  }
+
+  if (shouldKeepProfileDeliveryReachable(bid)) {
+    return 3;
+  }
+
+  if (isProfileBidPaymentConfirmed(bid)) {
+    return 2;
+  }
+
+  return isProfileBidClosed(bid, now) ? 1 : 0;
+}
+
+function mergeProfileBidEntryGroup(
+  groupEntries: ProfileBidEntry[],
+  now: Date,
+) {
+  const sortedEntries = [...groupEntries].sort((left, right) => {
+    const progressDiff =
+      getProfileBidGroupPriority(right, now) -
+      getProfileBidGroupPriority(left, now);
+
+    if (progressDiff !== 0) {
+      return progressDiff;
+    }
+
+    return right.amount - left.amount;
+  });
+  const representative =
+    sortedEntries.find(
+      (bid) =>
+        isProfileBidPaymentReady(bid, now) ||
+        isProfileBidTransferRequested(bid),
+    ) ?? sortedEntries[0];
+  const totalAmount = groupEntries.reduce((sum, bid) => sum + bid.amount, 0);
+  const paymentAmounts = groupEntries.map((bid) => bid.paymentAmount);
+  const hasCompletePaymentAmounts = paymentAmounts.every(
+    (amount): amount is number => typeof amount === "number",
+  );
+  const totalPaymentAmount = hasCompletePaymentAmounts
+    ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
+    : groupEntries.length === 1
+      ? representative.paymentAmount
+      : null;
+  const shippingFees = groupEntries.map((bid) => bid.shippingFee);
+  const totalShippingFee = shippingFees.every(
+    (amount): amount is number => typeof amount === "number",
+  )
+    ? shippingFees.reduce((sum, amount) => sum + amount, 0)
+    : representative.shippingFee;
+
+  return {
+    ...representative,
+    amount: totalAmount,
+    deliveryId:
+      representative.deliveryId ??
+      groupEntries.find((bid) => bid.deliveryId)?.deliveryId ??
+      null,
+    deliveryStatus:
+      representative.deliveryStatus ??
+      groupEntries.find((bid) => bid.deliveryStatus)?.deliveryStatus ??
+      null,
+    hostBankAccount:
+      representative.hostBankAccount ??
+      groupEntries.find((bid) => bid.hostBankAccount)?.hostBankAccount ??
+      null,
+    id: representative.id,
+    optionLabel: formatProfileGroupedOptionLabel(
+      groupEntries.map((bid) => bid.optionLabel),
+    ),
+    paymentAmount: totalPaymentAmount,
+    shippingAddress:
+      representative.shippingAddress ??
+      groupEntries.find((bid) => bid.shippingAddress)?.shippingAddress ??
+      null,
+    shippingFee: totalShippingFee ?? null,
+    trackingNumber:
+      representative.trackingNumber ??
+      groupEntries.find((bid) => bid.trackingNumber)?.trackingNumber ??
+      null,
+  };
+}
+
+function getProfileBidGroupKey(bid: ProfileBidEntry) {
+  return bid.productId || bid.id;
+}
+
+function getGroupedProfileBidEntries(records: ProfileBidEntry[], now: Date) {
+  const groups = new Map<string, ProfileBidEntry[]>();
+
+  records.forEach((bid) => {
+    const key = getProfileBidGroupKey(bid);
+    const group = groups.get(key) ?? [];
+
+    group.push(bid);
+    groups.set(key, group);
+  });
+
+  return [...groups.values()].map((group) =>
+    mergeProfileBidEntryGroup(group, now),
+  );
+}
+
+function findGroupedProfileBidEntryById(
+  groupedEntries: ProfileBidEntry[],
+  sourceEntries: ProfileBidEntry[],
+  bidId: string | null,
+  now: Date,
+) {
+  if (!bidId) {
+    return null;
+  }
+
+  const groupedEntry = groupedEntries.find((bid) => bid.id === bidId);
+
+  if (groupedEntry) {
+    return groupedEntry;
+  }
+
+  const sourceEntry = sourceEntries.find((bid) => bid.id === bidId);
+
+  if (!sourceEntry) {
+    return null;
+  }
+
+  const groupKey = getProfileBidGroupKey(sourceEntry);
+  const groupEntries = sourceEntries.filter(
+    (bid) => getProfileBidGroupKey(bid) === groupKey,
+  );
+
+  return mergeProfileBidEntryGroup(groupEntries, now);
+}
+
 function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
   if (product.status && !isRecruitingStatus(product.status)) {
     return false;
@@ -791,6 +945,10 @@ export function ProfileContent({
       }),
     [allBids, now],
   );
+  const groupedActiveBids = useMemo(
+    () => getGroupedProfileBidEntries(activeBids, now),
+    [activeBids, now],
+  );
   const shouldRefreshPaymentState = allBids.some(
     (bid) =>
       isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid),
@@ -835,8 +993,12 @@ export function ProfileContent({
     settlementAccountForm.accountHolder.trim().length <= 50 &&
     settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
 
-  const selectedPaymentBid =
-    activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+  const selectedPaymentBid = findGroupedProfileBidEntryById(
+    groupedActiveBids,
+    activeBids,
+    selectedPaymentBidId,
+    now,
+  );
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
@@ -1224,9 +1386,12 @@ export function ProfileContent({
     );
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
 
-    const returnBid = returnState.bidId
-      ? activeBids.find((bid) => bid.id === returnState.bidId)
-      : null;
+    const returnBid = findGroupedProfileBidEntryById(
+      groupedActiveBids,
+      activeBids,
+      returnState.bidId ?? null,
+      now,
+    );
 
     if (!returnBid) {
       return;
@@ -1281,7 +1446,7 @@ export function ProfileContent({
       isRestoreActive = false;
       window.clearTimeout(restoreTimer);
     };
-  }, [activeBids, defaultAddressIds, deliveryAddresses]);
+  }, [activeBids, defaultAddressIds, deliveryAddresses, groupedActiveBids, now]);
 
   useEffect(() => {
     if (!isAddressSheetOpen) {
@@ -1508,13 +1673,19 @@ export function ProfileContent({
     }
 
     const requestId = paymentStoreTypeRequestIdRef.current + 1;
-    const selectedBid = activeBids.find((bid) => bid.id === bidId) ?? null;
+    const currentTime = new Date();
+    const selectedBid = findGroupedProfileBidEntryById(
+      groupedActiveBids,
+      activeBids,
+      bidId,
+      currentTime,
+    );
 
     if (!selectedBid) {
       return;
     }
 
-    if (isProfileBidPaymentExpired(selectedBid, new Date())) {
+    if (isProfileBidPaymentExpired(selectedBid, currentTime)) {
       setUserProfileMessage(
         "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );

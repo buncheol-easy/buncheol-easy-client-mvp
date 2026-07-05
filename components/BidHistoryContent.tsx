@@ -449,11 +449,14 @@ function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
     ) ?? sortedRecords[0];
   const totalAmount = groupRecords.reduce((sum, bid) => sum + bid.amount, 0);
   const paymentAmounts = groupRecords.map((bid) => bid.paymentAmount);
-  const totalPaymentAmount = paymentAmounts.every(
+  const hasCompletePaymentAmounts = paymentAmounts.every(
     (amount): amount is number => typeof amount === "number",
-  )
+  );
+  const totalPaymentAmount = hasCompletePaymentAmounts
     ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
-    : representative.paymentAmount;
+    : groupRecords.length === 1
+      ? representative.paymentAmount
+      : null;
   const shippingFees = groupRecords.map((bid) => bid.shippingFee);
   const totalShippingFee = shippingFees.every(
     (amount): amount is number => typeof amount === "number",
