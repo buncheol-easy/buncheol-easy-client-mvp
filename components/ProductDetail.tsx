@@ -500,6 +500,26 @@ function getOptionPurchaseOverlayLabel(
   return null;
 }
 
+function getOptionPurchaseBlockChipLabel(overlayLabel: string | null) {
+  if (!overlayLabel) {
+    return null;
+  }
+
+  if (overlayLabel === "선택할 수 없는 멤버예요") {
+    return "구매 불가";
+  }
+
+  if (overlayLabel === "구매가 완료됐어요") {
+    return "구매 완료";
+  }
+
+  if (overlayLabel === "결제 진행 중이에요") {
+    return "구매 진행 중";
+  }
+
+  return overlayLabel;
+}
+
 function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
   const winner = option.winner;
 
@@ -2716,11 +2736,13 @@ export function ProductDetail({
                     myBids[option.id],
                     product.isApiProduct === true,
                   );
+                  const blockChipLabel =
+                    getOptionPurchaseBlockChipLabel(overlayLabel);
 
                   return (
                     <div
                       key={option.id}
-                      className={`relative flex min-h-[72px] items-center justify-between gap-3 border-b border-black/[0.06] px-4 py-3 last:border-b-0 ${
+                      className={`relative flex min-h-[72px] items-center justify-between gap-3 overflow-hidden border-b border-black/[0.06] px-4 py-3 last:border-b-0 ${
                         overlayLabel
                           ? "bg-[#fafafa]"
                           : "bg-white"
@@ -2759,6 +2781,16 @@ export function ProductDetail({
                           {getBidBaseline(option)}
                         </p>
                       </div>
+                      {blockChipLabel ? (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
+                        >
+                          <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                            {blockChipLabel}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
