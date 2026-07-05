@@ -398,11 +398,11 @@ function getOptionPurchaseOverlayLabel(
   const isConfirmed = isConfirmedOptionPurchase(option);
 
   if (myBid) {
-    return isConfirmed ? "내 구매 완료" : "내 결제 대기 중";
+    return isConfirmed ? "내 구매 완료" : "내 구매 진행 중";
   }
 
   if (hasOptionPurchaseState(option)) {
-    return isConfirmed ? "구매 완료" : "결제 대기 중";
+    return isConfirmed ? "구매 완료" : "구매 진행 중";
   }
 
   if (isUnavailablePurchaseOption(option)) {
@@ -414,7 +414,7 @@ function getOptionPurchaseOverlayLabel(
   }
 
   if (shouldUseParticipantCount && option.participantCount > 0) {
-    return "결제 대기 중";
+    return "구매 진행 중";
   }
 
   return null;
@@ -2610,7 +2610,7 @@ export function ProductDetail({
                                   </p>
                                   {myBid ? (
                                     <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2 py-0.5 text-[10px] font-semibold text-black">
-                                      구매 진행 중
+                                      {overlayLabel}
                                     </span>
                                   ) : null}
                                 </div>
