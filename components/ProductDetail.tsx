@@ -108,9 +108,16 @@ type CheckoutPaymentSummary = {
   totalAmount: number;
 };
 
+type CheckoutAddressReturnOption = {
+  buncheolMemberId?: string;
+  id: string;
+  label?: string;
+};
+
 type CheckoutAddressReturnState = {
   addressId?: string | null;
   createdAt: number;
+  options?: CheckoutAddressReturnOption[];
   optionIds: string[];
   productId: string;
   reopenAddressSheet: boolean;
@@ -828,6 +835,19 @@ export function ProductDetail({
     if (options.restoreCheckoutAddressSheet) {
       params.set("checkoutStep", "confirm");
       params.set("addressSheet", "1");
+      params.delete("checkoutOption");
+      getSelectedCheckoutOptionIds().forEach((optionId) => {
+        params.append("checkoutOption", optionId);
+      });
+
+      const checkoutAddressId =
+        checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null;
+
+      if (checkoutAddressId) {
+        params.set("checkoutAddress", checkoutAddressId);
+      } else {
+        params.delete("checkoutAddress");
+      }
     }
 
     const query = params.toString();
@@ -837,6 +857,10 @@ export function ProductDetail({
   }
 
   function getSelectedCheckoutOptionIds() {
+    return getSelectedCheckoutReturnOptions().map((option) => option.id);
+  }
+
+  function getSelectedCheckoutReturnOptions(): CheckoutAddressReturnOption[] {
     return auctionOptions
       .filter(
         (option) =>
@@ -847,20 +871,34 @@ export function ProductDetail({
             product.isApiProduct === true,
           ),
       )
-      .map((option) => option.id);
+      .map((option) => ({
+        buncheolMemberId: option.buncheolMemberId,
+        id: option.id,
+        label: option.label,
+      }));
   }
 
-  function rememberCheckoutAddressReturnState(reopenAddressSheet = true) {
+  function rememberCheckoutAddressReturnState(
+    reopenAddressSheet = true,
+    preferredAddressId?: string | null,
+  ) {
     if (typeof window === "undefined") {
       return;
     }
+
+    const returnOptions = getSelectedCheckoutReturnOptions();
 
     window.sessionStorage.setItem(
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
       JSON.stringify({
         createdAt: Date.now(),
-        addressId: checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null,
-        optionIds: getSelectedCheckoutOptionIds(),
+        addressId:
+          preferredAddressId ??
+          checkoutDeliveryAddress?.id ??
+          bidDeliveryAddress?.id ??
+          null,
+        optionIds: returnOptions.map((option) => option.id),
+        options: returnOptions,
         productId: buncheolId,
         reopenAddressSheet,
       } satisfies CheckoutAddressReturnState),
@@ -931,64 +969,149 @@ export function ProductDetail({
       return;
     }
 
+    let returnState: CheckoutAddressReturnState | null = null;
     const rawState = window.sessionStorage.getItem(
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
     );
 
-    if (!rawState) {
-      return;
-    }
+    if (rawState) {
+      try {
+        const parsedState = JSON.parse(
+          rawState,
+        ) as Partial<CheckoutAddressReturnState>;
+        const parsedOptions = Array.isArray(parsedState.options)
+          ? parsedState.options
+              .map((option): CheckoutAddressReturnOption | null => {
+                if (!option || typeof option.id !== "string") {
+                  return null;
+                }
 
-    let returnState: CheckoutAddressReturnState | null = null;
+                return {
+                  buncheolMemberId:
+                    typeof option.buncheolMemberId === "string"
+                      ? option.buncheolMemberId
+                      : undefined,
+                  id: option.id,
+                  label:
+                    typeof option.label === "string" ? option.label : undefined,
+                } satisfies CheckoutAddressReturnOption;
+              })
+              .filter(
+                (option): option is CheckoutAddressReturnOption =>
+                  option !== null,
+              )
+          : [];
 
-    try {
-      const parsedState = JSON.parse(rawState) as Partial<CheckoutAddressReturnState>;
-
-      if (
-        parsedState &&
-        parsedState.productId === buncheolId &&
-        Array.isArray(parsedState.optionIds)
-      ) {
-        returnState = {
-          createdAt:
-            typeof parsedState.createdAt === "number"
-              ? parsedState.createdAt
-              : Date.now(),
-          addressId:
-            typeof parsedState.addressId === "string"
-              ? parsedState.addressId
-              : null,
-          optionIds: parsedState.optionIds.filter(
-            (optionId): optionId is string => typeof optionId === "string",
-          ),
-          productId: parsedState.productId,
-          reopenAddressSheet: parsedState.reopenAddressSheet !== false,
-        };
+        if (
+          parsedState &&
+          parsedState.productId === buncheolId &&
+          Array.isArray(parsedState.optionIds)
+        ) {
+          returnState = {
+            createdAt:
+              typeof parsedState.createdAt === "number"
+                ? parsedState.createdAt
+                : Date.now(),
+            addressId:
+              typeof parsedState.addressId === "string"
+                ? parsedState.addressId
+                : null,
+            optionIds: parsedState.optionIds.filter(
+              (optionId): optionId is string => typeof optionId === "string",
+            ),
+            options: parsedOptions,
+            productId: parsedState.productId,
+            reopenAddressSheet: parsedState.reopenAddressSheet !== false,
+          };
+        }
+      } catch {
+        returnState = null;
       }
-    } catch {
-      returnState = null;
     }
 
     window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
+
+    if (!returnState) {
+      const params = new URLSearchParams(window.location.search);
+      const shouldRestoreCheckout =
+        params.get("checkoutStep") === "confirm" ||
+        params.get("addressSheet") === "1";
+      const queryOptionIds = [
+        ...params.getAll("checkoutOption"),
+        ...(params.get("checkoutOptions")?.split(",") ?? []),
+      ].filter(Boolean);
+
+      if (shouldRestoreCheckout) {
+        returnState = {
+          createdAt: Date.now(),
+          addressId: params.get("checkoutAddress"),
+          optionIds: [...new Set(queryOptionIds)],
+          options: [...new Set(queryOptionIds)].map((optionId) => ({
+            id: optionId,
+          })),
+          productId: buncheolId,
+          reopenAddressSheet: params.get("addressSheet") === "1",
+        };
+      }
+    }
 
     if (!returnState || Date.now() - returnState.createdAt > 30 * 60 * 1000) {
       return;
     }
 
+    const checkoutReturnState = returnState;
+
     didRestoreCheckoutAddressReturnRef.current = true;
 
-    const restorableOptionIds = returnState.optionIds.filter((optionId) => {
-      const option = auctionOptions.find((item) => item.id === optionId);
+    const restorableOptions: CheckoutAddressReturnOption[] = [
+      ...checkoutReturnState.optionIds.map((optionId) => ({ id: optionId })),
+      ...(checkoutReturnState.options ?? []),
+    ];
 
-      return (
-        option &&
-        !getOptionPurchaseOverlayLabel(
-          option,
-          myBids[option.id],
-          product.isApiProduct === true,
-        )
-      );
-    });
+    const restorableOptionIds = auctionOptions.reduce<string[]>(
+      (optionIds, option) => {
+        const isSelected = restorableOptions.some(
+          (returnOption) =>
+            returnOption.id === option.id ||
+            (returnOption.buncheolMemberId &&
+              returnOption.buncheolMemberId === option.buncheolMemberId) ||
+            (returnOption.label && returnOption.label === option.label),
+        );
+
+        if (
+          isSelected &&
+          !getOptionPurchaseOverlayLabel(
+            option,
+            myBids[option.id],
+            product.isApiProduct === true,
+          )
+        ) {
+          optionIds.push(option.id);
+        }
+
+        return optionIds;
+      },
+      [],
+    );
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+
+      if (params.has("checkoutStep") || params.has("addressSheet")) {
+        params.delete("checkoutStep");
+        params.delete("addressSheet");
+        params.delete("checkoutAddress");
+        params.delete("checkoutOption");
+        params.delete("checkoutOptions");
+        const query = params.toString();
+
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${window.location.pathname}${query ? `?${query}` : ""}`,
+        );
+      }
+    }
 
     if (restorableOptionIds.length > 0) {
       setBidAmounts(
@@ -1051,8 +1174,10 @@ export function ProductDetail({
           ? eligibleAddresses.find((address) => address.id === lastAddedAddressId)
           : null;
       const previousSelectedAddress =
-        returnState.addressId
-          ? eligibleAddresses.find((address) => address.id === returnState.addressId)
+        checkoutReturnState.addressId
+          ? eligibleAddresses.find(
+              (address) => address.id === checkoutReturnState.addressId,
+            )
           : null;
       const restoredAddress =
         lastAddedAddress ??
@@ -1067,7 +1192,7 @@ export function ProductDetail({
         window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
       }
 
-      if (returnState.reopenAddressSheet && eligibleAddresses.length > 0) {
+      if (checkoutReturnState.reopenAddressSheet) {
         if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
           window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
           checkoutAddressSheetCloseFallbackTimerRef.current = null;
@@ -3020,7 +3145,10 @@ export function ProductDetail({
                           : "border-[#ededed] bg-white"
                       }`}
                       key={address.id}
-                      onClick={() => setCheckoutDeliveryAddress(address)}
+                      onClick={() => {
+                        setCheckoutDeliveryAddress(address);
+                        rememberCheckoutAddressReturnState(true, address.id);
+                      }}
                       type="button"
                     >
                       <div className="flex items-center justify-between gap-3">
