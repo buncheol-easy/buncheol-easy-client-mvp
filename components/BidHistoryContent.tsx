@@ -454,6 +454,12 @@ function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
   )
     ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
     : representative.paymentAmount;
+  const shippingFees = groupRecords.map((bid) => bid.shippingFee);
+  const totalShippingFee = shippingFees.every(
+    (amount): amount is number => typeof amount === "number",
+  )
+    ? shippingFees.reduce((sum, amount) => sum + amount, 0)
+    : representative.shippingFee;
 
   return {
     ...representative,
@@ -463,6 +469,7 @@ function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
       groupRecords.map((bid) => bid.optionLabel),
     ),
     paymentAmount: totalPaymentAmount,
+    shippingFee: totalShippingFee ?? null,
     shippingAddress:
       representative.shippingAddress ??
       groupRecords.find((bid) => bid.shippingAddress)?.shippingAddress ??
@@ -470,11 +477,15 @@ function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
   };
 }
 
+function getBidRecordGroupKey(bid: BidRecord) {
+  return bid.productId || bid.id;
+}
+
 function getGroupedBidRecords(records: BidRecord[], now: Date) {
   const groups = new Map<string, BidRecord[]>();
 
   records.forEach((bid) => {
-    const key = bid.productId || bid.id;
+    const key = getBidRecordGroupKey(bid);
     const group = groups.get(key) ?? [];
 
     group.push(bid);
@@ -482,6 +493,36 @@ function getGroupedBidRecords(records: BidRecord[], now: Date) {
   });
 
   return [...groups.values()].map((group) => mergeBidRecordGroup(group, now));
+}
+
+function findGroupedBidRecordById(
+  groupedRecords: BidRecord[],
+  sourceRecords: BidRecord[],
+  bidId: string | null,
+  now: Date,
+) {
+  if (!bidId) {
+    return null;
+  }
+
+  const groupedRecord = groupedRecords.find((bid) => bid.id === bidId);
+
+  if (groupedRecord) {
+    return groupedRecord;
+  }
+
+  const sourceRecord = sourceRecords.find((bid) => bid.id === bidId);
+
+  if (!sourceRecord) {
+    return null;
+  }
+
+  const groupKey = getBidRecordGroupKey(sourceRecord);
+  const groupRecords = sourceRecords.filter(
+    (bid) => getBidRecordGroupKey(bid) === groupKey,
+  );
+
+  return mergeBidRecordGroup(groupRecords, now);
 }
 
 function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
@@ -886,8 +927,17 @@ export function BidHistoryContent({
     () => apiBidRecords ?? [],
     [apiBidRecords],
   );
+  const groupedPaymentBidRecords = useMemo(
+    () => getGroupedBidRecords(paymentBidRecords, now),
+    [now, paymentBidRecords],
+  );
   const selectedPaymentBid =
-    paymentBidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+    findGroupedBidRecordById(
+      groupedPaymentBidRecords,
+      paymentBidRecords,
+      selectedPaymentBidId,
+      now,
+    );
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
       isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
@@ -1142,9 +1192,12 @@ export function BidHistoryContent({
     );
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
 
-    const returnBid = returnState.bidId
-      ? paymentBidRecords.find((bid) => bid.id === returnState.bidId)
-      : null;
+    const returnBid = findGroupedBidRecordById(
+      groupedPaymentBidRecords,
+      paymentBidRecords,
+      returnState.bidId,
+      now,
+    );
 
     if (!returnBid) {
       return;
@@ -1198,7 +1251,13 @@ export function BidHistoryContent({
       isRestoreActive = false;
       window.clearTimeout(restoreTimer);
     };
-  }, [defaultAddressIds, deliveryAddresses, paymentBidRecords]);
+  }, [
+    defaultAddressIds,
+    deliveryAddresses,
+    groupedPaymentBidRecords,
+    now,
+    paymentBidRecords,
+  ]);
 
   function finishPaymentSheetClose() {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -1302,13 +1361,19 @@ export function BidHistoryContent({
     }
 
     const requestId = paymentStoreTypeRequestIdRef.current + 1;
-    const selectedBid = paymentBidRecords.find((bid) => bid.id === bidId) ?? null;
+    const currentTime = new Date();
+    const selectedBid = findGroupedBidRecordById(
+      groupedPaymentBidRecords,
+      paymentBidRecords,
+      bidId,
+      currentTime,
+    );
 
     if (!selectedBid) {
       return;
     }
 
-    if (isBidRecordPaymentExpired(selectedBid, new Date())) {
+    if (isBidRecordPaymentExpired(selectedBid, currentTime)) {
       setHistoryMessage(
         "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );
