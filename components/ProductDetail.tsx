@@ -435,15 +435,15 @@ function getOptionPurchaseOverlayLabel(
   const isConfirmed = isConfirmedOptionPurchase(option);
 
   if (myBid) {
-    return isConfirmed ? "내 구매 완료" : "내 구매 진행 중";
+    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
   }
 
   if (hasOptionPurchaseState(option)) {
-    return isConfirmed ? "구매 완료" : "구매 진행 중";
+    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
   }
 
   if (isUnavailablePurchaseOption(option)) {
-    return "구매 진행 중";
+    return "선택할 수 없는 멤버예요";
   }
 
   if (option.available === true) {
@@ -451,7 +451,7 @@ function getOptionPurchaseOverlayLabel(
   }
 
   if (shouldUseParticipantCount && option.participantCount > 0) {
-    return "구매 진행 중";
+    return "결제 진행 중이에요";
   }
 
   return null;
@@ -2735,11 +2735,10 @@ export function ProductDetail({
                 <>
                   <div className="mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
-                      const myBid = myBids[option.id];
                       const isSelected = bidAmounts[option.id] === "selected";
                       const overlayLabel = getOptionPurchaseOverlayLabel(
                         option,
-                        myBid,
+                        myBids[option.id],
                         product.isApiProduct === true,
                       );
 
@@ -2766,16 +2765,9 @@ export function ProductDetail({
                                   <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                                     {option.label}
                                   </p>
-                                  {myBid ? (
-                                    <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2 py-0.5 text-[10px] font-semibold text-black">
-                                      {overlayLabel}
-                                    </span>
-                                  ) : null}
                                 </div>
                                 <p className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45">
-                                  {myBid
-                                    ? `구매 금액 ${formatPrice(myBid)}`
-                                    : "구매 가능"}
+                                  {overlayLabel ?? "구매 가능"}
                                 </p>
                               </div>
                             </div>
