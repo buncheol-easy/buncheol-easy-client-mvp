@@ -544,6 +544,7 @@ export function ProductDetail({
   const didRestoreCheckoutAddressReturnRef = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
+  const checkoutSelectedOptionsRef = useRef<CheckoutAddressReturnOption[]>([]);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
   const checkoutCopyToastTimerRef = useRef<number | null>(null);
@@ -614,6 +615,36 @@ export function ProductDetail({
       0,
     );
   }, [selectedCheckoutItems]);
+
+  function getCheckoutReturnOptionsForAmounts(
+    amounts: Record<string, string>,
+  ): CheckoutAddressReturnOption[] {
+    return auctionOptions
+      .filter(
+        (option) =>
+          amounts[option.id] === "selected" &&
+          !getOptionPurchaseOverlayLabel(
+            option,
+            myBids[option.id],
+            product.isApiProduct === true,
+          ),
+      )
+      .map((option) => ({
+        buncheolMemberId: option.buncheolMemberId,
+        id: option.id,
+        label: option.label,
+      }));
+  }
+
+  function getCheckoutReturnOptionsFromItems(
+    items: CheckoutDraftItem[],
+  ): CheckoutAddressReturnOption[] {
+    return items.map(({ option }) => ({
+      buncheolMemberId: option.buncheolMemberId,
+      id: option.id,
+      label: option.label,
+    }));
+  }
 
   const sortedAuctionOptions = [...auctionOptions].sort((left, right) => {
     const leftHasBid = Boolean(
@@ -861,21 +892,14 @@ export function ProductDetail({
   }
 
   function getSelectedCheckoutReturnOptions(): CheckoutAddressReturnOption[] {
-    return auctionOptions
-      .filter(
-        (option) =>
-          bidAmounts[option.id] === "selected" &&
-          !getOptionPurchaseOverlayLabel(
-            option,
-            myBids[option.id],
-            product.isApiProduct === true,
-          ),
-      )
-      .map((option) => ({
-        buncheolMemberId: option.buncheolMemberId,
-        id: option.id,
-        label: option.label,
-      }));
+    const currentReturnOptions = getCheckoutReturnOptionsForAmounts(bidAmounts);
+
+    if (currentReturnOptions.length > 0) {
+      checkoutSelectedOptionsRef.current = currentReturnOptions;
+      return currentReturnOptions;
+    }
+
+    return checkoutSelectedOptionsRef.current;
   }
 
   function rememberCheckoutAddressReturnState(
@@ -951,6 +975,7 @@ export function ProductDetail({
   useEffect(() => {
     setAuctionOptions(product.options);
     setMyBids(getMyBidsFromOptions(product.options));
+    checkoutSelectedOptionsRef.current = [];
     setBidAmounts({});
     setIsHostedByMeFromApi(product.isHostedByMe === true);
     setCheckoutStep("options");
@@ -1114,6 +1139,13 @@ export function ProductDetail({
     }
 
     if (restorableOptionIds.length > 0) {
+      checkoutSelectedOptionsRef.current = auctionOptions
+        .filter((option) => restorableOptionIds.includes(option.id))
+        .map((option) => ({
+          buncheolMemberId: option.buncheolMemberId,
+          id: option.id,
+          label: option.label,
+        }));
       setBidAmounts(
         restorableOptionIds.reduce<Record<string, string>>((amounts, optionId) => {
           amounts[optionId] = "selected";
@@ -1321,17 +1353,22 @@ export function ProductDetail({
     }
 
     setBidAmounts((current) => {
-      if (current[optionId] === "selected") {
-        const nextAmounts = { ...current };
-        delete nextAmounts[optionId];
+      let nextAmounts: Record<string, string>;
 
-        return nextAmounts;
+      if (current[optionId] === "selected") {
+        nextAmounts = { ...current };
+        delete nextAmounts[optionId];
+      } else {
+        nextAmounts = {
+          ...current,
+          [optionId]: "selected",
+        };
       }
 
-      return {
-        ...current,
-        [optionId]: "selected",
-      };
+      checkoutSelectedOptionsRef.current =
+        getCheckoutReturnOptionsForAmounts(nextAmounts);
+
+      return nextAmounts;
     });
   }
 
@@ -1407,6 +1444,8 @@ export function ProductDetail({
       return;
     }
 
+    checkoutSelectedOptionsRef.current =
+      getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
     setCheckoutError("");
     setIsBidSubmitPending(true);
 
