@@ -2760,13 +2760,11 @@ export function ProductDetail({
                           >
                             {option.label}
                           </p>
-                          <p
-                            className={`mt-0.5 text-[12px] font-semibold ${
-                              overlayLabel ? "text-black/40" : "text-black/35"
-                            }`}
-                          >
-                            {overlayLabel ?? "구매 가능 멤버"}
-                          </p>
+                          {overlayLabel ? null : (
+                            <p className="mt-0.5 text-[12px] font-semibold text-black/35">
+                              구매 가능 멤버
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div
