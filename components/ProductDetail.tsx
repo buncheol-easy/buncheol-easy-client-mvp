@@ -2435,13 +2435,13 @@ export function ProductDetail({
             <div className="mt-8 border-t border-black/10 pt-6">
               <div className="flex items-end justify-between gap-3">
                 <h2 className="text-[18px] font-semibold">
-                  옵션 선택
+                  멤버
                 </h2>
                 <p className="text-[12px] font-semibold text-black/35">
-                  {auctionOptions.length.toLocaleString("ko-KR")}개 옵션
+                  {auctionOptions.length.toLocaleString("ko-KR")}명
                 </p>
               </div>
-              <div className="mt-4 grid gap-2.5">
+              <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
                 {auctionOptions.map((option) => {
                   const overlayLabel = getOptionPurchaseOverlayLabel(
                     option,
@@ -2452,30 +2452,36 @@ export function ProductDetail({
                   return (
                     <div
                       key={option.id}
-                      className={`relative flex min-h-[76px] items-center justify-between gap-3 overflow-hidden rounded-[0.9rem] border px-4 py-3 shadow-[0_8px_22px_rgba(0,0,0,0.035)] ${
+                      className={`relative flex min-h-[72px] items-center justify-between gap-3 border-b border-black/[0.06] px-4 py-3 last:border-b-0 ${
                         overlayLabel
-                          ? "border-black/10 bg-[#f7f7f7]"
-                          : "border-black/10 bg-white"
+                          ? "bg-[#fafafa]"
+                          : "bg-white"
                       }`}
                     >
-                      <div
-                        className={`flex min-w-0 items-center gap-3 ${
-                          overlayLabel ? "opacity-65" : ""
-                        }`}
-                      >
-                        <OptionAvatar option={option} size="md" />
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className={overlayLabel ? "opacity-45" : ""}>
+                          <OptionAvatar option={option} size="md" />
+                        </div>
                         <div className="min-w-0">
-                          <p className="truncate text-[16px] font-semibold">
+                          <p
+                            className={`truncate text-[16px] font-semibold ${
+                              overlayLabel ? "text-black/45" : "text-black"
+                            }`}
+                          >
                             {option.label}
                           </p>
-                          <p className="mt-0.5 text-[12px] font-semibold text-black/35">
-                            {overlayLabel ? "선택할 수 없는 옵션" : "구매 가능 옵션"}
+                          <p
+                            className={`mt-0.5 text-[12px] font-semibold ${
+                              overlayLabel ? "text-black/40" : "text-black/35"
+                            }`}
+                          >
+                            {overlayLabel ?? "구매 가능 멤버"}
                           </p>
                         </div>
                       </div>
                       <div
                         className={`shrink-0 text-right ${
-                          overlayLabel ? "opacity-65" : ""
+                          overlayLabel ? "opacity-45" : ""
                         }`}
                       >
                         <p className="text-[11px] font-semibold text-black/35">
@@ -2485,13 +2491,6 @@ export function ProductDetail({
                           {getBidBaseline(option)}
                         </p>
                       </div>
-                      {overlayLabel ? (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
-                          <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
-                            {overlayLabel}
-                          </span>
-                        </div>
-                      ) : null}
                     </div>
                   );
                 })}
