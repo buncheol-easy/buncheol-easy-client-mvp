@@ -1511,7 +1511,7 @@ export function BidHistoryContent({
     const returnState: AddressReturnState = {
       source: "bids",
       bidId: selectedPaymentBidId,
-      addressId: selectedPaymentAddressId,
+      addressId: selectedPaymentAddressId ?? paymentDeliveryAddress?.id ?? null,
     };
 
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
