@@ -668,21 +668,69 @@ async function getBidRecordWithShippingData(
   participation: MyParticipation,
 ): Promise<BidRecord> {
   const bidRecord = getBidRecordFromParticipation(participation);
+  const shouldFetchParticipationDetail =
+    isBidRecordPaymentConfirmed(bidRecord) ||
+    isBidRecordTransferRequested(bidRecord) ||
+    Boolean(bidRecord.deliveryId);
+  const [productDetailResult, paymentDetailResult] =
+    await Promise.allSettled([
+      requestBuncheolDetail(accessToken, bidRecord.productId),
+      shouldFetchParticipationDetail
+        ? requestParticipationPaymentDetail(accessToken, bidRecord.id)
+        : Promise.resolve(null),
+    ]);
 
-  try {
-    const detail = await requestBuncheolDetail(accessToken, bidRecord.productId);
+  let mergedBidRecord = bidRecord;
+
+  if (
+    paymentDetailResult.status === "fulfilled" &&
+    paymentDetailResult.value
+  ) {
+    const paymentDetail = paymentDetailResult.value;
+    const participationStatus =
+      paymentDetail.paymentStatus || mergedBidRecord.participationStatus;
+
+    mergedBidRecord = {
+      ...mergedBidRecord,
+      deliveryId: mergedBidRecord.deliveryId ?? paymentDetail.deliveryId ?? null,
+      deliveryStatus:
+        paymentDetail.deliveryStatus ?? mergedBidRecord.deliveryStatus ?? null,
+      hostBankAccount:
+        mergedBidRecord.hostBankAccount ?? paymentDetail.hostBankAccount,
+      paidAt:
+        mergedBidRecord.paidAt ??
+        (isPaymentConfirmedParticipationStatus(participationStatus)
+          ? "결제 완료"
+          : null),
+      participationStatus,
+      paymentAmount:
+        mergedBidRecord.paymentAmount ?? paymentDetail.paymentAmount ?? null,
+      paymentDueAt:
+        mergedBidRecord.paymentDueAt ?? paymentDetail.paymentDueAt ?? null,
+      shippingAddress:
+        mergedBidRecord.shippingAddress ?? paymentDetail.shippingAddress ?? null,
+      shippingFee:
+        mergedBidRecord.shippingFee ?? paymentDetail.shippingFee ?? null,
+      trackingNumber:
+        paymentDetail.trackingNumber ?? mergedBidRecord.trackingNumber ?? null,
+    };
+  }
+
+  if (productDetailResult.status === "fulfilled") {
+    const detail = productDetailResult.value;
     const product = toProductDetailItem(detail);
 
     return {
-      ...bidRecord,
+      ...mergedBidRecord,
       courier: product.courier,
-      hostBankAccount: bidRecord.hostBankAccount ?? detail.hostBankAccount,
-      imageUrl: bidRecord.imageUrl ?? product.imageUrl,
+      hostBankAccount:
+        mergedBidRecord.hostBankAccount ?? detail.hostBankAccount,
+      imageUrl: mergedBidRecord.imageUrl ?? product.imageUrl,
       shippingMethods: product.shippingMethods,
     };
-  } catch {
-    return bidRecord;
   }
+
+  return mergedBidRecord;
 }
 
 function getHostedProductFromBuncheol(

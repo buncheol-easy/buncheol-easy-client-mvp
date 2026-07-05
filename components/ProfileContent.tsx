@@ -561,21 +561,69 @@ async function getProfileBidEntryWithShippingData(
   participation: MyParticipation,
 ): Promise<ProfileBidEntry> {
   const bidEntry = getProfileBidEntryFromParticipation(participation);
+  const shouldFetchParticipationDetail =
+    isProfileBidPaymentConfirmed(bidEntry) ||
+    isProfileBidTransferRequested(bidEntry) ||
+    Boolean(bidEntry.deliveryId);
+  const [productDetailResult, paymentDetailResult] =
+    await Promise.allSettled([
+      requestBuncheolDetail(accessToken, bidEntry.productId),
+      shouldFetchParticipationDetail
+        ? requestParticipationPaymentDetail(accessToken, bidEntry.id)
+        : Promise.resolve(null),
+    ]);
 
-  try {
-    const detail = await requestBuncheolDetail(accessToken, bidEntry.productId);
+  let mergedBidEntry = bidEntry;
+
+  if (
+    paymentDetailResult.status === "fulfilled" &&
+    paymentDetailResult.value
+  ) {
+    const paymentDetail = paymentDetailResult.value;
+    const participationStatus =
+      paymentDetail.paymentStatus || mergedBidEntry.participationStatus;
+
+    mergedBidEntry = {
+      ...mergedBidEntry,
+      deliveryId: mergedBidEntry.deliveryId ?? paymentDetail.deliveryId ?? null,
+      deliveryStatus:
+        paymentDetail.deliveryStatus ?? mergedBidEntry.deliveryStatus ?? null,
+      hostBankAccount:
+        mergedBidEntry.hostBankAccount ?? paymentDetail.hostBankAccount,
+      paidAt:
+        mergedBidEntry.paidAt ??
+        (isPaymentConfirmedParticipationStatus(participationStatus)
+          ? "결제 완료"
+          : null),
+      participationStatus,
+      paymentAmount:
+        mergedBidEntry.paymentAmount ?? paymentDetail.paymentAmount ?? null,
+      paymentDueAt:
+        mergedBidEntry.paymentDueAt ?? paymentDetail.paymentDueAt ?? null,
+      shippingAddress:
+        mergedBidEntry.shippingAddress ?? paymentDetail.shippingAddress ?? null,
+      shippingFee:
+        mergedBidEntry.shippingFee ?? paymentDetail.shippingFee ?? null,
+      trackingNumber:
+        paymentDetail.trackingNumber ?? mergedBidEntry.trackingNumber ?? null,
+    };
+  }
+
+  if (productDetailResult.status === "fulfilled") {
+    const detail = productDetailResult.value;
     const product = toProductDetailItem(detail);
 
     return {
-      ...bidEntry,
+      ...mergedBidEntry,
       courier: product.courier,
-      hostBankAccount: bidEntry.hostBankAccount ?? detail.hostBankAccount,
-      imageUrl: bidEntry.imageUrl ?? product.imageUrl,
+      hostBankAccount:
+        mergedBidEntry.hostBankAccount ?? detail.hostBankAccount,
+      imageUrl: mergedBidEntry.imageUrl ?? product.imageUrl,
       shippingMethods: product.shippingMethods,
     };
-  } catch {
-    return bidEntry;
   }
+
+  return mergedBidEntry;
 }
 
 function getHostedProductFromBuncheol(
