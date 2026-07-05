@@ -363,12 +363,16 @@ export type MyHostedBuncheol = BuncheolSummary & {
 
 export type ParticipationPaymentDetail = {
   bidAmount: number;
+  deliveryId?: string | null;
+  deliveryStatus?: string | null;
   hostBankAccount: BankAccountInfo | null;
   participationId: string;
   paymentAmount: number | null;
   paymentDueAt?: string | null;
   paymentStatus: string;
+  shippingAddress?: DeliveryAddress | null;
   shippingFee: number | null;
+  trackingNumber?: string | null;
 };
 
 function getConfiguredApiBaseUrl() {
@@ -627,6 +631,184 @@ function getOptionalStringValue(body: Record<string, unknown>, keys: string[]) {
   return value.length > 0 ? value : undefined;
 }
 
+const participationDeliveryIdKeys = [
+  "deliveryId",
+  "deliverySnapshotId",
+  "trackingDeliveryId",
+  "shipmentId",
+  "shippingId",
+];
+
+const participationDeliveryStatusKeys = [
+  "deliveryStatus",
+  "shippingStatus",
+  "trackingStatus",
+  "shipmentStatus",
+];
+
+const participationNestedDeliveryStatusKeys = [
+  ...participationDeliveryStatusKeys,
+  "status",
+];
+
+const participationTrackingNumberKeys = [
+  "trackingNumber",
+  "invoiceNumber",
+  "waybillNumber",
+  "trackingNo",
+  "trackingCode",
+];
+
+function getOptionalStringValueFromRecords(
+  records: (Record<string, unknown> | null | undefined)[],
+  keys: string[],
+) {
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+
+    const value = getOptionalStringValue(record, keys);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function getOptionalNumberValueFromRecords(
+  records: (Record<string, unknown> | null | undefined)[],
+  keys: string[],
+) {
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+
+    const value = getOptionalNumberValue(record, keys);
+
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function getParticipationRelatedRecords(record: Record<string, unknown>) {
+  return [
+    record.paymentRequest,
+    record.paymentReport,
+    record.pendingPayment,
+    record.pendingWinner,
+    record.payment,
+    record.participation,
+    record.participant,
+    record.winner,
+    record.order,
+    record.orderInfo,
+    record.checkout,
+    record.checkoutRequest,
+  ]
+    .map(getNestedData)
+    .filter(isRecord);
+}
+
+function getParticipationDeliveryRecord(record: Record<string, unknown>) {
+  const relatedRecords = getParticipationRelatedRecords(record);
+  const deliveryCandidates = [
+    record.delivery,
+    record.deliverySnapshot,
+    record.deliveryInfo,
+    record.deliveryRequest,
+    record.shipment,
+    record.shipmentInfo,
+    record.shippingDelivery,
+    record.shippingSnapshot,
+    record.shipping,
+    record.shippingInfo,
+    ...relatedRecords.flatMap((relatedRecord) => [
+      relatedRecord.delivery,
+      relatedRecord.deliverySnapshot,
+      relatedRecord.deliveryInfo,
+      relatedRecord.deliveryRequest,
+      relatedRecord.shipment,
+      relatedRecord.shipmentInfo,
+      relatedRecord.shippingDelivery,
+      relatedRecord.shippingSnapshot,
+      relatedRecord.shipping,
+      relatedRecord.shippingInfo,
+    ]),
+  ];
+
+  return deliveryCandidates.map(getNestedData).find(isRecord) ?? null;
+}
+
+function getParticipationShippingAddressRecord(
+  record: Record<string, unknown>,
+) {
+  const relatedRecords = getParticipationRelatedRecords(record);
+  const deliveryRecord = getParticipationDeliveryRecord(record);
+  const addressCandidates = [
+    record.shippingAddressSnapshot,
+    record.shippingAddress,
+    record.shippingAddressInfo,
+    record.selectedShippingAddress,
+    record.selectedAddress,
+    record.deliveryAddress,
+    record.deliveryAddressSnapshot,
+    record.recipientAddress,
+    record.recipient,
+    record.receiver,
+    record.receiverInfo,
+    record.pickupStore,
+    record.store,
+    record.storeInfo,
+    record.addressSnapshot,
+    record.address,
+    record.shipping,
+    record.shippingInfo,
+    deliveryRecord?.shippingAddressSnapshot,
+    deliveryRecord?.shippingAddress,
+    deliveryRecord?.shippingAddressInfo,
+    deliveryRecord?.selectedShippingAddress,
+    deliveryRecord?.selectedAddress,
+    deliveryRecord?.recipientAddress,
+    deliveryRecord?.recipient,
+    deliveryRecord?.receiver,
+    deliveryRecord?.receiverInfo,
+    deliveryRecord?.pickupStore,
+    deliveryRecord?.store,
+    deliveryRecord?.storeInfo,
+    deliveryRecord?.addressSnapshot,
+    deliveryRecord?.address,
+    ...relatedRecords.flatMap((relatedRecord) => [
+      relatedRecord.shippingAddressSnapshot,
+      relatedRecord.shippingAddress,
+      relatedRecord.shippingAddressInfo,
+      relatedRecord.selectedShippingAddress,
+      relatedRecord.selectedAddress,
+      relatedRecord.deliveryAddress,
+      relatedRecord.deliveryAddressSnapshot,
+      relatedRecord.recipientAddress,
+      relatedRecord.recipient,
+      relatedRecord.receiver,
+      relatedRecord.receiverInfo,
+      relatedRecord.pickupStore,
+      relatedRecord.store,
+      relatedRecord.storeInfo,
+      relatedRecord.addressSnapshot,
+      relatedRecord.address,
+      relatedRecord.shipping,
+      relatedRecord.shippingInfo,
+    ]),
+  ];
+
+  return addressCandidates.map(getNestedData).find(isRecord) ?? null;
+}
+
 function getBankAccountInfoFromRecord(
   body: Record<string, unknown>,
 ): BankAccountInfo | null {
@@ -752,6 +934,10 @@ function getParticipationPaymentDetailFromBody(
     return null;
   }
 
+  const deliveryRecord = getParticipationDeliveryRecord(data);
+  const shippingAddressRecord = getParticipationShippingAddressRecord(data);
+  const lookupRecords = [data, deliveryRecord];
+
   return {
     bidAmount:
       getNumberValue(data, [
@@ -762,6 +948,20 @@ function getParticipationPaymentDetailFromBody(
         "amount",
         "paymentAmount",
       ]) ?? 0,
+    deliveryId:
+      getOptionalStringValueFromRecords(
+        lookupRecords,
+        participationDeliveryIdKeys,
+      ) ?? null,
+    deliveryStatus:
+      (deliveryRecord
+        ? getOptionalStringValue(
+            deliveryRecord,
+            participationNestedDeliveryStatusKeys,
+          )
+        : undefined) ??
+      getOptionalStringValue(data, participationDeliveryStatusKeys) ??
+      null,
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
@@ -801,7 +1001,19 @@ function getParticipationPaymentDetailFromBody(
         "status",
       ]) ??
       "",
-    shippingFee: getNumberValue(data, ["shippingFee"]) ?? null,
+    shippingAddress: shippingAddressRecord
+      ? getUserShippingAddress(shippingAddressRecord)
+      : null,
+    shippingFee:
+      getOptionalNumberValueFromRecords(lookupRecords, [
+        "shippingFee",
+        "deliveryFee",
+      ]) ?? null,
+    trackingNumber:
+      getOptionalStringValueFromRecords(
+        lookupRecords,
+        participationTrackingNumberKeys,
+      ) ?? null,
   };
 }
 
@@ -3659,25 +3871,12 @@ export async function requestMyParticipations(accessToken: string) {
       const buncheolMember = isRecord(buncheolMemberRecord)
         ? buncheolMemberRecord
         : null;
-      const shippingAddressRecord =
-        getNestedData(record.shippingAddressSnapshot) ??
-        getNestedData(record.shippingAddress) ??
-        getNestedData(record.shippingAddressInfo) ??
-        getNestedData(record.addressSnapshot) ??
-        getNestedData(record.address) ??
-        getNestedData(record.delivery) ??
-        getNestedData(record.deliverySnapshot) ??
-        getNestedData(record.deliveryInfo);
+      const shippingAddressRecord = getParticipationShippingAddressRecord(record);
       const shippingAddress = shippingAddressRecord
         ? getUserShippingAddress(shippingAddressRecord)
         : null;
-      const deliveryRecord =
-        getNestedData(record.delivery) ??
-        getNestedData(record.deliverySnapshot) ??
-        getNestedData(record.shippingAddressSnapshot) ??
-        getNestedData(record.shippingAddress) ??
-        getNestedData(record.deliveryInfo);
-      const delivery = isRecord(deliveryRecord) ? deliveryRecord : null;
+      const delivery = getParticipationDeliveryRecord(record);
+      const lookupRecords = [record, delivery];
       const participationId = getStringValue(record, [
         "participationId",
         "id",
@@ -3740,30 +3939,18 @@ export async function requestMyParticipations(accessToken: string) {
           ]) || (buncheol ? getStringValue(buncheol, ["title"]) : ""),
         closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
-          getOptionalStringValue(record, [
-            "deliveryId",
-            "deliverySnapshotId",
-          ]) ??
-          (delivery
-            ? getOptionalStringValue(delivery, [
-                "deliveryId",
-                "id",
-                "deliverySnapshotId",
-              ])
-            : null) ??
-          null,
+          getOptionalStringValueFromRecords(
+            lookupRecords,
+            participationDeliveryIdKeys,
+          ) ?? null,
         deliveryStatus:
-          getOptionalStringValue(record, [
-            "deliveryStatus",
-            "shippingStatus",
-          ]) ??
           (delivery
-            ? getOptionalStringValue(delivery, [
-                "deliveryStatus",
-                "shippingStatus",
-                "status",
-              ])
-            : null) ??
+            ? getOptionalStringValue(
+                delivery,
+                participationNestedDeliveryStatusKeys,
+              )
+            : undefined) ??
+          getOptionalStringValue(record, participationDeliveryStatusKeys) ??
           null,
         thumbnailUrl:
           getOptionalStringValue(record, [
@@ -3851,21 +4038,16 @@ export async function requestMyParticipations(accessToken: string) {
               ])
             : null),
         shippingAddress,
-        shippingFee: getOptionalNumberValue(record, ["shippingFee"]) ?? null,
+        shippingFee:
+          getOptionalNumberValueFromRecords(lookupRecords, [
+            "shippingFee",
+            "deliveryFee",
+          ]) ?? null,
         trackingNumber:
-          getOptionalStringValue(record, [
-            "trackingNumber",
-            "invoiceNumber",
-            "waybillNumber",
-          ]) ??
-          (delivery
-            ? getOptionalStringValue(delivery, [
-                "trackingNumber",
-                "invoiceNumber",
-                "waybillNumber",
-              ])
-            : null) ??
-          null,
+          getOptionalStringValueFromRecords(
+            lookupRecords,
+            participationTrackingNumberKeys,
+          ) ?? null,
       };
     })
     .filter(
