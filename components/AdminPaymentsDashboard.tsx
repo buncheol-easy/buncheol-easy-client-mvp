@@ -7,9 +7,12 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ChangeEvent,
+  type FormEvent,
 } from "react";
 import {
   requestBuncheolManagement,
+  requestCreateNotice,
   requestDeliveryTrackingRegistration,
   requestMyHostedBuncheols,
   requestPaymentConfirmation,
@@ -17,6 +20,7 @@ import {
   type BuncheolManagementDelivery,
   type BuncheolManagementDetail,
   type BuncheolManagementOption,
+  type CreateNoticeRequest,
 } from "@/lib/auth-api";
 import {
   getInitialAuthState,
@@ -431,6 +435,294 @@ async function getAdminDashboardAccessToken() {
   } catch {
     return accessToken;
   }
+}
+
+type NoticeFormState = {
+  bannerTitle: string;
+  description: string;
+  includeBanner: boolean;
+  linkPath: string;
+  pinned: boolean;
+  reference: string;
+  title: string;
+};
+
+const initialNoticeFormState: NoticeFormState = {
+  bannerTitle: "",
+  description: "",
+  includeBanner: true,
+  linkPath: "",
+  pinned: true,
+  reference: "",
+  title: "",
+};
+
+function getOptionalNoticeText(value: string) {
+  const trimmedValue = value.trim();
+
+  return trimmedValue ? trimmedValue : undefined;
+}
+
+function AdminNoticeUploader() {
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
+  const bodyImageInputRef = useRef<HTMLInputElement | null>(null);
+  const bannerImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [form, setForm] = useState<NoticeFormState>(initialNoticeFormState);
+  const [bodyImage, setBodyImage] = useState<File | null>(null);
+  const [bannerImage, setBannerImage] = useState<File | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState("");
+  const [isSubmittingNotice, setIsSubmittingNotice] = useState(false);
+
+  function updateTextField(
+    field: Exclude<keyof NoticeFormState, "includeBanner" | "pinned">,
+  ) {
+    return (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setForm((current) => ({
+        ...current,
+        [field]: event.target.value,
+      }));
+    };
+  }
+
+  function updateCheckboxField(field: "includeBanner" | "pinned") {
+    return (event: ChangeEvent<HTMLInputElement>) => {
+      setForm((current) => ({
+        ...current,
+        [field]: event.target.checked,
+      }));
+    };
+  }
+
+  function handleFileChange(setFile: (file: File | null) => void) {
+    return (event: ChangeEvent<HTMLInputElement>) => {
+      setFile(event.target.files?.[0] ?? null);
+    };
+  }
+
+  async function handleNoticeSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const title = form.title.trim();
+    const description = form.description.trim();
+    const linkPath = form.linkPath.trim();
+    const bannerTitle = form.bannerTitle.trim() || title;
+
+    if (!title || !description) {
+      setNoticeMessage("제목과 본문을 입력해 주세요.");
+      return;
+    }
+
+    if (linkPath && !linkPath.startsWith("/")) {
+      setNoticeMessage("연결 경로는 /로 시작해야 해요.");
+      return;
+    }
+
+    if (form.includeBanner && (!bannerTitle || !bannerImage)) {
+      setNoticeMessage("홈 배너로 노출하려면 배너 제목과 이미지를 함께 넣어 주세요.");
+      return;
+    }
+
+    setIsSubmittingNotice(true);
+    setNoticeMessage("공지 업로드 중이에요.");
+
+    try {
+      const accessToken = await getAdminDashboardAccessToken();
+
+      if (!accessToken) {
+        setNoticeMessage("로그인 후 공지를 업로드할 수 있어요.");
+        return;
+      }
+
+      const request: CreateNoticeRequest = {
+        description,
+        pinned: form.pinned,
+        title,
+        ...(getOptionalNoticeText(form.reference)
+          ? { reference: getOptionalNoticeText(form.reference) }
+          : {}),
+        ...(linkPath ? { linkPath } : {}),
+        ...(form.includeBanner ? { banner: { title: bannerTitle } } : {}),
+      };
+      const result = await requestCreateNotice(accessToken, request, {
+        bannerImage: form.includeBanner ? bannerImage : null,
+        image: bodyImage,
+      });
+
+      setNoticeMessage(
+        result.noticeId
+          ? `공지 업로드 완료: #${result.noticeId}`
+          : "공지 업로드 완료",
+      );
+      setForm(initialNoticeFormState);
+      setBodyImage(null);
+      setBannerImage(null);
+
+      if (bodyImageInputRef.current) {
+        bodyImageInputRef.current.value = "";
+      }
+
+      if (bannerImageInputRef.current) {
+        bannerImageInputRef.current.value = "";
+      }
+    } catch (error: unknown) {
+      setNoticeMessage(
+        error instanceof Error
+          ? error.message
+          : "공지를 업로드하지 못했어요.",
+      );
+    } finally {
+      setIsSubmittingNotice(false);
+    }
+  }
+
+  return (
+    <section className="rounded-[1.15rem] bg-white p-4 shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-semibold uppercase text-black/35">
+            Notice
+          </p>
+          <h2 className="mt-1 text-[22px] font-semibold">공지 업로드</h2>
+          <p className="mt-1 text-[13px] font-semibold text-black/40">
+            공지 본문과 홈 배너 이미지를 함께 등록해요.
+          </p>
+        </div>
+        {noticeMessage ? (
+          <p className="rounded-full bg-[#f4f6f8] px-3 py-2 text-[12px] font-semibold text-black/45">
+            {noticeMessage}
+          </p>
+        ) : null}
+      </div>
+
+      <form
+        className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]"
+        onSubmit={(event) => void handleNoticeSubmit(event)}
+      >
+        <div className="grid gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[12px] font-semibold text-black/40">
+                제목
+              </span>
+              <input
+                className="h-11 rounded-[0.85rem] border border-black/10 px-3 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+                maxLength={200}
+                onChange={updateTextField("title")}
+                placeholder="예: 배송지 선택 기능 안내"
+                value={form.title}
+              />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[12px] font-semibold text-black/40">
+                참고
+              </span>
+              <input
+                className="h-11 rounded-[0.85rem] border border-black/10 px-3 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+                maxLength={200}
+                onChange={updateTextField("reference")}
+                placeholder="선택 입력"
+                value={form.reference}
+              />
+            </label>
+          </div>
+
+          <label className="grid gap-1.5">
+            <span className="text-[12px] font-semibold text-black/40">
+              본문
+            </span>
+            <textarea
+              className="min-h-[9.5rem] resize-y rounded-[0.85rem] border border-black/10 px-3 py-3 text-[14px] font-semibold leading-6 outline-none placeholder:text-black/25 focus:border-black"
+              maxLength={5000}
+              onChange={updateTextField("description")}
+              placeholder="공지 내용을 입력해 주세요."
+              value={form.description}
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-3 rounded-[1rem] bg-[#f7f8f2] p-3">
+          <label className="grid gap-1.5">
+            <span className="text-[12px] font-semibold text-black/40">
+              연결 경로
+            </span>
+            <input
+              className="h-11 rounded-[0.85rem] border border-black/10 bg-white px-3 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+              maxLength={500}
+              onChange={updateTextField("linkPath")}
+              placeholder="/profile/bids"
+              value={form.linkPath}
+            />
+          </label>
+
+          <label className="grid gap-1.5">
+            <span className="text-[12px] font-semibold text-black/40">
+              본문 이미지
+            </span>
+            <input
+              accept="image/png,image/jpeg,image/webp"
+              className="block w-full rounded-[0.85rem] border border-black/10 bg-white px-3 py-2 text-[13px] font-semibold text-black/45 file:mr-3 file:rounded-full file:border-0 file:bg-black file:px-3 file:py-1.5 file:text-[12px] file:font-semibold file:text-white"
+              onChange={handleFileChange(setBodyImage)}
+              ref={bodyImageInputRef}
+              type="file"
+            />
+          </label>
+
+          <div className="grid gap-2 rounded-[0.9rem] border border-[#C8D4A5] bg-white p-3">
+            <label className="flex items-center justify-between gap-3 text-[13px] font-semibold">
+              <span>홈 배너로 노출</span>
+              <input
+                checked={form.includeBanner}
+                className="h-5 w-5 accent-[#CFE86B]"
+                onChange={updateCheckboxField("includeBanner")}
+                type="checkbox"
+              />
+            </label>
+
+            {form.includeBanner ? (
+              <>
+                <input
+                  className="h-10 rounded-[0.8rem] border border-black/10 px-3 text-[13px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+                  maxLength={200}
+                  onChange={updateTextField("bannerTitle")}
+                  placeholder="배너 제목은 비우면 공지 제목을 사용해요"
+                  value={form.bannerTitle}
+                />
+                <input
+                  accept="image/png,image/jpeg,image/webp"
+                  className="block w-full rounded-[0.8rem] border border-black/10 px-3 py-2 text-[13px] font-semibold text-black/45 file:mr-3 file:rounded-full file:border-0 file:bg-[#DDE7B8] file:px-3 file:py-1.5 file:text-[12px] file:font-semibold file:text-black"
+                  onChange={handleFileChange(setBannerImage)}
+                  ref={bannerImageInputRef}
+                  type="file"
+                />
+              </>
+            ) : null}
+          </div>
+
+          <label className="flex items-center justify-between gap-3 rounded-[0.9rem] bg-white px-3 py-2 text-[13px] font-semibold">
+            <span>상단 고정</span>
+            <input
+              checked={form.pinned}
+              className="h-5 w-5 accent-[#CFE86B]"
+              onChange={updateCheckboxField("pinned")}
+              type="checkbox"
+            />
+          </label>
+
+          <button
+            className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
+            disabled={!authState.isLoggedIn || isSubmittingNotice}
+            type="submit"
+          >
+            {isSubmittingNotice ? "업로드 중" : "공지 업로드"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
 }
 
 function toDeliveryFromWinner(
@@ -956,6 +1248,8 @@ export function AdminPaymentsDashboard() {
             {message}
           </p>
         ) : null}
+
+        <AdminNoticeUploader />
 
         <section className="grid min-h-[640px] gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-[1.15rem] bg-white p-3.5">

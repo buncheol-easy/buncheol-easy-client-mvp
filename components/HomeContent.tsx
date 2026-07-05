@@ -20,6 +20,7 @@ import {
   addFavoriteGroup,
   removeFavoriteGroup,
   requestAllBuncheols,
+  requestBanners,
   requestFavoriteGroups,
   toProductCardItem,
 } from "@/lib/auth-api";
@@ -39,35 +40,33 @@ const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const HOME_BANNER_AUTO_INTERVAL_MS = 4200;
-const HOME_BANNERS = [
+type HomeBanner = {
+  href: string;
+  imageAlt: string;
+  imageSrc: string;
+  label: string;
+};
+
+const HOME_BANNERS: HomeBanner[] = [
   {
-    href: "/board/transfer-payment?from=home",
-    eyebrow: "Notice",
-    title: "입금 확인 방식이\n계좌이체 기반으로 바뀌어요.",
-    badge: "PAY",
-    caption: "Transfer Guide",
-    gradient:
-      "bg-[linear-gradient(135deg,#111111_0%,#2f371f_50%,#AAB67C_100%)]",
+    href: "/board?from=home",
+    imageAlt: "분철이지 사용법 한눈에 보기",
+    imageSrc: "/banners/buncheol-guide.png",
+    label: "분철이지 사용법",
   },
   {
-    href: "/board/shipping-method-filter?from=home",
-    eyebrow: "Delivery",
-    title: "상품별 배송 방식에 맞는\n주소만 선택해요.",
-    badge: "CU·GS",
-    caption: "Address Match",
-    gradient:
-      "bg-[linear-gradient(135deg,#111827_0%,#3d4728_50%,#AAB67C_100%)]",
+    href: "/board/transfer-payment?from=home",
+    imageAlt: "분철이지 오픈 안내",
+    imageSrc: "/banners/buncheol-open.png",
+    label: "분철이지 오픈",
   },
   {
     href: "/board/closed-bid-status?from=home",
-    eyebrow: "Bid Alert",
-    title: "참여와 입금 상태를\n빠르게 확인하세요.",
-    badge: "BID",
-    caption: "Winning Status",
-    gradient:
-      "bg-[linear-gradient(135deg,#18181b_0%,#464a2b_50%,#AAB67C_100%)]",
+    imageAlt: "안전한 분철을 위한 안내",
+    imageSrc: "/banners/buncheol-safe.png",
+    label: "안전한 분철 안내",
   },
-] as const;
+];
 
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
@@ -131,6 +130,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
+  const [apiBanners, setApiBanners] = useState<HomeBanner[] | null>(null);
   const [apiListings, setApiListings] = useState<ProductCardItem[] | null>(null);
   const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
   const [listingMessage, setListingMessage] = useState("");
@@ -142,6 +142,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   );
   const isListingLoading = apiListings === null;
   const isGroupLoading = apiGroups === null;
+  const banners = apiBanners && apiBanners.length > 0 ? apiBanners : HOME_BANNERS;
   const listings = apiListings ?? [];
   const favoriteGroups = apiGroups ?? [];
 
@@ -181,20 +182,35 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }
 
   function handleBannerScroll(event: UIEvent<HTMLDivElement>) {
-    const { clientWidth, scrollLeft } = event.currentTarget;
+    const scrollElement = event.currentTarget;
 
-    if (clientWidth <= 0) {
+    if (scrollElement.clientWidth <= 0) {
       return;
     }
 
-    const nextIndex = Math.min(
-      HOME_BANNERS.length - 1,
-      Math.max(0, Math.round(scrollLeft / clientWidth)),
+    const slideOffsets = Array.from(scrollElement.children).map((child) =>
+      child instanceof HTMLElement ? child.offsetLeft : 0,
     );
+    const nextIndex = slideOffsets.reduce((nearestIndex, offset, index) => {
+      const nearestDistance = Math.abs(
+        slideOffsets[nearestIndex] - scrollElement.scrollLeft,
+      );
+      const distance = Math.abs(offset - scrollElement.scrollLeft);
+
+      return distance < nearestDistance ? index : nearestIndex;
+    }, 0);
 
     setActiveBannerIndex((current) =>
       current === nextIndex ? current : nextIndex,
     );
+  }
+
+  function getBannerSlideLeft(scrollElement: HTMLDivElement, index: number) {
+    const slide = scrollElement.children.item(index);
+
+    return slide instanceof HTMLElement
+      ? slide.offsetLeft
+      : scrollElement.clientWidth * index;
   }
 
   function handleBannerDotClick(index: number) {
@@ -207,12 +223,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     setActiveBannerIndex(index);
     scrollElement.scrollTo({
       behavior: "smooth",
-      left: scrollElement.clientWidth * index,
+      left: getBannerSlideLeft(scrollElement, index),
     });
   }
 
   useEffect(() => {
-    if (HOME_BANNERS.length <= 1 || typeof window === "undefined") {
+    if (banners.length <= 1 || typeof window === "undefined") {
       return;
     }
 
@@ -234,11 +250,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       }
 
       setActiveBannerIndex((currentIndex) => {
-        const nextIndex = (currentIndex + 1) % HOME_BANNERS.length;
+        const nextIndex = (currentIndex + 1) % banners.length;
 
         scrollElement.scrollTo({
           behavior: "auto",
-          left: scrollElement.clientWidth * nextIndex,
+          left: getBannerSlideLeft(scrollElement, nextIndex),
         });
 
         return nextIndex;
@@ -246,7 +262,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     }, HOME_BANNER_AUTO_INTERVAL_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [activeBannerIndex]);
+  }, [activeBannerIndex, banners.length]);
 
   useLayoutEffect(() => {
     const storedScrollTop = getStoredHomeScrollTop();
@@ -308,6 +324,44 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       }
     };
   }, [skipEnterAnimation]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    requestBanners()
+      .then((items) => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiBanners(
+          items.map((item) => ({
+            href: `/board/${encodeURIComponent(item.noticeId)}?from=home`,
+            imageAlt: item.bannerTitle || "분철이지 배너",
+            imageSrc: item.bannerImageUrl,
+            label: item.bannerTitle || "분철이지 배너",
+          })),
+        );
+        setActiveBannerIndex(0);
+
+        const scrollElement = bannerScrollerRef.current;
+
+        if (scrollElement) {
+          scrollElement.scrollTo({ behavior: "auto", left: 0 });
+        }
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setApiBanners([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -528,49 +582,28 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             onScroll={handleBannerScroll}
             ref={bannerScrollerRef}
           >
-            {HOME_BANNERS.map((banner) => (
+            {banners.map((banner, index) => (
               <Link
-                aria-label={`${banner.eyebrow} 공지 상세 보기`}
-                className="motion-card motion-carousel__slide grid w-full flex-none snap-center grid-cols-[minmax(0,1.34fr)_minmax(104px,0.66fr)] overflow-hidden rounded-[1.15rem] border border-black bg-black shadow-[0_18px_40px_rgba(0,0,0,0.12)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                aria-label={`${banner.label} 보기`}
+                className="motion-card motion-carousel__slide relative aspect-[1770/533] w-full flex-none snap-start overflow-hidden rounded-[1.15rem] bg-white shadow-[0_14px_34px_rgba(0,0,0,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 href={banner.href}
                 key={banner.href}
               >
-                <div className="flex min-w-0 items-center px-4 py-4">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.18em] text-white/45">
-                      {banner.eyebrow}
-                    </p>
-                    <h2 className="mt-2 max-w-[13rem] whitespace-pre-line break-keep text-[clamp(14px,3.55vw,16px)] font-semibold leading-[1.24] text-white">
-                      {banner.title}
-                    </h2>
-                  </div>
-                </div>
-                <div
-                  className={`relative min-h-[108px] min-w-0 overflow-hidden border-l border-white/10 ${banner.gradient}`}
-                >
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_28%,rgba(255,255,255,0.7),transparent_22%)]" />
-                  <div className="absolute bottom-4 left-2 h-[70px] w-[52px] rotate-[-10deg] rounded-[0.8rem] border border-white/25 bg-black shadow-[0_12px_24px_rgba(0,0,0,0.24)]" />
-                  <div className="absolute bottom-4 left-[3.75rem] h-[82px] w-[58px] rotate-[7deg] rounded-[0.8rem] border border-white/40 bg-white/85 shadow-[0_12px_24px_rgba(0,0,0,0.16)]" />
-                  <div className="absolute right-2 top-4 rounded-full bg-[#DDE7B8] px-2 py-1 text-[9px] font-semibold tracking-[0.12em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
-                    {banner.badge}
-                  </div>
-                  <div className="absolute bottom-3 right-2 max-w-[6.75rem] rounded-xl border border-black/10 bg-white/90 px-2 py-1.5 backdrop-blur">
-                    <p className="text-[8px] font-medium uppercase tracking-[0.12em] text-black/45">
-                      {banner.caption}
-                    </p>
-                    <p className="mt-0.5 text-[11px] font-semibold tracking-[-0.03em]">
-                      자세히 보기
-                    </p>
-                  </div>
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  alt={banner.imageAlt}
+                  className="h-full w-full object-cover"
+                  loading={index === 0 ? "eager" : "lazy"}
+                  src={banner.imageSrc}
+                />
               </Link>
             ))}
           </div>
 
           <div className="flex items-center justify-center gap-2 pt-2 pb-4">
-            {HOME_BANNERS.map((banner, index) => (
+            {banners.map((banner, index) => (
               <button
-                aria-label={`${index + 1}번째 광고판 보기`}
+                aria-label={`${index + 1}번째 배너 보기`}
                 className={`motion-pill h-2 rounded-full ${
                   activeBannerIndex === index
                     ? "w-6 bg-[#CFE86B] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_6px_16px_rgba(120,132,82,0.3)]"

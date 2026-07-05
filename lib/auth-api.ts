@@ -141,6 +141,33 @@ export type InboxMessageDetail = InboxMessageSummary & {
   reference?: string;
 };
 
+export type CreateNoticeRequest = {
+  banner?: {
+    title: string;
+  };
+  description: string;
+  linkPath?: string;
+  pinned: boolean;
+  reference?: string;
+  title: string;
+};
+
+export type CreateNoticeFiles = {
+  bannerImage?: Blob | null;
+  image?: Blob | null;
+};
+
+export type CreateNoticeResponse = {
+  location: string | null;
+  noticeId: string | null;
+};
+
+export type ApiBanner = {
+  bannerImageUrl: string;
+  bannerTitle: string;
+  noticeId: string;
+};
+
 export type InboxFeed = {
   hasNext: boolean;
   items: InboxMessageSummary[];
@@ -1335,6 +1362,42 @@ function appendImageFormParts(formData: FormData, images: Blob[] = []) {
 
     formData.append("images", file);
   });
+}
+
+function appendNamedFileFormPart(
+  formData: FormData,
+  name: string,
+  file: Blob | null | undefined,
+  fallbackFilename: string,
+) {
+  if (!file) {
+    return;
+  }
+
+  formData.append(
+    name,
+    file instanceof File
+      ? file
+      : new File([file], fallbackFilename, {
+          type: file.type || "image/jpeg",
+        }),
+  );
+}
+
+function getBannerList(body: unknown) {
+  const data = getNestedData(body);
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (!isRecord(data)) {
+    return [];
+  }
+
+  const candidates = [data.banners, data.items, data.content, data.list];
+
+  return candidates.find(Array.isArray) ?? [];
 }
 
 function getBuncheolList(body: unknown) {
@@ -4064,6 +4127,68 @@ export async function requestDeliveryTrackingRegistration(
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
+}
+
+export async function requestCreateNotice(
+  accessToken: string,
+  request: CreateNoticeRequest,
+  files: CreateNoticeFiles = {},
+): Promise<CreateNoticeResponse> {
+  const formData = new FormData();
+  appendJsonFormPart(formData, request);
+  appendNamedFileFormPart(
+    formData,
+    "image",
+    files.image,
+    "notice-image.jpg",
+  );
+  appendNamedFileFormPart(
+    formData,
+    "bannerImage",
+    files.bannerImage,
+    "notice-banner.jpg",
+  );
+
+  const response = await fetch(`${getVersionedApiBaseUrl()}/notices`, {
+    body: formData,
+    credentials: "include",
+    headers: getAuthHeaders(accessToken),
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+
+  const location = response.headers.get("location");
+  const noticeId = location?.match(/\/inbox\/([^/?#]+)/)?.[1] ?? null;
+
+  return {
+    location,
+    noticeId,
+  };
+}
+
+export async function requestBanners(): Promise<ApiBanner[]> {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/banners`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  return getBannerList(await readJsonBody(response))
+    .filter(isRecord)
+    .map((record) => ({
+      bannerImageUrl: getStringValue(record, ["bannerImageUrl", "imageUrl"]),
+      bannerTitle: getStringValue(record, ["bannerTitle", "title"]),
+      noticeId: getStringValue(record, ["noticeId", "id"]),
+    }))
+    .filter(
+      (banner) =>
+        Boolean(banner.noticeId) && Boolean(banner.bannerImageUrl),
+    );
 }
 
 function getInboxMessageSummaryFromRecord(
