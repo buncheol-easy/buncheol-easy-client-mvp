@@ -49,19 +49,19 @@ export default function RootLayout({
           <div>
             <p className="desktop-web-brand__eyebrow">BUNCHEOL EASY</p>
             <h1 className="desktop-web-brand__title">
-              최애 포카 분철을
+              최애 포카 분철,
               <br />
-              더 쉽고 빠르게.
+              이제 분철이지.
             </h1>
             <p className="desktop-web-brand__body">
-              모바일 앱 흐름은 그대로 두고, 웹에서는 분철 현황과 입금 안내를
-              더 안정적인 프레임 안에서 확인할 수 있어요.
+              멤버별 모집부터 입금 안내, 편의점 배송까지 복잡한 분철을
+              한 화면에서 깔끔하게 관리해요.
             </p>
           </div>
           <div className="desktop-web-brand__chips" aria-hidden="true">
-            <span>공동구매</span>
-            <span>계좌이체</span>
-            <span>편의점 택배</span>
+            <span>빠른 모집</span>
+            <span>안심 입금</span>
+            <span>편의점 배송</span>
             <span>분철 관리</span>
           </div>
           <div className="desktop-web-brand__visual" aria-hidden="true">
