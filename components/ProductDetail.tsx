@@ -306,6 +306,53 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
   return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
 }
 
+function parseCheckoutDateTime(value: string | null | undefined) {
+  if (!value) {
+    return new Date(Number.NaN);
+  }
+
+  const date = new Date(value);
+
+  if (!Number.isNaN(date.getTime())) {
+    return date;
+  }
+
+  return parseKoreaDateTime(value);
+}
+
+function formatPaymentDueCountdown(
+  value: string | null | undefined,
+  now = Date.now(),
+) {
+  const dueDate = parseCheckoutDateTime(value);
+
+  if (Number.isNaN(dueDate.getTime())) {
+    return "-";
+  }
+
+  const remainingMilliseconds = dueDate.getTime() - now;
+
+  if (remainingMilliseconds <= 0) {
+    return "입금 마감";
+  }
+
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) {
+    return `${days}일 ${hours.toString().padStart(2, "0")}시간 남음`;
+  }
+
+  if (hours > 0) {
+    return `${hours}시간 ${minutes.toString().padStart(2, "0")}분 남음`;
+  }
+
+  return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
+}
+
 function getTargetTags(product: ProductDetailItem) {
   const tags = product.targetMembers ?? [product.member];
 
@@ -323,14 +370,10 @@ function getProductImageUrls(product: ProductDetailItem) {
 }
 
 function formatCheckoutDateTime(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
+  const date = parseCheckoutDateTime(value);
 
   if (Number.isNaN(date.getTime())) {
-    return value;
+    return value ?? "-";
   }
 
   return new Intl.DateTimeFormat("ko-KR", {
@@ -956,7 +999,13 @@ export function ProductDetail({
   }
 
   useEffect(() => {
-    if (isDeadlineClosed(product.deadline)) {
+    const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
+    const paymentDueDate = parseCheckoutDateTime(paymentDueAt);
+    const shouldTickPaymentDue =
+      !Number.isNaN(paymentDueDate.getTime()) &&
+      paymentDueDate.getTime() > Date.now();
+
+    if (isDeadlineClosed(product.deadline) && !shouldTickPaymentDue) {
       setDeadlineTick(Date.now());
       return;
     }
@@ -966,7 +1015,7 @@ export function ProductDetail({
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [product.deadline]);
+  }, [checkoutPaymentSummary?.paymentDueAt, product.deadline]);
 
   useEffect(() => {
     setIsLiked(product.liked === true);
@@ -2996,19 +3045,37 @@ export function ProductDetail({
                 checkoutPaymentSummary ? (
                   <>
                     <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                      <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                              입금 마감
+                            </p>
+                            <p className="mt-1 text-[23px] font-semibold tracking-[-0.05em] text-white">
+                              {formatPaymentDueCountdown(
+                                checkoutPaymentSummary.paymentDueAt,
+                                deadlineTick,
+                              )}
+                            </p>
+                          </div>
+                          <p className="shrink-0 pt-1 text-right text-[12px] font-semibold leading-5 text-white/45">
+                            {formatCheckoutDateTime(
+                              checkoutPaymentSummary.paymentDueAt,
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                        <p className="text-[12px] font-semibold text-black/40">선택 옵션</p>
-                        <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                          {checkoutPaymentSummary.items[0]?.option.label ?? "-"}
-                          {checkoutPaymentSummary.items.length > 1
-                            ? ` 외 ${checkoutPaymentSummary.items.length - 1}개`
-                            : ""}
-                        </p>
-                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-                          선택한 옵션 {checkoutPaymentSummary.items.length}개를
-                          합산해 한 번에 입금해 주세요.
-                        </p>
-                        <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[12px] font-semibold text-black/40">
+                            선택 옵션
+                          </p>
+                          <span className="text-[12px] font-semibold text-black/35">
+                            {checkoutPaymentSummary.items.length}개
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-2">
                           {checkoutPaymentSummary.items.map((item) => (
                             <div
                               className="flex items-center justify-between gap-3 rounded-[0.75rem] bg-white px-3 py-2"
@@ -3089,15 +3156,6 @@ export function ProductDetail({
                         </div>
                       </div>
 
-                      <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                        <p className="text-[12px] font-semibold text-black/40">입금 마감</p>
-                        <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em]">
-                          {formatCheckoutDateTime(checkoutPaymentSummary.paymentDueAt)}
-                        </p>
-                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-                          마감 시각까지 입금하면 관리자가 확인 후 주문을 확정해요.
-                        </p>
-                      </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
