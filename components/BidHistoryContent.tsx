@@ -296,6 +296,7 @@ function isBidRecordClosed(bid: BidRecord, now: Date) {
 
 function isBidRecordPaymentReady(bid: BidRecord, now: Date) {
   return (
+    !isBidRecordCancelled(bid) &&
     !isBidRecordPaymentConfirmed(bid) &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
       (isBidRecordClosed(bid, now) && bid.rank === 1)) &&
@@ -322,6 +323,17 @@ function isCancelledParticipationStatus(status: string | undefined) {
   return status === "CANCELLED" || status === "CANCELED";
 }
 
+function isCancelledBuncheolStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "CANCELED";
+}
+
+function isBidRecordCancelled(bid: BidRecord) {
+  return (
+    isCancelledParticipationStatus(bid.participationStatus) ||
+    isCancelledBuncheolStatus(bid.buncheolStatus)
+  );
+}
+
 function isDeletedProductStatus(status: string | undefined) {
   return status === "DELETED";
 }
@@ -332,6 +344,7 @@ function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
     (isBidRecordClosed(bid, now) && bid.rank === 1);
 
   if (
+    isBidRecordCancelled(bid) ||
     isBidRecordPaymentConfirmed(bid) ||
     isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
@@ -380,7 +393,7 @@ function isDeliveryInProgress(bid: BidRecord) {
 
 function getBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   if (
-    isCancelledParticipationStatus(bid.participationStatus) ||
+    isBidRecordCancelled(bid) ||
     isBidRecordPaymentExpired(bid, now)
   ) {
     return -1;
@@ -542,7 +555,7 @@ function findGroupedBidRecordById(
 }
 
 function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isBidRecordCancelled(bid)) {
     return "취소";
   }
 
@@ -566,7 +579,11 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
 }
 
 function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isBidRecordCancelled(bid)) {
+    if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
+      return "취소된 분철이에요.";
+    }
+
     return "취소된 참여예요.";
   }
 
@@ -1916,9 +1933,12 @@ export function BidHistoryContent({
             ) : null}
             {!isBidRecordsLoading && records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
-              const isCancelled = isCancelledParticipationStatus(
-                bid.participationStatus,
-              );
+              const isCancelled = isBidRecordCancelled(bid);
+              const cancellationLabel = isCancelledBuncheolStatus(
+                bid.buncheolStatus,
+              )
+                ? "분철 취소됨"
+                : "참여 취소됨";
               const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
               const isPaymentConfirmed = isBidRecordPaymentConfirmed(bid);
@@ -2003,6 +2023,13 @@ export function BidHistoryContent({
                       </div>
 
                       <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                        {isCancelled ? (
+                          <div className="mb-3 flex justify-center">
+                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
+                              {cancellationLabel}
+                            </span>
+                          </div>
+                        ) : null}
                         <div className="relative">
                           <div className="absolute left-[12.5%] right-[12.5%] top-[9px] h-px bg-[#CAD6A0]" />
                           <div className="relative grid grid-cols-4 gap-1">

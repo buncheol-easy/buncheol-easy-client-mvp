@@ -341,6 +341,7 @@ function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
 
 function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
   return (
+    !isProfileBidCancelled(bid) &&
     !isProfileBidPaymentConfirmed(bid) &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
       (isProfileBidClosed(bid, now) && bid.rank === 1)) &&
@@ -367,12 +368,24 @@ function isCancelledParticipationStatus(status: string | undefined) {
   return status === "CANCELLED" || status === "CANCELED";
 }
 
+function isCancelledBuncheolStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "CANCELED";
+}
+
+function isProfileBidCancelled(bid: ProfileBidEntry) {
+  return (
+    isCancelledParticipationStatus(bid.participationStatus) ||
+    isCancelledBuncheolStatus(bid.buncheolStatus)
+  );
+}
+
 function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
   const isPaymentCandidate =
     isPaymentWaitingParticipationStatus(bid.participationStatus) ||
     (isProfileBidClosed(bid, now) && bid.rank === 1);
 
   if (
+    isProfileBidCancelled(bid) ||
     isProfileBidPaymentConfirmed(bid) ||
     isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
@@ -400,7 +413,7 @@ function isProfileBidTransferRequested(bid: ProfileBidEntry) {
 }
 
 function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isProfileBidCancelled(bid)) {
     return "취소";
   }
 
@@ -424,7 +437,11 @@ function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
 }
 
 function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isProfileBidCancelled(bid)) {
+    if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
+      return "취소된 분철이에요.";
+    }
+
     return "취소된 참여예요.";
   }
 
@@ -946,7 +963,7 @@ export function ProfileContent({
       allBids.filter((bid) => {
         const isClosed = isProfileBidClosed(bid, now);
 
-        if (isCancelledParticipationStatus(bid.participationStatus)) {
+        if (isProfileBidCancelled(bid)) {
           return false;
         }
 
