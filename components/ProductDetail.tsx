@@ -109,6 +109,7 @@ type CheckoutPaymentSummary = {
 };
 
 type CheckoutAddressReturnState = {
+  addressId?: string | null;
   createdAt: number;
   optionIds: string[];
   productId: string;
@@ -824,6 +825,7 @@ export function ProductDetail({
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
       JSON.stringify({
         createdAt: Date.now(),
+        addressId: checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null,
         optionIds: getSelectedCheckoutOptionIds(),
         productId: buncheolId,
         reopenAddressSheet,
@@ -918,6 +920,10 @@ export function ProductDetail({
             typeof parsedState.createdAt === "number"
               ? parsedState.createdAt
               : Date.now(),
+          addressId:
+            typeof parsedState.addressId === "string"
+              ? parsedState.addressId
+              : null,
           optionIds: parsedState.optionIds.filter(
             (optionId): optionId is string => typeof optionId === "string",
           ),
@@ -1006,10 +1012,17 @@ export function ProductDetail({
         availableShippingStoreTypes
           .map((storeType) => defaultDeliveryAddresses[storeType])
           .find((address) => address !== null) ?? null;
-      const restoredAddress =
-        (lastAddedAddressId
+      const lastAddedAddress =
+        lastAddedAddressId
           ? eligibleAddresses.find((address) => address.id === lastAddedAddressId)
-          : null) ??
+          : null;
+      const previousSelectedAddress =
+        returnState.addressId
+          ? eligibleAddresses.find((address) => address.id === returnState.addressId)
+          : null;
+      const restoredAddress =
+        lastAddedAddress ??
+        previousSelectedAddress ??
         defaultAddress ??
         eligibleAddresses[0] ??
         null;

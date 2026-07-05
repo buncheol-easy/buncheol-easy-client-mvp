@@ -1384,7 +1384,7 @@ export function ProfileContent({
     const returnState: AddressReturnState = {
       source: "profile",
       bidId: selectedPaymentBidId,
-      addressId: selectedPaymentAddressId,
+      addressId: selectedPaymentAddressId ?? paymentDeliveryAddress?.id ?? null,
     };
 
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
