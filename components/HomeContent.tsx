@@ -578,7 +578,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       >
         <section className="px-4 pt-4">
           <div
-            className="motion-carousel flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="home-banner-carousel motion-carousel flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onScroll={handleBannerScroll}
             ref={bannerScrollerRef}
           >

@@ -718,6 +718,19 @@ body.is-pwa-standalone {
   animation-play-state: paused;
 }
 
+.home-banner-carousel {
+  scroll-padding-inline: 0;
+}
+
+.home-banner-carousel .motion-carousel__slide {
+  inline-size: 100%;
+  min-inline-size: 100%;
+}
+
+.home-banner-carousel img {
+  object-position: center;
+}
+
 .tab-content-enter {
   animation: tab-content-enter 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
   transform-origin: center center;
