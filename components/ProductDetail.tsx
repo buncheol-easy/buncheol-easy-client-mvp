@@ -269,6 +269,36 @@ function isDeadlineClosed(deadline: string, now = Date.now()) {
   );
 }
 
+function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return deadline;
+  }
+
+  const remainingMilliseconds = deadlineDate.getTime() - now;
+
+  if (remainingMilliseconds <= 0) {
+    return "구매 마감";
+  }
+
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) {
+    return `${days}일 ${hours.toString().padStart(2, "0")}시간 남음`;
+  }
+
+  if (hours > 0) {
+    return `${hours}시간 ${minutes.toString().padStart(2, "0")}분 남음`;
+  }
+
+  return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
+}
+
 function getTargetTags(product: ProductDetailItem) {
   const tags = product.targetMembers ?? [product.member];
 
@@ -689,6 +719,10 @@ export function ProductDetail({
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
   const isDeadlinePassed = isDeadlineClosed(product.deadline, deadlineTick);
+  const purchaseDeadlineCountdown = formatPurchaseDeadlineCountdown(
+    product.deadline,
+    deadlineTick,
+  );
   const productStatus = product.status?.toUpperCase();
   const isCancelledProduct =
     productStatus === "CANCELLED" || productStatus === "CANCELED";
@@ -2356,7 +2390,7 @@ export function ProductDetail({
                     구매 기한
                   </p>
                   <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em]">
-                    {product.deadline}
+                    {purchaseDeadlineCountdown}
                   </p>
                 </div>
               </div>
