@@ -260,6 +260,7 @@ type ProfileBidEntry = {
   imageUrl?: string;
   member: string;
   optionLabel: string;
+  optionLabels?: string[];
   paidAt?: string | null;
   payerName?: string;
   participantCount: number;
@@ -475,6 +476,16 @@ function formatProfileGroupedOptionLabel(labels: string[]) {
   return `${uniqueLabels[0]} 외 ${uniqueLabels.length - 1}개`;
 }
 
+function getProfileBidOptionLabels(bid: ProfileBidEntry) {
+  const optionLabels = getProfileUniqueLabels(
+    bid.optionLabels && bid.optionLabels.length > 0
+      ? bid.optionLabels
+      : [bid.optionLabel],
+  );
+
+  return optionLabels.length > 0 ? optionLabels : ["멤버 확인 필요"];
+}
+
 function getProfileBidGroupPriority(bid: ProfileBidEntry, now: Date) {
   if (isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid)) {
     return 4;
@@ -528,6 +539,9 @@ function mergeProfileBidEntryGroup(
   )
     ? shippingFees.reduce((sum, amount) => sum + amount, 0)
     : representative.shippingFee;
+  const optionLabels = getProfileUniqueLabels(
+    groupEntries.flatMap((bid) => bid.optionLabels ?? [bid.optionLabel]),
+  );
 
   return {
     ...representative,
@@ -546,8 +560,9 @@ function mergeProfileBidEntryGroup(
       null,
     id: representative.id,
     optionLabel: formatProfileGroupedOptionLabel(
-      groupEntries.map((bid) => bid.optionLabel),
+      optionLabels,
     ),
+    optionLabels,
     paymentAmount: totalPaymentAmount,
     shippingAddress:
       representative.shippingAddress ??
@@ -1041,6 +1056,26 @@ export function ProfileContent({
     : 0;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
+  const selectedPaymentOptionLabels = selectedPaymentBid
+    ? getProfileBidOptionLabels(selectedPaymentBid)
+    : [];
+  const selectedPaymentStatusLabel = selectedPaymentBid
+    ? getProfileBidPaymentStatusLabel(selectedPaymentBid, now)
+    : "";
+  const selectedPaymentStatusDescription = selectedPaymentBid
+    ? getProfileBidPaymentStatusDescription(selectedPaymentBid, now)
+    : "";
+  const isSelectedPaymentReady = selectedPaymentBid
+    ? isProfileBidPaymentReady(selectedPaymentBid, now)
+    : false;
+  const selectedPaymentRemainingTime = selectedPaymentBid
+    ? formatPaymentRemainingTime(
+        selectedPaymentBid.deadline,
+        now,
+        selectedPaymentBid.paymentDueAt,
+        selectedPaymentBid.createdAt,
+      )
+    : "";
   const syncDeliveryAddresses = useCallback(async (
     accessToken: string,
     options: { clearBeforeSync?: boolean } = {},
@@ -2885,20 +2920,36 @@ export function ProfileContent({
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
               </p>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                {selectedPaymentBid.member} · {selectedPaymentBid.optionLabel}
-              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {selectedPaymentOptionLabels.map((optionLabel) => (
+                  <span
+                    className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65"
+                    key={optionLabel}
+                  >
+                    {optionLabel}
+                  </span>
+                ))}
+              </div>
             </div>
 
             <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white ring-1 ring-[#AAB67C]/35">
-              <p className="text-[12px] font-semibold text-[#DDE7B8]">
-                현재 상태
-              </p>
-              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                {getProfileBidPaymentStatusLabel(selectedPaymentBid, now)}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                  {isSelectedPaymentReady ? "입금 마감까지" : "현재 상태"}
+                </p>
+                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
+                  {selectedPaymentStatusLabel}
+                </span>
+              </div>
+              <p className="mt-1 text-[24px] font-semibold tracking-[-0.06em]">
+                {isSelectedPaymentReady
+                  ? selectedPaymentRemainingTime
+                  : selectedPaymentStatusLabel}
               </p>
               <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
-                {getProfileBidPaymentStatusDescription(selectedPaymentBid, now)}
+                {isSelectedPaymentReady
+                  ? "기한 안에 아래 계좌로 입금해 주세요."
+                  : selectedPaymentStatusDescription}
               </p>
             </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
@@ -2950,31 +3001,28 @@ export function ProfileContent({
               ) : null}
             </div>
 
-            <div className="mt-4 rounded-[0.95rem] border-[1.5px] border-[#d8d8d8] bg-[#ececec] px-4 py-3">
+            <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     {paymentDeliveryAddress ? (
-                      <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
+                      <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-[#D7FF5F]">
                         {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/55">
                       배송지 고정
                     </span>
                   </div>
-                  <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                  <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
                     {paymentDeliveryAddress?.branchName ??
                       "결제 요청 배송지 확인 중"}
                   </p>
                 </div>
-                <span className="inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white px-3 text-[12px] font-semibold text-black/45">
+                <span className="shrink-0 text-[11px] font-semibold text-black/40">
                   변경 불가
                 </span>
               </div>
-              <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-                결제 요청 후 배송지는 변경할 수 없어요.
-              </p>
             </div>
 
             </div>
