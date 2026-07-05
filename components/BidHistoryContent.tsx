@@ -185,7 +185,7 @@ type BidHistoryViewState = {
 };
 
 const bidProgressStepLabels = [
-  "결제 확인",
+  "결제 대기",
   "결제 완료",
   "배송중",
   "배송 완료",
