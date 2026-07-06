@@ -1748,9 +1748,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 환불 계좌를 먼저 등록해 주세요.");
+        window.alert("마이페이지에서 환불 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push("/profile/account");
+        router.push("/profile");
         return;
       }
 
@@ -1840,9 +1840,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 환불 계좌를 먼저 등록해 주세요.");
+        window.alert("마이페이지에서 환불 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push("/profile/account");
+        router.push("/profile");
         return;
       }
 

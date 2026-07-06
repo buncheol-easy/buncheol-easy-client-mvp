@@ -1006,11 +1006,20 @@ export function ProfileContent({
         profileSettlementAccount.accountNumber.trim().length > 0 &&
         profileSettlementAccount.accountHolder.trim().length > 0;
 
-      return hasProfileSettlementAccount
-        ? profileSettlementAccount
+      if (hasProfileSettlementAccount || userProfile) {
+        return profileSettlementAccount;
+      }
+
+      return isUserProfileLoading
+        ? getEmptySettlementAccountState()
         : storedSettlementAccount;
     },
-    [authState.isLoggedIn, storedSettlementAccount, userProfile],
+    [
+      authState.isLoggedIn,
+      isUserProfileLoading,
+      storedSettlementAccount,
+      userProfile,
+    ],
   );
   const hasSettlementAccount =
     settlementAccount.bankName.trim().length > 0 &&
@@ -1337,6 +1346,8 @@ export function ProfileContent({
 
         if (hasProfileSettlementAccount) {
           writeSettlementAccountState(profileSettlementAccount);
+        } else {
+          clearSettlementAccountState();
         }
       })
       .catch((error: unknown) => {

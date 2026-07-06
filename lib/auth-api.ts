@@ -917,6 +917,49 @@ function getNestedBankAccountInfo(
   return getBankAccountInfoFromRecord(body);
 }
 
+function getUserProfileFromBody(body: unknown): UserProfile {
+  const data = getNestedData(body);
+
+  if (!isRecord(data)) {
+    return {
+      bankAccount: null,
+      email: "",
+      nickname: "",
+      phoneNumber: "",
+      provider: "",
+    };
+  }
+
+  return {
+    bankAccount: getNestedBankAccountInfo(data, [
+      "bankAccount",
+      "refundAccount",
+      "refundBankAccount",
+      "refundBankAccountInfo",
+      "settlementAccount",
+      "settlementBankAccount",
+      "settlementBankAccountInfo",
+      "paymentAccount",
+      "paymentBankAccount",
+      "userBankAccount",
+      "account",
+    ]),
+    email: getStringValue(data, ["email", "emailAddress"]),
+    nickname: getStringValue(data, ["nickname", "name", "displayName"]),
+    phoneNumber: getStringValue(data, [
+      "phoneNumber",
+      "phone",
+      "mobilePhone",
+      "phoneNo",
+    ]),
+    provider: getStringValue(data, [
+      "provider",
+      "oauthProvider",
+      "socialProvider",
+    ]),
+  };
+}
+
 function getParticipationPaymentDetailFromBody(
   body: unknown,
   fallbackParticipationId: string,
@@ -1368,7 +1411,7 @@ export async function requestUserProfile(accessToken: string) {
     throw new Error(await parseErrorMessage(response));
   }
 
-  return (await response.json()) as UserProfile;
+  return getUserProfileFromBody(await response.json());
 }
 
 export async function requestNicknameDuplicate(
