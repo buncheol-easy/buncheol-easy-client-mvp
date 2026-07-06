@@ -123,6 +123,94 @@ type CheckoutAddressReturnState = {
   reopenAddressSheet: boolean;
 };
 
+function parseCheckoutAddressReturnOptions(
+  value: unknown,
+): CheckoutAddressReturnOption[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((option): CheckoutAddressReturnOption | null => {
+      if (!option || typeof option.id !== "string") {
+        return null;
+      }
+
+      return {
+        buncheolMemberId:
+          typeof option.buncheolMemberId === "string"
+            ? option.buncheolMemberId
+            : undefined,
+        id: option.id,
+        label: typeof option.label === "string" ? option.label : undefined,
+      };
+    })
+    .filter(
+      (option): option is CheckoutAddressReturnOption => option !== null,
+    );
+}
+
+function parseCheckoutAddressReturnState(
+  rawState: string | null,
+  productId: string,
+): CheckoutAddressReturnState | null {
+  if (!rawState) {
+    return null;
+  }
+
+  try {
+    const parsedState = JSON.parse(rawState) as Partial<CheckoutAddressReturnState>;
+
+    if (
+      !parsedState ||
+      parsedState.productId !== productId ||
+      !Array.isArray(parsedState.optionIds)
+    ) {
+      return null;
+    }
+
+    return {
+      createdAt:
+        typeof parsedState.createdAt === "number"
+          ? parsedState.createdAt
+          : Date.now(),
+      addressId:
+        typeof parsedState.addressId === "string"
+          ? parsedState.addressId
+          : null,
+      optionIds: parsedState.optionIds.filter(
+        (optionId): optionId is string => typeof optionId === "string",
+      ),
+      options: parseCheckoutAddressReturnOptions(parsedState.options),
+      productId: parsedState.productId,
+      reopenAddressSheet: parsedState.reopenAddressSheet !== false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getCheckoutReturnOptionsFromState(
+  state: CheckoutAddressReturnState,
+): CheckoutAddressReturnOption[] {
+  const seenKeys = new Set<string>();
+  const options: CheckoutAddressReturnOption[] = [
+    ...state.optionIds.map((optionId) => ({ id: optionId })),
+    ...(state.options ?? []),
+  ];
+
+  return options.filter((option) => {
+    const key = option.buncheolMemberId ?? option.id ?? option.label;
+
+    if (!key || seenKeys.has(key)) {
+      return false;
+    }
+
+    seenKeys.add(key);
+    return true;
+  });
+}
+
 type ProductHistoryState = {
   idx?: unknown;
   [PRODUCT_PROFILE_ENTRY_STATE_KEY]?: unknown;
@@ -709,6 +797,73 @@ export function ProductDetail({
     }));
   }
 
+  function getRestorableCheckoutOptionIds(
+    restorableOptions: CheckoutAddressReturnOption[],
+  ) {
+    return auctionOptions.reduce<string[]>((optionIds, option) => {
+      const isSelected = restorableOptions.some(
+        (returnOption) =>
+          returnOption.id === option.id ||
+          (returnOption.buncheolMemberId &&
+            returnOption.buncheolMemberId === option.buncheolMemberId) ||
+          (returnOption.label && returnOption.label === option.label),
+      );
+
+      if (
+        isSelected &&
+        !getOptionPurchaseOverlayLabel(
+          option,
+          myBids[option.id],
+          product.isApiProduct === true,
+        )
+      ) {
+        optionIds.push(option.id);
+      }
+
+      return optionIds;
+    }, []);
+  }
+
+  function getCheckoutReturnOptionsFromOptionIds(optionIds: string[]) {
+    return auctionOptions
+      .filter((option) => optionIds.includes(option.id))
+      .map((option) => ({
+        buncheolMemberId: option.buncheolMemberId,
+        id: option.id,
+        label: option.label,
+      }));
+  }
+
+  function restoreCheckoutSelectionFromReturnOptions(
+    returnOptions: CheckoutAddressReturnOption[],
+  ) {
+    const restorableOptionIds = getRestorableCheckoutOptionIds(returnOptions);
+
+    if (restorableOptionIds.length === 0) {
+      return false;
+    }
+
+    checkoutSelectedOptionsRef.current =
+      getCheckoutReturnOptionsFromOptionIds(restorableOptionIds);
+    setBidAmounts(
+      restorableOptionIds.reduce<Record<string, string>>((amounts, optionId) => {
+        amounts[optionId] = "selected";
+        return amounts;
+      }, {}),
+    );
+
+    return true;
+  }
+
+  useEffect(() => {
+    if (selectedCheckoutItems.length === 0) {
+      return;
+    }
+
+    checkoutSelectedOptionsRef.current =
+      getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
+  }, [selectedCheckoutItems]);
+
   const sortedAuctionOptions = [...auctionOptions].sort((left, right) => {
     const leftHasBid = Boolean(
       getOptionPurchaseOverlayLabel(
@@ -973,7 +1128,19 @@ export function ProductDetail({
       return;
     }
 
-    const returnOptions = getSelectedCheckoutReturnOptions();
+    const previousReturnState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY),
+      buncheolId,
+    );
+    let returnOptions = getSelectedCheckoutReturnOptions();
+
+    if (returnOptions.length === 0 && previousReturnState) {
+      returnOptions = getCheckoutReturnOptionsFromState(previousReturnState);
+    }
+
+    if (returnOptions.length === 0) {
+      return;
+    }
 
     window.sessionStorage.setItem(
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
@@ -1068,60 +1235,7 @@ export function ProductDetail({
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
     );
 
-    if (rawState) {
-      try {
-        const parsedState = JSON.parse(
-          rawState,
-        ) as Partial<CheckoutAddressReturnState>;
-        const parsedOptions = Array.isArray(parsedState.options)
-          ? parsedState.options
-              .map((option): CheckoutAddressReturnOption | null => {
-                if (!option || typeof option.id !== "string") {
-                  return null;
-                }
-
-                return {
-                  buncheolMemberId:
-                    typeof option.buncheolMemberId === "string"
-                      ? option.buncheolMemberId
-                      : undefined,
-                  id: option.id,
-                  label:
-                    typeof option.label === "string" ? option.label : undefined,
-                } satisfies CheckoutAddressReturnOption;
-              })
-              .filter(
-                (option): option is CheckoutAddressReturnOption =>
-                  option !== null,
-              )
-          : [];
-
-        if (
-          parsedState &&
-          parsedState.productId === buncheolId &&
-          Array.isArray(parsedState.optionIds)
-        ) {
-          returnState = {
-            createdAt:
-              typeof parsedState.createdAt === "number"
-                ? parsedState.createdAt
-                : Date.now(),
-            addressId:
-              typeof parsedState.addressId === "string"
-                ? parsedState.addressId
-                : null,
-            optionIds: parsedState.optionIds.filter(
-              (optionId): optionId is string => typeof optionId === "string",
-            ),
-            options: parsedOptions,
-            productId: parsedState.productId,
-            reopenAddressSheet: parsedState.reopenAddressSheet !== false,
-          };
-        }
-      } catch {
-        returnState = null;
-      }
-    }
+    returnState = parseCheckoutAddressReturnState(rawState, buncheolId);
 
     window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
 
@@ -1157,11 +1271,8 @@ export function ProductDetail({
 
     didRestoreCheckoutAddressReturnRef.current = true;
 
-    const restorableOptions: CheckoutAddressReturnOption[] = [
-      ...checkoutReturnState.optionIds.map((optionId) => ({ id: optionId })),
-      ...(checkoutReturnState.options ?? []),
-    ];
-
+    const restorableOptions =
+      getCheckoutReturnOptionsFromState(checkoutReturnState);
     const restorableOptionIds = auctionOptions.reduce<string[]>(
       (optionIds, option) => {
         const isSelected = restorableOptions.some(
@@ -2300,6 +2411,12 @@ export function ProductDetail({
   }
 
   function confirmCheckoutAddressSelection() {
+    if (selectedCheckoutItems.length === 0) {
+      restoreCheckoutSelectionFromReturnOptions(
+        checkoutSelectedOptionsRef.current,
+      );
+    }
+
     const selectedAddress =
       checkoutDeliveryAddress ??
       bidDeliveryAddress ??
