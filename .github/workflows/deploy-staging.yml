@@ -1,0 +1,54 @@
+name: Deploy Frontend Staging
+
+# dev 브랜치 push -> staging EC2 의 self-hosted runner 에서 직접 배포.
+# NEXT_PUBLIC_API_BASE_URL 은 박스의 .env.production 에 박혀 있으므로 rsync 에서 제외해 보존한다.
+# 배포 디렉터리는 기존 ~/buncheol-easy-client 를 재사용한다(.env.production 상주).
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-staging-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, staging]
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Sync source to deploy dir (preserve .env.production)
+        run: |
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.env.production' \
+            "${GITHUB_WORKSPACE}/" /home/ubuntu/buncheol-easy-client/
+
+      - name: Build and run frontend container
+        run: |
+          set -e
+          cd /home/ubuntu/buncheol-easy-client
+
+          docker build -t buncheoleasy-frontend:staging .
+
+          docker rm -f buncheoleasy-frontend 2>/dev/null || true
+          # 런타임 env(.env.production: NEXT_PUBLIC + 테스트 계정 스위처 토큰)를 컨테이너에 주입.
+          # NEXT_PUBLIC_* 는 빌드 때 이미 박혔고, 서버 런타임 변수(TEST_*)는 여기서만 전달된다.
+          docker run -d \
+            --name buncheoleasy-frontend \
+            --restart unless-stopped \
+            -p 127.0.0.1:3000:3000 \
+            --env-file /home/ubuntu/buncheol-easy-client/.env.production \
+            buncheoleasy-frontend:staging
+
+          docker image prune -f
+
+          echo "Waiting for frontend..."
+          sleep 3
+          curl -fsS -I http://127.0.0.1:3000 > /dev/null && echo "Frontend is up"
