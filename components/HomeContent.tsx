@@ -188,8 +188,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
-    const slideOffsets = Array.from(scrollElement.children).map((child) =>
-      child instanceof HTMLElement ? child.offsetLeft : 0,
+    const slideOffsets = Array.from(scrollElement.children).map((child, index) =>
+      child instanceof HTMLElement
+        ? getBannerSlideLeft(scrollElement, index)
+        : 0,
     );
     const nextIndex = slideOffsets.reduce((nearestIndex, offset, index) => {
       const nearestDistance = Math.abs(
@@ -208,9 +210,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   function getBannerSlideLeft(scrollElement: HTMLDivElement, index: number) {
     const slide = scrollElement.children.item(index);
 
-    return slide instanceof HTMLElement
-      ? slide.offsetLeft
-      : scrollElement.clientWidth * index;
+    if (!(slide instanceof HTMLElement)) {
+      return scrollElement.clientWidth * index;
+    }
+
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const slideRect = slide.getBoundingClientRect();
+
+    return slideRect.left - scrollRect.left + scrollElement.scrollLeft;
   }
 
   function handleBannerDotClick(index: number) {
