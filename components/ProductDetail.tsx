@@ -382,16 +382,17 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
+  const clock = [
+    hours.toString().padStart(2, "0"),
+    minutes.toString().padStart(2, "0"),
+    seconds.toString().padStart(2, "0"),
+  ].join(":");
 
   if (days > 0) {
-    return `${days}일 ${hours.toString().padStart(2, "0")}시간 남음`;
+    return `${days}일 ${clock} 남음`;
   }
 
-  if (hours > 0) {
-    return `${hours}시간 ${minutes.toString().padStart(2, "0")}분 남음`;
-  }
-
-  return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
+  return `${clock} 남음`;
 }
 
 function parseCheckoutDateTime(value: string | null | undefined) {
@@ -2760,7 +2761,7 @@ export function ProductDetail({
                   <p className="text-[12px] font-medium text-black/45">
                     구매 기한
                   </p>
-                  <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em]">
+                  <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums">
                     {purchaseDeadlineCountdown}
                   </p>
                 </div>
