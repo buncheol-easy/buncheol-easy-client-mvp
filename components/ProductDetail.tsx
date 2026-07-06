@@ -79,6 +79,8 @@ const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
+const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
+const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
 const kstOffsetHours = 9;
 
 type CheckoutSheetStep = "options" | "confirm" | "payment";
@@ -741,6 +743,7 @@ export function ProductDetail({
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
   const [deadlineTick, setDeadlineTick] = useState(() => Date.now());
+  const buncheolId = product.buncheolId ?? product.id;
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
@@ -856,15 +859,6 @@ export function ProductDetail({
     return true;
   }
 
-  useEffect(() => {
-    if (selectedCheckoutItems.length === 0) {
-      return;
-    }
-
-    checkoutSelectedOptionsRef.current =
-      getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
-  }, [selectedCheckoutItems]);
-
   const sortedAuctionOptions = [...auctionOptions].sort((left, right) => {
     const leftHasBid = Boolean(
       getOptionPurchaseOverlayLabel(
@@ -964,6 +958,43 @@ export function ProductDetail({
     getBidDeliveryAddressFromState(deliveryAddressState);
   const checkoutEligibleDeliveryAddresses =
     getCheckoutEligibleDeliveryAddressesFromState(deliveryAddressState);
+
+  useEffect(() => {
+    if (selectedCheckoutItems.length === 0) {
+      return;
+    }
+
+    const returnOptions = selectedCheckoutItems.map(({ option }) => ({
+      buncheolMemberId: option.buncheolMemberId,
+      id: option.id,
+      label: option.label,
+    }));
+
+    checkoutSelectedOptionsRef.current = returnOptions;
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      CHECKOUT_DRAFT_STATE_KEY,
+      JSON.stringify({
+        createdAt: Date.now(),
+        addressId:
+          checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null,
+        optionIds: returnOptions.map((option) => option.id),
+        options: returnOptions,
+        productId: buncheolId,
+        reopenAddressSheet: false,
+      } satisfies CheckoutAddressReturnState),
+    );
+  }, [
+    bidDeliveryAddress?.id,
+    buncheolId,
+    checkoutDeliveryAddress?.id,
+    selectedCheckoutItems,
+  ]);
+
   const targetTags = getTargetTags(product);
   const productImages = getProductImageUrls(product);
   const visibleProductImageIndex = Math.min(
@@ -995,7 +1026,6 @@ export function ProductDetail({
         product.isApiProduct === true,
       ),
   );
-  const buncheolId = product.buncheolId ?? product.id;
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
   const canEditProduct =
@@ -1133,29 +1163,47 @@ export function ProductDetail({
       window.sessionStorage.getItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY),
       buncheolId,
     );
+    const previousDraftState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+      buncheolId,
+    );
     let returnOptions = getSelectedCheckoutReturnOptions();
 
     if (returnOptions.length === 0 && previousReturnState) {
       returnOptions = getCheckoutReturnOptionsFromState(previousReturnState);
     }
 
+    if (returnOptions.length === 0 && previousDraftState) {
+      returnOptions = getCheckoutReturnOptionsFromState(previousDraftState);
+    }
+
     if (returnOptions.length === 0) {
       return;
     }
 
+    const nextReturnState: CheckoutAddressReturnState = {
+      createdAt: Date.now(),
+      addressId:
+        preferredAddressId ??
+        checkoutDeliveryAddress?.id ??
+        bidDeliveryAddress?.id ??
+        previousDraftState?.addressId ??
+        null,
+      optionIds: returnOptions.map((option) => option.id),
+      options: returnOptions,
+      productId: buncheolId,
+      reopenAddressSheet,
+    };
+
     window.sessionStorage.setItem(
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
+      JSON.stringify(nextReturnState),
+    );
+    window.sessionStorage.setItem(
+      CHECKOUT_DRAFT_STATE_KEY,
       JSON.stringify({
-        createdAt: Date.now(),
-        addressId:
-          preferredAddressId ??
-          checkoutDeliveryAddress?.id ??
-          bidDeliveryAddress?.id ??
-          null,
-        optionIds: returnOptions.map((option) => option.id),
-        options: returnOptions,
-        productId: buncheolId,
-        reopenAddressSheet,
+        ...nextReturnState,
+        reopenAddressSheet: false,
       } satisfies CheckoutAddressReturnState),
     );
   }
@@ -1235,6 +1283,10 @@ export function ProductDetail({
     const rawState = window.sessionStorage.getItem(
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
     );
+    const draftState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+      buncheolId,
+    );
 
     returnState = parseCheckoutAddressReturnState(rawState, buncheolId);
 
@@ -1264,7 +1316,24 @@ export function ProductDetail({
       }
     }
 
-    if (!returnState || Date.now() - returnState.createdAt > 30 * 60 * 1000) {
+    if (returnState && draftState) {
+      const returnOptions = getCheckoutReturnOptionsFromState(returnState);
+      const draftOptions = getCheckoutReturnOptionsFromState(draftState);
+
+      if (returnOptions.length === 0 && draftOptions.length > 0) {
+        returnState = {
+          ...draftState,
+          addressId: returnState.addressId ?? draftState.addressId,
+          createdAt: Math.max(returnState.createdAt, draftState.createdAt),
+          reopenAddressSheet: returnState.reopenAddressSheet,
+        };
+      }
+    }
+
+    if (
+      !returnState ||
+      Date.now() - returnState.createdAt > checkoutDraftMaxAgeMs
+    ) {
       return;
     }
 
@@ -2413,8 +2482,21 @@ export function ProductDetail({
 
   function confirmCheckoutAddressSelection() {
     if (selectedCheckoutItems.length === 0) {
+      const draftState =
+        typeof window === "undefined"
+          ? null
+          : parseCheckoutAddressReturnState(
+              window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+              buncheolId,
+            );
+      const draftOptions = draftState
+        ? getCheckoutReturnOptionsFromState(draftState)
+        : [];
+
       restoreCheckoutSelectionFromReturnOptions(
-        checkoutSelectedOptionsRef.current,
+        checkoutSelectedOptionsRef.current.length > 0
+          ? checkoutSelectedOptionsRef.current
+          : draftOptions,
       );
     }
 
