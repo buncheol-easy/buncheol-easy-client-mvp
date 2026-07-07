@@ -189,9 +189,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
   const [apiBanners, setApiBanners] = useState<HomeBanner[] | null>(null);
-  const [apiListings, setApiListings] = useState<ProductCardItem[] | null>(
-    () => readCachedHomeListings(),
-  );
+  const [apiListings, setApiListings] = useState<ProductCardItem[] | null>(null);
   const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
   const [listingMessage, setListingMessage] = useState("");
   const [groupMessage, setGroupMessage] = useState("");
@@ -206,6 +204,20 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const banners = apiBanners && apiBanners.length > 0 ? apiBanners : HOME_BANNERS;
   const listings = apiListings ?? [];
   const favoriteGroups = apiGroups ?? [];
+
+  useEffect(() => {
+    const cacheRestoreFrame = window.requestAnimationFrame(() => {
+      const cachedListings = readCachedHomeListings();
+
+      if (cachedListings !== null) {
+        setApiListings((current) => current ?? cachedListings);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(cacheRestoreFrame);
+    };
+  }, []);
 
   useEffect(() => {
     apiListingsRef.current = apiListings;
