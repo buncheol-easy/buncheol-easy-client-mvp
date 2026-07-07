@@ -522,11 +522,6 @@ function HomeMiniScreen() {
         </div>
 
         <div className="mt-5 border-t border-black/10 pt-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-[19px] font-semibold tracking-[-0.05em]">
-              나를 위한 추천 상품
-            </h3>
-          </div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-4">
             {introRecommendedProducts.map(({ deadline, image, status, tags, title, tone }) => (
               <div className="min-w-0" key={title}>
