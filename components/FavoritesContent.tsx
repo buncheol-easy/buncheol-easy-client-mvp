@@ -355,7 +355,7 @@ export function FavoritesContent({
           </h1>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
+        <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f4f5ef] p-1.5 ring-1 ring-black/[0.03]">
           {(
             [
               ["all", "전체"],
@@ -368,7 +368,7 @@ export function FavoritesContent({
               <button
                 className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
                   isActive
-                    ? "bg-[#D7FF5F] text-black shadow-[0_8px_18px_rgba(215,255,95,0.24)]"
+                    ? "bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
                     : "text-black/45"
                 }`}
                 key={value}
@@ -384,7 +384,7 @@ export function FavoritesContent({
         <div className="relative mt-3 flex items-center justify-between gap-3">
           <div className="relative">
             <button
-              className="flex h-9 items-center gap-1.5 rounded-full bg-[#f7f7f7] px-3 text-[12px] font-semibold text-black/55 ring-1 ring-black/10"
+              className="flex h-9 items-center gap-1.5 rounded-full border border-[#CFE86B] bg-[#E4F6A5] px-3 text-[12px] font-semibold text-black shadow-[0_8px_18px_rgba(215,255,95,0.22)]"
               onClick={() => setIsSortOpen((current) => !current)}
               type="button"
             >
