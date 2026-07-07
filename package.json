@@ -9,7 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@next/third-parties": "^16.2.10",
     "next": "16.2.3",
+    "posthog-js": "^1.398.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

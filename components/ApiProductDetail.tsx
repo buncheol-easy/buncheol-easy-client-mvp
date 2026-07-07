@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ProductDetail } from "@/components/ProductDetail";
+import { trackEvent } from "@/lib/analytics";
 import type { ProductCardItem } from "@/components/ProductCard";
 import {
   requestBuncheolDetail,
@@ -154,6 +155,8 @@ export function ApiProductDetail({
   );
   const [product, setProduct] = useState<ProductDetailItem | null>(null);
   const [message, setMessage] = useState("분철 정보를 불러오고 있습니다.");
+  // 같은 분철을 볼 때 토큰 갱신 등으로 effect가 재실행돼도 조회 이벤트는 1회만 발사.
+  const viewedBuncheolIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const requiresLogin = !authState.isLoggedIn;
@@ -252,6 +255,11 @@ export function ApiProductDetail({
           isHostedByMe,
         });
         setMessage("");
+
+        if (viewedBuncheolIdRef.current !== id) {
+          viewedBuncheolIdRef.current = id;
+          trackEvent("buncheol_viewed", { buncheol_id: id });
+        }
       })
       .catch((error: unknown) => {
         if (!isActive) {

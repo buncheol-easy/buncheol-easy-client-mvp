@@ -26,6 +26,7 @@ import {
   type BankAccountInfo,
   type BuncheolManagementOption,
 } from "@/lib/auth-api";
+import { trackEvent } from "@/lib/analytics";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
@@ -1780,6 +1781,11 @@ export function ProductDetail({
     if (submittedBids.length === 0) {
       return;
     }
+
+    trackEvent("participation_started", {
+      buncheol_id: buncheolId,
+      option_count: submittedBids.length,
+    });
 
     const participationResults = new Map<
       string,

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import Image from "next/image";
 import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
@@ -90,6 +91,9 @@ export default function RootLayout({
         {children}
         <TestAccountSwitcher />
       </body>
+      {process.env.NEXT_PUBLIC_GA_ID && (
+        <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID} />
+      )}
     </html>
   );
 }

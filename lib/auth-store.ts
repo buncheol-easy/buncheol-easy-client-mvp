@@ -1,3 +1,5 @@
+import { identifyAnalyticsUser, resetAnalyticsUser } from "@/lib/analytics";
+
 const authStoreKey = "buncheol-auth-state";
 const authStoreEvent = "buncheol-auth-state-change";
 const refreshTokenCookieNames = ["refreshToken", "refresh_token"];
@@ -80,6 +82,7 @@ export function writeAuthState(state: AuthState) {
 }
 
 export function clearAuthState() {
+  resetAnalyticsUser();
   writeAuthState(initialAuthState);
 }
 
@@ -96,6 +99,7 @@ export function clearAuthCookies() {
 export function writeAuthTokens(tokens: {
   accessToken: string;
 }) {
+  identifyAnalyticsUser(tokens.accessToken);
   writeAuthState({
     accessToken: tokens.accessToken,
     isLoggedIn: true,
