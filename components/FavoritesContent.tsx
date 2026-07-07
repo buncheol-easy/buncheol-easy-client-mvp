@@ -368,7 +368,7 @@ export function FavoritesContent({
               <button
                 className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
                   isActive
-                    ? "bg-black text-white"
+                    ? "bg-[#D7FF5F] text-black shadow-[0_8px_18px_rgba(215,255,95,0.24)]"
                     : "text-black/45"
                 }`}
                 key={value}
@@ -409,7 +409,9 @@ export function FavoritesContent({
                   return (
                     <button
                       className={`h-10 w-full px-3 text-left text-[13px] font-semibold tracking-[-0.04em] ${
-                        isActive ? "bg-black text-white" : "text-black/55"
+                        isActive
+                          ? "bg-[#E4F6A5] text-black"
+                          : "text-black/55"
                       }`}
                       key={value}
                       onClick={() => {
@@ -433,7 +435,7 @@ export function FavoritesContent({
             <button
               aria-pressed={hideClosed}
               className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${
-                hideClosed ? "bg-black" : "bg-black/10"
+                hideClosed ? "bg-[#CFE86B]" : "bg-black/10"
               }`}
               onClick={() => setHideClosed((current) => !current)}
               type="button"
@@ -459,7 +461,7 @@ export function FavoritesContent({
           key={`${filter}-${hideClosed}-${sort}`}
         >
           {favoriteMessage ? (
-            <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+            <div className="mb-4 rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-3">
               <p className="text-[13px] font-semibold text-black/45">
                 {favoriteMessage}
               </p>
@@ -470,7 +472,7 @@ export function FavoritesContent({
           ) : filteredProducts.length > 0 ? (
             <ProductGrid items={filteredProducts} />
           ) : (
-            <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-6">
+            <div className="rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
                 {authState.isLoggedIn
                   ? "조건에 맞는 찜 상품이 없습니다."
