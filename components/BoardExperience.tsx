@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BOARD_SKIP_ENTER_KEY,
@@ -30,22 +30,12 @@ export function BoardExperience() {
   const router = useRouter();
   const exitTimerRef = useRef<number | null>(null);
   const [shouldSkipPanelEnter] = useState(shouldSkipBoardPanelEnter);
-  const [isEntered, setIsEntered] = useState(false);
+  const [isEntered, setIsEntered] = useState(shouldSkipPanelEnter);
   const [isExiting, setIsExiting] = useState(false);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (shouldSkipPanelEnter) {
-      let isActive = true;
-
-      window.queueMicrotask(() => {
-        if (isActive) {
-          setIsEntered(true);
-        }
-      });
-
-      return () => {
-        isActive = false;
-      };
+      return;
     }
 
     const enterFrame = window.requestAnimationFrame(() => {
@@ -94,10 +84,12 @@ export function BoardExperience() {
 
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
-      <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-        <HomeContent skipEnterAnimation />
-        <BottomNavigator />
-      </SwipeUnderlay>
+      {!shouldSkipPanelEnter || isExiting ? (
+        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+          <HomeContent skipEnterAnimation />
+          <BottomNavigator />
+        </SwipeUnderlay>
+      ) : null}
 
       <div
         className={`product-page-panel absolute inset-0 z-10 flex flex-col overflow-hidden bg-white ${
