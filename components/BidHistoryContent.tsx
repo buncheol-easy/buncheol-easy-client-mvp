@@ -185,7 +185,7 @@ type BidHistoryViewState = {
 };
 
 const bidProgressStepLabels = [
-  "결제 확인",
+  "결제 대기",
   "결제 완료",
   "배송중",
   "배송 완료",
@@ -253,6 +253,7 @@ type BidRecord = {
   imageUrl?: string;
   member: string;
   optionLabel: string;
+  optionLabels?: string[];
   paidAt: string | null;
   participantCount: number;
   productId: string;
@@ -295,6 +296,7 @@ function isBidRecordClosed(bid: BidRecord, now: Date) {
 
 function isBidRecordPaymentReady(bid: BidRecord, now: Date) {
   return (
+    !isBidRecordCancelled(bid) &&
     !isBidRecordPaymentConfirmed(bid) &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
       (isBidRecordClosed(bid, now) && bid.rank === 1)) &&
@@ -321,6 +323,17 @@ function isCancelledParticipationStatus(status: string | undefined) {
   return status === "CANCELLED" || status === "CANCELED";
 }
 
+function isCancelledBuncheolStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "CANCELED";
+}
+
+function isBidRecordCancelled(bid: BidRecord) {
+  return (
+    isCancelledParticipationStatus(bid.participationStatus) ||
+    isCancelledBuncheolStatus(bid.buncheolStatus)
+  );
+}
+
 function isDeletedProductStatus(status: string | undefined) {
   return status === "DELETED";
 }
@@ -331,6 +344,7 @@ function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
     (isBidRecordClosed(bid, now) && bid.rank === 1);
 
   if (
+    isBidRecordCancelled(bid) ||
     isBidRecordPaymentConfirmed(bid) ||
     isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
@@ -379,7 +393,7 @@ function isDeliveryInProgress(bid: BidRecord) {
 
 function getBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   if (
-    isCancelledParticipationStatus(bid.participationStatus) ||
+    isBidRecordCancelled(bid) ||
     isBidRecordPaymentExpired(bid, now)
   ) {
     return -1;
@@ -431,6 +445,16 @@ function formatGroupedOptionLabel(labels: string[]) {
   return `${uniqueLabels[0]} 외 ${uniqueLabels.length - 1}개`;
 }
 
+function getBidRecordOptionLabels(bid: BidRecord) {
+  const optionLabels = getUniqueLabels(
+    bid.optionLabels && bid.optionLabels.length > 0
+      ? bid.optionLabels
+      : [bid.optionLabel],
+  );
+
+  return optionLabels.length > 0 ? optionLabels : ["옵션 확인 필요"];
+}
+
 function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
   const sortedRecords = [...groupRecords].sort((left, right) => {
     const rightProgress = getBidRecordProgressStepIndex(right, now);
@@ -449,20 +473,32 @@ function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
     ) ?? sortedRecords[0];
   const totalAmount = groupRecords.reduce((sum, bid) => sum + bid.amount, 0);
   const paymentAmounts = groupRecords.map((bid) => bid.paymentAmount);
-  const totalPaymentAmount = paymentAmounts.every(
+  const hasCompletePaymentAmounts = paymentAmounts.every(
+    (amount): amount is number => typeof amount === "number",
+  );
+  const totalPaymentAmount = hasCompletePaymentAmounts
+    ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
+    : groupRecords.length === 1
+      ? representative.paymentAmount
+      : null;
+  const shippingFees = groupRecords.map((bid) => bid.shippingFee);
+  const totalShippingFee = shippingFees.every(
     (amount): amount is number => typeof amount === "number",
   )
-    ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
-    : representative.paymentAmount;
+    ? shippingFees.reduce((sum, amount) => sum + amount, 0)
+    : representative.shippingFee;
+  const optionLabels = getUniqueLabels(
+    groupRecords.flatMap((bid) => bid.optionLabels ?? [bid.optionLabel]),
+  );
 
   return {
     ...representative,
     amount: totalAmount,
     id: representative.id,
-    optionLabel: formatGroupedOptionLabel(
-      groupRecords.map((bid) => bid.optionLabel),
-    ),
+    optionLabel: formatGroupedOptionLabel(optionLabels),
+    optionLabels,
     paymentAmount: totalPaymentAmount,
+    shippingFee: totalShippingFee ?? null,
     shippingAddress:
       representative.shippingAddress ??
       groupRecords.find((bid) => bid.shippingAddress)?.shippingAddress ??
@@ -470,11 +506,15 @@ function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
   };
 }
 
+function getBidRecordGroupKey(bid: BidRecord) {
+  return bid.productId || bid.id;
+}
+
 function getGroupedBidRecords(records: BidRecord[], now: Date) {
   const groups = new Map<string, BidRecord[]>();
 
   records.forEach((bid) => {
-    const key = bid.productId || bid.id;
+    const key = getBidRecordGroupKey(bid);
     const group = groups.get(key) ?? [];
 
     group.push(bid);
@@ -484,8 +524,38 @@ function getGroupedBidRecords(records: BidRecord[], now: Date) {
   return [...groups.values()].map((group) => mergeBidRecordGroup(group, now));
 }
 
+function findGroupedBidRecordById(
+  groupedRecords: BidRecord[],
+  sourceRecords: BidRecord[],
+  bidId: string | null,
+  now: Date,
+) {
+  if (!bidId) {
+    return null;
+  }
+
+  const groupedRecord = groupedRecords.find((bid) => bid.id === bidId);
+
+  if (groupedRecord) {
+    return groupedRecord;
+  }
+
+  const sourceRecord = sourceRecords.find((bid) => bid.id === bidId);
+
+  if (!sourceRecord) {
+    return null;
+  }
+
+  const groupKey = getBidRecordGroupKey(sourceRecord);
+  const groupRecords = sourceRecords.filter(
+    (bid) => getBidRecordGroupKey(bid) === groupKey,
+  );
+
+  return mergeBidRecordGroup(groupRecords, now);
+}
+
 function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isBidRecordCancelled(bid)) {
     return "취소";
   }
 
@@ -509,7 +579,11 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
 }
 
 function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isBidRecordCancelled(bid)) {
+    if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
+      return "취소된 분철이에요.";
+    }
+
     return "취소된 참여예요.";
   }
 
@@ -886,8 +960,17 @@ export function BidHistoryContent({
     () => apiBidRecords ?? [],
     [apiBidRecords],
   );
+  const groupedPaymentBidRecords = useMemo(
+    () => getGroupedBidRecords(paymentBidRecords, now),
+    [now, paymentBidRecords],
+  );
   const selectedPaymentBid =
-    paymentBidRecords.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+    findGroupedBidRecordById(
+      groupedPaymentBidRecords,
+      paymentBidRecords,
+      selectedPaymentBidId,
+      now,
+    );
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
       isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
@@ -930,6 +1013,26 @@ export function BidHistoryContent({
     : 0;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
+  const selectedPaymentOptionLabels = selectedPaymentBid
+    ? getBidRecordOptionLabels(selectedPaymentBid)
+    : [];
+  const selectedPaymentStatusLabel = selectedPaymentBid
+    ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
+    : "";
+  const selectedPaymentStatusDescription = selectedPaymentBid
+    ? getBidRecordPaymentStatusDescription(selectedPaymentBid, now)
+    : "";
+  const isSelectedPaymentReady = selectedPaymentBid
+    ? isBidRecordPaymentReady(selectedPaymentBid, now)
+    : false;
+  const selectedPaymentRemainingTime = selectedPaymentBid
+    ? formatPaymentRemainingTime(
+        selectedPaymentBid.deadline,
+        now,
+        selectedPaymentBid.paymentDueAt,
+        selectedPaymentBid.createdAt,
+      )
+    : "";
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNow(new Date());
@@ -1142,9 +1245,12 @@ export function BidHistoryContent({
     );
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
 
-    const returnBid = returnState.bidId
-      ? paymentBidRecords.find((bid) => bid.id === returnState.bidId)
-      : null;
+    const returnBid = findGroupedBidRecordById(
+      groupedPaymentBidRecords,
+      paymentBidRecords,
+      returnState.bidId,
+      now,
+    );
 
     if (!returnBid) {
       return;
@@ -1198,7 +1304,13 @@ export function BidHistoryContent({
       isRestoreActive = false;
       window.clearTimeout(restoreTimer);
     };
-  }, [defaultAddressIds, deliveryAddresses, paymentBidRecords]);
+  }, [
+    defaultAddressIds,
+    deliveryAddresses,
+    groupedPaymentBidRecords,
+    now,
+    paymentBidRecords,
+  ]);
 
   function finishPaymentSheetClose() {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -1302,13 +1414,19 @@ export function BidHistoryContent({
     }
 
     const requestId = paymentStoreTypeRequestIdRef.current + 1;
-    const selectedBid = paymentBidRecords.find((bid) => bid.id === bidId) ?? null;
+    const currentTime = new Date();
+    const selectedBid = findGroupedBidRecordById(
+      groupedPaymentBidRecords,
+      paymentBidRecords,
+      bidId,
+      currentTime,
+    );
 
     if (!selectedBid) {
       return;
     }
 
-    if (isBidRecordPaymentExpired(selectedBid, new Date())) {
+    if (isBidRecordPaymentExpired(selectedBid, currentTime)) {
       setHistoryMessage(
         "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );
@@ -1815,9 +1933,12 @@ export function BidHistoryContent({
             ) : null}
             {!isBidRecordsLoading && records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
-              const isCancelled = isCancelledParticipationStatus(
-                bid.participationStatus,
-              );
+              const isCancelled = isBidRecordCancelled(bid);
+              const cancellationLabel = isCancelledBuncheolStatus(
+                bid.buncheolStatus,
+              )
+                ? "분철 취소됨"
+                : "참여 취소됨";
               const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
               const isPaymentConfirmed = isBidRecordPaymentConfirmed(bid);
@@ -1902,6 +2023,13 @@ export function BidHistoryContent({
                       </div>
 
                       <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                        {isCancelled ? (
+                          <div className="mb-3 flex justify-center">
+                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
+                              {cancellationLabel}
+                            </span>
+                          </div>
+                        ) : null}
                         <div className="relative">
                           <div className="absolute left-[12.5%] right-[12.5%] top-[9px] h-px bg-[#CAD6A0]" />
                           <div className="relative grid grid-cols-4 gap-1">
@@ -2209,20 +2337,36 @@ export function BidHistoryContent({
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
               </p>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                {selectedPaymentBid.member} · {selectedPaymentBid.optionLabel}
-              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {selectedPaymentOptionLabels.map((optionLabel) => (
+                  <span
+                    className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65"
+                    key={optionLabel}
+                  >
+                    {optionLabel}
+                  </span>
+                ))}
+              </div>
             </div>
 
             <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
-              <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
-                현재 상태
-              </p>
-              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                {getBidRecordPaymentStatusLabel(selectedPaymentBid, now)}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
+                  {isSelectedPaymentReady ? "입금 마감까지" : "현재 상태"}
+                </p>
+                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
+                  {selectedPaymentStatusLabel}
+                </span>
+              </div>
+              <p className="mt-1 text-[24px] font-semibold tracking-[-0.06em]">
+                {isSelectedPaymentReady
+                  ? selectedPaymentRemainingTime
+                  : selectedPaymentStatusLabel}
               </p>
               <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
-                {getBidRecordPaymentStatusDescription(selectedPaymentBid, now)}
+                {isSelectedPaymentReady
+                  ? "기한 안에 아래 계좌로 입금해 주세요."
+                  : selectedPaymentStatusDescription}
               </p>
             </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
@@ -2274,31 +2418,28 @@ export function BidHistoryContent({
               ) : null}
             </div>
 
-            <div className="mt-4 rounded-[0.95rem] border-[1.5px] border-[#DDE7B8] bg-[#F7FAEE] px-4 py-3">
+            <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     {paymentDeliveryAddress ? (
-                      <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F]">
+                      <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-[#D7FF5F]">
                         {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-[#E4F6A5] px-2.5 py-1 text-[11px] font-semibold text-black/65">
+                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/55">
                       배송지 고정
                     </span>
                   </div>
-                  <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                  <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
                     {paymentDeliveryAddress?.branchName ??
                       "결제 요청 배송지 확인 중"}
                   </p>
                 </div>
-                <span className="inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white px-3 text-[12px] font-semibold text-black/45">
+                <span className="shrink-0 text-[11px] font-semibold text-black/40">
                   변경 불가
                 </span>
               </div>
-              <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-                결제 요청 후 배송지는 변경할 수 없어요.
-              </p>
             </div>
 
             </div>

@@ -7,6 +7,8 @@ import {
   subscribeAuthState,
   writeAuthTokens,
 } from "@/lib/auth-store";
+import { clearDeliveryAddressState } from "@/lib/delivery-address-store";
+import { clearSettlementAccountState } from "@/lib/settlement-account-store";
 
 type TestAccount = {
   id: string;
@@ -142,6 +144,8 @@ export function TestAccountSwitcher() {
       }
 
       writeAuthTokens({ accessToken: data.accessToken });
+      clearDeliveryAddressState();
+      clearSettlementAccountState();
       setActiveAccountId(account.id);
       setIsOpen(false);
       showToast(`${data.label ?? account.label}로 전환했어요.`);

@@ -260,6 +260,7 @@ type ProfileBidEntry = {
   imageUrl?: string;
   member: string;
   optionLabel: string;
+  optionLabels?: string[];
   paidAt?: string | null;
   payerName?: string;
   participantCount: number;
@@ -340,6 +341,7 @@ function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
 
 function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
   return (
+    !isProfileBidCancelled(bid) &&
     !isProfileBidPaymentConfirmed(bid) &&
     (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
       (isProfileBidClosed(bid, now) && bid.rank === 1)) &&
@@ -366,12 +368,24 @@ function isCancelledParticipationStatus(status: string | undefined) {
   return status === "CANCELLED" || status === "CANCELED";
 }
 
+function isCancelledBuncheolStatus(status: string | undefined) {
+  return status === "CANCELLED" || status === "CANCELED";
+}
+
+function isProfileBidCancelled(bid: ProfileBidEntry) {
+  return (
+    isCancelledParticipationStatus(bid.participationStatus) ||
+    isCancelledBuncheolStatus(bid.buncheolStatus)
+  );
+}
+
 function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
   const isPaymentCandidate =
     isPaymentWaitingParticipationStatus(bid.participationStatus) ||
     (isProfileBidClosed(bid, now) && bid.rank === 1);
 
   if (
+    isProfileBidCancelled(bid) ||
     isProfileBidPaymentConfirmed(bid) ||
     isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
@@ -399,7 +413,7 @@ function isProfileBidTransferRequested(bid: ProfileBidEntry) {
 }
 
 function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isProfileBidCancelled(bid)) {
     return "취소";
   }
 
@@ -423,7 +437,11 @@ function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
 }
 
 function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) {
-  if (isCancelledParticipationStatus(bid.participationStatus)) {
+  if (isProfileBidCancelled(bid)) {
+    if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
+      return "취소된 분철이에요.";
+    }
+
     return "취소된 참여예요.";
   }
 
@@ -455,6 +473,174 @@ function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) 
 
 function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
   return Boolean(bid.deliveryId && isProfileBidPaymentConfirmed(bid));
+}
+
+function getProfileUniqueLabels(labels: string[]) {
+  return [...new Set(labels.map((label) => label.trim()).filter(Boolean))];
+}
+
+function formatProfileGroupedOptionLabel(labels: string[]) {
+  const uniqueLabels = getProfileUniqueLabels(labels);
+
+  if (uniqueLabels.length === 0) {
+    return "멤버 확인 필요";
+  }
+
+  if (uniqueLabels.length === 1) {
+    return uniqueLabels[0];
+  }
+
+  return `${uniqueLabels[0]} 외 ${uniqueLabels.length - 1}개`;
+}
+
+function getProfileBidOptionLabels(bid: ProfileBidEntry) {
+  const optionLabels = getProfileUniqueLabels(
+    bid.optionLabels && bid.optionLabels.length > 0
+      ? bid.optionLabels
+      : [bid.optionLabel],
+  );
+
+  return optionLabels.length > 0 ? optionLabels : ["멤버 확인 필요"];
+}
+
+function getProfileBidGroupPriority(bid: ProfileBidEntry, now: Date) {
+  if (isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid)) {
+    return 4;
+  }
+
+  if (shouldKeepProfileDeliveryReachable(bid)) {
+    return 3;
+  }
+
+  if (isProfileBidPaymentConfirmed(bid)) {
+    return 2;
+  }
+
+  return isProfileBidClosed(bid, now) ? 1 : 0;
+}
+
+function mergeProfileBidEntryGroup(
+  groupEntries: ProfileBidEntry[],
+  now: Date,
+) {
+  const sortedEntries = [...groupEntries].sort((left, right) => {
+    const progressDiff =
+      getProfileBidGroupPriority(right, now) -
+      getProfileBidGroupPriority(left, now);
+
+    if (progressDiff !== 0) {
+      return progressDiff;
+    }
+
+    return right.amount - left.amount;
+  });
+  const representative =
+    sortedEntries.find(
+      (bid) =>
+        isProfileBidPaymentReady(bid, now) ||
+        isProfileBidTransferRequested(bid),
+    ) ?? sortedEntries[0];
+  const totalAmount = groupEntries.reduce((sum, bid) => sum + bid.amount, 0);
+  const paymentAmounts = groupEntries.map((bid) => bid.paymentAmount);
+  const hasCompletePaymentAmounts = paymentAmounts.every(
+    (amount): amount is number => typeof amount === "number",
+  );
+  const totalPaymentAmount = hasCompletePaymentAmounts
+    ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
+    : groupEntries.length === 1
+      ? representative.paymentAmount
+      : null;
+  const shippingFees = groupEntries.map((bid) => bid.shippingFee);
+  const totalShippingFee = shippingFees.every(
+    (amount): amount is number => typeof amount === "number",
+  )
+    ? shippingFees.reduce((sum, amount) => sum + amount, 0)
+    : representative.shippingFee;
+  const optionLabels = getProfileUniqueLabels(
+    groupEntries.flatMap((bid) => bid.optionLabels ?? [bid.optionLabel]),
+  );
+
+  return {
+    ...representative,
+    amount: totalAmount,
+    deliveryId:
+      representative.deliveryId ??
+      groupEntries.find((bid) => bid.deliveryId)?.deliveryId ??
+      null,
+    deliveryStatus:
+      representative.deliveryStatus ??
+      groupEntries.find((bid) => bid.deliveryStatus)?.deliveryStatus ??
+      null,
+    hostBankAccount:
+      representative.hostBankAccount ??
+      groupEntries.find((bid) => bid.hostBankAccount)?.hostBankAccount ??
+      null,
+    id: representative.id,
+    optionLabel: formatProfileGroupedOptionLabel(
+      optionLabels,
+    ),
+    optionLabels,
+    paymentAmount: totalPaymentAmount,
+    shippingAddress:
+      representative.shippingAddress ??
+      groupEntries.find((bid) => bid.shippingAddress)?.shippingAddress ??
+      null,
+    shippingFee: totalShippingFee ?? null,
+    trackingNumber:
+      representative.trackingNumber ??
+      groupEntries.find((bid) => bid.trackingNumber)?.trackingNumber ??
+      null,
+  };
+}
+
+function getProfileBidGroupKey(bid: ProfileBidEntry) {
+  return bid.productId || bid.id;
+}
+
+function getGroupedProfileBidEntries(records: ProfileBidEntry[], now: Date) {
+  const groups = new Map<string, ProfileBidEntry[]>();
+
+  records.forEach((bid) => {
+    const key = getProfileBidGroupKey(bid);
+    const group = groups.get(key) ?? [];
+
+    group.push(bid);
+    groups.set(key, group);
+  });
+
+  return [...groups.values()].map((group) =>
+    mergeProfileBidEntryGroup(group, now),
+  );
+}
+
+function findGroupedProfileBidEntryById(
+  groupedEntries: ProfileBidEntry[],
+  sourceEntries: ProfileBidEntry[],
+  bidId: string | null,
+  now: Date,
+) {
+  if (!bidId) {
+    return null;
+  }
+
+  const groupedEntry = groupedEntries.find((bid) => bid.id === bidId);
+
+  if (groupedEntry) {
+    return groupedEntry;
+  }
+
+  const sourceEntry = sourceEntries.find((bid) => bid.id === bidId);
+
+  if (!sourceEntry) {
+    return null;
+  }
+
+  const groupKey = getProfileBidGroupKey(sourceEntry);
+  const groupEntries = sourceEntries.filter(
+    (bid) => getProfileBidGroupKey(bid) === groupKey,
+  );
+
+  return mergeProfileBidEntryGroup(groupEntries, now);
 }
 
 function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
@@ -777,7 +963,7 @@ export function ProfileContent({
       allBids.filter((bid) => {
         const isClosed = isProfileBidClosed(bid, now);
 
-        if (isCancelledParticipationStatus(bid.participationStatus)) {
+        if (isProfileBidCancelled(bid)) {
           return false;
         }
 
@@ -790,6 +976,10 @@ export function ProfileContent({
         );
       }),
     [allBids, now],
+  );
+  const groupedActiveBids = useMemo(
+    () => getGroupedProfileBidEntries(activeBids, now),
+    [activeBids, now],
   );
   const shouldRefreshPaymentState = allBids.some(
     (bid) =>
@@ -816,11 +1006,20 @@ export function ProfileContent({
         profileSettlementAccount.accountNumber.trim().length > 0 &&
         profileSettlementAccount.accountHolder.trim().length > 0;
 
-      return hasProfileSettlementAccount
-        ? profileSettlementAccount
+      if (hasProfileSettlementAccount || userProfile) {
+        return profileSettlementAccount;
+      }
+
+      return isUserProfileLoading
+        ? getEmptySettlementAccountState()
         : storedSettlementAccount;
     },
-    [authState.isLoggedIn, storedSettlementAccount, userProfile],
+    [
+      authState.isLoggedIn,
+      isUserProfileLoading,
+      storedSettlementAccount,
+      userProfile,
+    ],
   );
   const hasSettlementAccount =
     settlementAccount.bankName.trim().length > 0 &&
@@ -835,8 +1034,12 @@ export function ProfileContent({
     settlementAccountForm.accountHolder.trim().length <= 50 &&
     settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
 
-  const selectedPaymentBid =
-    activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
+  const selectedPaymentBid = findGroupedProfileBidEntryById(
+    groupedActiveBids,
+    activeBids,
+    selectedPaymentBidId,
+    now,
+  );
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
@@ -879,6 +1082,26 @@ export function ProfileContent({
     : 0;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
+  const selectedPaymentOptionLabels = selectedPaymentBid
+    ? getProfileBidOptionLabels(selectedPaymentBid)
+    : [];
+  const selectedPaymentStatusLabel = selectedPaymentBid
+    ? getProfileBidPaymentStatusLabel(selectedPaymentBid, now)
+    : "";
+  const selectedPaymentStatusDescription = selectedPaymentBid
+    ? getProfileBidPaymentStatusDescription(selectedPaymentBid, now)
+    : "";
+  const isSelectedPaymentReady = selectedPaymentBid
+    ? isProfileBidPaymentReady(selectedPaymentBid, now)
+    : false;
+  const selectedPaymentRemainingTime = selectedPaymentBid
+    ? formatPaymentRemainingTime(
+        selectedPaymentBid.deadline,
+        now,
+        selectedPaymentBid.paymentDueAt,
+        selectedPaymentBid.createdAt,
+      )
+    : "";
   const syncDeliveryAddresses = useCallback(async (
     accessToken: string,
     options: { clearBeforeSync?: boolean } = {},
@@ -1123,6 +1346,8 @@ export function ProfileContent({
 
         if (hasProfileSettlementAccount) {
           writeSettlementAccountState(profileSettlementAccount);
+        } else {
+          clearSettlementAccountState();
         }
       })
       .catch((error: unknown) => {
@@ -1224,9 +1449,12 @@ export function ProfileContent({
     );
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
 
-    const returnBid = returnState.bidId
-      ? activeBids.find((bid) => bid.id === returnState.bidId)
-      : null;
+    const returnBid = findGroupedProfileBidEntryById(
+      groupedActiveBids,
+      activeBids,
+      returnState.bidId ?? null,
+      now,
+    );
 
     if (!returnBid) {
       return;
@@ -1281,7 +1509,7 @@ export function ProfileContent({
       isRestoreActive = false;
       window.clearTimeout(restoreTimer);
     };
-  }, [activeBids, defaultAddressIds, deliveryAddresses]);
+  }, [activeBids, defaultAddressIds, deliveryAddresses, groupedActiveBids, now]);
 
   useEffect(() => {
     if (!isAddressSheetOpen) {
@@ -1508,13 +1736,19 @@ export function ProfileContent({
     }
 
     const requestId = paymentStoreTypeRequestIdRef.current + 1;
-    const selectedBid = activeBids.find((bid) => bid.id === bidId) ?? null;
+    const currentTime = new Date();
+    const selectedBid = findGroupedProfileBidEntryById(
+      groupedActiveBids,
+      activeBids,
+      bidId,
+      currentTime,
+    );
 
     if (!selectedBid) {
       return;
     }
 
-    if (isProfileBidPaymentExpired(selectedBid, new Date())) {
+    if (isProfileBidPaymentExpired(selectedBid, currentTime)) {
       setUserProfileMessage(
         "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );
@@ -2714,20 +2948,36 @@ export function ProfileContent({
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
               </p>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                {selectedPaymentBid.member} · {selectedPaymentBid.optionLabel}
-              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {selectedPaymentOptionLabels.map((optionLabel) => (
+                  <span
+                    className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65"
+                    key={optionLabel}
+                  >
+                    {optionLabel}
+                  </span>
+                ))}
+              </div>
             </div>
 
             <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white ring-1 ring-[#AAB67C]/35">
-              <p className="text-[12px] font-semibold text-[#DDE7B8]">
-                현재 상태
-              </p>
-              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                {getProfileBidPaymentStatusLabel(selectedPaymentBid, now)}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                  {isSelectedPaymentReady ? "입금 마감까지" : "현재 상태"}
+                </p>
+                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
+                  {selectedPaymentStatusLabel}
+                </span>
+              </div>
+              <p className="mt-1 text-[24px] font-semibold tracking-[-0.06em]">
+                {isSelectedPaymentReady
+                  ? selectedPaymentRemainingTime
+                  : selectedPaymentStatusLabel}
               </p>
               <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
-                {getProfileBidPaymentStatusDescription(selectedPaymentBid, now)}
+                {isSelectedPaymentReady
+                  ? "기한 안에 아래 계좌로 입금해 주세요."
+                  : selectedPaymentStatusDescription}
               </p>
             </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
@@ -2779,31 +3029,28 @@ export function ProfileContent({
               ) : null}
             </div>
 
-            <div className="mt-4 rounded-[0.95rem] border-[1.5px] border-[#d8d8d8] bg-[#ececec] px-4 py-3">
+            <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     {paymentDeliveryAddress ? (
-                      <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
+                      <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-[#D7FF5F]">
                         {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/55">
                       배송지 고정
                     </span>
                   </div>
-                  <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                  <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
                     {paymentDeliveryAddress?.branchName ??
                       "결제 요청 배송지 확인 중"}
                   </p>
                 </div>
-                <span className="inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white px-3 text-[12px] font-semibold text-black/45">
+                <span className="shrink-0 text-[11px] font-semibold text-black/40">
                   변경 불가
                 </span>
               </div>
-              <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-                결제 요청 후 배송지는 변경할 수 없어요.
-              </p>
             </div>
 
             </div>

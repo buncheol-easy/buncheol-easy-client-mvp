@@ -40,6 +40,7 @@ export type ProductCardItem = {
 
 type ProductCardProps = {
   item: ProductCardItem;
+  variant?: "grid" | "wide";
 };
 
 const kstOffsetHours = 9;
@@ -251,7 +252,7 @@ function isRecentlyUploaded(uploadedAt?: string) {
   return elapsedDays >= 0 && elapsedDays < newProductDays;
 }
 
-export function ProductCard({ item }: ProductCardProps) {
+export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -359,42 +360,142 @@ export function ProductCard({ item }: ProductCardProps) {
     }
   }
 
+  function handleCardClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    writePublicBuncheolCard(item);
+
+    const pathname = window.location.pathname;
+
+    if (pathname === "/search") {
+      event.preventDefault();
+
+      const searchParams = new URLSearchParams(window.location.search);
+      const query = searchParams.get("q") ?? "";
+
+      router.push(
+        `/products/${productId}?from=search&q=${encodeURIComponent(query)}`,
+      );
+      return;
+    }
+
+    if (pathname === "/") {
+      event.preventDefault();
+      rememberProductListScrollPosition(event, HOME_SCROLL_TOP_KEY);
+      router.push(`/products/${productId}?from=home`);
+      return;
+    }
+
+    if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
+      event.preventDefault();
+      rememberProductListScrollPosition(event, FAVORITES_SCROLL_TOP_KEY);
+      rememberFavoritesProductEntry();
+      router.push(`/products/${productId}?from=favorites`);
+    }
+  }
+
+  if (variant === "wide") {
+    return (
+      <Link
+        href={`/products/${productId}`}
+        className="motion-card block overflow-hidden rounded-[1rem] border border-black/8 bg-white shadow-[0_12px_28px_rgba(0,0,0,0.08)]"
+        prefetch={false}
+        onClick={handleCardClick}
+      >
+        <div
+          className={`relative aspect-[1.72/1] overflow-hidden bg-gradient-to-br ${item.tone}`}
+        >
+          {item.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.imageUrl}
+              alt={item.title}
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
+          )}
+          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
+            <span
+              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
+                isPurchasable
+                  ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
+                  : "bg-black/55 text-white/80"
+              }`}
+            >
+              {deadlineBadge.label}
+            </span>
+            {shouldShowBookmarkButton ? (
+              <button
+                type="button"
+                aria-label={isLiked ? "찜 해제" : "찜하기"}
+                className={`motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
+                  isLiked
+                    ? "bg-[#DDE7B8] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
+                    : "bg-white/95 text-black/45"
+                } disabled:opacity-60`}
+                disabled={isBookmarkPending}
+                onClick={handleBookmarkClick}
+              >
+                <HeartIcon filled={isLiked} />
+              </button>
+            ) : null}
+          </div>
+          {deadlineBadge.value ? (
+            <span className="absolute bottom-3 left-3 rounded-full bg-black/76 px-2.5 py-1 text-[13px] font-semibold tracking-[-0.04em] text-white backdrop-blur-sm">
+              {deadlineBadge.value}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="px-3.5 py-3.5">
+          {shouldShowAvailableMembers ? (
+            <div>
+              {availableMemberNames.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-[#D7FF5F]">
+                    가능 멤버
+                  </span>
+                  {availableMemberNames.map((memberName) => (
+                    <span
+                      className="rounded-full bg-[#EEF8C8] px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-black/70 ring-1 ring-[#CFE86B]/55"
+                      key={memberName}
+                    >
+                      {memberName}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-black/38">
+                  남은 멤버 없음
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+              {targetTags.join(" ")}
+            </p>
+          )}
+          <div className="mt-2 flex items-start justify-between gap-3">
+            <p className="line-clamp-2 min-w-0 text-[16px] font-semibold leading-6 tracking-[-0.04em] text-black">
+              {item.title}
+            </p>
+            {isNewProduct ? (
+              <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black">
+                신규
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </Link>
+    );
+  }
+
   return (
     <Link
       href={`/products/${productId}`}
       className="motion-card block space-y-2"
       prefetch={false}
-      onClick={(event) => {
-        writePublicBuncheolCard(item);
-
-        const pathname = window.location.pathname;
-
-        if (pathname === "/search") {
-          event.preventDefault();
-
-          const searchParams = new URLSearchParams(window.location.search);
-          const query = searchParams.get("q") ?? "";
-
-          router.push(
-            `/products/${productId}?from=search&q=${encodeURIComponent(query)}`,
-          );
-          return;
-        }
-
-        if (pathname === "/") {
-          event.preventDefault();
-          rememberProductListScrollPosition(event, HOME_SCROLL_TOP_KEY);
-          router.push(`/products/${productId}?from=home`);
-          return;
-        }
-
-        if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
-          event.preventDefault();
-          rememberProductListScrollPosition(event, FAVORITES_SCROLL_TOP_KEY);
-          rememberFavoritesProductEntry();
-          router.push(`/products/${productId}?from=favorites`);
-        }
-      }}
+      onClick={handleCardClick}
     >
       <div
         className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br shadow-[0_12px_28px_rgba(0,0,0,0.08)] ${item.tone}`}

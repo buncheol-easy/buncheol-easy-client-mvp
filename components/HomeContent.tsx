@@ -188,8 +188,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
-    const slideOffsets = Array.from(scrollElement.children).map((child) =>
-      child instanceof HTMLElement ? child.offsetLeft : 0,
+    const slideOffsets = Array.from(scrollElement.children).map((child, index) =>
+      child instanceof HTMLElement
+        ? getBannerSlideLeft(scrollElement, index)
+        : 0,
     );
     const nextIndex = slideOffsets.reduce((nearestIndex, offset, index) => {
       const nearestDistance = Math.abs(
@@ -208,9 +210,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   function getBannerSlideLeft(scrollElement: HTMLDivElement, index: number) {
     const slide = scrollElement.children.item(index);
 
-    return slide instanceof HTMLElement
-      ? slide.offsetLeft
-      : scrollElement.clientWidth * index;
+    if (!(slide instanceof HTMLElement)) {
+      return scrollElement.clientWidth * index;
+    }
+
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const slideRect = slide.getBoundingClientRect();
+
+    return slideRect.left - scrollRect.left + scrollElement.scrollLeft;
   }
 
   function handleBannerDotClick(index: number) {
@@ -578,7 +585,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       >
         <section className="px-4 pt-4">
           <div
-            className="motion-carousel flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="home-banner-carousel motion-carousel flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onScroll={handleBannerScroll}
             ref={bannerScrollerRef}
           >
@@ -660,10 +667,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             {isListingLoading ? (
               <ProductGridSkeleton
                 ariaLabel="추천 상품을 불러오는 중"
-                count={6}
+                count={3}
+                variant="wide"
               />
             ) : (
-              <ProductGrid items={listings} />
+              <ProductGrid items={listings} variant="wide" />
             )}
           </div>
         </section>

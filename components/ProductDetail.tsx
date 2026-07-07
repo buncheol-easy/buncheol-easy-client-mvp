@@ -79,6 +79,8 @@ const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
+const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
+const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
 const kstOffsetHours = 9;
 
 type CheckoutSheetStep = "options" | "confirm" | "payment";
@@ -108,13 +110,108 @@ type CheckoutPaymentSummary = {
   totalAmount: number;
 };
 
+type CheckoutAddressReturnOption = {
+  buncheolMemberId?: string;
+  id: string;
+  label?: string;
+};
+
 type CheckoutAddressReturnState = {
   addressId?: string | null;
   createdAt: number;
+  options?: CheckoutAddressReturnOption[];
   optionIds: string[];
   productId: string;
   reopenAddressSheet: boolean;
 };
+
+function parseCheckoutAddressReturnOptions(
+  value: unknown,
+): CheckoutAddressReturnOption[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((option): CheckoutAddressReturnOption | null => {
+      if (!option || typeof option.id !== "string") {
+        return null;
+      }
+
+      return {
+        buncheolMemberId:
+          typeof option.buncheolMemberId === "string"
+            ? option.buncheolMemberId
+            : undefined,
+        id: option.id,
+        label: typeof option.label === "string" ? option.label : undefined,
+      };
+    })
+    .filter(
+      (option): option is CheckoutAddressReturnOption => option !== null,
+    );
+}
+
+function parseCheckoutAddressReturnState(
+  rawState: string | null,
+  productId: string,
+): CheckoutAddressReturnState | null {
+  if (!rawState) {
+    return null;
+  }
+
+  try {
+    const parsedState = JSON.parse(rawState) as Partial<CheckoutAddressReturnState>;
+
+    if (
+      !parsedState ||
+      parsedState.productId !== productId ||
+      !Array.isArray(parsedState.optionIds)
+    ) {
+      return null;
+    }
+
+    return {
+      createdAt:
+        typeof parsedState.createdAt === "number"
+          ? parsedState.createdAt
+          : Date.now(),
+      addressId:
+        typeof parsedState.addressId === "string"
+          ? parsedState.addressId
+          : null,
+      optionIds: parsedState.optionIds.filter(
+        (optionId): optionId is string => typeof optionId === "string",
+      ),
+      options: parseCheckoutAddressReturnOptions(parsedState.options),
+      productId: parsedState.productId,
+      reopenAddressSheet: parsedState.reopenAddressSheet !== false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getCheckoutReturnOptionsFromState(
+  state: CheckoutAddressReturnState,
+): CheckoutAddressReturnOption[] {
+  const seenKeys = new Set<string>();
+  const options: CheckoutAddressReturnOption[] = [
+    ...state.optionIds.map((optionId) => ({ id: optionId })),
+    ...(state.options ?? []),
+  ];
+
+  return options.filter((option) => {
+    const key = option.buncheolMemberId ?? option.id ?? option.label;
+
+    if (!key || seenKeys.has(key)) {
+      return false;
+    }
+
+    seenKeys.add(key);
+    return true;
+  });
+}
 
 type ProductHistoryState = {
   idx?: unknown;
@@ -269,6 +366,84 @@ function isDeadlineClosed(deadline: string, now = Date.now()) {
   );
 }
 
+function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
+  const deadlineDate = parseKoreaDateTime(deadline);
+
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return deadline;
+  }
+
+  const remainingMilliseconds = deadlineDate.getTime() - now;
+
+  if (remainingMilliseconds <= 0) {
+    return "구매 마감";
+  }
+
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  const clock = [
+    hours.toString().padStart(2, "0"),
+    minutes.toString().padStart(2, "0"),
+    seconds.toString().padStart(2, "0"),
+  ].join(":");
+
+  if (days > 0) {
+    return `${days}일 ${clock} 남음`;
+  }
+
+  return `${clock} 남음`;
+}
+
+function parseCheckoutDateTime(value: string | null | undefined) {
+  if (!value) {
+    return new Date(Number.NaN);
+  }
+
+  const date = new Date(value);
+
+  if (!Number.isNaN(date.getTime())) {
+    return date;
+  }
+
+  return parseKoreaDateTime(value);
+}
+
+function formatPaymentDueCountdown(
+  value: string | null | undefined,
+  now = Date.now(),
+) {
+  const dueDate = parseCheckoutDateTime(value);
+
+  if (Number.isNaN(dueDate.getTime())) {
+    return "-";
+  }
+
+  const remainingMilliseconds = dueDate.getTime() - now;
+
+  if (remainingMilliseconds <= 0) {
+    return "입금 마감";
+  }
+
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) {
+    return `${days}일 ${hours.toString().padStart(2, "0")}시간 남음`;
+  }
+
+  if (hours > 0) {
+    return `${hours}시간 ${minutes.toString().padStart(2, "0")}분 남음`;
+  }
+
+  return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
+}
+
 function getTargetTags(product: ProductDetailItem) {
   const tags = product.targetMembers ?? [product.member];
 
@@ -286,14 +461,10 @@ function getProductImageUrls(product: ProductDetailItem) {
 }
 
 function formatCheckoutDateTime(value: string | null | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
+  const date = parseCheckoutDateTime(value);
 
   if (Number.isNaN(date.getTime())) {
-    return value;
+    return value ?? "-";
   }
 
   return new Intl.DateTimeFormat("ko-KR", {
@@ -398,15 +569,15 @@ function getOptionPurchaseOverlayLabel(
   const isConfirmed = isConfirmedOptionPurchase(option);
 
   if (myBid) {
-    return isConfirmed ? "내 구매 완료" : "내 결제 대기 중";
+    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
   }
 
   if (hasOptionPurchaseState(option)) {
-    return isConfirmed ? "구매 완료" : "결제 대기 중";
+    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
   }
 
   if (isUnavailablePurchaseOption(option)) {
-    return "구매 진행 중";
+    return "선택할 수 없는 멤버예요";
   }
 
   if (option.available === true) {
@@ -414,10 +585,30 @@ function getOptionPurchaseOverlayLabel(
   }
 
   if (shouldUseParticipantCount && option.participantCount > 0) {
-    return "결제 대기 중";
+    return "결제 진행 중이에요";
   }
 
   return null;
+}
+
+function getOptionPurchaseBlockChipLabel(overlayLabel: string | null) {
+  if (!overlayLabel) {
+    return null;
+  }
+
+  if (overlayLabel === "선택할 수 없는 멤버예요") {
+    return "구매 불가";
+  }
+
+  if (overlayLabel === "구매가 완료됐어요") {
+    return "구매 완료";
+  }
+
+  if (overlayLabel === "결제 진행 중이에요") {
+    return "구매 진행 중";
+  }
+
+  return overlayLabel;
 }
 
 function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
@@ -507,6 +698,7 @@ export function ProductDetail({
   const didRestoreCheckoutAddressReturnRef = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
+  const checkoutSelectedOptionsRef = useRef<CheckoutAddressReturnOption[]>([]);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
   const checkoutCopyToastTimerRef = useRef<number | null>(null);
@@ -551,6 +743,7 @@ export function ProductDetail({
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
   const [deadlineTick, setDeadlineTick] = useState(() => Date.now());
+  const buncheolId = product.buncheolId ?? product.id;
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
@@ -577,6 +770,94 @@ export function ProductDetail({
       0,
     );
   }, [selectedCheckoutItems]);
+
+  function getCheckoutReturnOptionsForAmounts(
+    amounts: Record<string, string>,
+  ): CheckoutAddressReturnOption[] {
+    return auctionOptions
+      .filter(
+        (option) =>
+          amounts[option.id] === "selected" &&
+          !getOptionPurchaseOverlayLabel(
+            option,
+            myBids[option.id],
+            product.isApiProduct === true,
+          ),
+      )
+      .map((option) => ({
+        buncheolMemberId: option.buncheolMemberId,
+        id: option.id,
+        label: option.label,
+      }));
+  }
+
+  function getCheckoutReturnOptionsFromItems(
+    items: CheckoutDraftItem[],
+  ): CheckoutAddressReturnOption[] {
+    return items.map(({ option }) => ({
+      buncheolMemberId: option.buncheolMemberId,
+      id: option.id,
+      label: option.label,
+    }));
+  }
+
+  function getRestorableCheckoutOptionIds(
+    restorableOptions: CheckoutAddressReturnOption[],
+  ) {
+    return auctionOptions.reduce<string[]>((optionIds, option) => {
+      const isSelected = restorableOptions.some(
+        (returnOption) =>
+          returnOption.id === option.id ||
+          (returnOption.buncheolMemberId &&
+            returnOption.buncheolMemberId === option.buncheolMemberId) ||
+          (returnOption.label && returnOption.label === option.label),
+      );
+
+      if (
+        isSelected &&
+        !getOptionPurchaseOverlayLabel(
+          option,
+          myBids[option.id],
+          product.isApiProduct === true,
+        )
+      ) {
+        optionIds.push(option.id);
+      }
+
+      return optionIds;
+    }, []);
+  }
+
+  function getCheckoutReturnOptionsFromOptionIds(optionIds: string[]) {
+    return auctionOptions
+      .filter((option) => optionIds.includes(option.id))
+      .map((option) => ({
+        buncheolMemberId: option.buncheolMemberId,
+        id: option.id,
+        label: option.label,
+      }));
+  }
+
+  function restoreCheckoutSelectionFromReturnOptions(
+    returnOptions: CheckoutAddressReturnOption[],
+  ) {
+    const restorableOptionIds = getRestorableCheckoutOptionIds(returnOptions);
+
+    if (restorableOptionIds.length === 0) {
+      return false;
+    }
+
+    checkoutSelectedOptionsRef.current =
+      getCheckoutReturnOptionsFromOptionIds(restorableOptionIds);
+    setBidAmounts(
+      restorableOptionIds.reduce<Record<string, string>>((amounts, optionId) => {
+        amounts[optionId] = "selected";
+        return amounts;
+      }, {}),
+    );
+
+    return true;
+  }
 
   const sortedAuctionOptions = [...auctionOptions].sort((left, right) => {
     const leftHasBid = Boolean(
@@ -677,6 +958,43 @@ export function ProductDetail({
     getBidDeliveryAddressFromState(deliveryAddressState);
   const checkoutEligibleDeliveryAddresses =
     getCheckoutEligibleDeliveryAddressesFromState(deliveryAddressState);
+
+  useEffect(() => {
+    if (selectedCheckoutItems.length === 0) {
+      return;
+    }
+
+    const returnOptions = selectedCheckoutItems.map(({ option }) => ({
+      buncheolMemberId: option.buncheolMemberId,
+      id: option.id,
+      label: option.label,
+    }));
+
+    checkoutSelectedOptionsRef.current = returnOptions;
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      CHECKOUT_DRAFT_STATE_KEY,
+      JSON.stringify({
+        createdAt: Date.now(),
+        addressId:
+          checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null,
+        optionIds: returnOptions.map((option) => option.id),
+        options: returnOptions,
+        productId: buncheolId,
+        reopenAddressSheet: false,
+      } satisfies CheckoutAddressReturnState),
+    );
+  }, [
+    bidDeliveryAddress?.id,
+    buncheolId,
+    checkoutDeliveryAddress?.id,
+    selectedCheckoutItems,
+  ]);
+
   const targetTags = getTargetTags(product);
   const productImages = getProductImageUrls(product);
   const visibleProductImageIndex = Math.min(
@@ -689,6 +1007,10 @@ export function ProductDetail({
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
   const isDeadlinePassed = isDeadlineClosed(product.deadline, deadlineTick);
+  const purchaseDeadlineCountdown = formatPurchaseDeadlineCountdown(
+    product.deadline,
+    deadlineTick,
+  );
   const productStatus = product.status?.toUpperCase();
   const isCancelledProduct =
     productStatus === "CANCELLED" || productStatus === "CANCELED";
@@ -704,7 +1026,6 @@ export function ProductDetail({
         product.isApiProduct === true,
       ),
   );
-  const buncheolId = product.buncheolId ?? product.id;
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
   const canEditProduct =
@@ -794,6 +1115,19 @@ export function ProductDetail({
     if (options.restoreCheckoutAddressSheet) {
       params.set("checkoutStep", "confirm");
       params.set("addressSheet", "1");
+      params.delete("checkoutOption");
+      getSelectedCheckoutOptionIds().forEach((optionId) => {
+        params.append("checkoutOption", optionId);
+      });
+
+      const checkoutAddressId =
+        checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null;
+
+      if (checkoutAddressId) {
+        params.set("checkoutAddress", checkoutAddressId);
+      } else {
+        params.delete("checkoutAddress");
+      }
     }
 
     const query = params.toString();
@@ -803,32 +1137,73 @@ export function ProductDetail({
   }
 
   function getSelectedCheckoutOptionIds() {
-    return auctionOptions
-      .filter(
-        (option) =>
-          bidAmounts[option.id] === "selected" &&
-          !getOptionPurchaseOverlayLabel(
-            option,
-            myBids[option.id],
-            product.isApiProduct === true,
-          ),
-      )
-      .map((option) => option.id);
+    return getSelectedCheckoutReturnOptions().map((option) => option.id);
   }
 
-  function rememberCheckoutAddressReturnState(reopenAddressSheet = true) {
+  function getSelectedCheckoutReturnOptions(): CheckoutAddressReturnOption[] {
+    const currentReturnOptions = getCheckoutReturnOptionsForAmounts(bidAmounts);
+
+    if (currentReturnOptions.length > 0) {
+      checkoutSelectedOptionsRef.current = currentReturnOptions;
+      return currentReturnOptions;
+    }
+
+    return checkoutSelectedOptionsRef.current;
+  }
+
+  function rememberCheckoutAddressReturnState(
+    reopenAddressSheet = true,
+    preferredAddressId?: string | null,
+  ) {
     if (typeof window === "undefined") {
       return;
     }
 
+    const previousReturnState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY),
+      buncheolId,
+    );
+    const previousDraftState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+      buncheolId,
+    );
+    let returnOptions = getSelectedCheckoutReturnOptions();
+
+    if (returnOptions.length === 0 && previousReturnState) {
+      returnOptions = getCheckoutReturnOptionsFromState(previousReturnState);
+    }
+
+    if (returnOptions.length === 0 && previousDraftState) {
+      returnOptions = getCheckoutReturnOptionsFromState(previousDraftState);
+    }
+
+    if (returnOptions.length === 0) {
+      return;
+    }
+
+    const nextReturnState: CheckoutAddressReturnState = {
+      createdAt: Date.now(),
+      addressId:
+        preferredAddressId ??
+        checkoutDeliveryAddress?.id ??
+        bidDeliveryAddress?.id ??
+        previousDraftState?.addressId ??
+        null,
+      optionIds: returnOptions.map((option) => option.id),
+      options: returnOptions,
+      productId: buncheolId,
+      reopenAddressSheet,
+    };
+
     window.sessionStorage.setItem(
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
+      JSON.stringify(nextReturnState),
+    );
+    window.sessionStorage.setItem(
+      CHECKOUT_DRAFT_STATE_KEY,
       JSON.stringify({
-        createdAt: Date.now(),
-        addressId: checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null,
-        optionIds: getSelectedCheckoutOptionIds(),
-        productId: buncheolId,
-        reopenAddressSheet,
+        ...nextReturnState,
+        reopenAddressSheet: false,
       } satisfies CheckoutAddressReturnState),
     );
   }
@@ -860,7 +1235,13 @@ export function ProductDetail({
   }
 
   useEffect(() => {
-    if (isDeadlineClosed(product.deadline)) {
+    const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
+    const paymentDueDate = parseCheckoutDateTime(paymentDueAt);
+    const shouldTickPaymentDue =
+      !Number.isNaN(paymentDueDate.getTime()) &&
+      paymentDueDate.getTime() > Date.now();
+
+    if (isDeadlineClosed(product.deadline) && !shouldTickPaymentDue) {
       setDeadlineTick(Date.now());
       return;
     }
@@ -870,7 +1251,7 @@ export function ProductDetail({
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [product.deadline]);
+  }, [checkoutPaymentSummary?.paymentDueAt, product.deadline]);
 
   useEffect(() => {
     setIsLiked(product.liked === true);
@@ -879,6 +1260,7 @@ export function ProductDetail({
   useEffect(() => {
     setAuctionOptions(product.options);
     setMyBids(getMyBidsFromOptions(product.options));
+    checkoutSelectedOptionsRef.current = [];
     setBidAmounts({});
     setIsHostedByMeFromApi(product.isHostedByMe === true);
     setCheckoutStep("options");
@@ -897,66 +1279,123 @@ export function ProductDetail({
       return;
     }
 
+    let returnState: CheckoutAddressReturnState | null = null;
     const rawState = window.sessionStorage.getItem(
       CHECKOUT_ADDRESS_RETURN_STATE_KEY,
     );
+    const draftState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+      buncheolId,
+    );
 
-    if (!rawState) {
-      return;
-    }
-
-    let returnState: CheckoutAddressReturnState | null = null;
-
-    try {
-      const parsedState = JSON.parse(rawState) as Partial<CheckoutAddressReturnState>;
-
-      if (
-        parsedState &&
-        parsedState.productId === buncheolId &&
-        Array.isArray(parsedState.optionIds)
-      ) {
-        returnState = {
-          createdAt:
-            typeof parsedState.createdAt === "number"
-              ? parsedState.createdAt
-              : Date.now(),
-          addressId:
-            typeof parsedState.addressId === "string"
-              ? parsedState.addressId
-              : null,
-          optionIds: parsedState.optionIds.filter(
-            (optionId): optionId is string => typeof optionId === "string",
-          ),
-          productId: parsedState.productId,
-          reopenAddressSheet: parsedState.reopenAddressSheet !== false,
-        };
-      }
-    } catch {
-      returnState = null;
-    }
+    returnState = parseCheckoutAddressReturnState(rawState, buncheolId);
 
     window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
 
-    if (!returnState || Date.now() - returnState.createdAt > 30 * 60 * 1000) {
+    if (!returnState) {
+      const params = new URLSearchParams(window.location.search);
+      const shouldRestoreCheckout =
+        params.get("checkoutStep") === "confirm" ||
+        params.get("addressSheet") === "1";
+      const queryOptionIds = [
+        ...params.getAll("checkoutOption"),
+        ...(params.get("checkoutOptions")?.split(",") ?? []),
+      ].filter(Boolean);
+
+      if (shouldRestoreCheckout) {
+        returnState = {
+          createdAt: Date.now(),
+          addressId: params.get("checkoutAddress"),
+          optionIds: [...new Set(queryOptionIds)],
+          options: [...new Set(queryOptionIds)].map((optionId) => ({
+            id: optionId,
+          })),
+          productId: buncheolId,
+          reopenAddressSheet: params.get("addressSheet") === "1",
+        };
+      }
+    }
+
+    if (returnState && draftState) {
+      const returnOptions = getCheckoutReturnOptionsFromState(returnState);
+      const draftOptions = getCheckoutReturnOptionsFromState(draftState);
+
+      if (returnOptions.length === 0 && draftOptions.length > 0) {
+        returnState = {
+          ...draftState,
+          addressId: returnState.addressId ?? draftState.addressId,
+          createdAt: Math.max(returnState.createdAt, draftState.createdAt),
+          reopenAddressSheet: returnState.reopenAddressSheet,
+        };
+      }
+    }
+
+    if (
+      !returnState ||
+      Date.now() - returnState.createdAt > checkoutDraftMaxAgeMs
+    ) {
       return;
     }
 
+    const checkoutReturnState = returnState;
+
     didRestoreCheckoutAddressReturnRef.current = true;
 
-    const restorableOptionIds = returnState.optionIds.filter((optionId) => {
-      const option = auctionOptions.find((item) => item.id === optionId);
+    const restorableOptions =
+      getCheckoutReturnOptionsFromState(checkoutReturnState);
+    const restorableOptionIds = auctionOptions.reduce<string[]>(
+      (optionIds, option) => {
+        const isSelected = restorableOptions.some(
+          (returnOption) =>
+            returnOption.id === option.id ||
+            (returnOption.buncheolMemberId &&
+              returnOption.buncheolMemberId === option.buncheolMemberId) ||
+            (returnOption.label && returnOption.label === option.label),
+        );
 
-      return (
-        option &&
-        !getOptionPurchaseOverlayLabel(
-          option,
-          myBids[option.id],
-          product.isApiProduct === true,
-        )
-      );
-    });
+        if (
+          isSelected &&
+          !getOptionPurchaseOverlayLabel(
+            option,
+            myBids[option.id],
+            product.isApiProduct === true,
+          )
+        ) {
+          optionIds.push(option.id);
+        }
+
+        return optionIds;
+      },
+      [],
+    );
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+
+      if (params.has("checkoutStep") || params.has("addressSheet")) {
+        params.delete("checkoutStep");
+        params.delete("addressSheet");
+        params.delete("checkoutAddress");
+        params.delete("checkoutOption");
+        params.delete("checkoutOptions");
+        const query = params.toString();
+
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${window.location.pathname}${query ? `?${query}` : ""}`,
+        );
+      }
+    }
 
     if (restorableOptionIds.length > 0) {
+      checkoutSelectedOptionsRef.current = auctionOptions
+        .filter((option) => restorableOptionIds.includes(option.id))
+        .map((option) => ({
+          buncheolMemberId: option.buncheolMemberId,
+          id: option.id,
+          label: option.label,
+        }));
       setBidAmounts(
         restorableOptionIds.reduce<Record<string, string>>((amounts, optionId) => {
           amounts[optionId] = "selected";
@@ -1017,8 +1456,10 @@ export function ProductDetail({
           ? eligibleAddresses.find((address) => address.id === lastAddedAddressId)
           : null;
       const previousSelectedAddress =
-        returnState.addressId
-          ? eligibleAddresses.find((address) => address.id === returnState.addressId)
+        checkoutReturnState.addressId
+          ? eligibleAddresses.find(
+              (address) => address.id === checkoutReturnState.addressId,
+            )
           : null;
       const restoredAddress =
         lastAddedAddress ??
@@ -1033,7 +1474,7 @@ export function ProductDetail({
         window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
       }
 
-      if (returnState.reopenAddressSheet && eligibleAddresses.length > 0) {
+      if (checkoutReturnState.reopenAddressSheet) {
         if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
           window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
           checkoutAddressSheetCloseFallbackTimerRef.current = null;
@@ -1162,17 +1603,22 @@ export function ProductDetail({
     }
 
     setBidAmounts((current) => {
-      if (current[optionId] === "selected") {
-        const nextAmounts = { ...current };
-        delete nextAmounts[optionId];
+      let nextAmounts: Record<string, string>;
 
-        return nextAmounts;
+      if (current[optionId] === "selected") {
+        nextAmounts = { ...current };
+        delete nextAmounts[optionId];
+      } else {
+        nextAmounts = {
+          ...current,
+          [optionId]: "selected",
+        };
       }
 
-      return {
-        ...current,
-        [optionId]: "selected",
-      };
+      checkoutSelectedOptionsRef.current =
+        getCheckoutReturnOptionsForAmounts(nextAmounts);
+
+      return nextAmounts;
     });
   }
 
@@ -1248,6 +1694,8 @@ export function ProductDetail({
       return;
     }
 
+    checkoutSelectedOptionsRef.current =
+      getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
     setCheckoutError("");
     setIsBidSubmitPending(true);
 
@@ -1300,9 +1748,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 환불 계좌를 먼저 등록해 주세요.");
+        window.alert("마이페이지에서 환불 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push("/profile/account");
+        router.push("/profile");
         return;
       }
 
@@ -1392,9 +1840,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 환불 계좌를 먼저 등록해 주세요.");
+        window.alert("마이페이지에서 환불 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        router.push("/profile/account");
+        router.push("/profile");
         return;
       }
 
@@ -2033,6 +2481,25 @@ export function ProductDetail({
   }
 
   function confirmCheckoutAddressSelection() {
+    if (selectedCheckoutItems.length === 0) {
+      const draftState =
+        typeof window === "undefined"
+          ? null
+          : parseCheckoutAddressReturnState(
+              window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+              buncheolId,
+            );
+      const draftOptions = draftState
+        ? getCheckoutReturnOptionsFromState(draftState)
+        : [];
+
+      restoreCheckoutSelectionFromReturnOptions(
+        checkoutSelectedOptionsRef.current.length > 0
+          ? checkoutSelectedOptionsRef.current
+          : draftOptions,
+      );
+    }
+
     const selectedAddress =
       checkoutDeliveryAddress ??
       bidDeliveryAddress ??
@@ -2048,8 +2515,29 @@ export function ProductDetail({
 
     setCheckoutDeliveryAddress(selectedAddress);
     setCheckoutStep("confirm");
+    setCheckoutPaymentSummary(null);
+    setCheckoutError("");
+    setCheckoutCopyToast("");
+
+    if (sheetCloseFallbackTimerRef.current !== null) {
+      window.clearTimeout(sheetCloseFallbackTimerRef.current);
+      sheetCloseFallbackTimerRef.current = null;
+    }
+
+    if (sheetEnterAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(sheetEnterAnimationFrameRef.current);
+      sheetEnterAnimationFrameRef.current = null;
+    }
+
     setIsSheetOpen(true);
     setIsSheetClosing(false);
+    setIsSheetEntered(false);
+
+    sheetEnterAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      sheetEnterAnimationFrameRef.current = null;
+      setIsSheetEntered(true);
+    });
+
     closeCheckoutAddressSheet();
   }
 
@@ -2355,8 +2843,8 @@ export function ProductDetail({
                   <p className="text-[12px] font-medium text-black/45">
                     구매 기한
                   </p>
-                  <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em]">
-                    {product.deadline}
+                  <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums">
+                    {purchaseDeadlineCountdown}
                   </p>
                 </div>
               </div>
@@ -2435,47 +2923,53 @@ export function ProductDetail({
             <div className="mt-8 border-t border-black/10 pt-6">
               <div className="flex items-end justify-between gap-3">
                 <h2 className="text-[18px] font-semibold">
-                  옵션 선택
+                  멤버
                 </h2>
                 <p className="text-[12px] font-semibold text-black/35">
-                  {auctionOptions.length.toLocaleString("ko-KR")}개 옵션
+                  {auctionOptions.length.toLocaleString("ko-KR")}명
                 </p>
               </div>
-              <div className="mt-4 grid gap-2.5">
+              <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
                 {auctionOptions.map((option) => {
                   const overlayLabel = getOptionPurchaseOverlayLabel(
                     option,
                     myBids[option.id],
                     product.isApiProduct === true,
                   );
+                  const blockChipLabel =
+                    getOptionPurchaseBlockChipLabel(overlayLabel);
 
                   return (
                     <div
                       key={option.id}
-                      className={`relative flex min-h-[76px] items-center justify-between gap-3 overflow-hidden rounded-[0.9rem] border px-4 py-3 shadow-[0_8px_22px_rgba(0,0,0,0.035)] ${
+                      className={`relative flex min-h-[72px] items-center justify-between gap-3 overflow-hidden border-b border-black/[0.06] px-4 py-3 last:border-b-0 ${
                         overlayLabel
-                          ? "border-black/10 bg-[#f7f7f7]"
-                          : "border-black/10 bg-white"
+                          ? "bg-[#fafafa]"
+                          : "bg-white"
                       }`}
                     >
-                      <div
-                        className={`flex min-w-0 items-center gap-3 ${
-                          overlayLabel ? "opacity-65" : ""
-                        }`}
-                      >
-                        <OptionAvatar option={option} size="md" />
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className={overlayLabel ? "opacity-45" : ""}>
+                          <OptionAvatar option={option} size="md" />
+                        </div>
                         <div className="min-w-0">
-                          <p className="truncate text-[16px] font-semibold">
+                          <p
+                            className={`truncate text-[16px] font-semibold ${
+                              overlayLabel ? "text-black/45" : "text-black"
+                            }`}
+                          >
                             {option.label}
                           </p>
-                          <p className="mt-0.5 text-[12px] font-semibold text-black/35">
-                            {overlayLabel ? "선택할 수 없는 옵션" : "구매 가능 옵션"}
-                          </p>
+                          {overlayLabel ? null : (
+                            <p className="mt-0.5 text-[12px] font-semibold text-black/35">
+                              구매 가능 멤버
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div
                         className={`shrink-0 text-right ${
-                          overlayLabel ? "opacity-65" : ""
+                          overlayLabel ? "opacity-45" : ""
                         }`}
                       >
                         <p className="text-[11px] font-semibold text-black/35">
@@ -2485,10 +2979,13 @@ export function ProductDetail({
                           {getBidBaseline(option)}
                         </p>
                       </div>
-                      {overlayLabel ? (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
+                      {blockChipLabel ? (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
+                        >
                           <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
-                            {overlayLabel}
+                            {blockChipLabel}
                           </span>
                         </div>
                       ) : null}
@@ -2577,11 +3074,10 @@ export function ProductDetail({
                 <>
                   <div className="mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
-                      const myBid = myBids[option.id];
                       const isSelected = bidAmounts[option.id] === "selected";
                       const overlayLabel = getOptionPurchaseOverlayLabel(
                         option,
-                        myBid,
+                        myBids[option.id],
                         product.isApiProduct === true,
                       );
 
@@ -2608,16 +3104,9 @@ export function ProductDetail({
                                   <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                                     {option.label}
                                   </p>
-                                  {myBid ? (
-                                    <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2 py-0.5 text-[10px] font-semibold text-black">
-                                      구매 진행 중
-                                    </span>
-                                  ) : null}
                                 </div>
                                 <p className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45">
-                                  {myBid
-                                    ? `구매 금액 ${formatPrice(myBid)}`
-                                    : "구매 가능"}
+                                  {overlayLabel ?? "구매 가능"}
                                 </p>
                               </div>
                             </div>
@@ -2786,19 +3275,37 @@ export function ProductDetail({
                 checkoutPaymentSummary ? (
                   <>
                     <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                      <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                              입금 마감
+                            </p>
+                            <p className="mt-1 text-[23px] font-semibold tracking-[-0.05em] text-white">
+                              {formatPaymentDueCountdown(
+                                checkoutPaymentSummary.paymentDueAt,
+                                deadlineTick,
+                              )}
+                            </p>
+                          </div>
+                          <p className="shrink-0 pt-1 text-right text-[12px] font-semibold leading-5 text-white/45">
+                            {formatCheckoutDateTime(
+                              checkoutPaymentSummary.paymentDueAt,
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                        <p className="text-[12px] font-semibold text-black/40">선택 옵션</p>
-                        <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                          {checkoutPaymentSummary.items[0]?.option.label ?? "-"}
-                          {checkoutPaymentSummary.items.length > 1
-                            ? ` 외 ${checkoutPaymentSummary.items.length - 1}개`
-                            : ""}
-                        </p>
-                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-                          선택한 옵션 {checkoutPaymentSummary.items.length}개를
-                          합산해 한 번에 입금해 주세요.
-                        </p>
-                        <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[12px] font-semibold text-black/40">
+                            선택 옵션
+                          </p>
+                          <span className="text-[12px] font-semibold text-black/35">
+                            {checkoutPaymentSummary.items.length}개
+                          </span>
+                        </div>
+                        <div className="mt-2 space-y-2">
                           {checkoutPaymentSummary.items.map((item) => (
                             <div
                               className="flex items-center justify-between gap-3 rounded-[0.75rem] bg-white px-3 py-2"
@@ -2879,15 +3386,6 @@ export function ProductDetail({
                         </div>
                       </div>
 
-                      <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                        <p className="text-[12px] font-semibold text-black/40">입금 마감</p>
-                        <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em]">
-                          {formatCheckoutDateTime(checkoutPaymentSummary.paymentDueAt)}
-                        </p>
-                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-                          마감 시각까지 입금하면 관리자가 확인 후 주문을 확정해요.
-                        </p>
-                      </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
@@ -2987,7 +3485,10 @@ export function ProductDetail({
                           : "border-[#ededed] bg-white"
                       }`}
                       key={address.id}
-                      onClick={() => setCheckoutDeliveryAddress(address)}
+                      onClick={() => {
+                        setCheckoutDeliveryAddress(address);
+                        rememberCheckoutAddressReturnState(true, address.id);
+                      }}
                       type="button"
                     >
                       <div className="flex items-center justify-between gap-3">
