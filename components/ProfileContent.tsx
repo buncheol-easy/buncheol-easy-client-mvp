@@ -2517,7 +2517,9 @@ export function ProfileContent({
                         ) : isDefaultAddressLoading ? (
                           <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
                         ) : (
-                          address?.branchName ?? "등록된 배송지가 없어요"
+                          address
+                            ? getDeliveryAddressDisplayBranchName(address)
+                            : "등록된 배송지가 없어요"
                         )}
                       </p>
                     </div>
@@ -3043,8 +3045,9 @@ export function ProfileContent({
                     </span>
                   </div>
                   <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
-                    {paymentDeliveryAddress?.branchName ??
-                      "결제 요청 배송지 확인 중"}
+                    {paymentDeliveryAddress
+                      ? getDeliveryAddressDisplayBranchName(paymentDeliveryAddress)
+                      : "결제 요청 배송지 확인 중"}
                   </p>
                 </div>
                 <span className="shrink-0 text-[11px] font-semibold text-black/40">
@@ -3263,7 +3266,7 @@ export function ProfileContent({
                             기본 설정
                           </button>
                           <button
-                            aria-label={`${getConvenienceStoreLabel(address.storeType)} ${address.branchName} 배송지 삭제`}
+                            aria-label={`${getConvenienceStoreLabel(address.storeType)} ${displayBranchName} 배송지 삭제`}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10 transition-colors duration-300 ease-out"
                             onClick={(event) => {
                               event.stopPropagation();

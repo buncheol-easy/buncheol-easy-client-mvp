@@ -3204,7 +3204,7 @@ export function ProductDetail({
                           <p className="text-[12px] font-semibold text-black/40">배송지</p>
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {checkoutDeliveryAddress
-                              ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${checkoutDeliveryAddress.branchName}`
+                              ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
                               : "등록된 배송지 없음"}
                           </p>
                           <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">

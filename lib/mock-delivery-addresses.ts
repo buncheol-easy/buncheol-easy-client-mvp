@@ -54,8 +54,36 @@ export function getDeliveryAddressDisplayAlias(address: DeliveryAddress) {
   return cleanBrokenDeliveryAddressText(address.alias);
 }
 
+export function stripLeadingConvenienceStoreLabel(
+  storeType: ConvenienceStoreType,
+  value: string,
+) {
+  const label = convenienceStoreTypeLabels[storeType];
+  // "CUBE점"처럼 지점명 자체가 라벨 철자로 시작하는 경우는 남긴다.
+  const labelPrefixPattern = new RegExp(`^${label}(?![A-Za-z0-9])[\\s-]*`, "i");
+  let result = value.trim();
+
+  while (true) {
+    const next = result.replace(labelPrefixPattern, "").trim();
+
+    if (next === result) {
+      break;
+    }
+
+    result = next;
+  }
+
+  return result;
+}
+
 export function getDeliveryAddressDisplayBranchName(address: DeliveryAddress) {
-  return cleanBrokenDeliveryAddressText(address.branchName) || address.branchName;
+  const cleanedBranchName =
+    cleanBrokenDeliveryAddressText(address.branchName) || address.branchName;
+
+  return (
+    stripLeadingConvenienceStoreLabel(address.storeType, cleanedBranchName) ||
+    cleanedBranchName
+  );
 }
 
 export function getConvenienceStoreTypeFromShippingName(

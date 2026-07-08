@@ -43,6 +43,7 @@ import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
   getDefaultDeliveryAddressesByType,
+  getDeliveryAddressDisplayBranchName,
   getPrioritizedDeliveryAddresses,
   type ConvenienceStoreType,
   type DeliveryAddress,
@@ -670,7 +671,7 @@ function getBidRecordShippingAddressLabel(bid: BidRecord) {
     return "배송지 확인 중";
   }
 
-  return `${getConvenienceStoreLabel(address.storeType)} ${address.branchName}`;
+  return `${getConvenienceStoreLabel(address.storeType)} ${getDeliveryAddressDisplayBranchName(address)}`;
 }
 
 function getToneFromId(id: string) {
@@ -2432,8 +2433,9 @@ export function BidHistoryContent({
                     </span>
                   </div>
                   <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
-                    {paymentDeliveryAddress?.branchName ??
-                      "결제 요청 배송지 확인 중"}
+                    {paymentDeliveryAddress
+                      ? getDeliveryAddressDisplayBranchName(paymentDeliveryAddress)
+                      : "결제 요청 배송지 확인 중"}
                   </p>
                 </div>
                 <span className="shrink-0 text-[11px] font-semibold text-black/40">
@@ -2578,7 +2580,7 @@ export function BidHistoryContent({
                           ) : null}
                         </div>
                         <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
+                          {getDeliveryAddressDisplayBranchName(address)}
                         </p>
                       </div>
                       <span

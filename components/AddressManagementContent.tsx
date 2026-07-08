@@ -41,6 +41,7 @@ import {
   getConvenienceStoreLabel,
   getPrioritizedDeliveryAddresses,
   maxDeliveryAddressCount,
+  stripLeadingConvenienceStoreLabel,
   type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
 
@@ -302,16 +303,28 @@ export function AddressManagementContent({
       return;
     }
 
-    const addressDraft = {
-      storeType: newAddressStoreType,
-      alias: newAddressAlias.trim() || undefined,
-      branchName: trimmedBranchName,
-      address: "",
-    };
-    const accessToken = authState.accessToken;
+    // 서버 응답의 storeType 판별이 지점명 문구에 의존할 수 있어
+    // 지점명은 브랜드 라벨을 한 번만 붙인 형태로 저장한다.
+    const strippedBranchName = stripLeadingConvenienceStoreLabel(
+      newAddressStoreType,
+      trimmedBranchName,
+    );
 
     setAddressMessage("");
     setFormErrorMessage("");
+
+    if (!strippedBranchName) {
+      setFormErrorMessage("지점명을 입력해 주세요. (예: 강남점)");
+      return;
+    }
+
+    const addressDraft = {
+      storeType: newAddressStoreType,
+      alias: newAddressAlias.trim() || undefined,
+      branchName: `${getConvenienceStoreLabel(newAddressStoreType)} ${strippedBranchName}`,
+      address: "",
+    };
+    const accessToken = authState.accessToken;
 
     if (!canManageAddresses || !accessToken) {
       setFormErrorMessage("배송지는 로그인 후 이용할 수 있어요.");
@@ -697,7 +710,7 @@ export function AddressManagementContent({
                         setHasTouchedAddressForm(true);
                         setFormErrorMessage("");
                       }}
-                      placeholder="GS25 강남점"
+                      placeholder="강남점"
                       value={newAddressBranchName}
                     />
                   </label>
