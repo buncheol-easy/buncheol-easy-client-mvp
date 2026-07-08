@@ -125,9 +125,6 @@ export function BoardDetailContent({
               <h2 className="mt-4 text-[23px] font-semibold leading-[1.22] tracking-[-0.06em] text-black">
                 {post.title}
               </h2>
-              <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/45">
-                {post.summary}
-              </p>
             </section>
 
             <section className="mt-3 rounded-[1.15rem] bg-[#f7f7f7] px-4 py-5">

@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BoardContent } from "@/components/BoardContent";
+import {
+  BOARD_SKIP_ENTER_KEY,
+  BoardContent,
+} from "@/components/BoardContent";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
@@ -15,20 +18,37 @@ function getHistoryIndex() {
   return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
+function shouldSkipBoardPanelEnter() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(BOARD_SKIP_ENTER_KEY) === "true";
+}
+
 export function BoardExperience() {
   const router = useRouter();
   const exitTimerRef = useRef<number | null>(null);
-  const [isEntered, setIsEntered] = useState(false);
+  const [shouldSkipPanelEnter] = useState(shouldSkipBoardPanelEnter);
+  const [isEntered, setIsEntered] = useState(shouldSkipPanelEnter);
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
+    if (shouldSkipPanelEnter) {
+      return;
+    }
+
     const enterFrame = window.requestAnimationFrame(() => {
       setIsEntered(true);
     });
 
     return () => {
       window.cancelAnimationFrame(enterFrame);
+    };
+  }, [shouldSkipPanelEnter]);
 
+  useEffect(() => {
+    return () => {
       if (exitTimerRef.current !== null) {
         window.clearTimeout(exitTimerRef.current);
       }
@@ -64,10 +84,12 @@ export function BoardExperience() {
 
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
-      <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-        <HomeContent skipEnterAnimation />
-        <BottomNavigator />
-      </SwipeUnderlay>
+      {!shouldSkipPanelEnter || isExiting ? (
+        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+          <HomeContent skipEnterAnimation />
+          <BottomNavigator />
+        </SwipeUnderlay>
+      ) : null}
 
       <div
         className={`product-page-panel absolute inset-0 z-10 flex flex-col overflow-hidden bg-white ${

@@ -43,7 +43,6 @@ export function SignupProfileContent() {
   const [isTermsAgreed, setIsTermsAgreed] = useState(false);
   const [isPrivacyAgreed, setIsPrivacyAgreed] = useState(false);
   const [isMarketingAgreed, setIsMarketingAgreed] = useState(false);
-  const [isKakaoExtraAgreed, setIsKakaoExtraAgreed] = useState(false);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const canSave =
@@ -213,19 +212,6 @@ export function SignupProfileContent() {
                 </span>
               </label>
 
-              <label className="flex items-start gap-3">
-                <input
-                  checked={isKakaoExtraAgreed}
-                  className="mt-0.5 h-4 w-4 accent-black"
-                  onChange={(event) =>
-                    setIsKakaoExtraAgreed(event.currentTarget.checked)
-                  }
-                  type="checkbox"
-                />
-                <span className="text-[13px] font-medium tracking-[-0.03em] text-black/45">
-                  [선택] 카카오 추가정보(이름·성별·연령대·생일) 제공
-                </span>
-              </label>
             </div>
           </div>
 

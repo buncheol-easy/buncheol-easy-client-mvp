@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BusinessFooter } from "@/components/BusinessFooter";
@@ -80,6 +85,20 @@ function takeShouldSkipBoardEnter() {
   window.sessionStorage.removeItem(BOARD_SKIP_ENTER_KEY);
 
   return shouldSkip;
+}
+
+function rememberBoardReturn(event: MouseEvent<HTMLAnchorElement>) {
+  if (
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return;
+  }
+
+  window.sessionStorage.setItem(BOARD_SKIP_ENTER_KEY, "true");
 }
 
 export function BoardContent({
@@ -281,6 +300,7 @@ export function BoardContent({
                     }`}
                     href={`/board/${item.id}?from=board`}
                     key={item.id}
+                    onClick={rememberBoardReturn}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="mb-2 flex items-center gap-1.5">

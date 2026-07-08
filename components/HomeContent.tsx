@@ -36,10 +36,12 @@ import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
+const HOME_LISTINGS_CACHE_KEY = "home-listings-cache";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const HOME_BANNER_AUTO_INTERVAL_MS = 4200;
+const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
 type HomeBanner = {
   href: string;
   imageAlt: string;
@@ -94,6 +96,61 @@ function getStoredHomeScrollTop() {
   return storedScrollTop === null ? null : Number(storedScrollTop);
 }
 
+function readCachedHomeListings() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawListings = window.sessionStorage.getItem(HOME_LISTINGS_CACHE_KEY);
+
+    if (rawListings === null) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawListings);
+
+    return Array.isArray(parsed) ? (parsed as ProductCardItem[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedHomeListings(listings: ProductCardItem[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      HOME_LISTINGS_CACHE_KEY,
+      JSON.stringify(listings.slice(0, 80)),
+    );
+  } catch {
+    // The cache is only for swipe-back recovery.
+  }
+}
+
+function withHomeListingsTimeout<T>(request: Promise<T>) {
+  if (typeof window === "undefined") {
+    return request;
+  }
+
+  let timeoutId: number | null = null;
+
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error("홈 분철 목록 요청이 지연되고 있어요."));
+    }, HOME_LISTINGS_REQUEST_TIMEOUT_MS);
+  });
+
+  return Promise.race([request, timeout]).finally(() => {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  });
+}
+
 function HomeArtistRailSkeleton() {
   return (
     <div
@@ -124,6 +181,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const isRestoringReturnScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
+  const apiListingsRef = useRef<ProductCardItem[] | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
     useState(skipEnterAnimation);
@@ -135,6 +193,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
   const [listingMessage, setListingMessage] = useState("");
   const [groupMessage, setGroupMessage] = useState("");
+  const [listingRefreshKey, setListingRefreshKey] = useState(0);
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -145,6 +204,24 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const banners = apiBanners && apiBanners.length > 0 ? apiBanners : HOME_BANNERS;
   const listings = apiListings ?? [];
   const favoriteGroups = apiGroups ?? [];
+
+  useEffect(() => {
+    const cacheRestoreFrame = window.requestAnimationFrame(() => {
+      const cachedListings = readCachedHomeListings();
+
+      if (cachedListings !== null) {
+        setApiListings((current) => current ?? cachedListings);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(cacheRestoreFrame);
+    };
+  }, []);
+
+  useEffect(() => {
+    apiListingsRef.current = apiListings;
+  }, [apiListings]);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -372,14 +449,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
   useEffect(() => {
     let isActive = true;
-    const resetFrame = window.requestAnimationFrame(() => {
-      if (!isActive) {
-        return;
-      }
-
-      setApiListings(null);
-      setListingMessage("");
-    });
 
     async function loadListings() {
       let accessToken: string | null = null;
@@ -393,15 +462,18 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return requestAllBuncheols(accessToken ?? undefined);
     }
 
-    loadListings()
+    withHomeListingsTimeout(loadListings())
       .then((items) => {
         if (!isActive) {
           return;
         }
 
-        setApiListings(
-          items.map(toProductCardItem).map(mergeCachedProductImage),
-        );
+        const nextListings = items
+          .map(toProductCardItem)
+          .map(mergeCachedProductImage);
+
+        setApiListings(nextListings);
+        writeCachedHomeListings(nextListings);
         setListingMessage("");
       })
       .catch((error: unknown) => {
@@ -409,7 +481,16 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
-        setApiListings([]);
+        const fallbackListings =
+          apiListingsRef.current ?? readCachedHomeListings();
+
+        setApiListings(fallbackListings ?? []);
+
+        if (fallbackListings && fallbackListings.length > 0) {
+          setListingMessage("");
+          return;
+        }
+
         setListingMessage(
           error instanceof Error
             ? error.message
@@ -419,9 +500,44 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     return () => {
       isActive = false;
-      window.cancelAnimationFrame(resetFrame);
     };
-  }, [authState.accessToken, authState.isLoggedIn]);
+  }, [authState.accessToken, authState.isLoggedIn, listingRefreshKey]);
+
+  useEffect(() => {
+    function recoverStalledListings() {
+      if (apiListingsRef.current !== null) {
+        return;
+      }
+
+      const cachedListings = readCachedHomeListings();
+
+      if (cachedListings !== null) {
+        setApiListings(cachedListings);
+      }
+
+      setListingRefreshKey((current) => current + 1);
+    }
+
+    function handlePageShow(event: PageTransitionEvent) {
+      if (event.persisted) {
+        recoverStalledListings();
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        recoverStalledListings();
+      }
+    }
+
+    window.addEventListener("pageshow", handlePageShow);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pageshow", handlePageShow);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -649,14 +765,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           ) : null}
 
           <div className="border-t border-black/10 pt-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-[19px] font-semibold tracking-[-0.05em]">
-                  나를 위한 추천 상품
-                </h3>
-              </div>
-            </div>
-
             {listingMessage ? (
               <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
                 <p className="text-[13px] font-semibold text-black/45">
