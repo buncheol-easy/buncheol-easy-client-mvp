@@ -2,6 +2,8 @@ export type ConvenienceStoreType = "gs25" | "cu";
 
 export const convenienceStoreTypes = ["gs25", "cu"] as const;
 
+export const maxDeliveryAddressCount = 5;
+
 export type DeliveryAddress = {
   id: string;
   storeType: ConvenienceStoreType;
