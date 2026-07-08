@@ -558,6 +558,21 @@ export function UploadProductForm({
 }: UploadProductFormProps) {
   const router = useRouter();
   const isEditMode = Boolean(editProductId);
+  const loginReturnHref = (() => {
+    const loginReturnParams = new URLSearchParams();
+
+    if (editProductId && !editProductId.startsWith("uploaded-")) {
+      loginReturnParams.set("edit", editProductId);
+    }
+
+    if (returnSource) {
+      loginReturnParams.set("from", returnSource);
+    }
+
+    const loginReturnQuery = loginReturnParams.toString();
+
+    return loginReturnQuery ? `/upload?${loginReturnQuery}` : "/upload";
+  })();
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
@@ -745,6 +760,33 @@ export function UploadProductForm({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (authState.isLoggedIn && authState.accessToken) {
+      return;
+    }
+
+    if (
+      editProductId?.startsWith("uploaded-") &&
+      readUploadedProduct(editProductId)
+    ) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      router.replace(`/login?returnTo=${encodeURIComponent(loginReturnHref)}`);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    editProductId,
+    loginReturnHref,
+    router,
+  ]);
 
   useEffect(() => {
     const query = idolQuery.trim();
@@ -986,6 +1028,11 @@ export function UploadProductForm({
           return;
         }
 
+        if (authState.isLoggedIn && authState.accessToken) {
+          router.replace(returnSource ? `/upload?from=${returnSource}` : "/upload");
+          return;
+        }
+
         setSubmitError("수정할 분철 정보를 찾을 수 없습니다.");
         return;
       }
@@ -1082,7 +1129,13 @@ export function UploadProductForm({
     return () => {
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [authState.accessToken, editProductId]);
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    editProductId,
+    returnSource,
+    router,
+  ]);
 
   function showPhotoLimitToast(message: string) {
     setPhotoLimitToast(message);
@@ -1433,6 +1486,18 @@ export function UploadProductForm({
       return;
     }
 
+    const isLocalDraftEdit = Boolean(
+      editingProduct?.id.startsWith("uploaded-"),
+    );
+
+    if (
+      !isLocalDraftEdit &&
+      (!authState.isLoggedIn || !authState.accessToken)
+    ) {
+      router.push(`/login?returnTo=${encodeURIComponent(loginReturnHref)}`);
+      return;
+    }
+
     setSubmitError("");
 
     const productId = editingProduct?.id ?? createUploadedProductId();
@@ -1690,6 +1755,11 @@ export function UploadProductForm({
       }
     }
 
+    if (!isLocalDraftEdit) {
+      setSubmitError("수정할 분철 정보를 찾을 수 없습니다.");
+      return;
+    }
+
     try {
       writeUploadedProduct(product);
     } catch {
@@ -1713,14 +1783,9 @@ export function UploadProductForm({
       }
     }
 
-    if (isEditMode) {
-      const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+    const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
 
-      router.replace(`/products/${productId}${returnSourceQuery}`);
-      return;
-    }
-
-    router.push(`/products/${productId}?from=upload`);
+    router.replace(`/products/${productId}${returnSourceQuery}`);
   }
 
   const apiEditIsWaiting =
