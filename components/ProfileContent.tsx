@@ -2301,10 +2301,10 @@ export function ProfileContent({
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                정산 계좌
+                계좌
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                개최한 분철 정산금을 받을 계좌를 입력해 주세요.
+                환불받을 때 사용할 계좌를 확인해요.
               </p>
             </div>
             {authState.isLoggedIn &&
@@ -2447,10 +2447,10 @@ export function ProfileContent({
             >
               <span>
                 <span className="block text-[14px] font-semibold text-black/70">
-                  정산 계좌를 등록해 주세요.
+                  환불받을 계좌를 등록해 주세요.
                 </span>
                 <span className="mt-1 block text-[13px] font-medium text-black/40">
-                  등록하면 개최한 분철 정산금을 받을 수 있어요.
+                  등록해 두면 환불이 필요할 때 바로 받을 수 있어요.
                 </span>
               </span>
               <span className="shrink-0 rounded-full bg-[#CFE86B] px-3 py-2 text-[12px] font-semibold text-black">
