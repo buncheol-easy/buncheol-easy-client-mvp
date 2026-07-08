@@ -1751,6 +1751,8 @@ export function ProductDetail({
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
         window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
+        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
+        rememberCheckoutAddressReturnState(false);
         router.push("/profile");
         return;
       }
@@ -1848,6 +1850,8 @@ export function ProductDetail({
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
         window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
+        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
+        rememberCheckoutAddressReturnState(false);
         router.push("/profile");
         return;
       }
