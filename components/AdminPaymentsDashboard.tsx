@@ -11,24 +11,28 @@ import {
   type FormEvent,
 } from "react";
 import {
-  requestBuncheolManagement,
+  ApiRequestError,
+  requestAdminLogin,
+  requestAdminMe,
+  requestAdminPaymentConfirmation,
+  requestAdminPaymentsSummary,
+  requestAdminTrackingRegistration,
+  requestAllAdminPayments,
   requestCreateNotice,
-  requestDeliveryTrackingRegistration,
-  requestMyHostedBuncheols,
-  requestPaymentConfirmation,
+  type AdminBulkFailure,
+  type AdminPaymentRecordItem,
+  type AdminPaymentSummary,
   type BankAccountInfo,
   type BuncheolManagementDelivery,
-  type BuncheolManagementDetail,
-  type BuncheolManagementOption,
   type CreateNoticeRequest,
 } from "@/lib/auth-api";
 import {
-  getInitialAuthState,
-  readAuthState,
-  subscribeAuthState,
-  writeAuthTokens,
-} from "@/lib/auth-store";
-import { getFreshAccessToken } from "@/lib/auth-session";
+  clearAdminAuthState,
+  getInitialAdminAuthState,
+  readAdminAuthState,
+  subscribeAdminAuthState,
+  writeAdminAccessToken,
+} from "@/lib/admin-auth-store";
 
 type AdminPaymentStatus =
   | "AWAITING_CONFIRMATION"
@@ -36,18 +40,9 @@ type AdminPaymentStatus =
   | "CONFIRMED"
   | "OTHER"
   | "REFUND_REQUIRED";
+type StatusFilter = "ALL" | AdminPaymentStatus;
 type VerificationKey = "amount" | "participant";
 type VerificationState = Record<VerificationKey, boolean>;
-
-type ActiveTestAccountResponse = {
-  accountId?: string | null;
-};
-
-type SwitchTestAccountResponse = {
-  accessToken?: string;
-};
-
-const adminHostTestAccountId = "user1";
 
 type AdminPaymentRecord = {
   amount: number;
@@ -101,43 +96,17 @@ function getStatusLabel(status: AdminPaymentStatus) {
   return "확인 제외";
 }
 
-function isAwaitingPaymentStatus(status: string) {
-  return [
-    "AWAITING_CONFIRMATION",
-    "AWAITING_PAYMENT",
-    "PENDING_PAYMENT",
-    "PAYMENT_PENDING",
-    "PENDING_CONFIRMATION",
-    "WAITING_PAYMENT",
-    "WAITING_CONFIRMATION",
-  ].includes(status);
-}
-
-function isConfirmedPaymentStatus(status: string) {
-  return ["CONFIRMED", "PAYMENT_CONFIRMED"].includes(status);
-}
-
-function isCancelledStatus(status: string) {
-  return status === "CANCELLED" || status === "CANCELED";
-}
-
-function normalizePaymentStatus(
-  status: string,
-  buncheolStatus = "",
-): AdminPaymentStatus {
-  const normalizedStatus = status.trim().toUpperCase();
-  const normalizedBuncheolStatus = buncheolStatus.trim().toUpperCase();
-
+// 파생 상태(환불 필요 포함)는 백엔드(AdminPaymentStatus)가 판정해 내려준다.
+function getAdminPaymentStatus(paymentStatus: string): AdminPaymentStatus {
   if (
-    isCancelledStatus(normalizedBuncheolStatus) &&
-    isConfirmedPaymentStatus(normalizedStatus)
+    paymentStatus === "AWAITING_CONFIRMATION" ||
+    paymentStatus === "CONFIRMED" ||
+    paymentStatus === "REFUND_REQUIRED" ||
+    paymentStatus === "CANCELLED"
   ) {
-    return "REFUND_REQUIRED";
+    return paymentStatus;
   }
 
-  if (isConfirmedPaymentStatus(normalizedStatus)) return "CONFIRMED";
-  if (isAwaitingPaymentStatus(normalizedStatus)) return "AWAITING_CONFIRMATION";
-  if (isCancelledStatus(normalizedStatus)) return "CANCELLED";
   return "OTHER";
 }
 
@@ -368,73 +337,53 @@ function groupPaymentRecords(records: AdminPaymentRecord[]) {
   });
 }
 
-async function readAdminJsonResponse<T>(
-  response: Response,
-  fallbackMessage: string,
-) {
-  if (!response.ok) {
-    throw new Error(fallbackMessage);
-  }
-
-  return (await response.json()) as T;
-}
-
-async function getActiveTestAccountId(accessToken: string) {
-  const response = await fetch("/api/test-accounts/active", {
-    cache: "no-store",
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = await readAdminJsonResponse<ActiveTestAccountResponse>(
-    response,
-    "테스트 계정 상태를 확인할 수 없어요.",
+// 관리자 토큰 만료(12시간, refresh 없음)·권한 상실은 401/403 으로 온다 — 재로그인 대상.
+function isAdminSessionError(error: unknown) {
+  return (
+    error instanceof ApiRequestError &&
+    (error.status === 401 || error.status === 403)
   );
-
-  return data.accountId ?? null;
 }
 
-async function switchToAdminHostTestAccount() {
-  const response = await fetch("/api/test-accounts", {
-    body: JSON.stringify({ accountId: adminHostTestAccountId }),
-    cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-  const data = await readAdminJsonResponse<SwitchTestAccountResponse>(
-    response,
-    "김판매 계정으로 전환할 수 없어요.",
-  );
+function toAdminPaymentRecord(item: AdminPaymentRecordItem): AdminPaymentRecord {
+  const memberName = item.memberName ?? "옵션";
+  const rawStatus = item.cancelReason
+    ? `${item.status} (${item.cancelReason})`
+    : item.status;
+  // 닉네임이 없는 참여(탈퇴 등)가 같은 기본값으로 한 묶음에 합산되지 않도록 참여 ID 로 구분한다.
+  const participantNickname =
+    item.participantNickname ?? `참여자#${item.participationId}`;
 
-  if (!data.accessToken) {
-    throw new Error("김판매 계정 토큰을 확인할 수 없어요.");
-  }
-
-  writeAuthTokens({ accessToken: data.accessToken });
-
-  return data.accessToken;
+  return {
+    amount: item.amount,
+    buncheolId: item.buncheolId,
+    buncheolStatus: item.buncheolStatus,
+    buncheolTitle: item.buncheolTitle,
+    confirmedAt: item.confirmedAt,
+    confirmedCount: item.confirmedCount,
+    delivery: item.delivery,
+    deliveries: item.delivery ? [item.delivery] : [],
+    groupName: item.groupName,
+    memberName,
+    memberNames: [memberName],
+    minHeadcount: item.minHeadcount,
+    participantNickname,
+    participationId: item.participationId,
+    participationIds: [item.participationId],
+    paymentDueAt: item.dueAt,
+    rawStatus,
+    refundAccount: item.refundAccount,
+    status: getAdminPaymentStatus(item.paymentStatus),
+  };
 }
 
-async function getAdminDashboardAccessToken() {
-  const accessToken = await getFreshAccessToken();
+function getBulkFailureMessage(failures: AdminBulkFailure[]) {
+  const firstFailure = failures[0];
+  const detail = firstFailure
+    ? ` (ID ${firstFailure.id}: ${firstFailure.message})`
+    : "";
 
-  if (!accessToken) {
-    return null;
-  }
-
-  try {
-    const activeAccountId = await getActiveTestAccountId(accessToken);
-
-    if (activeAccountId === adminHostTestAccountId) {
-      return accessToken;
-    }
-
-    return await switchToAdminHostTestAccount();
-  } catch {
-    return accessToken;
-  }
+  return `${failures.length}건을 처리하지 못했어요.${detail}`;
 }
 
 type NoticeFormState = {
@@ -463,12 +412,7 @@ function getOptionalNoticeText(value: string) {
   return trimmedValue ? trimmedValue : undefined;
 }
 
-function AdminNoticeUploader() {
-  const authState = useSyncExternalStore(
-    subscribeAuthState,
-    readAuthState,
-    getInitialAuthState,
-  );
+function AdminNoticeUploader({ accessToken }: { accessToken: string }) {
   const bodyImageInputRef = useRef<HTMLInputElement | null>(null);
   const bannerImageInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<NoticeFormState>(initialNoticeFormState);
@@ -530,13 +474,6 @@ function AdminNoticeUploader() {
     setNoticeMessage("공지 업로드 중이에요.");
 
     try {
-      const accessToken = await getAdminDashboardAccessToken();
-
-      if (!accessToken) {
-        setNoticeMessage("로그인 후 공지를 업로드할 수 있어요.");
-        return;
-      }
-
       const request: CreateNoticeRequest = {
         description,
         pinned: form.pinned,
@@ -580,26 +517,15 @@ function AdminNoticeUploader() {
   }
 
   return (
-    <section className="rounded-[1.15rem] bg-white p-4 shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-semibold uppercase text-black/35">
-            Notice
-          </p>
-          <h2 className="mt-1 text-[22px] font-semibold">공지 업로드</h2>
-          <p className="mt-1 text-[13px] font-semibold text-black/40">
-            공지 본문과 홈 배너 이미지를 함께 등록해요.
-          </p>
-        </div>
-        {noticeMessage ? (
-          <p className="rounded-full bg-[#f4f6f8] px-3 py-2 text-[12px] font-semibold text-black/45">
-            {noticeMessage}
-          </p>
-        ) : null}
-      </div>
+    <div className="border-t border-black/10 px-4 pb-4 pt-4">
+      {noticeMessage ? (
+        <p className="mb-3 inline-block rounded-full bg-[#f4f6f8] px-3 py-2 text-[12px] font-semibold text-black/45">
+          {noticeMessage}
+        </p>
+      ) : null}
 
       <form
-        className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]"
+        className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]"
         onSubmit={(event) => void handleNoticeSubmit(event)}
       >
         <div className="grid gap-3">
@@ -714,134 +640,104 @@ function AdminNoticeUploader() {
 
           <button
             className="h-11 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-            disabled={!authState.isLoggedIn || isSubmittingNotice}
+            disabled={isSubmittingNotice}
             type="submit"
           >
             {isSubmittingNotice ? "업로드 중" : "공지 업로드"}
           </button>
         </div>
       </form>
-    </section>
+    </div>
   );
 }
 
-function toDeliveryFromWinner(
-  option: BuncheolManagementOption,
-): BuncheolManagementDelivery | null {
-  const winner = option.winner;
+function AdminLoginPanel({ notice }: { notice: string }) {
+  const [loginId, setLoginId] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (!winner) return null;
+  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
-  if (
-    !winner.deliveryId &&
-    !winner.shippingMethod &&
-    !winner.storeName &&
-    !winner.trackingNumber &&
-    !winner.deliveryStatus
-  ) {
-    return null;
+    const trimmedLoginId = loginId.trim();
+
+    if (!trimmedLoginId || !password) {
+      setLoginError("아이디와 비밀번호를 입력해 주세요.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setLoginError("");
+
+    try {
+      const accessToken = await requestAdminLogin(trimmedLoginId, password);
+
+      writeAdminAccessToken(accessToken);
+    } catch (error: unknown) {
+      setLoginError(
+        error instanceof Error ? error.message : "로그인에 실패했어요.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  return {
-    deliveryId: winner.deliveryId,
-    receiverNickname: winner.receiverNickname,
-    receiverPhoneNumber: winner.receiverPhoneNumber,
-    shippingMethod: winner.shippingMethod,
-    status: winner.deliveryStatus,
-    storeName: winner.storeName,
-    trackingNumber: winner.trackingNumber ?? null,
-  };
-}
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f4f6f8] px-6 text-[#111111]">
+      <section className="w-full max-w-[380px] rounded-[1.15rem] bg-white p-6 shadow-[0_18px_50px_rgba(0,0,0,0.08)]">
+        <p className="text-[12px] font-semibold uppercase text-black/35">
+          Admin
+        </p>
+        <h1 className="mt-1 text-[26px] font-semibold">관리자 로그인</h1>
+        <p className="mt-1.5 text-[13px] font-semibold text-black/40">
+          운영자 계정으로 로그인하면 결제 확인 대시보드를 사용할 수 있어요.
+        </p>
 
-function getRecordsFromManagementDetail(detail: BuncheolManagementDetail) {
-  const deliveryByParticipationId = new Map<string, BuncheolManagementDelivery>();
-  const memberNameByParticipationId = new Map<string, string>();
+        <form className="mt-5 grid gap-3" onSubmit={(event) => void handleLoginSubmit(event)}>
+          <label className="grid gap-1.5">
+            <span className="text-[12px] font-semibold text-black/40">
+              아이디
+            </span>
+            <input
+              autoComplete="username"
+              className="h-11 rounded-[0.85rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+              maxLength={50}
+              onChange={(event) => setLoginId(event.currentTarget.value)}
+              value={loginId}
+            />
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-[12px] font-semibold text-black/40">
+              비밀번호
+            </span>
+            <input
+              autoComplete="current-password"
+              className="h-11 rounded-[0.85rem] border border-black/10 px-3 text-[15px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+              maxLength={72}
+              onChange={(event) => setPassword(event.currentTarget.value)}
+              type="password"
+              value={password}
+            />
+          </label>
 
-  detail.options.forEach((option) => {
-    const winner = option.winner;
-    const delivery = toDeliveryFromWinner(option);
+          {loginError || notice ? (
+            <p className="rounded-[0.8rem] bg-[#fff1f0] px-3 py-2 text-[12px] font-semibold text-[#c03131]">
+              {loginError || notice}
+            </p>
+          ) : null}
 
-    if (!winner?.participationId) return;
-
-    memberNameByParticipationId.set(winner.participationId, option.memberName);
-
-    if (delivery) {
-      deliveryByParticipationId.set(winner.participationId, delivery);
-    }
-  });
-
-  const participantRecords = detail.participants.map(
-    (participant): AdminPaymentRecord => {
-      const delivery =
-        participant.delivery ??
-        deliveryByParticipationId.get(participant.participationId) ??
-        null;
-      const memberName =
-        participant.memberName ||
-        memberNameByParticipationId.get(participant.participationId) ||
-        "옵션";
-
-      return {
-        amount: participant.amount,
-        buncheolId: detail.id,
-        buncheolStatus: detail.status,
-        buncheolTitle: detail.title,
-        confirmedAt: participant.confirmedAt,
-        confirmedCount: detail.confirmedCount,
-        delivery,
-        deliveries: delivery ? [delivery] : [],
-        groupName: detail.groupName,
-        memberName,
-        memberNames: [memberName],
-        minHeadcount: detail.minHeadcount,
-        participantNickname: participant.participantNickname,
-        participationId: participant.participationId,
-        participationIds: [participant.participationId],
-        paymentDueAt: participant.dueAt,
-        rawStatus: participant.status,
-        refundAccount: participant.refundAccount,
-        status: normalizePaymentStatus(participant.status, detail.status),
-      };
-    },
+          <button
+            className="mt-1 h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
+            disabled={isSubmitting}
+            type="submit"
+          >
+            {isSubmitting ? "로그인 중" : "로그인"}
+          </button>
+        </form>
+      </section>
+    </main>
   );
-
-  if (participantRecords.length > 0) return participantRecords;
-
-  return detail.options.reduce<AdminPaymentRecord[]>((records, option) => {
-    const winner = option.winner;
-
-    if (!winner?.participationId) return records;
-
-    const rawStatus =
-      winner.paymentStatus ||
-      (winner.paymentConfirmedAt ? "CONFIRMED" : "AWAITING_PAYMENT");
-    const delivery = toDeliveryFromWinner(option);
-
-    records.push({
-      amount: winner.paymentAmount ?? winner.bidAmount ?? 0,
-      buncheolId: detail.id,
-      buncheolStatus: detail.status,
-      buncheolTitle: detail.title,
-      confirmedAt: winner.paymentConfirmedAt,
-      confirmedCount: detail.confirmedCount,
-      delivery,
-      deliveries: delivery ? [delivery] : [],
-      groupName: detail.groupName,
-      memberName: option.memberName,
-      memberNames: [option.memberName],
-      minHeadcount: detail.minHeadcount,
-      participantNickname:
-        winner.depositorName ?? winner.receiverNickname ?? "참여자",
-      participationId: winner.participationId,
-      participationIds: [winner.participationId],
-      paymentDueAt: winner.paymentDueAt,
-      rawStatus,
-      refundAccount: null,
-      status: normalizePaymentStatus(rawStatus, detail.status),
-    });
-
-    return records;
-  }, []);
 }
 
 function StatusBadge({
@@ -882,13 +778,20 @@ function StatusBadge({
   );
 }
 export function AdminPaymentsDashboard() {
-  const authState = useSyncExternalStore(
-    subscribeAuthState,
-    readAuthState,
-    getInitialAuthState,
+  const adminAuthState = useSyncExternalStore(
+    subscribeAdminAuthState,
+    readAdminAuthState,
+    getInitialAdminAuthState,
   );
+  const adminAccessToken = adminAuthState.accessToken;
+  const [adminLoginId, setAdminLoginId] = useState("");
+  const [isSessionChecking, setIsSessionChecking] = useState(true);
+  const [loginNotice, setLoginNotice] = useState("");
   const [records, setRecords] = useState<AdminPaymentRecord[]>([]);
+  const [summary, setSummary] = useState<AdminPaymentSummary | null>(null);
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [isNoticeOpen, setIsNoticeOpen] = useState(false);
   const [selectedParticipationId, setSelectedParticipationId] = useState("");
   const [verificationByParticipation, setVerificationByParticipation] =
     useState<Record<string, VerificationState>>({});
@@ -901,125 +804,139 @@ export function AdminPaymentsDashboard() {
   const [registeringDeliveryId, setRegisteringDeliveryId] = useState<
     string | null
   >(null);
-  const paymentConfirmRefreshTimeoutRefs = useRef<
-    Array<ReturnType<typeof setTimeout>>
-  >([]);
 
-  const loadRecords = useCallback(async (successMessage?: string) => {
-    setIsLoading(true);
+  const handleSessionExpired = useCallback(() => {
+    clearAdminAuthState();
+    setAdminLoginId("");
+    setLoginNotice("관리자 세션이 만료됐어요. 다시 로그인해 주세요.");
+  }, []);
 
-    try {
-      const accessToken = await getAdminDashboardAccessToken();
+  const loadRecords = useCallback(
+    async (successMessage?: string) => {
+      const accessToken = readAdminAuthState().accessToken;
 
       if (!accessToken) {
-        setRecords([]);
-        setMessage("로그인 후 관리자 결제 건을 확인할 수 있어요.");
         return;
       }
 
-      const hostedBuncheols = await requestMyHostedBuncheols(accessToken);
+      setIsLoading(true);
 
-      if (hostedBuncheols.length === 0) {
+      try {
+        const [paymentsResult, summaryResult] = await Promise.all([
+          requestAllAdminPayments(accessToken),
+          requestAdminPaymentsSummary(accessToken),
+        ]);
+        const nextRecords = groupPaymentRecords(
+          paymentsResult.items.map(toAdminPaymentRecord),
+        );
+
+        setRecords(nextRecords);
+        setSummary(summaryResult);
+        setSelectedParticipationId((current) =>
+          nextRecords.some((record) => record.participationId === current)
+            ? current
+            : nextRecords[0]?.participationId ?? "",
+        );
+
+        // 사용자 액션 직후 메시지(벌크 성공/실패 상세)가 truncation 안내에 가려지지 않게 우선한다.
+        if (successMessage) {
+          setMessage(successMessage);
+        } else if (paymentsResult.truncated) {
+          setMessage("결제 건이 많아 최근 2,000건까지만 표시해요.");
+        } else if (nextRecords.length === 0) {
+          setMessage("확인할 결제 건이 없어요.");
+        } else {
+          setMessage("");
+        }
+      } catch (error: unknown) {
+        if (isAdminSessionError(error)) {
+          handleSessionExpired();
+          return;
+        }
+
         setRecords([]);
-        setMessage(successMessage ?? "개최한 분철이 아직 없어요.");
-        return;
+        setSummary(null);
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "결제 건을 불러오지 못했어요.",
+        );
+      } finally {
+        setIsLoading(false);
       }
-
-      const managementResults = await Promise.allSettled(
-        hostedBuncheols.map((buncheol) =>
-          requestBuncheolManagement(accessToken, buncheol.id),
-        ),
-      );
-      const details = managementResults.reduce<BuncheolManagementDetail[]>(
-        (nextDetails, result) => {
-          if (result.status === "fulfilled") nextDetails.push(result.value);
-          return nextDetails;
-        },
-        [],
-      );
-      const nextRecords = groupPaymentRecords(
-        details.flatMap(getRecordsFromManagementDetail),
-      );
-      const failedCount = managementResults.filter(
-        (result) => result.status === "rejected",
-      ).length;
-
-      setRecords(nextRecords);
-      setSelectedParticipationId((current) =>
-        nextRecords.some((record) => record.participationId === current)
-          ? current
-          : nextRecords[0]?.participationId ?? "",
-      );
-
-      if (failedCount > 0 && nextRecords.length > 0) {
-        setMessage(`${failedCount}개 분철 관리 정보를 불러오지 못했어요.`);
-      } else if (failedCount > 0) {
-        setMessage("분철 관리 정보를 불러오지 못했어요.");
-      } else if (nextRecords.length === 0) {
-        setMessage(successMessage ?? "확인할 결제 건이 없어요.");
-      } else {
-        setMessage(successMessage ?? "");
-      }
-    } catch (error: unknown) {
-      setRecords([]);
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "결제 건을 불러오지 못했어요.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const clearPaymentConfirmRefreshes = useCallback(() => {
-    paymentConfirmRefreshTimeoutRefs.current.forEach((timeoutId) => {
-      clearTimeout(timeoutId);
-    });
-    paymentConfirmRefreshTimeoutRefs.current = [];
-  }, []);
-
-  function schedulePaymentConfirmRefresh() {
-    clearPaymentConfirmRefreshes();
-
-    paymentConfirmRefreshTimeoutRefs.current = [700, 2000, 5000].map((delay) =>
-      setTimeout(() => {
-        void loadRecords();
-      }, delay),
-    );
-  }
+    },
+    [handleSessionExpired],
+  );
 
   useEffect(() => {
-    if (!authState.isLoggedIn) {
-      setIsLoading(false);
+    if (!adminAccessToken) {
+      setAdminLoginId("");
+      setIsSessionChecking(false);
       setRecords([]);
-      setMessage("로그인 후 관리자 결제 건을 확인할 수 있어요.");
+      setSummary(null);
       return;
     }
 
-    void loadRecords();
-  }, [authState.accessToken, authState.isLoggedIn, loadRecords]);
+    let isActive = true;
 
-  useEffect(() => {
+    setIsSessionChecking(true);
+
+    (async () => {
+      try {
+        const me = await requestAdminMe(adminAccessToken);
+
+        if (!isActive) {
+          return;
+        }
+
+        setAdminLoginId(me.loginId);
+        setLoginNotice("");
+        void loadRecords();
+      } catch (error: unknown) {
+        if (!isActive) {
+          return;
+        }
+
+        if (isAdminSessionError(error)) {
+          handleSessionExpired();
+          return;
+        }
+
+        setAdminLoginId("");
+        setLoginNotice(
+          error instanceof Error
+            ? error.message
+            : "관리자 정보를 확인하지 못했어요.",
+        );
+      } finally {
+        if (isActive) {
+          setIsSessionChecking(false);
+        }
+      }
+    })();
+
     return () => {
-      clearPaymentConfirmRefreshes();
+      isActive = false;
     };
-  }, [clearPaymentConfirmRefreshes]);
+  }, [adminAccessToken, handleSessionExpired, loadRecords]);
 
   const filteredRecords = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
 
     return records
+      .filter(
+        (record) => statusFilter === "ALL" || record.status === statusFilter,
+      )
       .filter((record) => !keyword || getSearchText(record).includes(keyword))
       .sort((left, right) => getRecordSortTime(right) - getRecordSortTime(left));
-  }, [records, searchKeyword]);
+  }, [records, searchKeyword, statusFilter]);
 
+  // 상세 패널은 항상 화면 테이블에 보이는 행과 대응되도록, 필터링된 목록 안에서만 선택을 유지한다.
   const selectedRecord =
-    records.find(
+    filteredRecords.find(
       (record) => record.participationId === selectedParticipationId,
     ) ??
     filteredRecords[0] ??
-    records[0] ??
     null;
   const pendingRecords = records.filter(
     (record) => record.status === "AWAITING_CONFIRMATION",
@@ -1030,10 +947,26 @@ export function AdminPaymentsDashboard() {
   const refundRecords = records.filter(
     (record) => record.status === "REFUND_REQUIRED",
   );
-  const pendingAmount = pendingRecords.reduce(
-    (sum, record) => sum + record.amount,
-    0,
+  const cancelledRecords = records.filter(
+    (record) => record.status === "CANCELLED",
   );
+  // 대기 금액은 전체 기준 집계(summary API)가 정확하고, 건수는 화면 행(묶음 집계 후)과
+  // 일치해야 운영자가 행 단위로 대조할 수 있어 목록 기준으로 계산한다.
+  const pendingAmount =
+    summary?.awaitingAmount ??
+    pendingRecords.reduce((sum, record) => sum + record.amount, 0);
+  const pendingCount = pendingRecords.length;
+  const statusCards: Array<{
+    key: StatusFilter;
+    label: string;
+    count: number;
+  }> = [
+    { count: records.length, key: "ALL", label: "전체" },
+    { count: pendingCount, key: "AWAITING_CONFIRMATION", label: "확인 대기" },
+    { count: confirmedRecords.length, key: "CONFIRMED", label: "확인 완료" },
+    { count: refundRecords.length, key: "REFUND_REQUIRED", label: "환불 필요" },
+    { count: cancelledRecords.length, key: "CANCELLED", label: "취소" },
+  ];
   const selectedVerification =
     selectedRecord && verificationByParticipation[selectedRecord.participationId]
       ? verificationByParticipation[selectedRecord.participationId]
@@ -1104,26 +1037,32 @@ export function AdminPaymentsDashboard() {
       return;
     }
 
+    const accessToken = readAdminAuthState().accessToken;
+
+    if (!accessToken) {
+      handleSessionExpired();
+      return;
+    }
+
     setConfirmingParticipationId(record.participationId);
 
     try {
-      const accessToken = await getAdminDashboardAccessToken();
+      const result = await requestAdminPaymentConfirmation(
+        accessToken,
+        record.participationIds,
+      );
 
-      if (!accessToken) {
-        setMessage("로그인 후 입금 확인을 처리할 수 있어요.");
+      await loadRecords(
+        result.failures.length > 0
+          ? getBulkFailureMessage(result.failures)
+          : "입금 확인이 완료됐어요.",
+      );
+    } catch (error: unknown) {
+      if (isAdminSessionError(error)) {
+        handleSessionExpired();
         return;
       }
 
-      await Promise.all(
-        record.participationIds.map((participationId) =>
-          requestPaymentConfirmation(accessToken, participationId, {
-            ignoreConflict: true,
-          }),
-        ),
-      );
-      await loadRecords("입금 확인이 완료됐어요.");
-      schedulePaymentConfirmRefresh();
-    } catch (error: unknown) {
       setMessage(
         error instanceof Error
           ? error.message
@@ -1153,34 +1092,33 @@ export function AdminPaymentsDashboard() {
       return;
     }
 
+    const accessToken = readAdminAuthState().accessToken;
+
+    if (!accessToken) {
+      handleSessionExpired();
+      return;
+    }
+
     setRegisteringDeliveryId(trackingBatchId);
 
     try {
-      const accessToken = await getAdminDashboardAccessToken();
+      const result = await requestAdminTrackingRegistration(
+        accessToken,
+        trackingTargetIds,
+        trackingNumber,
+      );
 
-      if (!accessToken) {
-        setMessage("로그인 후 운송장 번호를 등록할 수 있어요.");
+      await loadRecords(
+        result.failures.length > 0
+          ? getBulkFailureMessage(result.failures)
+          : "운송장 번호를 등록했어요.",
+      );
+    } catch (error: unknown) {
+      if (isAdminSessionError(error)) {
+        handleSessionExpired();
         return;
       }
 
-      for (const deliveryId of trackingTargetIds) {
-        try {
-          await requestDeliveryTrackingRegistration(
-            accessToken,
-            deliveryId,
-            trackingNumber,
-          );
-        } catch (error: unknown) {
-          throw new Error(
-            error instanceof Error
-              ? `배송 ID ${deliveryId}: ${error.message}`
-              : `배송 ID ${deliveryId}: 운송장 번호를 등록하지 못했어요.`,
-          );
-        }
-      }
-
-      await loadRecords("운송장 번호를 등록했어요.");
-    } catch (error: unknown) {
       setMessage(
         error instanceof Error
           ? error.message
@@ -1189,6 +1127,18 @@ export function AdminPaymentsDashboard() {
     } finally {
       setRegisteringDeliveryId(null);
     }
+  }
+
+  if (!adminLoginId) {
+    if (isSessionChecking) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-[#f4f6f8] text-[14px] font-semibold text-black/35">
+          관리자 세션을 확인하고 있어요.
+        </main>
+      );
+    }
+
+    return <AdminLoginPanel notice={loginNotice} />;
   }
 
   return (
@@ -1203,45 +1153,76 @@ export function AdminPaymentsDashboard() {
               결제 확인 대시보드
             </h1>
             <p className="mt-1.5 text-[14px] font-medium text-black/45">
-              개최한 분철의 입금 확인과 운송장 등록을 처리해요.
+              전체 분철의 입금 확인과 운송장 등록을 처리해요.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="flex h-10 items-center gap-2 rounded-full bg-white px-4 text-[13px] font-semibold text-black/55">
+              <span className="h-2 w-2 rounded-full bg-[#CFE86B]" />
+              {adminLoginId}
+            </span>
             <button
               className="h-10 rounded-full border border-black/10 bg-white px-4 text-[13px] font-semibold text-black disabled:text-black/25"
-              disabled={isLoading || !authState.isLoggedIn}
+              disabled={isLoading}
               onClick={() => void loadRecords("새로고침했어요.")}
               type="button"
             >
               새로고침
             </button>
-            <div className="flex flex-wrap items-center gap-5 rounded-[1rem] bg-black px-5 py-3 text-white">
-              <div>
-                <p className="text-[12px] font-semibold text-white/45">
-                  확인 대기 금액
-                </p>
-                <p className="mt-1 text-[24px] font-semibold">
-                  {formatPrice(pendingAmount)}
-                </p>
-              </div>
-              <div className="h-9 w-px bg-white/15" />
-              <div className="flex gap-4 text-[13px] font-semibold text-white/45">
-                <span className="whitespace-nowrap">
-                  대기 <strong className="ml-1 text-white">{pendingRecords.length}</strong>
-                </span>
-                <span className="whitespace-nowrap">
-                  완료 <strong className="ml-1 text-white">{confirmedRecords.length}</strong>
-                </span>
-                <span className="whitespace-nowrap">
-                  환불 <strong className="ml-1 text-white">{refundRecords.length}</strong>
-                </span>
-                <span className="whitespace-nowrap">
-                  전체 <strong className="ml-1 text-white">{records.length}</strong>
-                </span>
-              </div>
-            </div>
+            <button
+              className="h-10 rounded-full border border-black/10 bg-white px-4 text-[13px] font-semibold text-black/45"
+              onClick={() => {
+                setLoginNotice("");
+                clearAdminAuthState();
+              }}
+              type="button"
+            >
+              로그아웃
+            </button>
           </div>
         </header>
+
+        <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-7">
+          <div className="rounded-[1.15rem] bg-black px-5 py-4 text-white sm:col-span-3 xl:col-span-2">
+            <p className="text-[12px] font-semibold text-white/45">
+              확인 대기 금액
+            </p>
+            <p className="mt-1.5 text-[28px] font-semibold leading-none">
+              {formatPrice(pendingAmount)}
+            </p>
+            <p className="mt-2 text-[12px] font-semibold text-[#D7FF5F]">
+              대기 {pendingCount}건
+            </p>
+          </div>
+          {statusCards.map((card) => {
+            const isActive = statusFilter === card.key;
+
+            return (
+              <button
+                aria-pressed={isActive}
+                className={`rounded-[1.15rem] px-5 py-4 text-left transition-colors ${
+                  isActive
+                    ? "bg-black text-white"
+                    : "bg-white text-black hover:bg-[#fafafa]"
+                }`}
+                key={card.key}
+                onClick={() => setStatusFilter(card.key)}
+                type="button"
+              >
+                <p
+                  className={`text-[12px] font-semibold ${
+                    isActive ? "text-white/45" : "text-black/40"
+                  }`}
+                >
+                  {card.label}
+                </p>
+                <p className="mt-1.5 text-[24px] font-semibold leading-none">
+                  {card.count}
+                </p>
+              </button>
+            );
+          })}
+        </section>
 
         {message ? (
           <p className="rounded-[0.9rem] bg-white px-4 py-3 text-[13px] font-semibold text-black/45">
@@ -1249,13 +1230,15 @@ export function AdminPaymentsDashboard() {
           </p>
         ) : null}
 
-        <AdminNoticeUploader />
-
         <section className="grid min-h-[640px] gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-[1.15rem] bg-white p-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="rounded-full bg-[#f4f6f8] px-4 py-2 text-[13px] font-semibold text-black/45">
-                결제 건 전체 표시
+            <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-1">
+              <div>
+                <p className="text-[16px] font-semibold">결제 건</p>
+                <p className="mt-0.5 text-[12px] font-semibold text-black/40">
+                  {statusCards.find((card) => card.key === statusFilter)?.label}{" "}
+                  {filteredRecords.length}건 표시
+                </p>
               </div>
               <input
                 className="h-10 w-full rounded-full border border-black/10 bg-white px-4 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black md:w-[20rem]"
@@ -1291,8 +1274,8 @@ export function AdminPaymentsDashboard() {
 
                     return (
                       <tr
-                        className={`cursor-pointer align-top text-[14px] ${
-                          isSelected ? "bg-[#f7f7f7]" : "bg-white"
+                        className={`cursor-pointer align-top text-[14px] transition-colors ${
+                          isSelected ? "bg-[#F5F8E7]" : "bg-white hover:bg-[#fafafa]"
                         }`}
                         key={record.participationId}
                         onClick={() =>
@@ -1344,7 +1327,11 @@ export function AdminPaymentsDashboard() {
               </table>
               {filteredRecords.length === 0 ? (
                 <div className="flex h-44 items-center justify-center text-[14px] font-semibold text-black/35">
-                  {isLoading ? "결제 건을 불러오고 있어요." : "표시할 결제 건이 없어요."}
+                  {isLoading
+                    ? "결제 건을 불러오고 있어요."
+                    : statusFilter !== "ALL" || searchKeyword.trim()
+                      ? "조건에 맞는 결제 건이 없어요."
+                      : "표시할 결제 건이 없어요."}
                 </div>
               ) : null}
             </div>
@@ -1616,6 +1603,34 @@ export function AdminPaymentsDashboard() {
             )}
           </aside>
         </section>
+
+        {adminAccessToken ? (
+          <section className="rounded-[1.15rem] bg-white shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
+            <button
+              aria-expanded={isNoticeOpen}
+              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+              onClick={() => setIsNoticeOpen((current) => !current)}
+              type="button"
+            >
+              <div>
+                <p className="text-[12px] font-semibold uppercase text-black/35">
+                  Notice
+                </p>
+                <h2 className="mt-1 text-[18px] font-semibold">공지 업로드</h2>
+                <p className="mt-1 text-[13px] font-semibold text-black/40">
+                  공지 본문과 홈 배너 이미지를 함께 등록해요.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-black/10 px-4 py-2 text-[12px] font-semibold text-black/45">
+                {isNoticeOpen ? "접기" : "열기"}
+              </span>
+            </button>
+            {/* 접어도 언마운트하지 않아 작성 중이던 공지 내용이 유지된다. */}
+            <div className={isNoticeOpen ? "" : "hidden"}>
+              <AdminNoticeUploader accessToken={adminAccessToken} />
+            </div>
+          </section>
+        ) : null}
       </div>
     </main>
   );
