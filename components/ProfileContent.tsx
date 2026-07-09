@@ -103,7 +103,7 @@ function getEmptySettlementAccountState(): SettlementAccountState {
 }
 
 function sanitizeAccountNumber(value: string) {
-  return value.replace(/[^\d-]/g, "");
+  return value.replace(/\D/g, "");
 }
 
 function getDeliveryAddressDeleteErrorMessage(error: unknown) {
@@ -2301,10 +2301,10 @@ export function ProfileContent({
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                정산 계좌
+                계좌
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                개최한 분철 정산금을 받을 계좌를 입력해 주세요.
+                환불받을 때 사용할 계좌를 확인해요.
               </p>
             </div>
             {authState.isLoggedIn &&
@@ -2363,14 +2363,14 @@ export function ProfileContent({
                   <input
                     className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     inputMode="numeric"
-                    maxLength={60}
+                    maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
                         "accountNumber",
                         event.currentTarget.value,
                       )
                     }
-                    placeholder="000000-00-000000"
+                    placeholder="숫자만 입력해 주세요"
                     value={settlementAccountForm.accountNumber}
                   />
                 </label>
@@ -2447,10 +2447,10 @@ export function ProfileContent({
             >
               <span>
                 <span className="block text-[14px] font-semibold text-black/70">
-                  정산 계좌를 등록해 주세요.
+                  환불받을 계좌를 등록해 주세요.
                 </span>
                 <span className="mt-1 block text-[13px] font-medium text-black/40">
-                  등록하면 개최한 분철 정산금을 받을 수 있어요.
+                  등록해 두면 환불이 필요할 때 바로 받을 수 있어요.
                 </span>
               </span>
               <span className="shrink-0 rounded-full bg-[#CFE86B] px-3 py-2 text-[12px] font-semibold text-black">
@@ -2517,7 +2517,9 @@ export function ProfileContent({
                         ) : isDefaultAddressLoading ? (
                           <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
                         ) : (
-                          address?.branchName ?? "등록된 배송지가 없어요"
+                          address
+                            ? getDeliveryAddressDisplayBranchName(address)
+                            : "등록된 배송지가 없어요"
                         )}
                       </p>
                     </div>
@@ -3043,8 +3045,9 @@ export function ProfileContent({
                     </span>
                   </div>
                   <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
-                    {paymentDeliveryAddress?.branchName ??
-                      "결제 요청 배송지 확인 중"}
+                    {paymentDeliveryAddress
+                      ? getDeliveryAddressDisplayBranchName(paymentDeliveryAddress)
+                      : "결제 요청 배송지 확인 중"}
                   </p>
                 </div>
                 <span className="shrink-0 text-[11px] font-semibold text-black/40">
@@ -3263,7 +3266,7 @@ export function ProfileContent({
                             기본 설정
                           </button>
                           <button
-                            aria-label={`${getConvenienceStoreLabel(address.storeType)} ${address.branchName} 배송지 삭제`}
+                            aria-label={`${getConvenienceStoreLabel(address.storeType)} ${displayBranchName} 배송지 삭제`}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10 transition-colors duration-300 ease-out"
                             onClick={(event) => {
                               event.stopPropagation();

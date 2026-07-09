@@ -1749,8 +1749,10 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("마이페이지에서 환불 계좌를 먼저 등록해 주세요.");
+        window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
+        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
+        rememberCheckoutAddressReturnState(false);
         router.push("/profile");
         return;
       }
@@ -1846,8 +1848,10 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("마이페이지에서 환불 계좌를 먼저 등록해 주세요.");
+        window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
+        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
+        rememberCheckoutAddressReturnState(false);
         router.push("/profile");
         return;
       }
@@ -3204,7 +3208,7 @@ export function ProductDetail({
                           <p className="text-[12px] font-semibold text-black/40">배송지</p>
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {checkoutDeliveryAddress
-                              ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${checkoutDeliveryAddress.branchName}`
+                              ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
                               : "등록된 배송지 없음"}
                           </p>
                           <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">

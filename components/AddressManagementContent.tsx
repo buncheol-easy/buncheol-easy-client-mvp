@@ -40,6 +40,8 @@ import {
   getDeliveryAddressDisplayBranchName,
   getConvenienceStoreLabel,
   getPrioritizedDeliveryAddresses,
+  maxDeliveryAddressCount,
+  stripLeadingConvenienceStoreLabel,
   type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
 
@@ -93,11 +95,15 @@ export function AddressManagementContent({
   );
   const addressSyncRequestIdRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const addressMessageRef = useRef<HTMLParagraphElement | null>(null);
+  const pendingOpenFormOnEntryRef = useRef(openFormOnEntry);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAddressListLoading, setIsAddressListLoading] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [deletingAddressIds, setDeletingAddressIds] = useState<string[]>([]);
   const [addressMessage, setAddressMessage] = useState("");
+  const [formErrorMessage, setFormErrorMessage] = useState("");
+  const [hasTouchedAddressForm, setHasTouchedAddressForm] = useState(false);
   const [newAddressStoreType, setNewAddressStoreType] =
     useState<ConvenienceStoreType>("gs25");
   const [newAddressAlias, setNewAddressAlias] = useState("");
@@ -112,6 +118,10 @@ export function AddressManagementContent({
         : [],
     [canManageAddresses, defaultAddressIds, deliveryAddresses],
   );
+  const isAddressLimitReached =
+    canManageAddresses &&
+    !isAddressListLoading &&
+    visibleAddresses.length >= maxDeliveryAddressCount;
   const syncDeliveryAddresses = useCallback(async (
     accessToken: string,
     options: { clearBeforeSync?: boolean } = {},
@@ -149,48 +159,59 @@ export function AddressManagementContent({
     addressSyncRequestIdRef.current += 1;
   }, []);
 
-  function resetDraft() {
+  const resetDraft = useCallback(() => {
     setNewAddressStoreType("gs25");
     setNewAddressAlias("");
     setNewAddressBranchName("");
-  }
+  }, []);
 
-  function closeForm() {
+  const closeForm = useCallback(() => {
     setIsFormOpen(false);
+    setFormErrorMessage("");
+    setHasTouchedAddressForm(false);
     resetDraft();
-  }
+  }, [resetDraft]);
 
-  function openForm() {
-    setIsFormOpen(true);
+  const scrollToAddressListBottom = useCallback(() => {
+    scrollContainerRef.current?.scrollTo({
+      top: scrollContainerRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, []);
 
-    function scrollToBottom() {
-      scrollContainerRef.current?.scrollTo({
-        top: scrollContainerRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    }
-
+  const scrollAddressListAfterChange = useCallback(() => {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
-        scrollToBottom();
-        window.setTimeout(scrollToBottom, 420);
+        scrollToAddressListBottom();
+        window.setTimeout(scrollToAddressListBottom, 420);
       });
     });
-  }
+  }, [scrollToAddressListBottom]);
+
+  const openForm = useCallback(() => {
+    setIsFormOpen(true);
+    setFormErrorMessage("");
+    setHasTouchedAddressForm(false);
+    scrollAddressListAfterChange();
+  }, [scrollAddressListAfterChange]);
+
+  // 사용자가 아직 조작하지 않은 폼만 제한 도달 시 안내 카드로 되돌린다.
+  useEffect(() => {
+    if (isFormOpen && isAddressLimitReached && !hasTouchedAddressForm) {
+      closeForm();
+    }
+  }, [closeForm, hasTouchedAddressForm, isAddressLimitReached, isFormOpen]);
 
   useEffect(() => {
-    if (!openFormOnEntry) {
+    if (!addressMessage) {
       return;
     }
 
-    const openFrame = window.requestAnimationFrame(() => {
-      openForm();
+    addressMessageRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
     });
-
-    return () => {
-      window.cancelAnimationFrame(openFrame);
-    };
-  }, [openFormOnEntry]);
+  }, [addressMessage]);
 
   useEffect(() => {
     const accessToken = authState.accessToken;
@@ -209,8 +230,25 @@ export function AddressManagementContent({
     setAddressMessage("");
 
     syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
-      .then(() => {
+      .then(({ isLatest, nextState }) => {
         // The sync helper commits only if this is still the newest request.
+        if (!isActive || !pendingOpenFormOnEntryRef.current) {
+          return;
+        }
+
+        pendingOpenFormOnEntryRef.current = false;
+
+        // 사용자 조작으로 더 새로운 동기화가 시작됐다면 자동 오픈 의도는 버린다.
+        if (!isLatest) {
+          return;
+        }
+
+        if (nextState.addresses.length >= maxDeliveryAddressCount) {
+          scrollAddressListAfterChange();
+          return;
+        }
+
+        openForm();
       })
       .catch((error: unknown) => {
         if (!isActive) {
@@ -222,6 +260,12 @@ export function AddressManagementContent({
             ? error.message
             : "배송지 목록을 불러오지 못했어요.",
         );
+
+        // 목록을 확인하지 못하면 폼을 열어 두고 저장 시 인라인 에러에 맡긴다.
+        if (pendingOpenFormOnEntryRef.current) {
+          pendingOpenFormOnEntryRef.current = false;
+          openForm();
+        }
       })
       .finally(() => {
         if (isActive) {
@@ -237,15 +281,10 @@ export function AddressManagementContent({
     authState.accessToken,
     canManageAddresses,
     invalidateAddressSyncRequests,
+    openForm,
+    scrollAddressListAfterChange,
     syncDeliveryAddresses,
   ]);
-
-  function scrollToAddressListBottom() {
-    scrollContainerRef.current?.scrollTo({
-      top: scrollContainerRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }
 
   function commitAddressState(nextState: StoredDeliveryAddressState) {
     writeDeliveryAddressState(nextState);
@@ -257,15 +296,6 @@ export function AddressManagementContent({
     }
   }
 
-  function scrollAddressListAfterChange() {
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        scrollToAddressListBottom();
-        window.setTimeout(scrollToAddressListBottom, 420);
-      });
-    });
-  }
-
   async function addDeliveryAddress() {
     const trimmedBranchName = newAddressBranchName.trim();
 
@@ -273,18 +303,31 @@ export function AddressManagementContent({
       return;
     }
 
+    // 서버 응답의 storeType 판별이 지점명 문구에 의존할 수 있어
+    // 지점명은 브랜드 라벨을 한 번만 붙인 형태로 저장한다.
+    const strippedBranchName = stripLeadingConvenienceStoreLabel(
+      newAddressStoreType,
+      trimmedBranchName,
+    );
+
+    setAddressMessage("");
+    setFormErrorMessage("");
+
+    if (!strippedBranchName) {
+      setFormErrorMessage("지점명을 입력해 주세요. (예: 강남점)");
+      return;
+    }
+
     const addressDraft = {
       storeType: newAddressStoreType,
       alias: newAddressAlias.trim() || undefined,
-      branchName: trimmedBranchName,
+      branchName: `${getConvenienceStoreLabel(newAddressStoreType)} ${strippedBranchName}`,
       address: "",
     };
     const accessToken = authState.accessToken;
 
-    setAddressMessage("");
-
     if (!canManageAddresses || !accessToken) {
-      setAddressMessage("배송지는 로그인 후 이용할 수 있어요.");
+      setFormErrorMessage("배송지는 로그인 후 이용할 수 있어요.");
       return;
     }
 
@@ -314,9 +357,25 @@ export function AddressManagementContent({
 
       scrollAddressListAfterChange();
     } catch (error) {
-      setAddressMessage(
-        error instanceof Error ? error.message : "배송지를 등록하지 못했어요.",
-      );
+      let message =
+        error instanceof Error ? error.message : "배송지를 등록하지 못했어요.";
+
+      // 로컬 목록이 낡아 서버가 개수 제한으로 거부했는지 재동기화로 판정한다.
+      try {
+        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
+
+        if (
+          isLatest &&
+          nextState.addresses.length >= maxDeliveryAddressCount
+        ) {
+          message = `배송지는 최대 ${maxDeliveryAddressCount}개까지 등록할 수 있어요. 사용하지 않는 배송지를 삭제한 뒤 다시 시도해 주세요.`;
+        }
+      } catch {
+        // 재동기화가 실패하면 원래 저장 에러 메시지를 그대로 보여 준다.
+      }
+
+      setFormErrorMessage(message);
+      scrollAddressListAfterChange();
     } finally {
       setIsSavingAddress(false);
     }
@@ -477,12 +536,24 @@ export function AddressManagementContent({
                 상품 배송 방식에 맞는 지점을 저장해요.
               </p>
             </div>
-            <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3 py-2 text-[12px] font-semibold text-black/45">
-              {visibleAddresses.length}개
+            <span
+              aria-label={
+                canManageAddresses && !isAddressListLoading
+                  ? `등록된 배송지 ${visibleAddresses.length}개, 최대 ${maxDeliveryAddressCount}개`
+                  : undefined
+              }
+              className="shrink-0 rounded-full bg-[#f4f4f4] px-3 py-2 text-[12px] font-semibold text-black/45"
+            >
+              {canManageAddresses && !isAddressListLoading
+                ? `${visibleAddresses.length}/${maxDeliveryAddressCount}개`
+                : `${visibleAddresses.length}개`}
             </span>
           </div>
           {isAddressListLoading || addressMessage ? (
-            <p className="mb-3 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/45">
+            <p
+              className="mb-3 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/45"
+              ref={addressMessageRef}
+            >
               {addressMessage || "배송지를 불러오는 중이에요."}
             </p>
           ) : null}
@@ -600,7 +671,11 @@ export function AddressManagementContent({
                           event.preventDefault();
                         }}
                         disabled={!isFormOpen}
-                        onClick={() => setNewAddressStoreType(storeType)}
+                        onClick={() => {
+                          setNewAddressStoreType(storeType);
+                          setHasTouchedAddressForm(true);
+                          setFormErrorMessage("");
+                        }}
                         type="button"
                       >
                         {convenienceStoreTypeLabels[storeType]}
@@ -614,7 +689,11 @@ export function AddressManagementContent({
                     <input
                       className="mt-1 h-8 w-full bg-transparent text-[14px] font-semibold outline-none placeholder:text-black/25"
                       disabled={!isFormOpen}
-                      onChange={(event) => setNewAddressAlias(event.target.value)}
+                      onChange={(event) => {
+                        setNewAddressAlias(event.target.value);
+                        setHasTouchedAddressForm(true);
+                        setFormErrorMessage("");
+                      }}
                       placeholder="집, 회사"
                       value={newAddressAlias}
                     />
@@ -626,10 +705,12 @@ export function AddressManagementContent({
                     <input
                       className="mt-1 h-8 w-full bg-transparent text-[14px] font-semibold outline-none placeholder:text-black/25"
                       disabled={!isFormOpen}
-                      onChange={(event) =>
-                        setNewAddressBranchName(event.target.value)
-                      }
-                      placeholder="GS25 강남점"
+                      onChange={(event) => {
+                        setNewAddressBranchName(event.target.value);
+                        setHasTouchedAddressForm(true);
+                        setFormErrorMessage("");
+                      }}
+                      placeholder="강남점"
                       value={newAddressBranchName}
                     />
                   </label>
@@ -645,7 +726,28 @@ export function AddressManagementContent({
                   >
                     {isSavingAddress ? "저장 중" : "배송지 추가"}
                   </button>
+                  {formErrorMessage ? (
+                    <p
+                      className="mt-2 rounded-[0.9rem] bg-red-50 px-4 py-3 text-[13px] font-semibold text-red-600"
+                      role="alert"
+                    >
+                      {formErrorMessage}
+                    </p>
+                  ) : null}
                 </div>
+              ) : isAddressLimitReached ? (
+              <div
+                className="idol-selection-enter flex min-h-[4.25rem] w-full flex-col items-center justify-center gap-1 rounded-[1rem] border border-black/10 bg-[#f7f7f7] px-4 py-3 text-center"
+                key="address-limit-notice"
+                role="status"
+              >
+                <p className="text-[14px] font-semibold text-black/60">
+                  배송지는 최대 {maxDeliveryAddressCount}개까지 등록할 수 있어요
+                </p>
+                <p className="text-[12px] font-medium text-black/40">
+                  사용하지 않는 배송지를 삭제하면 새 지점을 추가할 수 있어요.
+                </p>
+              </div>
               ) : (
               <div
                 className="idol-selection-enter"
