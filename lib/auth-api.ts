@@ -4891,3 +4891,360 @@ export async function requestGroupMembers(groupId: string) {
     .map(getApiGroupMemberFromRecord)
     .filter((member): member is ApiGroupMember => member !== null);
 }
+
+// ---------------------------------------------------------------------------
+// 관리자(운영자) API — /v1/admin/**
+// 관리자 토큰(로그인 응답의 accessToken)을 쓰며 유저 토큰과 호환되지 않는다.
+// 401(만료/무효)·403(권한 없음)은 ApiRequestError.status 로 구분해 재로그인을 유도한다.
+// ---------------------------------------------------------------------------
+
+export type AdminMe = {
+  loginId: string;
+};
+
+export type AdminPaymentSummary = {
+  awaitingCount: number;
+  confirmedCount: number;
+  refundRequiredCount: number;
+  cancelledCount: number;
+  totalCount: number;
+  awaitingAmount: number;
+};
+
+export type AdminPaymentRecordItem = {
+  participationId: string;
+  participantNickname: string | null;
+  memberName: string | null;
+  amount: number;
+  paymentStatus: string;
+  status: string;
+  cancelReason: string | null;
+  dueAt: string | null;
+  confirmedAt: string | null;
+  refundAccount: BankAccountInfo | null;
+  delivery: BuncheolManagementDelivery | null;
+  buncheolId: string;
+  buncheolTitle: string;
+  buncheolStatus: string;
+  groupName: string;
+  minHeadcount: number;
+  confirmedCount: number;
+};
+
+export type AdminPaymentsPage = {
+  items: AdminPaymentRecordItem[];
+  nextCursor: string | null;
+  hasNext: boolean;
+};
+
+export type AdminBulkFailure = {
+  id: string;
+  code: string;
+  message: string;
+};
+
+export type AdminBulkResult = {
+  succeededIds: string[];
+  failures: AdminBulkFailure[];
+};
+
+async function parseAdminResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+
+  return (await response.json()) as T;
+}
+
+function getOptionalIdString(value: unknown) {
+  return typeof value === "number" || typeof value === "string"
+    ? String(value)
+    : undefined;
+}
+
+function getAdminDeliveryFromRecord(
+  value: unknown,
+): BuncheolManagementDelivery | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    deliveryId: getOptionalIdString(value.deliveryId),
+    receiverNickname:
+      typeof value.receiverNickname === "string"
+        ? value.receiverNickname
+        : undefined,
+    receiverPhoneNumber:
+      typeof value.receiverPhoneNumber === "string"
+        ? value.receiverPhoneNumber
+        : undefined,
+    shippingMethod:
+      typeof value.shippingMethod === "string" ? value.shippingMethod : undefined,
+    status: typeof value.status === "string" ? value.status : undefined,
+    storeName: typeof value.storeName === "string" ? value.storeName : undefined,
+    trackingNumber:
+      typeof value.trackingNumber === "string" ? value.trackingNumber : null,
+  };
+}
+
+function getAdminRefundAccountFromRecord(
+  value: unknown,
+): BankAccountInfo | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    account: typeof value.account === "string" ? value.account : "",
+    bank: typeof value.bank === "string" ? value.bank : "",
+    holder: typeof value.holder === "string" ? value.holder : "",
+  };
+}
+
+function getAdminPaymentRecordItem(value: unknown): AdminPaymentRecordItem | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const participationId = getOptionalIdString(value.participationId);
+  const buncheolId = getOptionalIdString(value.buncheolId);
+
+  if (!participationId || !buncheolId) {
+    return null;
+  }
+
+  return {
+    amount: typeof value.amount === "number" ? value.amount : 0,
+    buncheolId,
+    buncheolStatus:
+      typeof value.buncheolStatus === "string" ? value.buncheolStatus : "",
+    buncheolTitle:
+      typeof value.buncheolTitle === "string" ? value.buncheolTitle : "",
+    cancelReason:
+      typeof value.cancelReason === "string" ? value.cancelReason : null,
+    confirmedAt:
+      typeof value.confirmedAt === "string" ? value.confirmedAt : null,
+    confirmedCount:
+      typeof value.confirmedCount === "number" ? value.confirmedCount : 0,
+    delivery: getAdminDeliveryFromRecord(value.delivery),
+    dueAt: typeof value.dueAt === "string" ? value.dueAt : null,
+    groupName: typeof value.groupName === "string" ? value.groupName : "",
+    memberName: typeof value.memberName === "string" ? value.memberName : null,
+    minHeadcount:
+      typeof value.minHeadcount === "number" ? value.minHeadcount : 0,
+    participantNickname:
+      typeof value.participantNickname === "string"
+        ? value.participantNickname
+        : null,
+    participationId,
+    paymentStatus:
+      typeof value.paymentStatus === "string" ? value.paymentStatus : "",
+    refundAccount: getAdminRefundAccountFromRecord(value.refundAccount),
+    status: typeof value.status === "string" ? value.status : "",
+  };
+}
+
+export async function requestAdminLogin(loginId: string, password: string) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/auth/login`,
+    {
+      body: JSON.stringify({ loginId, password }),
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    },
+    "로그인 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const data = await parseAdminResponse<{ accessToken?: string }>(response);
+
+  if (!data.accessToken) {
+    throw new Error("관리자 토큰을 확인할 수 없어요.");
+  }
+
+  return data.accessToken;
+}
+
+export async function requestAdminMe(accessToken: string) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/me`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+    "관리자 정보를 불러오지 못했어요.",
+  );
+
+  return parseAdminResponse<AdminMe>(response);
+}
+
+export async function requestAdminPaymentsSummary(accessToken: string) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/payments/summary`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+    "결제 통계를 불러오지 못했어요.",
+  );
+
+  return parseAdminResponse<AdminPaymentSummary>(response);
+}
+
+export async function requestAdminPayments(
+  accessToken: string,
+  options: { cursor?: string; size?: number } = {},
+): Promise<AdminPaymentsPage> {
+  const searchParams = new URLSearchParams();
+
+  if (options.cursor) {
+    searchParams.set("cursor", options.cursor);
+  }
+
+  if (options.size) {
+    searchParams.set("size", String(options.size));
+  }
+
+  const query = searchParams.toString();
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/payments${query ? `?${query}` : ""}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+    "결제 건을 불러오지 못했어요.",
+  );
+  const body = await parseAdminResponse<{
+    items?: unknown;
+    nextCursor?: unknown;
+    hasNext?: unknown;
+  }>(response);
+  const items = Array.isArray(body.items)
+    ? body.items
+        .map(getAdminPaymentRecordItem)
+        .filter((item): item is AdminPaymentRecordItem => item !== null)
+    : [];
+
+  return {
+    hasNext: body.hasNext === true,
+    items,
+    nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : null,
+  };
+}
+
+// 커서 페이지를 끝까지(최대 20페이지 = 2,000건) 모아 온다. 대시보드가 전체 목록 위에서
+// 클라이언트 검색·묶음 집계를 하는 구조라 서버 필터 대신 전량 로드를 유지한다.
+export async function requestAllAdminPayments(accessToken: string) {
+  const items: AdminPaymentRecordItem[] = [];
+  let cursor: string | undefined;
+  let pageCount = 0;
+  let truncated = false;
+
+  while (pageCount < 20) {
+    const page: AdminPaymentsPage = await requestAdminPayments(accessToken, {
+      cursor,
+      size: 100,
+    });
+
+    items.push(...page.items);
+    pageCount += 1;
+
+    if (!page.hasNext || !page.nextCursor) {
+      return { items, truncated };
+    }
+
+    cursor = page.nextCursor;
+  }
+
+  truncated = true;
+
+  return { items, truncated };
+}
+
+function getAdminBulkResult(value: {
+  succeededIds?: unknown;
+  failures?: unknown;
+}): AdminBulkResult {
+  const succeededIds = Array.isArray(value.succeededIds)
+    ? value.succeededIds
+        .map(getOptionalIdString)
+        .filter((id): id is string => Boolean(id))
+    : [];
+  const failures = Array.isArray(value.failures)
+    ? value.failures.reduce<AdminBulkFailure[]>((nextFailures, failure) => {
+        if (!isRecord(failure)) {
+          return nextFailures;
+        }
+
+        const id = getOptionalIdString(failure.id);
+
+        if (id) {
+          nextFailures.push({
+            code: typeof failure.code === "string" ? failure.code : "",
+            id,
+            message:
+              typeof failure.message === "string"
+                ? failure.message
+                : "처리하지 못했어요.",
+          });
+        }
+
+        return nextFailures;
+      }, [])
+    : [];
+
+  return { failures, succeededIds };
+}
+
+export async function requestAdminPaymentConfirmation(
+  accessToken: string,
+  participationIds: string[],
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/payments/confirm`,
+    {
+      body: JSON.stringify({
+        participationIds: participationIds.map(Number),
+      }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+    "입금 확인 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const body = await parseAdminResponse<{
+    succeededIds?: unknown;
+    failures?: unknown;
+  }>(response);
+
+  return getAdminBulkResult(body);
+}
+
+export async function requestAdminTrackingRegistration(
+  accessToken: string,
+  deliveryIds: string[],
+  trackingNumber: string,
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/deliveries/tracking`,
+    {
+      body: JSON.stringify({
+        deliveryIds: deliveryIds.map(Number),
+        trackingNumber,
+      }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "PATCH",
+    },
+    "운송장 등록 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const body = await parseAdminResponse<{
+    succeededIds?: unknown;
+    failures?: unknown;
+  }>(response);
+
+  return getAdminBulkResult(body);
+}
