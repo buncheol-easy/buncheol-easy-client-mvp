@@ -40,6 +40,7 @@ type AdminPaymentStatus =
   | "CONFIRMED"
   | "OTHER"
   | "REFUND_REQUIRED";
+type StatusFilter = "ALL" | AdminPaymentStatus;
 type VerificationKey = "amount" | "participant";
 type VerificationState = Record<VerificationKey, boolean>;
 
@@ -516,26 +517,15 @@ function AdminNoticeUploader({ accessToken }: { accessToken: string }) {
   }
 
   return (
-    <section className="rounded-[1.15rem] bg-white p-4 shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-semibold uppercase text-black/35">
-            Notice
-          </p>
-          <h2 className="mt-1 text-[22px] font-semibold">공지 업로드</h2>
-          <p className="mt-1 text-[13px] font-semibold text-black/40">
-            공지 본문과 홈 배너 이미지를 함께 등록해요.
-          </p>
-        </div>
-        {noticeMessage ? (
-          <p className="rounded-full bg-[#f4f6f8] px-3 py-2 text-[12px] font-semibold text-black/45">
-            {noticeMessage}
-          </p>
-        ) : null}
-      </div>
+    <div className="border-t border-black/10 px-4 pb-4 pt-4">
+      {noticeMessage ? (
+        <p className="mb-3 inline-block rounded-full bg-[#f4f6f8] px-3 py-2 text-[12px] font-semibold text-black/45">
+          {noticeMessage}
+        </p>
+      ) : null}
 
       <form
-        className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]"
+        className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]"
         onSubmit={(event) => void handleNoticeSubmit(event)}
       >
         <div className="grid gap-3">
@@ -657,7 +647,7 @@ function AdminNoticeUploader({ accessToken }: { accessToken: string }) {
           </button>
         </div>
       </form>
-    </section>
+    </div>
   );
 }
 
@@ -800,6 +790,8 @@ export function AdminPaymentsDashboard() {
   const [records, setRecords] = useState<AdminPaymentRecord[]>([]);
   const [summary, setSummary] = useState<AdminPaymentSummary | null>(null);
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [isNoticeOpen, setIsNoticeOpen] = useState(false);
   const [selectedParticipationId, setSelectedParticipationId] = useState("");
   const [verificationByParticipation, setVerificationByParticipation] =
     useState<Record<string, VerificationState>>({});
@@ -932,16 +924,19 @@ export function AdminPaymentsDashboard() {
     const keyword = searchKeyword.trim().toLowerCase();
 
     return records
+      .filter(
+        (record) => statusFilter === "ALL" || record.status === statusFilter,
+      )
       .filter((record) => !keyword || getSearchText(record).includes(keyword))
       .sort((left, right) => getRecordSortTime(right) - getRecordSortTime(left));
-  }, [records, searchKeyword]);
+  }, [records, searchKeyword, statusFilter]);
 
+  // 상세 패널은 항상 화면 테이블에 보이는 행과 대응되도록, 필터링된 목록 안에서만 선택을 유지한다.
   const selectedRecord =
-    records.find(
+    filteredRecords.find(
       (record) => record.participationId === selectedParticipationId,
     ) ??
     filteredRecords[0] ??
-    records[0] ??
     null;
   const pendingRecords = records.filter(
     (record) => record.status === "AWAITING_CONFIRMATION",
@@ -952,15 +947,26 @@ export function AdminPaymentsDashboard() {
   const refundRecords = records.filter(
     (record) => record.status === "REFUND_REQUIRED",
   );
+  const cancelledRecords = records.filter(
+    (record) => record.status === "CANCELLED",
+  );
   // 대기 금액은 전체 기준 집계(summary API)가 정확하고, 건수는 화면 행(묶음 집계 후)과
   // 일치해야 운영자가 행 단위로 대조할 수 있어 목록 기준으로 계산한다.
   const pendingAmount =
     summary?.awaitingAmount ??
     pendingRecords.reduce((sum, record) => sum + record.amount, 0);
   const pendingCount = pendingRecords.length;
-  const confirmedCount = confirmedRecords.length;
-  const refundCount = refundRecords.length;
-  const totalCount = records.length;
+  const statusCards: Array<{
+    key: StatusFilter;
+    label: string;
+    count: number;
+  }> = [
+    { count: records.length, key: "ALL", label: "전체" },
+    { count: pendingCount, key: "AWAITING_CONFIRMATION", label: "확인 대기" },
+    { count: confirmedRecords.length, key: "CONFIRMED", label: "확인 완료" },
+    { count: refundRecords.length, key: "REFUND_REQUIRED", label: "환불 필요" },
+    { count: cancelledRecords.length, key: "CANCELLED", label: "취소" },
+  ];
   const selectedVerification =
     selectedRecord && verificationByParticipation[selectedRecord.participationId]
       ? verificationByParticipation[selectedRecord.participationId]
@@ -1150,20 +1156,11 @@ export function AdminPaymentsDashboard() {
               전체 분철의 입금 확인과 운송장 등록을 처리해요.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[13px] font-semibold text-black/45">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="flex h-10 items-center gap-2 rounded-full bg-white px-4 text-[13px] font-semibold text-black/55">
+              <span className="h-2 w-2 rounded-full bg-[#CFE86B]" />
               {adminLoginId}
             </span>
-            <button
-              className="h-10 rounded-full border border-black/10 bg-white px-4 text-[13px] font-semibold text-black"
-              onClick={() => {
-                setLoginNotice("");
-                clearAdminAuthState();
-              }}
-              type="button"
-            >
-              로그아웃
-            </button>
             <button
               className="h-10 rounded-full border border-black/10 bg-white px-4 text-[13px] font-semibold text-black disabled:text-black/25"
               disabled={isLoading}
@@ -1172,33 +1169,60 @@ export function AdminPaymentsDashboard() {
             >
               새로고침
             </button>
-            <div className="flex flex-wrap items-center gap-5 rounded-[1rem] bg-black px-5 py-3 text-white">
-              <div>
-                <p className="text-[12px] font-semibold text-white/45">
-                  확인 대기 금액
-                </p>
-                <p className="mt-1 text-[24px] font-semibold">
-                  {formatPrice(pendingAmount)}
-                </p>
-              </div>
-              <div className="h-9 w-px bg-white/15" />
-              <div className="flex gap-4 text-[13px] font-semibold text-white/45">
-                <span className="whitespace-nowrap">
-                  대기 <strong className="ml-1 text-white">{pendingCount}</strong>
-                </span>
-                <span className="whitespace-nowrap">
-                  완료 <strong className="ml-1 text-white">{confirmedCount}</strong>
-                </span>
-                <span className="whitespace-nowrap">
-                  환불 <strong className="ml-1 text-white">{refundCount}</strong>
-                </span>
-                <span className="whitespace-nowrap">
-                  전체 <strong className="ml-1 text-white">{totalCount}</strong>
-                </span>
-              </div>
-            </div>
+            <button
+              className="h-10 rounded-full border border-black/10 bg-white px-4 text-[13px] font-semibold text-black/45"
+              onClick={() => {
+                setLoginNotice("");
+                clearAdminAuthState();
+              }}
+              type="button"
+            >
+              로그아웃
+            </button>
           </div>
         </header>
+
+        <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-7">
+          <div className="rounded-[1.15rem] bg-black px-5 py-4 text-white sm:col-span-3 xl:col-span-2">
+            <p className="text-[12px] font-semibold text-white/45">
+              확인 대기 금액
+            </p>
+            <p className="mt-1.5 text-[28px] font-semibold leading-none">
+              {formatPrice(pendingAmount)}
+            </p>
+            <p className="mt-2 text-[12px] font-semibold text-[#D7FF5F]">
+              대기 {pendingCount}건
+            </p>
+          </div>
+          {statusCards.map((card) => {
+            const isActive = statusFilter === card.key;
+
+            return (
+              <button
+                aria-pressed={isActive}
+                className={`rounded-[1.15rem] px-5 py-4 text-left transition-colors ${
+                  isActive
+                    ? "bg-black text-white"
+                    : "bg-white text-black hover:bg-[#fafafa]"
+                }`}
+                key={card.key}
+                onClick={() => setStatusFilter(card.key)}
+                type="button"
+              >
+                <p
+                  className={`text-[12px] font-semibold ${
+                    isActive ? "text-white/45" : "text-black/40"
+                  }`}
+                >
+                  {card.label}
+                </p>
+                <p className="mt-1.5 text-[24px] font-semibold leading-none">
+                  {card.count}
+                </p>
+              </button>
+            );
+          })}
+        </section>
 
         {message ? (
           <p className="rounded-[0.9rem] bg-white px-4 py-3 text-[13px] font-semibold text-black/45">
@@ -1206,15 +1230,15 @@ export function AdminPaymentsDashboard() {
           </p>
         ) : null}
 
-        {adminAccessToken ? (
-          <AdminNoticeUploader accessToken={adminAccessToken} />
-        ) : null}
-
         <section className="grid min-h-[640px] gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="rounded-[1.15rem] bg-white p-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="rounded-full bg-[#f4f6f8] px-4 py-2 text-[13px] font-semibold text-black/45">
-                결제 건 전체 표시
+            <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-1">
+              <div>
+                <p className="text-[16px] font-semibold">결제 건</p>
+                <p className="mt-0.5 text-[12px] font-semibold text-black/40">
+                  {statusCards.find((card) => card.key === statusFilter)?.label}{" "}
+                  {filteredRecords.length}건 표시
+                </p>
               </div>
               <input
                 className="h-10 w-full rounded-full border border-black/10 bg-white px-4 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black md:w-[20rem]"
@@ -1250,8 +1274,8 @@ export function AdminPaymentsDashboard() {
 
                     return (
                       <tr
-                        className={`cursor-pointer align-top text-[14px] ${
-                          isSelected ? "bg-[#f7f7f7]" : "bg-white"
+                        className={`cursor-pointer align-top text-[14px] transition-colors ${
+                          isSelected ? "bg-[#F5F8E7]" : "bg-white hover:bg-[#fafafa]"
                         }`}
                         key={record.participationId}
                         onClick={() =>
@@ -1303,7 +1327,11 @@ export function AdminPaymentsDashboard() {
               </table>
               {filteredRecords.length === 0 ? (
                 <div className="flex h-44 items-center justify-center text-[14px] font-semibold text-black/35">
-                  {isLoading ? "결제 건을 불러오고 있어요." : "표시할 결제 건이 없어요."}
+                  {isLoading
+                    ? "결제 건을 불러오고 있어요."
+                    : statusFilter !== "ALL" || searchKeyword.trim()
+                      ? "조건에 맞는 결제 건이 없어요."
+                      : "표시할 결제 건이 없어요."}
                 </div>
               ) : null}
             </div>
@@ -1575,6 +1603,34 @@ export function AdminPaymentsDashboard() {
             )}
           </aside>
         </section>
+
+        {adminAccessToken ? (
+          <section className="rounded-[1.15rem] bg-white shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
+            <button
+              aria-expanded={isNoticeOpen}
+              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+              onClick={() => setIsNoticeOpen((current) => !current)}
+              type="button"
+            >
+              <div>
+                <p className="text-[12px] font-semibold uppercase text-black/35">
+                  Notice
+                </p>
+                <h2 className="mt-1 text-[18px] font-semibold">공지 업로드</h2>
+                <p className="mt-1 text-[13px] font-semibold text-black/40">
+                  공지 본문과 홈 배너 이미지를 함께 등록해요.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-black/10 px-4 py-2 text-[12px] font-semibold text-black/45">
+                {isNoticeOpen ? "접기" : "열기"}
+              </span>
+            </button>
+            {/* 접어도 언마운트하지 않아 작성 중이던 공지 내용이 유지된다. */}
+            <div className={isNoticeOpen ? "" : "hidden"}>
+              <AdminNoticeUploader accessToken={adminAccessToken} />
+            </div>
+          </section>
+        ) : null}
       </div>
     </main>
   );
