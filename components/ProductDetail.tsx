@@ -2924,7 +2924,7 @@ export function ProductDetail({
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 상품 설명
               </h2>
-              <p className="mt-3 text-[15px] leading-7 tracking-[-0.04em] text-black/65">
+              <p className="mt-3 whitespace-pre-line text-[15px] leading-7 tracking-[-0.04em] text-black/65">
                 {product.description.trim() ||
                   "판매자가 상품 설명을 작성하지 않았습니다."}
               </p>

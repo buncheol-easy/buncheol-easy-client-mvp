@@ -40,6 +40,8 @@ export type UserProfile = {
   nickname: string;
   phoneNumber: string;
   bankAccount: BankAccountInfo | null;
+  // 백엔드 개최 권한 제한 반영 전 응답에는 없는 필드라 undefined를 허용한다.
+  canHost?: boolean;
 };
 
 export type UpdateUserProfileRequest = {
@@ -944,6 +946,7 @@ function getUserProfileFromBody(body: unknown): UserProfile {
       "userBankAccount",
       "account",
     ]),
+    canHost: getBooleanValue(data, ["canHost"]) ?? undefined,
     email: getStringValue(data, ["email", "emailAddress"]),
     nickname: getStringValue(data, ["nickname", "name", "displayName"]),
     phoneNumber: getStringValue(data, [
@@ -3717,6 +3720,15 @@ async function requestMyParticipationRanks(
   );
 }
 
+const buncheolHostPermissionErrorCode = "USR-031";
+
+export class BuncheolHostPermissionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BuncheolHostPermissionError";
+  }
+}
+
 export async function createBuncheol(
   accessToken: string,
   body: CreateBuncheolRequest,
@@ -3734,7 +3746,26 @@ export async function createBuncheol(
   });
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    let errorBody: Record<string, unknown> | null = null;
+
+    try {
+      const parsedBody: unknown = await response.json();
+
+      errorBody = isRecord(parsedBody) ? parsedBody : null;
+    } catch {
+      errorBody = null;
+    }
+
+    const errorMessage =
+      [errorBody?.message, errorBody?.detail, errorBody?.title].find(
+        (value): value is string => typeof value === "string",
+      ) ?? response.statusText;
+
+    if (errorBody?.code === buncheolHostPermissionErrorCode) {
+      throw new BuncheolHostPermissionError(errorMessage);
+    }
+
+    throw new Error(errorMessage);
   }
 
   const responseBody = await readJsonBody(response);
