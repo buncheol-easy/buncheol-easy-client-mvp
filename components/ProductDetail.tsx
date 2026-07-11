@@ -3129,7 +3129,7 @@ export function ProductDetail({
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
                     {checkoutStep === "payment"
-                      ? "마감 시각까지 아래 계좌로 입금해 주세요."
+                      ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "confirm"
                         ? "결제 후 입금 계좌와 마감 시각이 안내돼요."
                         : "구매할 옵션을 선택해 주세요."}
@@ -3312,7 +3312,7 @@ export function ProductDetail({
                     </div>
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
-                      결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시각까지 입금하면 관리자가 확인 후 주문을 확정해요.
+                      결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
                     </p>
                     {checkoutError ? (
                       <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
@@ -3369,6 +3369,9 @@ export function ProductDetail({
                             )}
                           </p>
                         </div>
+                        <p className="mt-3 text-[12px] font-medium leading-5 text-white/60">
+                          입금 마감 시간 내에 입금하지 않으면 주문이 자동으로 취소돼요.
+                        </p>
                       </div>
 
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">

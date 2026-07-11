@@ -3002,7 +3002,7 @@ export function ProfileContent({
                   결제 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  계좌와 금액을 확인한 뒤 기한 내 입금해 주세요.
+                  계좌와 금액을 확인한 뒤 입금 마감 시간 내에 입금해 주세요.
                 </p>
               </div>
               <button
@@ -3048,7 +3048,7 @@ export function ProfileContent({
               </p>
               <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
                 {isSelectedPaymentReady
-                  ? "기한 안에 아래 계좌로 입금해 주세요."
+                  ? "입금 마감 시간 내에 입금하지 않으면 참여가 자동으로 취소돼요."
                   : selectedPaymentStatusDescription}
               </p>
             </div>
