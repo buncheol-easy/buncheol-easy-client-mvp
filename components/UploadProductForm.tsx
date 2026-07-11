@@ -82,6 +82,7 @@ const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
+const memberPriceUnitWon = 1000;
 const minimumPricePromptExitDelay = 220;
 const emptyProductDescriptionText =
   "판매자가 상품 설명을 작성하지 않았습니다.";
@@ -104,6 +105,12 @@ function parsePriceInput(value: string) {
 
 function isHundredWonAmount(value: number) {
   return Number.isInteger(value) && value > 0 && value % 100 === 0;
+}
+
+function isMemberMinimumPriceAmount(value: number) {
+  return (
+    Number.isInteger(value) && value > 0 && value % memberPriceUnitWon === 0
+  );
 }
 
 function isValidMinHeadcount(value: string, maxHeadcount: number) {
@@ -721,12 +728,12 @@ export function UploadProductForm({
     if (
       targetMembers.some(
         (member) =>
-          !isHundredWonAmount(
+          !isMemberMinimumPriceAmount(
             parsePriceInput(memberMinimumPrices[member.id] ?? ""),
           ),
       )
     ) {
-      return "옵션 가격을 100원 단위로 입력해 주세요.";
+      return "옵션 가격을 1,000원 단위로 입력해 주세요.";
     }
 
     if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
@@ -1385,6 +1392,15 @@ export function UploadProductForm({
 
   function updateMemberMinimumPrice(memberId: string, price: string) {
     const numericPrice = toNumericInput(price);
+    const parsedPrice = parsePriceInput(numericPrice);
+
+    if (
+      parsedPrice >= memberPriceUnitWon &&
+      !isMemberMinimumPriceAmount(parsedPrice)
+    ) {
+      showMemberToast(memberId, "가격은 1,000원 단위로 입력해 주세요");
+      return;
+    }
 
     setMemberMinimumPrices((current) => ({
       ...current,
@@ -1398,17 +1414,33 @@ export function UploadProductForm({
         !memberMinimumPrices[member.id]?.trim(),
     );
 
-    if (trimmedPrice && hasEmptyActiveMembers) {
+    if (
+      trimmedPrice &&
+      isMemberMinimumPriceAmount(parsePriceInput(trimmedPrice)) &&
+      hasEmptyActiveMembers
+    ) {
       showMinimumPricePrompt({ memberId, price: numericPrice });
     } else {
       hideMinimumPricePrompt();
     }
   }
 
+  function validateMemberMinimumPrice(memberId: string) {
+    const parsedPrice = parsePriceInput(memberMinimumPrices[memberId] ?? "");
+
+    if (parsedPrice > 0 && !isMemberMinimumPriceAmount(parsedPrice)) {
+      showMemberToast(memberId, "가격은 1,000원 단위로 입력해 주세요");
+    }
+  }
+
   function applyMinimumPriceToEmptyMembers(price: string) {
     const trimmedPrice = price.trim();
 
-    if (!trimmedPrice || targetMembers.length === 0) {
+    if (
+      !trimmedPrice ||
+      !isMemberMinimumPriceAmount(parsePriceInput(trimmedPrice)) ||
+      targetMembers.length === 0
+    ) {
       return;
     }
 
@@ -1567,12 +1599,13 @@ export function UploadProductForm({
     }));
     const isApiEditMode = isEditMode && !productId.startsWith("uploaded-");
     const parsedMinHeadcount = Number(minHeadcount);
-    const hasInvalidAmount =
-      apiMembers.some((member) => !isHundredWonAmount(member.price)) ||
-      selectedShipping.some(
-        (option) =>
-          !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
-      );
+    const hasInvalidMemberAmount = apiMembers.some(
+      (member) => !isMemberMinimumPriceAmount(member.price),
+    );
+    const hasInvalidShippingAmount = selectedShipping.some(
+      (option) =>
+        !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
+    );
     let storedPhotoUrls: string[];
 
     try {
@@ -1658,11 +1691,17 @@ export function UploadProductForm({
         (Number.isFinite(apiGroupId) &&
           apiMembers.every(
             (member) =>
-              Number.isFinite(member.memberId) && isHundredWonAmount(member.price),
+              Number.isFinite(member.memberId) &&
+              isMemberMinimumPriceAmount(member.price),
           )));
 
-    if (!isApiEditMode && hasInvalidAmount) {
-      setSubmitError("금액은 100원 단위로 입력해 주세요.");
+    if (!isApiEditMode && hasInvalidMemberAmount) {
+      setSubmitError("옵션 가격은 1,000원 단위로 입력해 주세요.");
+      return;
+    }
+
+    if (!isApiEditMode && hasInvalidShippingAmount) {
+      setSubmitError("배송비는 100원 단위로 입력해 주세요.");
       return;
     }
 
@@ -2535,6 +2574,9 @@ export function UploadProductForm({
                                     className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
                                     disabled={isApiEditMode || isExcluded}
                                     inputMode="numeric"
+                                    onBlur={() =>
+                                      validateMemberMinimumPrice(member.id)
+                                    }
                                     onChange={(event) =>
                                       updateMemberMinimumPrice(
                                         member.id,
