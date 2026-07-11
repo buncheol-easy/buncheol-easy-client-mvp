@@ -1613,7 +1613,14 @@ export function ProfileContent({
     );
   }
 
+  function rememberProfileReturnState() {
+    rememberScrollPosition();
+    window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
+  }
+
   function rememberAddressAddReturn() {
+    rememberProfileReturnState();
+
     const returnState: AddressReturnState = {
       source: "profile",
       bidId: selectedPaymentBidId,
@@ -2022,7 +2029,7 @@ export function ProfileContent({
       return;
     }
 
-    rememberScrollPosition();
+    rememberProfileReturnState();
   }
 
   async function handleDeleteHostedProduct(product: ProductDetailItem) {
