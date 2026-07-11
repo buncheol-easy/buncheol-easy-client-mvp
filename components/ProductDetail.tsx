@@ -3092,15 +3092,18 @@ export function ProductDetail({
                       );
 
                       return (
-                        <div
+                        <button
                           key={option.id}
-                          className={`relative overflow-hidden rounded-[0.85rem] border px-3 py-1.5 ${
+                          className={`relative w-full overflow-hidden rounded-[0.85rem] border px-3 py-1.5 text-left transition-colors disabled:cursor-default ${
                             overlayLabel
                               ? "border-black/10 bg-[#f7f7f7]"
                               : isSelected
                               ? "border-[#C8D4A5] bg-[#F3F5EA]"
                               : "border-black/10 bg-white"
                           }`}
+                          disabled={Boolean(overlayLabel)}
+                          onClick={() => togglePurchaseOption(option.id)}
+                          type="button"
                         >
                           <div
                             className={`flex items-center justify-between gap-2.5 ${
@@ -3124,24 +3127,21 @@ export function ProductDetail({
                               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                                 {getBidBaseline(option)}
                               </p>
-                              <button
-                                className={`h-7 min-w-[52px] rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
+                              <span
+                                className={`inline-flex h-7 min-w-[52px] items-center justify-center rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
                                   overlayLabel
                                     ? "bg-black/10 text-black/35"
                                     : isSelected
                                       ? "bg-[#DDE7B8] text-black"
                                       : "bg-[#f7f7f7] text-black/55"
                                 }`}
-                                disabled={Boolean(overlayLabel)}
-                                onClick={() => togglePurchaseOption(option.id)}
-                                type="button"
                               >
                                 {overlayLabel
                                   ? "선택 불가"
                                   : isSelected
                                     ? "해제"
                                     : "선택"}
-                              </button>
+                              </span>
                             </div>
                           </div>
                           {overlayLabel ? (
@@ -3151,7 +3151,7 @@ export function ProductDetail({
                               </span>
                             </div>
                           ) : null}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
