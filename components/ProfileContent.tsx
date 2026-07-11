@@ -11,7 +11,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { MouseEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { CloseIcon, ProfileIcon } from "@/components/icons";
 import {
@@ -857,6 +857,7 @@ type ProfileContentProps = {
 };
 
 export const PROFILE_SKIP_ENTER_KEY = "skip-profile-enter-animation";
+const paymentSheetDragCloseThreshold = 72;
 
 type AddressSheetMode = "manage" | "select";
 export function ProfileContent({
@@ -881,8 +882,10 @@ export function ProfileContent({
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
   const addressSyncRequestIdRef = useRef(0);
+  const paymentSheetDragStartYRef = useRef<number | null>(null);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
+  const [paymentSheetDragOffset, setPaymentSheetDragOffset] = useState(0);
   const [paymentCopyToast, setPaymentCopyToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
@@ -1582,6 +1585,8 @@ export function ProfileContent({
       paymentSheetCloseTimerRef.current = null;
     }
 
+    paymentSheetDragStartYRef.current = null;
+    setPaymentSheetDragOffset(0);
     setIsPaymentSheetOpen(false);
     setIsPaymentSheetClosing(false);
     setSelectedPaymentBidId(null);
@@ -1925,12 +1930,59 @@ export function ProfileContent({
       return;
     }
 
+    paymentSheetDragStartYRef.current = null;
+    setPaymentSheetDragOffset(0);
     setIsPaymentSheetClosing(true);
     setIsPaymentSheetEntered(false);
     paymentSheetCloseTimerRef.current = window.setTimeout(
       finishPaymentSheetClose,
       280,
     );
+  }
+
+  function startPaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (isPaymentSheetClosing) {
+      return;
+    }
+
+    paymentSheetDragStartYRef.current = event.clientY;
+    setPaymentSheetDragOffset(0);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function movePaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = paymentSheetDragStartYRef.current;
+
+    if (startY === null) {
+      return;
+    }
+
+    event.preventDefault();
+    setPaymentSheetDragOffset(Math.max(0, event.clientY - startY));
+  }
+
+  function finishPaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = paymentSheetDragStartYRef.current;
+    paymentSheetDragStartYRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (
+      startY !== null &&
+      event.clientY - startY >= paymentSheetDragCloseThreshold
+    ) {
+      closePaymentSheet();
+      return;
+    }
+
+    setPaymentSheetDragOffset(0);
+  }
+
+  function cancelPaymentSheetDrag() {
+    paymentSheetDragStartYRef.current = null;
+    setPaymentSheetDragOffset(0);
   }
 
   function rememberProfileProductEntry(event: MouseEvent<HTMLAnchorElement>) {
@@ -2915,6 +2967,14 @@ export function ProfileContent({
                 ? "bid-sheet-panel-active"
                 : ""
             }`}
+            style={
+              paymentSheetDragOffset > 0 && !isPaymentSheetClosing
+                ? {
+                    transform: `translateY(${paymentSheetDragOffset}px) scale(1)`,
+                    transition: "none",
+                  }
+                : undefined
+            }
             onTransitionEnd={(event) => {
               if (
                 isPaymentSheetClosing &&
@@ -2925,7 +2985,17 @@ export function ProfileContent({
               }
             }}
           >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+            <button
+              aria-label="결제 정보 창을 아래로 내려 닫기"
+              className="mx-auto mb-3 flex h-5 w-16 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+              onPointerCancel={cancelPaymentSheetDrag}
+              onPointerDown={startPaymentSheetDrag}
+              onPointerMove={movePaymentSheetDrag}
+              onPointerUp={finishPaymentSheetDrag}
+              type="button"
+            >
+              <span className="h-1 w-10 rounded-full bg-black/15" />
+            </button>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">

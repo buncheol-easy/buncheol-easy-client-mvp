@@ -82,6 +82,7 @@ const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
+const sheetDragCloseThreshold = 72;
 const kstOffsetHours = 9;
 
 type CheckoutSheetStep = "options" | "confirm" | "payment";
@@ -699,6 +700,7 @@ export function ProductDetail({
   const didRestoreCheckoutAddressReturnRef = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
+  const sheetDragStartYRef = useRef<number | null>(null);
   const checkoutSelectedOptionsRef = useRef<CheckoutAddressReturnOption[]>([]);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
@@ -710,6 +712,7 @@ export function ProductDetail({
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
   const [isSheetClosing, setIsSheetClosing] = useState(false);
+  const [sheetDragOffset, setSheetDragOffset] = useState(0);
   const [checkoutStep, setCheckoutStep] =
     useState<CheckoutSheetStep>("options");
   const [checkoutDeliveryAddress, setCheckoutDeliveryAddress] =
@@ -2448,6 +2451,8 @@ export function ProductDetail({
       sheetEnterAnimationFrameRef.current = null;
     }
 
+    sheetDragStartYRef.current = null;
+    setSheetDragOffset(0);
     setIsSheetClosing(true);
     setIsSheetEntered(false);
 
@@ -2458,6 +2463,48 @@ export function ProductDetail({
     sheetCloseFallbackTimerRef.current = window.setTimeout(() => {
       finishCloseSheet();
     }, 260);
+  }
+
+  function startSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (isSheetClosing) {
+      return;
+    }
+
+    sheetDragStartYRef.current = event.clientY;
+    setSheetDragOffset(0);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = sheetDragStartYRef.current;
+
+    if (startY === null) {
+      return;
+    }
+
+    event.preventDefault();
+    setSheetDragOffset(Math.max(0, event.clientY - startY));
+  }
+
+  function finishSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = sheetDragStartYRef.current;
+    sheetDragStartYRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (startY !== null && event.clientY - startY >= sheetDragCloseThreshold) {
+      closeSheet();
+      return;
+    }
+
+    setSheetDragOffset(0);
+  }
+
+  function cancelSheetDrag() {
+    sheetDragStartYRef.current = null;
+    setSheetDragOffset(0);
   }
 
   function finishCloseCheckoutAddressSheet() {
@@ -3042,6 +3089,14 @@ export function ProductDetail({
               className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isSheetEntered && !isSheetClosing ? "bid-sheet-panel-active" : ""
               }`}
+              style={
+                sheetDragOffset > 0 && !isSheetClosing
+                  ? {
+                      transform: `translateY(${sheetDragOffset}px) scale(1)`,
+                      transition: "none",
+                    }
+                  : undefined
+              }
               onTransitionEnd={(event) => {
                 if (
                   isSheetClosing &&
@@ -3052,7 +3107,17 @@ export function ProductDetail({
                 }
               }}
             >
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+              <button
+                aria-label="모달을 아래로 내려 닫기"
+                className="mx-auto mb-3 flex h-5 w-16 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+                onPointerCancel={cancelSheetDrag}
+                onPointerDown={startSheetDrag}
+                onPointerMove={moveSheetDrag}
+                onPointerUp={finishSheetDrag}
+                type="button"
+              >
+                <span className="h-1 w-10 rounded-full bg-black/15" />
+              </button>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
