@@ -93,6 +93,8 @@ const kstOffsetHours = 9;
 const paymentDeadlineMinutes = 30;
 const settlementAccountPanelExitMs = 180;
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
+const profileStateCacheKey = "buncheol-profile-state-cache";
+const profileStateCacheMaxAgeMs = 10 * 60 * 1000;
 
 function getEmptySettlementAccountState(): SettlementAccountState {
   return {
@@ -282,6 +284,117 @@ type ProfileBidEntry = {
   trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
 };
+
+type ProfileStateCache = {
+  apiBidEntries?: ProfileBidEntry[];
+  apiHostedProducts?: ProductDetailItem[];
+  authFingerprint?: string | null;
+  bookmarkedProductCount?: number;
+  cachedAt: number;
+  userProfile?: UserProfile | null;
+};
+
+function getAuthCacheFingerprint() {
+  const accessToken = readAuthState().accessToken;
+
+  return accessToken ? accessToken.slice(-16) : null;
+}
+
+function isProfileStateCache(value: unknown): value is ProfileStateCache {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Partial<ProfileStateCache>;
+
+  return (
+    typeof record.cachedAt === "number" &&
+    (record.apiBidEntries === undefined ||
+      Array.isArray(record.apiBidEntries)) &&
+    (record.apiHostedProducts === undefined ||
+      Array.isArray(record.apiHostedProducts)) &&
+    (record.authFingerprint === undefined ||
+      record.authFingerprint === null ||
+      typeof record.authFingerprint === "string") &&
+    (record.bookmarkedProductCount === undefined ||
+      typeof record.bookmarkedProductCount === "number") &&
+    (record.userProfile === undefined ||
+      record.userProfile === null ||
+      typeof record.userProfile === "object")
+  );
+}
+
+function readProfileStateCache({
+  ignoreMaxAge = false,
+}: {
+  ignoreMaxAge?: boolean;
+} = {}) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(profileStateCacheKey);
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue: unknown = JSON.parse(rawValue);
+
+    if (!isProfileStateCache(parsedValue)) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    if (parsedValue.authFingerprint !== getAuthCacheFingerprint()) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    if (
+      !ignoreMaxAge &&
+      Date.now() - parsedValue.cachedAt > profileStateCacheMaxAgeMs
+    ) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    return parsedValue;
+  } catch {
+    window.sessionStorage.removeItem(profileStateCacheKey);
+    return null;
+  }
+}
+
+function writeProfileStateCache(
+  patch: Partial<Omit<ProfileStateCache, "cachedAt">>,
+) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentCache = readProfileStateCache({ ignoreMaxAge: true }) ?? {};
+  const nextCache: ProfileStateCache = {
+    ...currentCache,
+    ...patch,
+    authFingerprint: getAuthCacheFingerprint(),
+    cachedAt: Date.now(),
+  };
+
+  window.sessionStorage.setItem(
+    profileStateCacheKey,
+    JSON.stringify(nextCache),
+  );
+}
+
+function clearProfileStateCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(profileStateCacheKey);
+}
 
 function ProfileListSkeleton({ count = 2 }: { count?: number }) {
   return (
@@ -875,6 +988,7 @@ export function ProfileContent({
 
     return shouldSkip;
   });
+  const [initialProfileStateCache] = useState(() => readProfileStateCache());
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
@@ -934,19 +1048,21 @@ export function ProfileContent({
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
   const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(
+    () => initialProfileStateCache?.userProfile ?? null,
+  );
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [userProfileMessage, setUserProfileMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [apiBidEntries, setApiBidEntries] = useState<ProfileBidEntry[] | null>(
-    null,
+    () => initialProfileStateCache?.apiBidEntries ?? null,
   );
   const [apiHostedProducts, setApiHostedProducts] = useState<
     ProductDetailItem[] | null
-  >(null);
+  >(() => initialProfileStateCache?.apiHostedProducts ?? null);
   const [bookmarkedProductCount, setBookmarkedProductCount] = useState<
     number | null
-  >(null);
+  >(() => initialProfileStateCache?.bookmarkedProductCount ?? null);
   const [hostedProductMessage, setHostedProductMessage] = useState("");
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
@@ -1189,7 +1305,43 @@ export function ProfileContent({
   }, []);
 
   useEffect(() => {
+    if (!authState.isLoggedIn) {
+      clearProfileStateCache();
+      return;
+    }
+
+    const cachePatch: Partial<Omit<ProfileStateCache, "cachedAt">> = {};
+
+    if (apiBidEntries !== null) {
+      cachePatch.apiBidEntries = apiBidEntries;
+    }
+
+    if (apiHostedProducts !== null) {
+      cachePatch.apiHostedProducts = apiHostedProducts;
+    }
+
+    if (bookmarkedProductCount !== null) {
+      cachePatch.bookmarkedProductCount = bookmarkedProductCount;
+    }
+
+    if (userProfile !== null) {
+      cachePatch.userProfile = userProfile;
+    }
+
+    if (Object.keys(cachePatch).length > 0) {
+      writeProfileStateCache(cachePatch);
+    }
+  }, [
+    apiBidEntries,
+    apiHostedProducts,
+    authState.isLoggedIn,
+    bookmarkedProductCount,
+    userProfile,
+  ]);
+
+  useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {
+      clearProfileStateCache();
       setApiBidEntries([]);
       setApiHostedProducts([]);
       setBookmarkedProductCount(0);
@@ -1199,9 +1351,6 @@ export function ProfileContent({
 
     let isActive = true;
 
-    setApiBidEntries(null);
-    setApiHostedProducts(null);
-    setBookmarkedProductCount(null);
     setHostedProductMessage("");
 
     async function loadApiProfileLists() {
@@ -1240,28 +1389,28 @@ export function ProfileContent({
 
         setApiBidEntries(bidEntries);
       } else {
-        setApiBidEntries([]);
+        setApiBidEntries((current) => current ?? []);
       }
 
       if (buncheols.status === "fulfilled") {
         setApiHostedProducts(buncheols.value.map(getHostedProductFromBuncheol));
         setHostedProductMessage("");
       } else {
-        setApiHostedProducts([]);
+        setApiHostedProducts((current) => current ?? []);
       }
 
       if (bookmarks.status === "fulfilled") {
         setBookmarkedProductCount(bookmarks.value.length);
       } else {
-        setBookmarkedProductCount(0);
+        setBookmarkedProductCount((current) => current ?? 0);
       }
     }
 
     loadApiProfileLists().catch(() => {
       if (isActive) {
-        setApiBidEntries([]);
-        setApiHostedProducts([]);
-        setBookmarkedProductCount(0);
+        setApiBidEntries((current) => current ?? []);
+        setApiHostedProducts((current) => current ?? []);
+        setBookmarkedProductCount((current) => current ?? 0);
       }
     });
 
