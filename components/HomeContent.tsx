@@ -20,9 +20,11 @@ import {
   addFavoriteGroup,
   removeFavoriteGroup,
   requestAllBuncheols,
-  requestBanners,
+  readCachedBanners,
+  requestCachedBanners,
   requestFavoriteGroups,
   toProductCardItem,
+  type ApiBanner,
 } from "@/lib/auth-api";
 import {
   clearAuthState,
@@ -73,6 +75,15 @@ const HOME_BANNERS: HomeBanner[] = [
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
 };
+
+function toHomeBanner(item: ApiBanner): HomeBanner {
+  return {
+    href: `/board/${encodeURIComponent(item.noticeId)}?from=home`,
+    imageAlt: item.bannerTitle || "분철이지 배너",
+    imageSrc: item.bannerImageUrl,
+    label: item.bannerTitle || "분철이지 배너",
+  };
+}
 
 function takeShouldSkipHomeEnter() {
   if (typeof window === "undefined") {
@@ -411,21 +422,20 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
   useEffect(() => {
     let isActive = true;
+    const cachedBanners = readCachedBanners();
+    const cachedBannerFrame = window.requestAnimationFrame(() => {
+      if (isActive && cachedBanners !== null) {
+        setApiBanners(cachedBanners.map(toHomeBanner));
+      }
+    });
 
-    requestBanners()
+    requestCachedBanners()
       .then((items) => {
         if (!isActive) {
           return;
         }
 
-        setApiBanners(
-          items.map((item) => ({
-            href: `/board/${encodeURIComponent(item.noticeId)}?from=home`,
-            imageAlt: item.bannerTitle || "분철이지 배너",
-            imageSrc: item.bannerImageUrl,
-            label: item.bannerTitle || "분철이지 배너",
-          })),
-        );
+        setApiBanners(items.map(toHomeBanner));
         setActiveBannerIndex(0);
 
         const scrollElement = bannerScrollerRef.current;
@@ -444,6 +454,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     return () => {
       isActive = false;
+      window.cancelAnimationFrame(cachedBannerFrame);
     };
   }, []);
 
