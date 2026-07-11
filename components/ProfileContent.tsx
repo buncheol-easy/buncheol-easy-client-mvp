@@ -105,7 +105,7 @@ function getEmptySettlementAccountState(): SettlementAccountState {
 }
 
 function sanitizeAccountNumber(value: string) {
-  return value.replace(/\D/g, "");
+  return value.replace(/[^\d-]/g, "");
 }
 
 function getDeliveryAddressDeleteErrorMessage(error: unknown) {
@@ -2570,7 +2570,7 @@ export function ProfileContent({
                   </span>
                   <input
                     className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
-                    inputMode="numeric"
+                    inputMode="tel"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
