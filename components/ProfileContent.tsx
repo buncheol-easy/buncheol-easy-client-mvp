@@ -1860,7 +1860,7 @@ export function ProfileContent({
       }
 
       await updateBankAccount(accessToken, {
-        account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+        account: nextSettlementAccount.accountNumber,
         bank: nextSettlementAccount.bankName,
         holder: nextSettlementAccount.accountHolder,
       });
@@ -1870,7 +1870,7 @@ export function ProfileContent({
         phoneNumber: current?.phoneNumber ?? "",
         provider: current?.provider ?? "",
         bankAccount: {
-          account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+          account: nextSettlementAccount.accountNumber,
           bank: nextSettlementAccount.bankName,
           holder: nextSettlementAccount.accountHolder,
         },
