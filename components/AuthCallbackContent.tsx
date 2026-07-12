@@ -7,7 +7,11 @@ import {
   authReturnHrefStorageKey,
   writeAuthTokens,
 } from "@/lib/auth-store";
-import { requestUserProfileStatus } from "@/lib/auth-api";
+import {
+  isUserProfileComplete,
+  requestUserProfile,
+  requestUserProfileStatus,
+} from "@/lib/auth-api";
 
 type AuthCallbackContentProps = {
   initialAccessToken?: string;
@@ -54,9 +58,19 @@ export function AuthCallbackContent({
     writeAuthTokens({ accessToken });
 
     requestUserProfileStatus(accessToken)
-      .then(({ isProfileComplete }) => {
+      .then(async ({ isProfileComplete }) => {
         if (!isActive) {
           return;
+        }
+
+        if (isProfileComplete) {
+          const profile = await requestUserProfile(accessToken);
+
+          if (!isActive) {
+            return;
+          }
+
+          isProfileComplete = isUserProfileComplete(profile);
         }
 
         if (!isProfileComplete) {

@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProfileIcon } from "@/components/icons";
 import {
+  isUserProfileComplete,
   requestNicknameDuplicate,
+  requestUserProfile,
   requestUserProfileStatus,
   updateUserProfile,
 } from "@/lib/auth-api";
@@ -161,8 +163,14 @@ export function SignupProfileContent() {
         }
 
         return requestUserProfileStatus(accessToken).then(
-          ({ isProfileComplete }) => {
+          async ({ isProfileComplete }) => {
             if (!isActive || !isProfileComplete) {
+              return;
+            }
+
+            const profile = await requestUserProfile(accessToken);
+
+            if (!isActive || !isUserProfileComplete(profile)) {
               return;
             }
 

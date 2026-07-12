@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -20,6 +21,7 @@ import {
   type AddressReturnState,
 } from "@/lib/address-return-state";
 import {
+  authProfileSetupReturnHrefStorageKey,
   clearAuthCookies,
   clearAuthState,
   getInitialAuthState,
@@ -31,6 +33,7 @@ import {
   ApiRequestError,
   deleteBuncheol,
   deleteShippingAddress,
+  isUserProfileComplete,
   requestBookmarkedBuncheols,
   requestBuncheolDetail,
   requestLogout,
@@ -976,6 +979,7 @@ type AddressSheetMode = "manage" | "select";
 export function ProfileContent({
   skipEnterAnimation = false,
 }: ProfileContentProps) {
+  const router = useRouter();
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(() => {
     if (skipEnterAnimation || typeof window === "undefined") {
@@ -1489,6 +1493,17 @@ export function ProfileContent({
           return;
         }
 
+        if (!isUserProfileComplete(profile)) {
+          clearProfileStateCache();
+          setUserProfile(null);
+          window.sessionStorage.setItem(
+            authProfileSetupReturnHrefStorageKey,
+            "/profile",
+          );
+          router.replace("/signup/profile");
+          return;
+        }
+
         setUserProfile(profile);
         const profileSettlementAccount = getSettlementAccountState(profile);
         const hasProfileSettlementAccount =
@@ -1522,7 +1537,7 @@ export function ProfileContent({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn]);
+  }, [authState.accessToken, authState.isLoggedIn, router]);
 
   useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {

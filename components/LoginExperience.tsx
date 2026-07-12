@@ -9,7 +9,11 @@ import {
   ProfileContent,
 } from "@/components/ProfileContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
-import { requestUserProfileStatus } from "@/lib/auth-api";
+import {
+  isUserProfileComplete,
+  requestUserProfile,
+  requestUserProfileStatus,
+} from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   authProfileSetupReturnHrefStorageKey,
@@ -69,9 +73,19 @@ export function LoginExperience({ returnHref }: LoginExperienceProps) {
         }
 
         return requestUserProfileStatus(accessToken).then(
-          ({ isProfileComplete }) => {
+          async ({ isProfileComplete }) => {
             if (!isActive) {
               return;
+            }
+
+            if (isProfileComplete) {
+              const profile = await requestUserProfile(accessToken);
+
+              if (!isActive) {
+                return;
+              }
+
+              isProfileComplete = isUserProfileComplete(profile);
             }
 
             if (!isProfileComplete) {

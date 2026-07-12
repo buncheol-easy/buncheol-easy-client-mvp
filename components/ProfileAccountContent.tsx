@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BackIcon, CheckIcon, ProfileIcon } from "@/components/icons";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
+  isUserProfileComplete,
   deleteUserProfile,
   requestNicknameDuplicate,
   requestUserProfile,
@@ -12,6 +13,7 @@ import {
   type UserProfile,
 } from "@/lib/auth-api";
 import {
+  authProfileSetupReturnHrefStorageKey,
   clearAuthCookies,
   clearAuthState,
   getInitialAuthState,
@@ -194,6 +196,15 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
           return;
         }
 
+        if (!isUserProfileComplete(nextProfile)) {
+          window.sessionStorage.setItem(
+            authProfileSetupReturnHrefStorageKey,
+            "/profile/account",
+          );
+          router.replace("/signup/profile");
+          return;
+        }
+
         setProfile(nextProfile);
         setForm(getProfileForm(nextProfile));
       })
@@ -217,7 +228,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn]);
+  }, [authState.accessToken, authState.isLoggedIn, router]);
 
   useEffect(() => {
     return () => {
