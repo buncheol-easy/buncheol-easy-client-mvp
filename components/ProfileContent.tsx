@@ -1538,9 +1538,7 @@ export function ProfileContent({
 
     getFreshAccessToken()
       .then((accessToken) =>
-        accessToken
-          ? syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
-          : null,
+        accessToken ? syncDeliveryAddresses(accessToken) : null,
       )
       .then(() => {
         // The sync helper commits only if this is still the newest request.
