@@ -155,6 +155,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isSaveFeedbackVisible, setIsSaveFeedbackVisible] = useState(false);
   const [message, setMessage] = useState("");
   const canSave =
@@ -331,12 +332,6 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
       return;
     }
 
-    const shouldDelete = window.confirm("회원 탈퇴를 진행할까요?");
-
-    if (!shouldDelete) {
-      return;
-    }
-
     setIsDeleting(true);
     setMessage("");
 
@@ -344,13 +339,15 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        return;
+        throw new Error("로그인이 만료됐어요. 다시 로그인한 뒤 탈퇴해 주세요.");
       }
 
       await deleteUserProfile(accessToken);
+      setIsDeleteConfirmOpen(false);
       clearSessionState();
       router.replace("/profile");
     } catch (error: unknown) {
+      setIsDeleteConfirmOpen(false);
       setMessage(
         error instanceof Error ? error.message : "회원 탈퇴를 처리하지 못했어요.",
       );
@@ -502,15 +499,61 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                   </p>
                 </div>
                 <button
-                  className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/45 disabled:text-black/15"
+                  className="h-9 shrink-0 rounded-full bg-[#E53935] px-3.5 text-[12px] font-semibold text-white shadow-[0_10px_24px_rgba(229,57,53,0.24)] transition-colors hover:bg-[#D32F2F] disabled:bg-[#F3B5B3] disabled:text-white/70"
                   disabled={isDeleting}
-                  onClick={deleteProfile}
+                  onClick={() => {
+                    setMessage("");
+                    setIsDeleteConfirmOpen(true);
+                  }}
                   type="button"
                 >
                   {isDeleting ? "처리 중" : "탈퇴"}
                 </button>
               </div>
             </section>
+
+            {isDeleteConfirmOpen ? (
+              <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 px-4 pb-4 backdrop-blur-[2px]">
+                <section
+                  aria-modal="true"
+                  className="w-full max-w-[398px] rounded-[1.2rem] bg-white p-5 shadow-[0_24px_72px_rgba(0,0,0,0.28)] ring-1 ring-[#E53935]/20"
+                  role="dialog"
+                >
+                  <div className="inline-flex rounded-full bg-[#FFF1F0] px-3 py-1 text-[12px] font-semibold text-[#D32F2F]">
+                    중요 확인
+                  </div>
+                  <h2 className="mt-3 text-[23px] font-semibold tracking-[-0.06em] text-[#D32F2F]">
+                    정말 탈퇴할까요?
+                  </h2>
+                  <p className="mt-2 break-keep text-[14px] font-semibold leading-6 text-black/65">
+                    탈퇴하면 계정 정보가 삭제되고 다시 되돌릴 수 없어요. 진행
+                    중인 분철이나 결제 내역이 있다면 확인이 어려워질 수 있어요.
+                  </p>
+                  <div className="mt-4 rounded-[0.9rem] bg-[#FFF5F4] px-4 py-3 text-[13px] font-semibold leading-6 text-[#B3261E]">
+                    이 작업은 취소할 수 없어요. 정말로 계정을 삭제할 때만
+                    탈퇴를 눌러 주세요.
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <button
+                      className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                      disabled={isDeleting}
+                      onClick={() => setIsDeleteConfirmOpen(false)}
+                      type="button"
+                    >
+                      취소
+                    </button>
+                    <button
+                      className="h-12 rounded-full bg-[#D32F2F] text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(211,47,47,0.28)] transition-colors hover:bg-[#B3261E] disabled:bg-[#F3B5B3]"
+                      disabled={isDeleting}
+                      onClick={deleteProfile}
+                      type="button"
+                    >
+                      {isDeleting ? "탈퇴 처리 중" : "탈퇴할게요"}
+                    </button>
+                  </div>
+                </section>
+              </div>
+            ) : null}
           </>
         )}
       </main>
