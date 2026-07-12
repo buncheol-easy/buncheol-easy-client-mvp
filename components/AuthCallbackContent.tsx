@@ -39,8 +39,6 @@ export function AuthCallbackContent({
     );
     const nextReturnHref = getSafeReturnHref(returnHref ?? storedReturnHref);
 
-    window.sessionStorage.removeItem(authReturnHrefStorageKey);
-
     if (!accessToken) {
       const errorTimer = window.setTimeout(() => {
         setErrorMessage("로그인 토큰을 확인하지 못했어요.");
@@ -66,14 +64,18 @@ export function AuthCallbackContent({
             authProfileSetupReturnHrefStorageKey,
             nextReturnHref,
           );
+          window.sessionStorage.removeItem(authReturnHrefStorageKey);
           router.replace("/signup/profile");
           return;
         }
 
+        window.sessionStorage.removeItem(authReturnHrefStorageKey);
+        window.sessionStorage.removeItem(authProfileSetupReturnHrefStorageKey);
         router.replace(nextReturnHref);
       })
       .catch(() => {
         if (isActive) {
+          window.sessionStorage.removeItem(authReturnHrefStorageKey);
           router.replace(nextReturnHref);
         }
       });

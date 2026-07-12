@@ -4,13 +4,28 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProfileIcon } from "@/components/icons";
-import { requestNicknameDuplicate, updateUserProfile } from "@/lib/auth-api";
+import {
+  requestNicknameDuplicate,
+  requestUserProfileStatus,
+  updateUserProfile,
+} from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   authProfileSetupReturnHrefStorageKey,
+  authSignupProfileDraftStorageKey,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+
+type SignupProfileDraft = {
+  isAgeConfirmed?: boolean;
+  isMarketingAgreed?: boolean;
+  isPrivacyAgreed?: boolean;
+  isTermsAgreed?: boolean;
+  nickname?: string;
+  phoneNumber?: string;
+};
 
 function getSafeReturnHref(value: string | null | undefined) {
   if (
@@ -30,6 +45,61 @@ function sanitizePhoneNumber(value: string) {
   return value.replace(/\D/g, "").slice(0, 11);
 }
 
+function readSignupProfileDraft(): SignupProfileDraft | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(
+      authSignupProfileDraftStorageKey,
+    );
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue) as Partial<SignupProfileDraft>;
+
+    return {
+      isAgeConfirmed: parsed.isAgeConfirmed === true,
+      isMarketingAgreed: parsed.isMarketingAgreed === true,
+      isPrivacyAgreed: parsed.isPrivacyAgreed === true,
+      isTermsAgreed: parsed.isTermsAgreed === true,
+      nickname: typeof parsed.nickname === "string" ? parsed.nickname : "",
+      phoneNumber:
+        typeof parsed.phoneNumber === "string"
+          ? sanitizePhoneNumber(parsed.phoneNumber)
+          : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSignupProfileDraft(draft: SignupProfileDraft) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      authSignupProfileDraftStorageKey,
+      JSON.stringify(draft),
+    );
+  } catch {
+    // 세션 저장소가 막힌 환경에서는 화면 상태만 유지한다.
+  }
+}
+
+function clearSignupProfileDraft() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(authSignupProfileDraftStorageKey);
+}
+
 export function SignupProfileContent() {
   const router = useRouter();
   const authState = useSyncExternalStore(
@@ -37,12 +107,23 @@ export function SignupProfileContent() {
     readAuthState,
     getInitialAuthState,
   );
-  const [nickname, setNickname] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [isAgeConfirmed, setIsAgeConfirmed] = useState(false);
-  const [isTermsAgreed, setIsTermsAgreed] = useState(false);
-  const [isPrivacyAgreed, setIsPrivacyAgreed] = useState(false);
-  const [isMarketingAgreed, setIsMarketingAgreed] = useState(false);
+  const [initialDraft] = useState(readSignupProfileDraft);
+  const [nickname, setNickname] = useState(initialDraft?.nickname ?? "");
+  const [phoneNumber, setPhoneNumber] = useState(
+    initialDraft?.phoneNumber ?? "",
+  );
+  const [isAgeConfirmed, setIsAgeConfirmed] = useState(
+    initialDraft?.isAgeConfirmed ?? false,
+  );
+  const [isTermsAgreed, setIsTermsAgreed] = useState(
+    initialDraft?.isTermsAgreed ?? false,
+  );
+  const [isPrivacyAgreed, setIsPrivacyAgreed] = useState(
+    initialDraft?.isPrivacyAgreed ?? false,
+  );
+  const [isMarketingAgreed, setIsMarketingAgreed] = useState(
+    initialDraft?.isMarketingAgreed ?? false,
+  );
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const canSave =
@@ -53,15 +134,87 @@ export function SignupProfileContent() {
     isPrivacyAgreed;
 
   useEffect(() => {
-    if (!authState.isLoggedIn && !authState.accessToken) {
-      router.replace("/login?returnTo=/profile");
+    if (!authState.isLoggedIn || !authState.accessToken) {
+      const returnHref = getSafeReturnHref(
+        window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),
+      );
+
+      window.sessionStorage.setItem(
+        authProfileSetupReturnHrefStorageKey,
+        returnHref,
+      );
+      router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
     }
   }, [authState.accessToken, authState.isLoggedIn, router]);
 
-  async function saveProfile() {
-    const accessToken = authState.accessToken;
+  useEffect(() => {
+    if (!authState.isLoggedIn || !authState.accessToken) {
+      return;
+    }
 
-    if (!accessToken || !canSave || isSaving) {
+    let isActive = true;
+
+    getFreshAccessToken()
+      .then((accessToken) => {
+        if (!isActive || !accessToken) {
+          return;
+        }
+
+        return requestUserProfileStatus(accessToken).then(
+          ({ isProfileComplete }) => {
+            if (!isActive || !isProfileComplete) {
+              return;
+            }
+
+            const returnHref = getSafeReturnHref(
+              window.sessionStorage.getItem(
+                authProfileSetupReturnHrefStorageKey,
+              ),
+            );
+
+            window.sessionStorage.removeItem(
+              authProfileSetupReturnHrefStorageKey,
+            );
+            clearSignupProfileDraft();
+            router.replace(returnHref);
+          },
+        );
+      })
+      .catch(() => {
+        // 프로필 완료 여부 확인이 실패하면 가입 입력을 계속 진행하게 둔다.
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn, router]);
+
+  useEffect(() => {
+    if (!authState.isLoggedIn || !authState.accessToken) {
+      return;
+    }
+
+    writeSignupProfileDraft({
+      isAgeConfirmed,
+      isMarketingAgreed,
+      isPrivacyAgreed,
+      isTermsAgreed,
+      nickname,
+      phoneNumber,
+    });
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    isAgeConfirmed,
+    isMarketingAgreed,
+    isPrivacyAgreed,
+    isTermsAgreed,
+    nickname,
+    phoneNumber,
+  ]);
+
+  async function saveProfile() {
+    if (!canSave || isSaving) {
       return;
     }
 
@@ -69,6 +222,17 @@ export function SignupProfileContent() {
     setMessage("");
 
     try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        const returnHref = getSafeReturnHref(
+          window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),
+        );
+
+        router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        return;
+      }
+
       const { isDuplicate } = await requestNicknameDuplicate(
         accessToken,
         nickname.trim(),
@@ -89,6 +253,7 @@ export function SignupProfileContent() {
       );
 
       window.sessionStorage.removeItem(authProfileSetupReturnHrefStorageKey);
+      clearSignupProfileDraft();
       router.replace(returnHref);
     } catch (error) {
       setMessage(
