@@ -82,7 +82,7 @@ const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
-const memberPriceUnitWon = 1000;
+const memberPriceUnitWon = 100;
 const minimumPricePromptExitDelay = 220;
 const emptyProductDescriptionText =
   "판매자가 상품 설명을 작성하지 않았습니다.";
@@ -733,7 +733,7 @@ export function UploadProductForm({
           ),
       )
     ) {
-      return "옵션 가격을 1,000원 단위로 입력해 주세요.";
+      return "옵션 가격을 100원 단위로 입력해 주세요.";
     }
 
     if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
@@ -1398,7 +1398,7 @@ export function UploadProductForm({
       parsedPrice >= memberPriceUnitWon &&
       !isMemberMinimumPriceAmount(parsedPrice)
     ) {
-      showMemberToast(memberId, "가격은 1,000원 단위로 입력해 주세요");
+      showMemberToast(memberId, "가격은 100원 단위로 입력해 주세요");
       return;
     }
 
@@ -1429,7 +1429,7 @@ export function UploadProductForm({
     const parsedPrice = parsePriceInput(memberMinimumPrices[memberId] ?? "");
 
     if (parsedPrice > 0 && !isMemberMinimumPriceAmount(parsedPrice)) {
-      showMemberToast(memberId, "가격은 1,000원 단위로 입력해 주세요");
+      showMemberToast(memberId, "가격은 100원 단위로 입력해 주세요");
     }
   }
 
@@ -1696,7 +1696,7 @@ export function UploadProductForm({
           )));
 
     if (!isApiEditMode && hasInvalidMemberAmount) {
-      setSubmitError("옵션 가격은 1,000원 단위로 입력해 주세요.");
+      setSubmitError("옵션 가격은 100원 단위로 입력해 주세요.");
       return;
     }
 
