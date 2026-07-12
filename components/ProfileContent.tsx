@@ -2578,7 +2578,7 @@ export function ProfileContent({
                         event.currentTarget.value,
                       )
                     }
-                    placeholder="숫자만 입력해 주세요"
+                    placeholder="숫자 또는 하이픈 입력"
                     value={settlementAccountForm.accountNumber}
                   />
                 </label>
