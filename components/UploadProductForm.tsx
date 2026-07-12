@@ -1392,15 +1392,6 @@ export function UploadProductForm({
 
   function updateMemberMinimumPrice(memberId: string, price: string) {
     const numericPrice = toNumericInput(price);
-    const parsedPrice = parsePriceInput(numericPrice);
-
-    if (
-      parsedPrice >= memberPriceUnitWon &&
-      !isMemberMinimumPriceAmount(parsedPrice)
-    ) {
-      showMemberToast(memberId, "가격은 100원 단위로 입력해 주세요");
-      return;
-    }
 
     setMemberMinimumPrices((current) => ({
       ...current,
