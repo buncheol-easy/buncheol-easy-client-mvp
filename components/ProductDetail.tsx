@@ -3370,7 +3370,7 @@ export function ProductDetail({
                           </p>
                         </div>
                         <p className="mt-3 text-[12px] font-medium leading-5 text-white/60">
-                          입금 마감 시간 내에 입금하지 않으면 주문이 자동으로 취소돼요.
+                          마감 전까지 입금하지 않으면 자동 취소돼요.
                         </p>
                       </div>
 
