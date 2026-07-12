@@ -381,7 +381,7 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
     return "구매 마감";
   }
 
-  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const totalSeconds = Math.floor(remainingMilliseconds / 1000);
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
@@ -429,7 +429,7 @@ function formatPaymentDueCountdown(
     return "입금 마감";
   }
 
-  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const totalSeconds = Math.floor(remainingMilliseconds / 1000);
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
