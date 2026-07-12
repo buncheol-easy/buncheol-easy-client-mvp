@@ -397,6 +397,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       <Link
         href={`/products/${productId}`}
         className="motion-card block overflow-hidden rounded-[1rem] border border-black/8 bg-white shadow-[0_12px_28px_rgba(0,0,0,0.08)]"
+        draggable={false}
         prefetch={false}
         onClick={handleCardClick}
       >
@@ -409,6 +410,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               src={item.imageUrl}
               alt={item.title}
               className="absolute inset-0 h-full w-full object-cover"
+              draggable={false}
               loading="lazy"
             />
           ) : (
@@ -494,6 +496,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     <Link
       href={`/products/${productId}`}
       className="motion-card block space-y-2"
+      draggable={false}
       prefetch={false}
       onClick={handleCardClick}
     >
@@ -506,6 +509,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             src={item.imageUrl}
             alt={item.title}
             className="absolute inset-0 h-full w-full object-cover"
+            draggable={false}
             loading="lazy"
           />
         ) : (
