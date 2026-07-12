@@ -446,6 +446,31 @@ function formatPaymentDueCountdown(
   return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
 }
 
+const PURCHASE_OPTION_LABELS = {
+  complete: "구매가 완료됐어요",
+  paymentWaiting: "입금 대기중",
+  unavailable: "선택할 수 없는 멤버예요",
+} as const;
+
+function getOptionPaymentWaitingLabel(option: ProductOption, now = Date.now()) {
+  const dueAt = option.purchasePaymentDueAt;
+
+  if (!dueAt) {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  const dueDate = parseCheckoutDateTime(dueAt);
+
+  if (Number.isNaN(dueDate.getTime()) || dueDate.getTime() <= now) {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  return `${PURCHASE_OPTION_LABELS.paymentWaiting} · ${formatPaymentDueCountdown(
+    dueAt,
+    now,
+  )}`;
+}
+
 function getTargetTags(product: ProductDetailItem) {
   const tags = product.targetMembers ?? [product.member];
 
@@ -571,43 +596,51 @@ function getOptionPurchaseOverlayLabel(
   const isConfirmed = isConfirmedOptionPurchase(option);
 
   if (myBid) {
-    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
+    return isConfirmed
+      ? PURCHASE_OPTION_LABELS.complete
+      : PURCHASE_OPTION_LABELS.paymentWaiting;
   }
 
   if (hasOptionPurchaseState(option)) {
-    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
+    return isConfirmed
+      ? PURCHASE_OPTION_LABELS.complete
+      : PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  if (shouldUseParticipantCount && option.participantCount > 0) {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
   }
 
   if (isUnavailablePurchaseOption(option)) {
-    return "선택할 수 없는 멤버예요";
+    return PURCHASE_OPTION_LABELS.unavailable;
   }
 
   if (option.available === true) {
     return null;
   }
 
-  if (shouldUseParticipantCount && option.participantCount > 0) {
-    return "결제 진행 중이에요";
-  }
-
   return null;
 }
 
-function getOptionPurchaseBlockChipLabel(overlayLabel: string | null) {
+function getOptionPurchaseBlockChipLabel(
+  overlayLabel: string | null,
+  option?: ProductOption,
+  now = Date.now(),
+) {
   if (!overlayLabel) {
     return null;
   }
 
-  if (overlayLabel === "선택할 수 없는 멤버예요") {
+  if (overlayLabel === PURCHASE_OPTION_LABELS.unavailable) {
     return "구매 불가";
   }
 
-  if (overlayLabel === "구매가 완료됐어요") {
+  if (overlayLabel === PURCHASE_OPTION_LABELS.complete) {
     return "구매 완료";
   }
 
-  if (overlayLabel === "결제 진행 중이에요") {
-    return "구매 진행 중";
+  if (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting) {
+    return option ? getOptionPaymentWaitingLabel(option, now) : overlayLabel;
   }
 
   return overlayLabel;
@@ -2934,7 +2967,7 @@ export function ProductDetail({
                 </div>
                 <p className="mt-2 text-[12px] font-semibold text-black/40">
                   {isConfirmedProduct
-                    ? "마감된 분철이에요. 아래 옵션에서 구매 진행/완료 기록을 확인해요."
+                    ? "마감된 분철이에요. 아래 멤버에서 입금 대기/구매 완료 기록을 확인해요."
                     : remainingHeadcount === null
                     ? "개최자가 정한 진행 기준을 확인하고 있어요."
                     : remainingHeadcount > 0
@@ -2993,8 +3026,11 @@ export function ProductDetail({
                     myBids[option.id],
                     product.isApiProduct === true,
                   );
-                  const blockChipLabel =
-                    getOptionPurchaseBlockChipLabel(overlayLabel);
+                  const blockChipLabel = getOptionPurchaseBlockChipLabel(
+                    overlayLabel,
+                    option,
+                    deadlineTick,
+                  );
 
                   return (
                     <div
@@ -3041,7 +3077,7 @@ export function ProductDetail({
                           aria-hidden="true"
                           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
                         >
-                          <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                          <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                             {blockChipLabel}
                           </span>
                         </div>
@@ -3155,6 +3191,12 @@ export function ProductDetail({
                         myBids[option.id],
                         product.isApiProduct === true,
                       );
+                      const displayedOverlayLabel =
+                        getOptionPurchaseBlockChipLabel(
+                          overlayLabel,
+                          option,
+                          deadlineTick,
+                        );
 
                       return (
                         <button
@@ -3184,7 +3226,7 @@ export function ProductDetail({
                                   </p>
                                 </div>
                                 <p className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45">
-                                  {overlayLabel ?? "구매 가능"}
+                                  {displayedOverlayLabel ?? "구매 가능"}
                                 </p>
                               </div>
                             </div>
@@ -3211,8 +3253,8 @@ export function ProductDetail({
                           </div>
                           {overlayLabel ? (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
-                              <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
-                                {overlayLabel}
+                              <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                                {displayedOverlayLabel}
                               </span>
                             </div>
                           ) : null}
