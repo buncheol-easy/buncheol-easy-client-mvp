@@ -237,7 +237,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
-    const nextScrollTop = Math.max(0, Math.min(scrollElement.scrollTop, maxScrollTop));
+    const nextScrollTop = Math.max(
+      0,
+      Math.min(scrollElement.scrollTop, maxScrollTop),
+    );
 
     if (isRestoringReturnScrollRef.current) {
       setIsHeaderHidden(false);
@@ -406,7 +409,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       setShouldSuppressHeaderTransition(false);
     });
 
-    if (!skipEnterAnimation) {
+    if (!skipEnterAnimation && !isListingLoading) {
       window.sessionStorage.removeItem(HOME_SCROLL_TOP_KEY);
     }
 
@@ -418,7 +421,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         window.clearTimeout(restoreTimer);
       }
     };
-  }, [skipEnterAnimation]);
+  }, [isListingLoading, listings.length, skipEnterAnimation]);
 
   useEffect(() => {
     let isActive = true;

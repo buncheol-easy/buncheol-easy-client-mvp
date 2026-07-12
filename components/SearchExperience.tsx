@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -62,6 +63,7 @@ type RecentSearchItem = {
 
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
 const SEARCH_QUERY_STACK_KEY = "buncheol-search-query-stack";
+const SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX = "search-result-scroll-top";
 export const SEARCH_SKIP_ENTER_KEY = "buncheol-search-skip-enter";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
@@ -119,6 +121,34 @@ function markNextSearchEnterSkipped() {
   sessionStorage.setItem(SEARCH_SKIP_ENTER_KEY, "true");
 }
 
+function getSearchResultScrollTopKey(
+  keyword: string,
+  selectedMemberId?: string,
+) {
+  return `${SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX}:${keyword}:${selectedMemberId ?? ""}`;
+}
+
+function readStoredSearchResultScrollTop(
+  keyword: string,
+  selectedMemberId?: string,
+) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const storedScrollTop = window.sessionStorage.getItem(
+    getSearchResultScrollTopKey(keyword, selectedMemberId),
+  );
+
+  if (storedScrollTop === null) {
+    return null;
+  }
+
+  const parsedScrollTop = Number(storedScrollTop);
+
+  return Number.isFinite(parsedScrollTop) ? parsedScrollTop : null;
+}
+
 function takeShouldSkipSearchEnter() {
   if (typeof window === "undefined") {
     return false;
@@ -154,6 +184,7 @@ export function SearchExperience({
   const router = useRouter();
   const isOpeningSearchSheetRef = useRef(false);
   const lastResultScrollTopRef = useRef(0);
+  const resultScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [isSearchEntered, setIsSearchEntered] = useState(
     () => skipEnterAnimation || takeShouldSkipSearchEnter(),
   );
@@ -222,6 +253,47 @@ export function SearchExperience({
     authState.isLoggedIn &&
     apiRecentSearches === null &&
     apiRecentSearchesToken === null;
+
+  useLayoutEffect(() => {
+    if (!hasResults || !keyword || isResultLoading) {
+      return;
+    }
+
+    const storedScrollTop = readStoredSearchResultScrollTop(
+      keyword,
+      selectedMemberFilterId,
+    );
+
+    if (storedScrollTop === null || !resultScrollContainerRef.current) {
+      return;
+    }
+
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (!resultScrollContainerRef.current) {
+        return;
+      }
+
+      resultScrollContainerRef.current.scrollTop = storedScrollTop;
+      lastResultScrollTopRef.current = storedScrollTop;
+
+      if (!skipEnterAnimation) {
+        window.sessionStorage.removeItem(
+          getSearchResultScrollTopKey(keyword, selectedMemberFilterId),
+        );
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(restoreFrame);
+    };
+  }, [
+    hasResults,
+    isResultLoading,
+    keyword,
+    resultItems.length,
+    selectedMemberFilterId,
+    skipEnterAnimation,
+  ]);
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -786,9 +858,19 @@ export function SearchExperience({
 
     const scrollElement = event.currentTarget;
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
-    const nextScrollTop = Math.max(0, Math.min(scrollElement.scrollTop, maxScrollTop));
+    const nextScrollTop = Math.max(
+      0,
+      Math.min(scrollElement.scrollTop, maxScrollTop),
+    );
     const previousScrollTop = lastResultScrollTopRef.current;
     const isNearBottom = maxScrollTop - nextScrollTop <= SCROLL_EDGE_GUARD;
+
+    if (keyword) {
+      window.sessionStorage.setItem(
+        getSearchResultScrollTopKey(keyword, selectedMemberFilterId),
+        String(nextScrollTop),
+      );
+    }
 
     if (nextScrollTop <= SCROLL_REVEAL_THRESHOLD) {
       setIsResultHeaderHidden(false);
@@ -998,7 +1080,9 @@ export function SearchExperience({
 
             <div
               className="scroll-reactive-content scroll-reactive-content--search min-h-0 flex-1 overflow-y-auto px-5"
+              data-product-scroll-container="search"
               onScroll={handleResultScroll}
+              ref={resultScrollContainerRef}
             >
               {hasResults ? (
                 <>
