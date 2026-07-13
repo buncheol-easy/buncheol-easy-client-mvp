@@ -29,6 +29,12 @@
   box-sizing: border-box;
 }
 
+img {
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 html {
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.9), transparent 32%),

@@ -10,7 +10,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon, BellIcon } from "@/components/icons";
-import { requestInboxMessages } from "@/lib/auth-api";
+import {
+  readCachedNoticeInboxMessages,
+  requestCachedNoticeInboxMessages,
+  requestInboxMessages,
+} from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   getInitialAuthState,
@@ -141,17 +145,36 @@ export function BoardContent({
         return;
       }
 
-      setIsLoading(true);
+      const requestParams = {
+        size: 20,
+        type: getInboxTypeFromFilter(category),
+      };
+      const shouldUseNoticeCache = category === "notice";
+      const cachedMessages = shouldUseNoticeCache
+        ? readCachedNoticeInboxMessages(requestParams)
+        : null;
+
+      if (cachedMessages) {
+        setPinnedItems(cachedMessages.pinned.map(getBoardPostFromInboxMessage));
+        setFeedItems(
+          cachedMessages.feed.items.map(getBoardPostFromInboxMessage),
+        );
+        setHasNext(cachedMessages.feed.hasNext);
+        setNextCursor(cachedMessages.feed.nextCursor);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
       setMessage("");
 
       try {
-        const accessToken = authState.isLoggedIn
+        const accessToken = !shouldUseNoticeCache && authState.isLoggedIn
           ? await getFreshAccessToken()
           : undefined;
-        const response = await requestInboxMessages(accessToken ?? undefined, {
-          size: 20,
-          type: getInboxTypeFromFilter(category),
-        });
+        const response = shouldUseNoticeCache
+          ? await requestCachedNoticeInboxMessages(requestParams)
+          : await requestInboxMessages(accessToken ?? undefined, requestParams);
 
         if (!isActive) {
           return;
@@ -199,14 +222,18 @@ export function BoardContent({
     setMessage("");
 
     try {
-      const accessToken = authState.isLoggedIn
+      const accessToken = category !== "notice" && authState.isLoggedIn
         ? await getFreshAccessToken()
         : undefined;
-      const response = await requestInboxMessages(accessToken ?? undefined, {
+      const requestParams = {
         cursor: nextCursor,
         size: 20,
         type: getInboxTypeFromFilter(category),
-      });
+      };
+      const response =
+        category === "notice"
+          ? await requestCachedNoticeInboxMessages(requestParams)
+          : await requestInboxMessages(accessToken ?? undefined, requestParams);
 
       setFeedItems((current) => [
         ...current,

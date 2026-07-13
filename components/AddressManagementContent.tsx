@@ -229,7 +229,7 @@ export function AddressManagementContent({
     setIsAddressListLoading(true);
     setAddressMessage("");
 
-    syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
+    syncDeliveryAddresses(accessToken)
       .then(({ isLatest, nextState }) => {
         // The sync helper commits only if this is still the newest request.
         if (!isActive || !pendingOpenFormOnEntryRef.current) {

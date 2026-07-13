@@ -20,9 +20,11 @@ import {
   addFavoriteGroup,
   removeFavoriteGroup,
   requestAllBuncheols,
-  requestBanners,
+  readCachedBanners,
+  requestCachedBanners,
   requestFavoriteGroups,
   toProductCardItem,
+  type ApiBanner,
 } from "@/lib/auth-api";
 import {
   clearAuthState,
@@ -73,6 +75,15 @@ const HOME_BANNERS: HomeBanner[] = [
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
 };
+
+function toHomeBanner(item: ApiBanner): HomeBanner {
+  return {
+    href: `/board/${encodeURIComponent(item.noticeId)}?from=home`,
+    imageAlt: item.bannerTitle || "분철이지 배너",
+    imageSrc: item.bannerImageUrl,
+    label: item.bannerTitle || "분철이지 배너",
+  };
+}
 
 function takeShouldSkipHomeEnter() {
   if (typeof window === "undefined") {
@@ -226,7 +237,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
-    const nextScrollTop = Math.max(0, Math.min(scrollElement.scrollTop, maxScrollTop));
+    const nextScrollTop = Math.max(
+      0,
+      Math.min(scrollElement.scrollTop, maxScrollTop),
+    );
 
     if (isRestoringReturnScrollRef.current) {
       setIsHeaderHidden(false);
@@ -395,7 +409,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       setShouldSuppressHeaderTransition(false);
     });
 
-    if (!skipEnterAnimation) {
+    if (!skipEnterAnimation && !isListingLoading) {
       window.sessionStorage.removeItem(HOME_SCROLL_TOP_KEY);
     }
 
@@ -407,25 +421,24 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         window.clearTimeout(restoreTimer);
       }
     };
-  }, [skipEnterAnimation]);
+  }, [isListingLoading, listings.length, skipEnterAnimation]);
 
   useEffect(() => {
     let isActive = true;
+    const cachedBanners = readCachedBanners();
+    const cachedBannerFrame = window.requestAnimationFrame(() => {
+      if (isActive && cachedBanners !== null) {
+        setApiBanners(cachedBanners.map(toHomeBanner));
+      }
+    });
 
-    requestBanners()
+    requestCachedBanners()
       .then((items) => {
         if (!isActive) {
           return;
         }
 
-        setApiBanners(
-          items.map((item) => ({
-            href: `/board/${encodeURIComponent(item.noticeId)}?from=home`,
-            imageAlt: item.bannerTitle || "분철이지 배너",
-            imageSrc: item.bannerImageUrl,
-            label: item.bannerTitle || "분철이지 배너",
-          })),
-        );
+        setApiBanners(items.map(toHomeBanner));
         setActiveBannerIndex(0);
 
         const scrollElement = bannerScrollerRef.current;
@@ -444,6 +457,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     return () => {
       isActive = false;
+      window.cancelAnimationFrame(cachedBannerFrame);
     };
   }, []);
 
@@ -709,6 +723,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               <Link
                 aria-label={`${banner.label} 보기`}
                 className="motion-card motion-carousel__slide relative aspect-[1770/533] w-full flex-none snap-start overflow-hidden rounded-[1.15rem] bg-white shadow-[0_14px_34px_rgba(0,0,0,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                draggable={false}
                 href={banner.href}
                 key={banner.href}
               >
@@ -716,6 +731,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 <img
                   alt={banner.imageAlt}
                   className="h-full w-full object-cover"
+                  draggable={false}
                   loading={index === 0 ? "eager" : "lazy"}
                   src={banner.imageSrc}
                 />

@@ -10,7 +10,12 @@ import { BoardDetailContent } from "@/components/BoardDetailContent";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
-import { requestInboxMessageDetail } from "@/lib/auth-api";
+import {
+  readCachedNoticeInboxMessageDetail,
+  requestCachedNoticeInboxMessageDetail,
+  requestInboxMessageDetail,
+  writeCachedNoticeInboxMessageDetail,
+} from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   getInitialAuthState,
@@ -73,22 +78,32 @@ export function BoardDetailExperience({
     let isActive = true;
 
     async function loadMessage() {
-      setIsLoading(true);
+      const cachedMessage = readCachedNoticeInboxMessageDetail(messageId);
+
+      if (cachedMessage) {
+        setPost(getBoardPostFromInboxMessage(cachedMessage));
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
       setMessage("");
 
       try {
-        const accessToken = authState.isLoggedIn
+        const shouldUseNoticeCache =
+          returnSource === "home" || Boolean(cachedMessage);
+        const accessToken = !shouldUseNoticeCache && authState.isLoggedIn
           ? await getFreshAccessToken()
           : undefined;
-        const detail = await requestInboxMessageDetail(
-          accessToken ?? undefined,
-          messageId,
-        );
+        const detail = shouldUseNoticeCache
+          ? await requestCachedNoticeInboxMessageDetail(messageId)
+          : await requestInboxMessageDetail(accessToken ?? undefined, messageId);
 
         if (!isActive) {
           return;
         }
 
+        writeCachedNoticeInboxMessageDetail(detail);
         setPost(getBoardPostFromInboxMessage(detail));
         setMessage("");
       } catch (error: unknown) {
@@ -118,7 +133,7 @@ export function BoardDetailExperience({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn, messageId]);
+  }, [authState.accessToken, authState.isLoggedIn, messageId, returnSource]);
 
   function finishBackNavigation() {
     const historyIndex = getHistoryIndex();

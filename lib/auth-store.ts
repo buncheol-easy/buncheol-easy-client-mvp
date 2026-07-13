@@ -6,6 +6,8 @@ const refreshTokenCookieNames = ["refreshToken", "refresh_token"];
 export const authReturnHrefStorageKey = "buncheol-auth-return-href";
 export const authProfileSetupReturnHrefStorageKey =
   "buncheol-auth-profile-setup-return-href";
+export const authSignupProfileDraftStorageKey =
+  "buncheol-signup-profile-draft";
 
 type AuthState = {
   accessToken: string | null;

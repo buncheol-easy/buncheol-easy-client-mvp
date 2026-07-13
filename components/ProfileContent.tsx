@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -11,7 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { MouseEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { CloseIcon, ProfileIcon } from "@/components/icons";
 import {
@@ -20,6 +21,7 @@ import {
   type AddressReturnState,
 } from "@/lib/address-return-state";
 import {
+  authProfileSetupReturnHrefStorageKey,
   clearAuthCookies,
   clearAuthState,
   getInitialAuthState,
@@ -31,6 +33,7 @@ import {
   ApiRequestError,
   deleteBuncheol,
   deleteShippingAddress,
+  isUserProfileComplete,
   requestBookmarkedBuncheols,
   requestBuncheolDetail,
   requestLogout,
@@ -93,6 +96,8 @@ const kstOffsetHours = 9;
 const paymentDeadlineMinutes = 30;
 const settlementAccountPanelExitMs = 180;
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
+const profileStateCacheKey = "buncheol-profile-state-cache";
+const profileStateCacheMaxAgeMs = 10 * 60 * 1000;
 
 function getEmptySettlementAccountState(): SettlementAccountState {
   return {
@@ -103,7 +108,7 @@ function getEmptySettlementAccountState(): SettlementAccountState {
 }
 
 function sanitizeAccountNumber(value: string) {
-  return value.replace(/\D/g, "");
+  return value.replace(/[^\d-]/g, "");
 }
 
 function getDeliveryAddressDeleteErrorMessage(error: unknown) {
@@ -282,6 +287,117 @@ type ProfileBidEntry = {
   trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
 };
+
+type ProfileStateCache = {
+  apiBidEntries?: ProfileBidEntry[];
+  apiHostedProducts?: ProductDetailItem[];
+  authFingerprint?: string | null;
+  bookmarkedProductCount?: number;
+  cachedAt: number;
+  userProfile?: UserProfile | null;
+};
+
+function getAuthCacheFingerprint() {
+  const accessToken = readAuthState().accessToken;
+
+  return accessToken ? accessToken.slice(-16) : null;
+}
+
+function isProfileStateCache(value: unknown): value is ProfileStateCache {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Partial<ProfileStateCache>;
+
+  return (
+    typeof record.cachedAt === "number" &&
+    (record.apiBidEntries === undefined ||
+      Array.isArray(record.apiBidEntries)) &&
+    (record.apiHostedProducts === undefined ||
+      Array.isArray(record.apiHostedProducts)) &&
+    (record.authFingerprint === undefined ||
+      record.authFingerprint === null ||
+      typeof record.authFingerprint === "string") &&
+    (record.bookmarkedProductCount === undefined ||
+      typeof record.bookmarkedProductCount === "number") &&
+    (record.userProfile === undefined ||
+      record.userProfile === null ||
+      typeof record.userProfile === "object")
+  );
+}
+
+function readProfileStateCache({
+  ignoreMaxAge = false,
+}: {
+  ignoreMaxAge?: boolean;
+} = {}) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(profileStateCacheKey);
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue: unknown = JSON.parse(rawValue);
+
+    if (!isProfileStateCache(parsedValue)) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    if (parsedValue.authFingerprint !== getAuthCacheFingerprint()) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    if (
+      !ignoreMaxAge &&
+      Date.now() - parsedValue.cachedAt > profileStateCacheMaxAgeMs
+    ) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    return parsedValue;
+  } catch {
+    window.sessionStorage.removeItem(profileStateCacheKey);
+    return null;
+  }
+}
+
+function writeProfileStateCache(
+  patch: Partial<Omit<ProfileStateCache, "cachedAt">>,
+) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentCache = readProfileStateCache({ ignoreMaxAge: true }) ?? {};
+  const nextCache: ProfileStateCache = {
+    ...currentCache,
+    ...patch,
+    authFingerprint: getAuthCacheFingerprint(),
+    cachedAt: Date.now(),
+  };
+
+  window.sessionStorage.setItem(
+    profileStateCacheKey,
+    JSON.stringify(nextCache),
+  );
+}
+
+function clearProfileStateCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(profileStateCacheKey);
+}
 
 function ProfileListSkeleton({ count = 2 }: { count?: number }) {
   return (
@@ -857,11 +973,13 @@ type ProfileContentProps = {
 };
 
 export const PROFILE_SKIP_ENTER_KEY = "skip-profile-enter-animation";
+const paymentSheetDragCloseThreshold = 72;
 
 type AddressSheetMode = "manage" | "select";
 export function ProfileContent({
   skipEnterAnimation = false,
 }: ProfileContentProps) {
+  const router = useRouter();
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(() => {
     if (skipEnterAnimation || typeof window === "undefined") {
@@ -874,6 +992,7 @@ export function ProfileContent({
 
     return shouldSkip;
   });
+  const [initialProfileStateCache] = useState(() => readProfileStateCache());
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
     string | null
   >(null);
@@ -881,8 +1000,10 @@ export function ProfileContent({
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
   const addressSyncRequestIdRef = useRef(0);
+  const paymentSheetDragStartYRef = useRef<number | null>(null);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
+  const [paymentSheetDragOffset, setPaymentSheetDragOffset] = useState(0);
   const [paymentCopyToast, setPaymentCopyToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
@@ -931,19 +1052,21 @@ export function ProfileContent({
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
   const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(
+    () => initialProfileStateCache?.userProfile ?? null,
+  );
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [userProfileMessage, setUserProfileMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [apiBidEntries, setApiBidEntries] = useState<ProfileBidEntry[] | null>(
-    null,
+    () => initialProfileStateCache?.apiBidEntries ?? null,
   );
   const [apiHostedProducts, setApiHostedProducts] = useState<
     ProductDetailItem[] | null
-  >(null);
+  >(() => initialProfileStateCache?.apiHostedProducts ?? null);
   const [bookmarkedProductCount, setBookmarkedProductCount] = useState<
     number | null
-  >(null);
+  >(() => initialProfileStateCache?.bookmarkedProductCount ?? null);
   const [hostedProductMessage, setHostedProductMessage] = useState("");
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
@@ -1186,7 +1309,43 @@ export function ProfileContent({
   }, []);
 
   useEffect(() => {
+    if (!authState.isLoggedIn) {
+      clearProfileStateCache();
+      return;
+    }
+
+    const cachePatch: Partial<Omit<ProfileStateCache, "cachedAt">> = {};
+
+    if (apiBidEntries !== null) {
+      cachePatch.apiBidEntries = apiBidEntries;
+    }
+
+    if (apiHostedProducts !== null) {
+      cachePatch.apiHostedProducts = apiHostedProducts;
+    }
+
+    if (bookmarkedProductCount !== null) {
+      cachePatch.bookmarkedProductCount = bookmarkedProductCount;
+    }
+
+    if (userProfile !== null) {
+      cachePatch.userProfile = userProfile;
+    }
+
+    if (Object.keys(cachePatch).length > 0) {
+      writeProfileStateCache(cachePatch);
+    }
+  }, [
+    apiBidEntries,
+    apiHostedProducts,
+    authState.isLoggedIn,
+    bookmarkedProductCount,
+    userProfile,
+  ]);
+
+  useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {
+      clearProfileStateCache();
       setApiBidEntries([]);
       setApiHostedProducts([]);
       setBookmarkedProductCount(0);
@@ -1196,9 +1355,6 @@ export function ProfileContent({
 
     let isActive = true;
 
-    setApiBidEntries(null);
-    setApiHostedProducts(null);
-    setBookmarkedProductCount(null);
     setHostedProductMessage("");
 
     async function loadApiProfileLists() {
@@ -1237,28 +1393,28 @@ export function ProfileContent({
 
         setApiBidEntries(bidEntries);
       } else {
-        setApiBidEntries([]);
+        setApiBidEntries((current) => current ?? []);
       }
 
       if (buncheols.status === "fulfilled") {
         setApiHostedProducts(buncheols.value.map(getHostedProductFromBuncheol));
         setHostedProductMessage("");
       } else {
-        setApiHostedProducts([]);
+        setApiHostedProducts((current) => current ?? []);
       }
 
       if (bookmarks.status === "fulfilled") {
         setBookmarkedProductCount(bookmarks.value.length);
       } else {
-        setBookmarkedProductCount(0);
+        setBookmarkedProductCount((current) => current ?? 0);
       }
     }
 
     loadApiProfileLists().catch(() => {
       if (isActive) {
-        setApiBidEntries([]);
-        setApiHostedProducts([]);
-        setBookmarkedProductCount(0);
+        setApiBidEntries((current) => current ?? []);
+        setApiHostedProducts((current) => current ?? []);
+        setBookmarkedProductCount((current) => current ?? 0);
       }
     });
 
@@ -1337,6 +1493,17 @@ export function ProfileContent({
           return;
         }
 
+        if (!isUserProfileComplete(profile)) {
+          clearProfileStateCache();
+          setUserProfile(null);
+          window.sessionStorage.setItem(
+            authProfileSetupReturnHrefStorageKey,
+            "/profile",
+          );
+          router.replace("/signup/profile");
+          return;
+        }
+
         setUserProfile(profile);
         const profileSettlementAccount = getSettlementAccountState(profile);
         const hasProfileSettlementAccount =
@@ -1370,7 +1537,7 @@ export function ProfileContent({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn]);
+  }, [authState.accessToken, authState.isLoggedIn, router]);
 
   useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {
@@ -1386,9 +1553,7 @@ export function ProfileContent({
 
     getFreshAccessToken()
       .then((accessToken) =>
-        accessToken
-          ? syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
-          : null,
+        accessToken ? syncDeliveryAddresses(accessToken) : null,
       )
       .then(() => {
         // The sync helper commits only if this is still the newest request.
@@ -1582,6 +1747,8 @@ export function ProfileContent({
       paymentSheetCloseTimerRef.current = null;
     }
 
+    paymentSheetDragStartYRef.current = null;
+    setPaymentSheetDragOffset(0);
     setIsPaymentSheetOpen(false);
     setIsPaymentSheetClosing(false);
     setSelectedPaymentBidId(null);
@@ -1608,7 +1775,14 @@ export function ProfileContent({
     );
   }
 
+  function rememberProfileReturnState() {
+    rememberScrollPosition();
+    window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
+  }
+
   function rememberAddressAddReturn() {
+    rememberProfileReturnState();
+
     const returnState: AddressReturnState = {
       source: "profile",
       bidId: selectedPaymentBidId,
@@ -1699,7 +1873,7 @@ export function ProfileContent({
       }
 
       await updateBankAccount(accessToken, {
-        account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+        account: nextSettlementAccount.accountNumber,
         bank: nextSettlementAccount.bankName,
         holder: nextSettlementAccount.accountHolder,
       });
@@ -1709,7 +1883,7 @@ export function ProfileContent({
         phoneNumber: current?.phoneNumber ?? "",
         provider: current?.provider ?? "",
         bankAccount: {
-          account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+          account: nextSettlementAccount.accountNumber,
           bank: nextSettlementAccount.bankName,
           holder: nextSettlementAccount.accountHolder,
         },
@@ -1925,12 +2099,59 @@ export function ProfileContent({
       return;
     }
 
+    paymentSheetDragStartYRef.current = null;
+    setPaymentSheetDragOffset(0);
     setIsPaymentSheetClosing(true);
     setIsPaymentSheetEntered(false);
     paymentSheetCloseTimerRef.current = window.setTimeout(
       finishPaymentSheetClose,
       280,
     );
+  }
+
+  function startPaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (isPaymentSheetClosing) {
+      return;
+    }
+
+    paymentSheetDragStartYRef.current = event.clientY;
+    setPaymentSheetDragOffset(0);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function movePaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = paymentSheetDragStartYRef.current;
+
+    if (startY === null) {
+      return;
+    }
+
+    event.preventDefault();
+    setPaymentSheetDragOffset(Math.max(0, event.clientY - startY));
+  }
+
+  function finishPaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = paymentSheetDragStartYRef.current;
+    paymentSheetDragStartYRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (
+      startY !== null &&
+      event.clientY - startY >= paymentSheetDragCloseThreshold
+    ) {
+      closePaymentSheet();
+      return;
+    }
+
+    setPaymentSheetDragOffset(0);
+  }
+
+  function cancelPaymentSheetDrag() {
+    paymentSheetDragStartYRef.current = null;
+    setPaymentSheetDragOffset(0);
   }
 
   function rememberProfileProductEntry(event: MouseEvent<HTMLAnchorElement>) {
@@ -1970,7 +2191,7 @@ export function ProfileContent({
       return;
     }
 
-    rememberScrollPosition();
+    rememberProfileReturnState();
   }
 
   async function handleDeleteHostedProduct(product: ProductDetailItem) {
@@ -2362,7 +2583,7 @@ export function ProfileContent({
                   </span>
                   <input
                     className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
-                    inputMode="numeric"
+                    inputMode="tel"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2370,7 +2591,7 @@ export function ProfileContent({
                         event.currentTarget.value,
                       )
                     }
-                    placeholder="숫자만 입력해 주세요"
+                    placeholder="숫자 또는 하이픈 입력"
                     value={settlementAccountForm.accountNumber}
                   />
                 </label>
@@ -2915,6 +3136,14 @@ export function ProfileContent({
                 ? "bid-sheet-panel-active"
                 : ""
             }`}
+            style={
+              paymentSheetDragOffset > 0 && !isPaymentSheetClosing
+                ? {
+                    transform: `translateY(${paymentSheetDragOffset}px) scale(1)`,
+                    transition: "none",
+                  }
+                : undefined
+            }
             onTransitionEnd={(event) => {
               if (
                 isPaymentSheetClosing &&
@@ -2925,14 +3154,24 @@ export function ProfileContent({
               }
             }}
           >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+            <button
+              aria-label="결제 정보 창을 아래로 내려 닫기"
+              className="mx-auto mb-3 flex h-5 w-16 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+              onPointerCancel={cancelPaymentSheetDrag}
+              onPointerDown={startPaymentSheetDrag}
+              onPointerMove={movePaymentSheetDrag}
+              onPointerUp={finishPaymentSheetDrag}
+              type="button"
+            >
+              <span className="h-1 w-10 rounded-full bg-black/15" />
+            </button>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
                   결제 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  계좌와 금액을 확인한 뒤 기한 내 입금해 주세요.
+                  계좌와 금액을 확인한 뒤 입금 마감 시간 내에 입금해 주세요.
                 </p>
               </div>
               <button
@@ -2978,7 +3217,7 @@ export function ProfileContent({
               </p>
               <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
                 {isSelectedPaymentReady
-                  ? "기한 안에 아래 계좌로 입금해 주세요."
+                  ? "입금 마감 시간 내에 입금하지 않으면 참여가 자동으로 취소돼요."
                   : selectedPaymentStatusDescription}
               </p>
             </div>

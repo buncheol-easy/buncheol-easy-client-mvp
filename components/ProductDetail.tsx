@@ -82,6 +82,7 @@ const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
+const sheetDragCloseThreshold = 72;
 const kstOffsetHours = 9;
 
 type CheckoutSheetStep = "options" | "confirm" | "payment";
@@ -380,7 +381,7 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
     return "구매 마감";
   }
 
-  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const totalSeconds = Math.floor(remainingMilliseconds / 1000);
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
@@ -428,7 +429,7 @@ function formatPaymentDueCountdown(
     return "입금 마감";
   }
 
-  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const totalSeconds = Math.floor(remainingMilliseconds / 1000);
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
@@ -443,6 +444,31 @@ function formatPaymentDueCountdown(
   }
 
   return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
+}
+
+const PURCHASE_OPTION_LABELS = {
+  complete: "구매가 완료됐어요",
+  paymentWaiting: "입금 대기중",
+  unavailable: "선택할 수 없는 멤버예요",
+} as const;
+
+function getOptionPaymentWaitingLabel(option: ProductOption, now = Date.now()) {
+  const dueAt = option.purchasePaymentDueAt;
+
+  if (!dueAt) {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  const dueDate = parseCheckoutDateTime(dueAt);
+
+  if (Number.isNaN(dueDate.getTime()) || dueDate.getTime() <= now) {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  return `${PURCHASE_OPTION_LABELS.paymentWaiting} · ${formatPaymentDueCountdown(
+    dueAt,
+    now,
+  )}`;
 }
 
 function getTargetTags(product: ProductDetailItem) {
@@ -570,43 +596,51 @@ function getOptionPurchaseOverlayLabel(
   const isConfirmed = isConfirmedOptionPurchase(option);
 
   if (myBid) {
-    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
+    return isConfirmed
+      ? PURCHASE_OPTION_LABELS.complete
+      : PURCHASE_OPTION_LABELS.paymentWaiting;
   }
 
   if (hasOptionPurchaseState(option)) {
-    return isConfirmed ? "구매가 완료됐어요" : "결제 진행 중이에요";
+    return isConfirmed
+      ? PURCHASE_OPTION_LABELS.complete
+      : PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  if (shouldUseParticipantCount && option.participantCount > 0) {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
   }
 
   if (isUnavailablePurchaseOption(option)) {
-    return "선택할 수 없는 멤버예요";
+    return PURCHASE_OPTION_LABELS.unavailable;
   }
 
   if (option.available === true) {
     return null;
   }
 
-  if (shouldUseParticipantCount && option.participantCount > 0) {
-    return "결제 진행 중이에요";
-  }
-
   return null;
 }
 
-function getOptionPurchaseBlockChipLabel(overlayLabel: string | null) {
+function getOptionPurchaseBlockChipLabel(
+  overlayLabel: string | null,
+  option?: ProductOption,
+  now = Date.now(),
+) {
   if (!overlayLabel) {
     return null;
   }
 
-  if (overlayLabel === "선택할 수 없는 멤버예요") {
+  if (overlayLabel === PURCHASE_OPTION_LABELS.unavailable) {
     return "구매 불가";
   }
 
-  if (overlayLabel === "구매가 완료됐어요") {
+  if (overlayLabel === PURCHASE_OPTION_LABELS.complete) {
     return "구매 완료";
   }
 
-  if (overlayLabel === "결제 진행 중이에요") {
-    return "구매 진행 중";
+  if (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting) {
+    return option ? getOptionPaymentWaitingLabel(option, now) : overlayLabel;
   }
 
   return overlayLabel;
@@ -699,6 +733,7 @@ export function ProductDetail({
   const didRestoreCheckoutAddressReturnRef = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
+  const sheetDragStartYRef = useRef<number | null>(null);
   const checkoutSelectedOptionsRef = useRef<CheckoutAddressReturnOption[]>([]);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
@@ -710,6 +745,7 @@ export function ProductDetail({
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
   const [isSheetClosing, setIsSheetClosing] = useState(false);
+  const [sheetDragOffset, setSheetDragOffset] = useState(0);
   const [checkoutStep, setCheckoutStep] =
     useState<CheckoutSheetStep>("options");
   const [checkoutDeliveryAddress, setCheckoutDeliveryAddress] =
@@ -2448,6 +2484,8 @@ export function ProductDetail({
       sheetEnterAnimationFrameRef.current = null;
     }
 
+    sheetDragStartYRef.current = null;
+    setSheetDragOffset(0);
     setIsSheetClosing(true);
     setIsSheetEntered(false);
 
@@ -2458,6 +2496,48 @@ export function ProductDetail({
     sheetCloseFallbackTimerRef.current = window.setTimeout(() => {
       finishCloseSheet();
     }, 260);
+  }
+
+  function startSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (isSheetClosing) {
+      return;
+    }
+
+    sheetDragStartYRef.current = event.clientY;
+    setSheetDragOffset(0);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = sheetDragStartYRef.current;
+
+    if (startY === null) {
+      return;
+    }
+
+    event.preventDefault();
+    setSheetDragOffset(Math.max(0, event.clientY - startY));
+  }
+
+  function finishSheetDrag(event: PointerEvent<HTMLButtonElement>) {
+    const startY = sheetDragStartYRef.current;
+    sheetDragStartYRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (startY !== null && event.clientY - startY >= sheetDragCloseThreshold) {
+      closeSheet();
+      return;
+    }
+
+    setSheetDragOffset(0);
+  }
+
+  function cancelSheetDrag() {
+    sheetDragStartYRef.current = null;
+    setSheetDragOffset(0);
   }
 
   function finishCloseCheckoutAddressSheet() {
@@ -2887,7 +2967,7 @@ export function ProductDetail({
                 </div>
                 <p className="mt-2 text-[12px] font-semibold text-black/40">
                   {isConfirmedProduct
-                    ? "마감된 분철이에요. 아래 옵션에서 구매 진행/완료 기록을 확인해요."
+                    ? "마감된 분철이에요. 아래 멤버에서 입금 대기/구매 완료 기록을 확인해요."
                     : remainingHeadcount === null
                     ? "개최자가 정한 진행 기준을 확인하고 있어요."
                     : remainingHeadcount > 0
@@ -2946,8 +3026,11 @@ export function ProductDetail({
                     myBids[option.id],
                     product.isApiProduct === true,
                   );
-                  const blockChipLabel =
-                    getOptionPurchaseBlockChipLabel(overlayLabel);
+                  const blockChipLabel = getOptionPurchaseBlockChipLabel(
+                    overlayLabel,
+                    option,
+                    deadlineTick,
+                  );
 
                   return (
                     <div
@@ -2994,7 +3077,7 @@ export function ProductDetail({
                           aria-hidden="true"
                           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
                         >
-                          <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                          <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                             {blockChipLabel}
                           </span>
                         </div>
@@ -3042,6 +3125,14 @@ export function ProductDetail({
               className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isSheetEntered && !isSheetClosing ? "bid-sheet-panel-active" : ""
               }`}
+              style={
+                sheetDragOffset > 0 && !isSheetClosing
+                  ? {
+                      transform: `translateY(${sheetDragOffset}px) scale(1)`,
+                      transition: "none",
+                    }
+                  : undefined
+              }
               onTransitionEnd={(event) => {
                 if (
                   isSheetClosing &&
@@ -3052,7 +3143,17 @@ export function ProductDetail({
                 }
               }}
             >
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+              <button
+                aria-label="모달을 아래로 내려 닫기"
+                className="mx-auto mb-3 flex h-5 w-16 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
+                onPointerCancel={cancelSheetDrag}
+                onPointerDown={startSheetDrag}
+                onPointerMove={moveSheetDrag}
+                onPointerUp={finishSheetDrag}
+                type="button"
+              >
+                <span className="h-1 w-10 rounded-full bg-black/15" />
+              </button>
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
@@ -3064,7 +3165,7 @@ export function ProductDetail({
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
                     {checkoutStep === "payment"
-                      ? "마감 시각까지 아래 계좌로 입금해 주세요."
+                      ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "confirm"
                         ? "결제 후 입금 계좌와 마감 시각이 안내돼요."
                         : "구매할 옵션을 선택해 주세요."}
@@ -3090,17 +3191,26 @@ export function ProductDetail({
                         myBids[option.id],
                         product.isApiProduct === true,
                       );
+                      const displayedOverlayLabel =
+                        getOptionPurchaseBlockChipLabel(
+                          overlayLabel,
+                          option,
+                          deadlineTick,
+                        );
 
                       return (
-                        <div
+                        <button
                           key={option.id}
-                          className={`relative overflow-hidden rounded-[0.85rem] border px-3 py-1.5 ${
+                          className={`relative w-full overflow-hidden rounded-[0.85rem] border px-3 py-1.5 text-left transition-colors disabled:cursor-default ${
                             overlayLabel
                               ? "border-black/10 bg-[#f7f7f7]"
                               : isSelected
                               ? "border-[#C8D4A5] bg-[#F3F5EA]"
                               : "border-black/10 bg-white"
                           }`}
+                          disabled={Boolean(overlayLabel)}
+                          onClick={() => togglePurchaseOption(option.id)}
+                          type="button"
                         >
                           <div
                             className={`flex items-center justify-between gap-2.5 ${
@@ -3116,7 +3226,7 @@ export function ProductDetail({
                                   </p>
                                 </div>
                                 <p className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45">
-                                  {overlayLabel ?? "구매 가능"}
+                                  {displayedOverlayLabel ?? "구매 가능"}
                                 </p>
                               </div>
                             </div>
@@ -3124,34 +3234,31 @@ export function ProductDetail({
                               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                                 {getBidBaseline(option)}
                               </p>
-                              <button
-                                className={`h-7 min-w-[52px] rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
+                              <span
+                                className={`inline-flex h-7 min-w-[52px] items-center justify-center rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
                                   overlayLabel
                                     ? "bg-black/10 text-black/35"
                                     : isSelected
                                       ? "bg-[#DDE7B8] text-black"
                                       : "bg-[#f7f7f7] text-black/55"
                                 }`}
-                                disabled={Boolean(overlayLabel)}
-                                onClick={() => togglePurchaseOption(option.id)}
-                                type="button"
                               >
                                 {overlayLabel
                                   ? "선택 불가"
                                   : isSelected
                                     ? "해제"
                                     : "선택"}
-                              </button>
+                              </span>
                             </div>
                           </div>
                           {overlayLabel ? (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
-                              <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
-                                {overlayLabel}
+                              <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                                {displayedOverlayLabel}
                               </span>
                             </div>
                           ) : null}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -3247,7 +3354,7 @@ export function ProductDetail({
                     </div>
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
-                      결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시각까지 입금하면 관리자가 확인 후 주문을 확정해요.
+                      결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
                     </p>
                     {checkoutError ? (
                       <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
@@ -3304,6 +3411,9 @@ export function ProductDetail({
                             )}
                           </p>
                         </div>
+                        <p className="mt-3 text-[12px] font-medium leading-5 text-white/60">
+                          마감 전까지 입금하지 않으면 자동 취소돼요.
+                        </p>
                       </div>
 
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">

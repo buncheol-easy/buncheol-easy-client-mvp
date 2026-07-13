@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { LoginContent } from "@/components/LoginContent";
@@ -9,6 +9,18 @@ import {
   ProfileContent,
 } from "@/components/ProfileContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import {
+  isUserProfileComplete,
+  requestUserProfile,
+  requestUserProfileStatus,
+} from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
+import {
+  authProfileSetupReturnHrefStorageKey,
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
 
 const LOGIN_PANEL_TRANSITION_MS = 240;
 
@@ -24,6 +36,11 @@ function getHistoryIndex() {
 
 export function LoginExperience({ returnHref }: LoginExperienceProps) {
   const router = useRouter();
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
   const exitTimerRef = useRef<number | null>(null);
   const [isEntered, setIsEntered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -41,6 +58,59 @@ export function LoginExperience({ returnHref }: LoginExperienceProps) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!authState.isLoggedIn || !authState.accessToken) {
+      return;
+    }
+
+    let isActive = true;
+
+    getFreshAccessToken()
+      .then((accessToken) => {
+        if (!isActive || !accessToken) {
+          return;
+        }
+
+        return requestUserProfileStatus(accessToken).then(
+          async ({ isProfileComplete }) => {
+            if (!isActive) {
+              return;
+            }
+
+            if (isProfileComplete) {
+              const profile = await requestUserProfile(accessToken);
+
+              if (!isActive) {
+                return;
+              }
+
+              isProfileComplete = isUserProfileComplete(profile);
+            }
+
+            if (!isProfileComplete) {
+              window.sessionStorage.setItem(
+                authProfileSetupReturnHrefStorageKey,
+                returnHref,
+              );
+              router.replace("/signup/profile");
+              return;
+            }
+
+            router.replace(returnHref);
+          },
+        );
+      })
+      .catch(() => {
+        if (isActive) {
+          router.replace(returnHref);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn, returnHref, router]);
 
   function finishBackNavigation() {
     const historyIndex = getHistoryIndex();

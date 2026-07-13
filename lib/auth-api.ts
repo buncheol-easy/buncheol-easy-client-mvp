@@ -3,10 +3,20 @@ import type {
   DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductCardItem } from "@/components/ProductCard";
+import {
+  clearBrowserApiCacheByPrefix,
+  readBrowserApiCache,
+  writeBrowserApiCache,
+} from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
 const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
 const legacyApiBaseUrlPattern = /^https?:\/\/13\.124\.248\.60(?:\/v1)?$/;
+const publicBannerCacheKey = "banners:v1";
+const publicBannerCacheTtlMs = 15 * 60 * 1000;
+const publicNoticeListCachePrefix = "inbox-notices:v1";
+const publicNoticeDetailCachePrefix = "inbox-notice-detail:v1";
+const publicNoticeCacheTtlMs = 5 * 60 * 1000;
 const thumbnailDetailFetchConcurrency = 4;
 const thumbnailDetailFetchLimit = 24;
 
@@ -43,6 +53,17 @@ export type UserProfile = {
   // 백엔드 개최 권한 제한 반영 전 응답에는 없는 필드라 undefined를 허용한다.
   canHost?: boolean;
 };
+
+export function isUserProfileComplete(
+  profile: Pick<UserProfile, "nickname" | "phoneNumber"> | null | undefined,
+) {
+  const phoneNumber = profile?.phoneNumber.replace(/\D/g, "") ?? "";
+
+  return (
+    /^[가-힣A-Za-z0-9]{1,20}$/.test(profile?.nickname.trim() ?? "") &&
+    /^01\d{8,9}$/.test(phoneNumber)
+  );
+}
 
 export type UpdateUserProfileRequest = {
   nickname: string;
@@ -4419,10 +4440,18 @@ export async function requestCreateNotice(
   const location = response.headers.get("location");
   const noticeId = location?.match(/\/inbox\/([^/?#]+)/)?.[1] ?? null;
 
+  clearPublicNoticeBrowserCaches();
+
   return {
     location,
     noticeId,
   };
+}
+
+export function clearPublicNoticeBrowserCaches() {
+  clearBrowserApiCacheByPrefix(publicBannerCacheKey);
+  clearBrowserApiCacheByPrefix(publicNoticeListCachePrefix);
+  clearBrowserApiCacheByPrefix(publicNoticeDetailCachePrefix);
 }
 
 export async function requestBanners(): Promise<ApiBanner[]> {
@@ -4445,6 +4474,107 @@ export async function requestBanners(): Promise<ApiBanner[]> {
       (banner) =>
         Boolean(banner.noticeId) && Boolean(banner.bannerImageUrl),
     );
+}
+
+export function readCachedBanners() {
+  return readBrowserApiCache<ApiBanner[]>(publicBannerCacheKey);
+}
+
+export async function requestCachedBanners() {
+  const cachedBanners = readCachedBanners();
+
+  if (cachedBanners) {
+    return cachedBanners;
+  }
+
+  const banners = await requestBanners();
+
+  writeBrowserApiCache(
+    publicBannerCacheKey,
+    banners,
+    publicBannerCacheTtlMs,
+  );
+
+  return banners;
+}
+
+function getPublicNoticeListCacheKey(params: InboxMessagesParams = {}) {
+  if (params.type !== "NOTICE" || params.cursor) {
+    return null;
+  }
+
+  return `${publicNoticeListCachePrefix}:size:${params.size ?? "default"}`;
+}
+
+export function readCachedNoticeInboxMessages(
+  params: InboxMessagesParams = {},
+) {
+  const cacheKey = getPublicNoticeListCacheKey(params);
+
+  return cacheKey
+    ? readBrowserApiCache<InboxMessagesResponse>(cacheKey)
+    : null;
+}
+
+export async function requestCachedNoticeInboxMessages(
+  params: InboxMessagesParams = {},
+) {
+  const cacheKey = getPublicNoticeListCacheKey(params);
+
+  if (!cacheKey) {
+    return requestInboxMessages(undefined, params);
+  }
+
+  const cachedMessages = readBrowserApiCache<InboxMessagesResponse>(cacheKey);
+
+  if (cachedMessages) {
+    return cachedMessages;
+  }
+
+  const messages = await requestInboxMessages(undefined, params);
+
+  writeBrowserApiCache(cacheKey, messages, publicNoticeCacheTtlMs);
+
+  return messages;
+}
+
+function getPublicNoticeDetailCacheKey(messageId: string) {
+  return `${publicNoticeDetailCachePrefix}:${messageId}`;
+}
+
+export function readCachedNoticeInboxMessageDetail(messageId: string) {
+  return readBrowserApiCache<InboxMessageDetail>(
+    getPublicNoticeDetailCacheKey(messageId),
+  );
+}
+
+export function writeCachedNoticeInboxMessageDetail(
+  message: InboxMessageDetail,
+) {
+  if (message.type !== "NOTICE") {
+    return;
+  }
+
+  writeBrowserApiCache(
+    getPublicNoticeDetailCacheKey(message.id),
+    message,
+    publicNoticeCacheTtlMs,
+  );
+}
+
+export async function requestCachedNoticeInboxMessageDetail(messageId: string) {
+  const cacheKey = getPublicNoticeDetailCacheKey(messageId);
+  const cachedMessage = readBrowserApiCache<InboxMessageDetail>(cacheKey);
+
+  if (cachedMessage) {
+    return cachedMessage;
+  }
+
+  const message = await requestInboxMessageDetail(undefined, messageId);
+
+  writeCachedNoticeInboxMessageDetail(message);
+
+  return message;
 }
 
 function getInboxMessageSummaryFromRecord(

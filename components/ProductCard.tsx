@@ -14,6 +14,7 @@ import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
+const SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX = "search-result-scroll-top";
 
 export type ProductCardItem = {
   id: string;
@@ -371,6 +372,10 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       const searchParams = new URLSearchParams(window.location.search);
       const query = searchParams.get("q") ?? "";
 
+      rememberProductListScrollPosition(
+        event,
+        `${SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX}:${query}:`,
+      );
       router.push(
         `/products/${productId}?from=search&q=${encodeURIComponent(query)}`,
       );
@@ -397,6 +402,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       <Link
         href={`/products/${productId}`}
         className="motion-card block overflow-hidden rounded-[1rem] border border-black/8 bg-white shadow-[0_12px_28px_rgba(0,0,0,0.08)]"
+        draggable={false}
         prefetch={false}
         onClick={handleCardClick}
       >
@@ -409,6 +415,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               src={item.imageUrl}
               alt={item.title}
               className="absolute inset-0 h-full w-full object-cover"
+              draggable={false}
               loading="lazy"
             />
           ) : (
@@ -494,6 +501,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     <Link
       href={`/products/${productId}`}
       className="motion-card block space-y-2"
+      draggable={false}
       prefetch={false}
       onClick={handleCardClick}
     >
@@ -506,6 +514,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             src={item.imageUrl}
             alt={item.title}
             className="absolute inset-0 h-full w-full object-cover"
+            draggable={false}
             loading="lazy"
           />
         ) : (
