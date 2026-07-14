@@ -46,7 +46,13 @@ import {
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
-import { BackIcon, CloseIcon, HeartIcon } from "@/components/icons";
+import {
+  BackIcon,
+  CloseIcon,
+  EditIcon,
+  HeartIcon,
+  TrashIcon,
+} from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
@@ -70,7 +76,89 @@ type ProductDetailProps = {
   backHref?: string;
   initialReturnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
+  startEntered?: boolean;
+  renderShell?: boolean;
+  onExitingChange?: (isExiting: boolean) => void;
 };
+
+export const productDetailShellClassName =
+  "product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]";
+
+export const productPagePanelClassName =
+  "product-page-panel relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-white";
+
+type ProductReturnUnderlayProps = {
+  isEntered: boolean;
+  isExiting: boolean;
+  returnQuery?: string;
+  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+};
+
+export function ProductReturnUnderlay({
+  isEntered,
+  isExiting,
+  returnQuery,
+  returnSource,
+}: ProductReturnUnderlayProps) {
+  return (
+    <>
+      {returnSource === "home" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <HomeContent skipEnterAnimation />
+          <BottomNavigator />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnSource === "profile" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <ProfileContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Profile" />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnSource === "bids" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <BidHistoryContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Bids" />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnSource === "favorites" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <FavoritesContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Favorites" />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnQuery !== undefined ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          constrainWidth={false}
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <SearchExperience query={returnQuery} skipEnterAnimation />
+        </SwipeUnderlay>
+      ) : null}
+    </>
+  );
+}
 
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 const PRODUCT_PROFILE_ENTRY_STATE_KEY = "__buncheolProductFromProfile";
@@ -221,47 +309,6 @@ type ProductHistoryState = {
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
 };
-
-function ProductEditIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="motion-icon h-5 w-5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="1.55"
-    >
-      <path
-        d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="m14.5 7.5 2 2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ProductDeleteIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="motion-icon h-5 w-5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="1.55"
-    >
-      <path d="M6.25 7.25h11.5" strokeLinecap="round" />
-      <path d="M9.5 7.25V6a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 6v1.25" />
-      <path
-        d="M8.7 10.25v6.65a2.35 2.35 0 0 0 2.35 2.35h1.9a2.35 2.35 0 0 0 2.35-2.35v-6.65"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function OptionAvatar({
   option,
@@ -717,6 +764,9 @@ export function ProductDetail({
   product,
   initialReturnSource,
   initialReturnQuery,
+  startEntered = false,
+  renderShell = true,
+  onExitingChange,
 }: ProductDetailProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
@@ -740,7 +790,7 @@ export function ProductDetail({
   const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
-  const [isEntered, setIsEntered] = useState(false);
+  const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
@@ -2146,6 +2196,11 @@ export function ProductDetail({
     };
   }, []);
 
+  // renderShell=false일 때 언더레이를 소유한 부모가 퇴장 전환을 따라가도록 알린다.
+  useEffect(() => {
+    onExitingChange?.(isExiting);
+  }, [isExiting, onExitingChange]);
+
   useEffect(() => {
     const historyIndex = getHistoryIndex();
     const expectedEntryIndex = window.sessionStorage.getItem(
@@ -2714,65 +2769,10 @@ export function ProductDetail({
     router.push("/profile/bids");
   }
 
-  return (
-    <main className="product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
-      {initialReturnSource === "home" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <HomeContent skipEnterAnimation />
-          <BottomNavigator />
-        </SwipeUnderlay>
-      ) : null}
-
-      {initialReturnSource === "profile" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <ProfileContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Profile" />
-        </SwipeUnderlay>
-      ) : null}
-
-      {initialReturnSource === "bids" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <BidHistoryContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Bids" />
-        </SwipeUnderlay>
-      ) : null}
-
-      {initialReturnSource === "favorites" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <FavoritesContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Favorites" />
-        </SwipeUnderlay>
-      ) : null}
-
-      {returnQuery !== undefined ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          constrainWidth={false}
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <SearchExperience query={returnQuery} skipEnterAnimation />
-        </SwipeUnderlay>
-      ) : null}
-
+  const panelAndSheets = (
+    <>
       <div
-        className={`product-page-panel relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-white ${
+        className={`${productPagePanelClassName} ${
           isEntered && !isExiting ? "product-page-active" : ""
         } ${
           isExiting ? "product-page-exit" : ""
@@ -2804,7 +2804,7 @@ export function ProductDetail({
                 onClick={openEditProduct}
                 aria-label="분철 수정"
               >
-                <ProductEditIcon />
+                <EditIcon />
               </button>
             ) : null}
             {canDeleteProduct ? (
@@ -2815,7 +2815,7 @@ export function ProductDetail({
                 aria-label="분철 삭제"
                 disabled={isDeletePending}
               >
-                <ProductDeleteIcon />
+                <TrashIcon />
               </button>
             ) : null}
             {!canEditProduct ? (
@@ -3357,7 +3357,10 @@ export function ProductDetail({
                       결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
                     </p>
                     {checkoutError ? (
-                      <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
+                      <p
+                        className="error-shake rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
+                        key={checkoutError}
+                      >
                         {checkoutError}
                       </p>
                     ) : null}
@@ -3671,6 +3674,22 @@ export function ProductDetail({
           </div>
         ) : null}
       </div>
+    </>
+  );
+
+  if (!renderShell) {
+    return panelAndSheets;
+  }
+
+  return (
+    <main className={productDetailShellClassName}>
+      <ProductReturnUnderlay
+        isEntered={isEntered}
+        isExiting={isExiting}
+        returnQuery={returnQuery}
+        returnSource={initialReturnSource}
+      />
+      {panelAndSheets}
     </main>
   );
 }

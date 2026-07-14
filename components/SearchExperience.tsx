@@ -1009,7 +1009,9 @@ export function SearchExperience({
                 onBack={() => undefined}
               />
               <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
-                {renderPreviousSearchResultsContent()}
+                <div className="flex min-h-full flex-col">
+                  {renderPreviousSearchResultsContent()}
+                </div>
               </div>
             </>
           ) : (
@@ -1084,6 +1086,7 @@ export function SearchExperience({
               onScroll={handleResultScroll}
               ref={resultScrollContainerRef}
             >
+              <div className="flex min-h-full flex-col">
               {hasResults ? (
                 <>
                   <section className="-mx-1">
@@ -1120,7 +1123,7 @@ export function SearchExperience({
                       <ProductGrid items={resultItems} />
                     )}
                   </section>
-                  <div className="-mx-5 mt-8">
+                  <div className="-mx-5 mt-auto pt-8">
                     <BusinessFooter />
                   </div>
                 </>
@@ -1193,11 +1196,12 @@ export function SearchExperience({
                     </div>
                     )}
                   </section>
-                  <div className="-mx-5 mt-8">
+                  <div className="-mx-5 mt-auto pt-8">
                     <BusinessFooter />
                   </div>
                 </>
               )}
+              </div>
             </div>
           </div>
 
@@ -1314,7 +1318,7 @@ export function SearchExperience({
 
           {isResultLoading ? renderSearchResultSkeleton() : <ProductGrid items={resultItems} />}
       </section>
-        <div className="-mx-5 mt-8">
+        <div className="-mx-5 mt-auto pt-8">
           <BusinessFooter />
         </div>
       </>

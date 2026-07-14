@@ -375,6 +375,7 @@ export type MyParticipation = {
   hostBankAccount?: BankAccountInfo | null;
   shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
+  shippingOptions?: BuncheolShippingOption[];
   trackingNumber?: string | null;
 };
 
@@ -3338,12 +3339,18 @@ function getShippingMethodLabel(method: string) {
   return method;
 }
 
+export function getShippingMethodsFromOptions(
+  shippingOptions: BuncheolShippingOption[],
+) {
+  return shippingOptions.map((option) => ({
+    name: getShippingMethodLabel(option.method),
+    price: formatWonAmount(option.fee),
+  }));
+}
+
 function getShippingMethodsFromDetail(detail: BuncheolDetail) {
   if (detail.shippingOptions.length > 0) {
-    return detail.shippingOptions.map((option) => ({
-      name: getShippingMethodLabel(option.method),
-      price: formatWonAmount(option.fee),
-    }));
+    return getShippingMethodsFromOptions(detail.shippingOptions);
   }
 
   return [
@@ -3695,50 +3702,6 @@ export async function requestCloseBuncheol(
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
-}
-
-async function requestMyParticipationRanks(
-  accessToken: string,
-  buncheolId: string,
-) {
-  const response = await fetch(`${getVersionedApiBaseUrl()}/buncheols/${buncheolId}`, {
-    credentials: "include",
-    headers: getAuthHeaders(accessToken),
-    method: "GET",
-  });
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-
-  const data = getNestedData(await readJsonBody(response));
-
-  if (!isRecord(data)) {
-    return new Map<string, number>();
-  }
-
-  const myParticipation = getNestedData(data.myParticipation);
-
-  if (!isRecord(myParticipation)) {
-    return new Map<string, number>();
-  }
-
-  return getRecordListValue(myParticipation, ["bids", "participations"]).reduce(
-    (rankMap, record) => {
-      const participationId = getStringValue(record, [
-        "participationId",
-        "id",
-      ]);
-      const rank = getOptionalNumberValue(record, ["rank", "closedRank"]);
-
-      if (participationId && rank !== null && rank !== undefined) {
-        rankMap.set(participationId, rank);
-      }
-
-      return rankMap;
-    },
-    new Map<string, number>(),
-  );
 }
 
 const buncheolHostPermissionErrorCode = "USR-031";
@@ -4138,6 +4101,16 @@ export async function requestMyParticipations(accessToken: string) {
             "shippingFee",
             "deliveryFee",
           ]) ?? null,
+        shippingOptions: getRecordListValue(record, [
+          "shippingOptions",
+          "shippingMethods",
+          "deliveryOptions",
+          "deliveryMethods",
+        ])
+          .map(getBuncheolShippingOptionFromRecord)
+          .filter(
+            (option): option is BuncheolShippingOption => option !== null,
+          ),
         trackingNumber:
           getOptionalStringValueFromRecords(
             lookupRecords,
@@ -4150,42 +4123,7 @@ export async function requestMyParticipations(accessToken: string) {
         participation !== null,
     );
 
-  const missingRankBuncheolIds = [
-    ...new Set(
-      participations
-        .filter((participation) => participation.closedRank === null)
-        .map((participation) => participation.buncheolId),
-    ),
-  ];
-
-  if (missingRankBuncheolIds.length === 0) {
-    return participations;
-  }
-
-  const rankMaps = await Promise.all(
-    missingRankBuncheolIds.map(async (buncheolId) => {
-      try {
-        return await requestMyParticipationRanks(accessToken, buncheolId);
-      } catch {
-        return new Map<string, number>();
-      }
-    }),
-  );
-  const rankByParticipationId = new Map<string, number>();
-
-  rankMaps.forEach((rankMap) => {
-    rankMap.forEach((rank, participationId) => {
-      rankByParticipationId.set(participationId, rank);
-    });
-  });
-
-  return participations.map((participation) => ({
-    ...participation,
-    closedRank:
-      participation.closedRank ??
-      rankByParticipationId.get(participation.participationId) ??
-      null,
-  }));
+  return participations;
 }
 
 export async function requestMyHostedBuncheols(accessToken: string) {

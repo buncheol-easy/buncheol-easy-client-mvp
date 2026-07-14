@@ -30,6 +30,7 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   deleteBuncheol,
+  getShippingMethodsFromOptions,
   requestBuncheolDetail,
   requestMyHostedBuncheols,
   requestMyParticipations,
@@ -54,6 +55,7 @@ import {
   writeCachedParticipationPayment,
 } from "@/lib/participation-payment-cache";
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
+import { SlidingFilterChips, SlidingTabs } from "@/components/SlidingTabs";
 import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
 function formatPrice(price: number) {
@@ -699,8 +701,13 @@ function getBidRecordFromParticipation(
   const rank =
     participation.closedRank ??
     (isPaymentWaitingParticipationStatus(participationStatus) ? 1 : 0);
+  const shippingMethods = getShippingMethodsFromOptions(
+    participation.shippingOptions ?? [],
+  );
 
   return {
+    courier: shippingMethods[0]?.name,
+    shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
     id: participation.participationId,
     amount: cachedPayment?.bidAmount ?? participation.bidAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
@@ -738,18 +745,72 @@ function getBidRecordFromParticipation(
   };
 }
 
+type BuncheolDetailCache = Map<string, ReturnType<typeof requestBuncheolDetail>>;
+
+// 같은 분철에 여러 슬롯으로 참여한 경우 분철 상세를 한 번만 조회하도록 로드 단위로 dedupe 한다.
+function getCachedBuncheolDetail(
+  accessToken: string,
+  buncheolId: string,
+  cache?: BuncheolDetailCache,
+) {
+  if (!cache) {
+    return requestBuncheolDetail(accessToken, buncheolId);
+  }
+
+  const cachedDetail = cache.get(buncheolId);
+
+  if (cachedDetail) {
+    return cachedDetail;
+  }
+
+  const detailPromise = requestBuncheolDetail(accessToken, buncheolId);
+  cache.set(buncheolId, detailPromise);
+
+  return detailPromise;
+}
+
+// 취소·삭제된 분철은 상세 조회가 404 를 반환하므로 호출하지 않는다.
+function isBuncheolDetailInaccessible(bid: BidRecord) {
+  return (
+    isBidRecordCancelled(bid) ||
+    isDeletedProductStatus(bid.buncheolStatus) ||
+    bid.buncheolStatus === "HOST_CANCELLED"
+  );
+}
+
 async function getBidRecordWithShippingData(
   accessToken: string,
   participation: MyParticipation,
+  buncheolDetailCache?: BuncheolDetailCache,
+  precomputedBidRecord?: BidRecord,
 ): Promise<BidRecord> {
-  const bidRecord = getBidRecordFromParticipation(participation);
+  const bidRecord =
+    precomputedBidRecord ?? getBidRecordFromParticipation(participation);
+  // 목록 응답에 배송옵션이 포함돼 있으면(신규 백엔드) 썸네일·배송·계좌 정보도 함께 오므로
+  // 참여 건마다 분철 상세/결제 상세를 추가 조회할 필요가 없다.
+  const hasListShippingData = Boolean(participation.shippingOptions?.length);
+  const shouldFetchBuncheolDetail =
+    !hasListShippingData && !isBuncheolDetailInaccessible(bidRecord);
   const shouldFetchParticipationDetail =
-    isBidRecordPaymentConfirmed(bidRecord) ||
-    isBidRecordTransferRequested(bidRecord) ||
-    Boolean(bidRecord.deliveryId);
+    !hasListShippingData &&
+    !isBidRecordCancelled(bidRecord) &&
+    (isBidRecordPaymentConfirmed(bidRecord) ||
+      isBidRecordTransferRequested(bidRecord) ||
+      Boolean(bidRecord.deliveryId));
+
+  if (!shouldFetchBuncheolDetail && !shouldFetchParticipationDetail) {
+    return bidRecord;
+  }
+
   const [productDetailResult, paymentDetailResult] =
     await Promise.allSettled([
-      requestBuncheolDetail(accessToken, bidRecord.productId),
+      shouldFetchBuncheolDetail
+        ? getCachedBuncheolDetail(
+            accessToken,
+            bidRecord.productId,
+            buncheolDetailCache,
+          )
+        : Promise.resolve(null),
       shouldFetchParticipationDetail
         ? requestParticipationPaymentDetail(accessToken, bidRecord.id)
         : Promise.resolve(null),
@@ -791,7 +852,7 @@ async function getBidRecordWithShippingData(
     };
   }
 
-  if (productDetailResult.status === "fulfilled") {
+  if (productDetailResult.status === "fulfilled" && productDetailResult.value) {
     const detail = productDetailResult.value;
     const product = toProductDetailItem(detail);
 
@@ -1100,43 +1161,69 @@ export function BidHistoryContent({
           return;
         }
 
-        Promise.all(
-          participations.map((participation) =>
-            getBidRecordWithShippingData(accessToken, participation),
-          ),
-        ).then((bidRecords) => {
-          if (!isActive) {
-            return;
-          }
+        // 목록 응답만으로 즉시 렌더링하고, 건별 보강 데이터는 도착하는 대로 병합한다.
+        const baseBidRecords = participations.map(getBidRecordFromParticipation);
 
-          setApiBidRecords(bidRecords);
-          setHistoryMessage("");
+        setApiBidRecords(baseBidRecords);
+        setHistoryMessage("");
 
-          const pendingPaymentId = window.sessionStorage.getItem(
-            BID_HISTORY_OPEN_PAYMENT_ID_KEY,
-          );
-          const pendingPaymentRecord = pendingPaymentId
-            ? bidRecords.find((bid) => bid.id === pendingPaymentId)
-            : null;
+        const pendingPaymentId = window.sessionStorage.getItem(
+          BID_HISTORY_OPEN_PAYMENT_ID_KEY,
+        );
+        const pendingPaymentRecord = pendingPaymentId
+          ? baseBidRecords.find((bid) => bid.id === pendingPaymentId)
+          : null;
 
-          if (pendingPaymentRecord) {
-            window.sessionStorage.removeItem(BID_HISTORY_OPEN_PAYMENT_ID_KEY);
-            setMode("joined");
-            setFilter("payment");
-            setSelectedPaymentBidId(pendingPaymentRecord.id);
-            setIsPaymentSheetOpen(true);
-            setIsPaymentSheetClosing(false);
-            setIsAddressSheetOpen(false);
-            setIsAddressSheetClosing(false);
+        if (pendingPaymentRecord) {
+          window.sessionStorage.removeItem(BID_HISTORY_OPEN_PAYMENT_ID_KEY);
+          setMode("joined");
+          setFilter("payment");
+          setSelectedPaymentBidId(pendingPaymentRecord.id);
+          setIsPaymentSheetOpen(true);
+          setIsPaymentSheetClosing(false);
+          setIsAddressSheetOpen(false);
+          setIsAddressSheetClosing(false);
 
-            window.requestAnimationFrame(() => {
-              if (!isActive) {
+          window.requestAnimationFrame(() => {
+            if (!isActive) {
+              return;
+            }
+
+            setIsPaymentSheetEntered(true);
+          });
+        }
+
+        const buncheolDetailCache: BuncheolDetailCache = new Map();
+
+        participations.forEach((participation, participationIndex) => {
+          const baseBidRecord = baseBidRecords[participationIndex];
+
+          getBidRecordWithShippingData(
+            accessToken,
+            participation,
+            buncheolDetailCache,
+            baseBidRecord,
+          )
+            .then((enrichedBidRecord) => {
+              if (!isActive || enrichedBidRecord === baseBidRecord) {
                 return;
               }
 
-              setIsPaymentSheetEntered(true);
+              // 보강 도착 전에 결제 시트·주기 갱신으로 레코드가 이미 교체됐다면
+              // (참조가 다르면) 구 데이터로 되돌리지 않는다.
+              setApiBidRecords((bidRecords) =>
+                bidRecords
+                  ? bidRecords.map((bidRecord) =>
+                      bidRecord === baseBidRecord
+                        ? enrichedBidRecord
+                        : bidRecord,
+                    )
+                  : bidRecords,
+              );
+            })
+            .catch(() => {
+              // 보강 실패 시 목록 응답 기반 레코드를 그대로 유지한다.
             });
-          }
         });
       })
       .catch((error: unknown) => {
@@ -1195,9 +1282,14 @@ export function BidHistoryContent({
 
       try {
         const participations = await requestMyParticipations(accessToken);
+        const buncheolDetailCache: BuncheolDetailCache = new Map();
         const bidRecords = await Promise.all(
           participations.map((participation) =>
-            getBidRecordWithShippingData(accessToken, participation),
+            getBidRecordWithShippingData(
+              accessToken,
+              participation,
+              buncheolDetailCache,
+            ),
           ),
         );
 
@@ -1811,91 +1903,38 @@ export function BidHistoryContent({
       </header>
 
       <div className="shrink-0 px-4 pb-4">
-        <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f4f5ef] p-1.5 ring-1 ring-black/[0.03]">
-          {(
-            [
-              ["joined", "참여한 분철"],
-              ["hosted", "개최한 분철"],
-            ] as const
-          ).map(([value, label]) => {
-            const isActive = mode === value;
-
-            return (
-              <button
-                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive
-                    ? "bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
-                    : "text-black/45"
-                }`}
-                key={value}
-                onClick={() => setMode(value)}
-                type="button"
-              >
-                {label}
-              </button>
-            );
-          })}
+        <div className="mb-3">
+          <SlidingTabs
+            onChange={setMode}
+            tabs={[
+              { label: "참여한 분철", value: "joined" },
+              { label: "개최한 분철", value: "hosted" },
+            ]}
+            value={mode}
+          />
         </div>
 
-        <div
-          className={`${
-            mode === "joined" ? "flex" : "hidden"
-          } justify-end gap-2 overflow-x-auto pb-1`}
-        >
-          {(
-            [
-              ["all", "전체"],
-              ["payment", "입금 필요"],
-              ["confirmed", "확정"],
-            ] as const
-          ).map(([value, label]) => {
-            const isActive = filter === value;
-
-            return (
-              <button
-                className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive
-                    ? "border-[#CFE86B] bg-[#E4F6A5] text-black shadow-[0_8px_18px_rgba(215,255,95,0.22)]"
-                    : "border-black/10 bg-[#f7f7f7] text-black/45"
-                }`}
-                key={value}
-                onClick={() => setFilter(value)}
-                type="button"
-              >
-                {label}
-              </button>
-            );
-          })}
+        <div className={mode === "joined" ? "" : "hidden"}>
+          <SlidingFilterChips
+            onChange={setFilter}
+            tabs={[
+              { label: "전체", value: "all" },
+              { label: "입금 필요", value: "payment" },
+              { label: "확정", value: "confirmed" },
+            ]}
+            value={filter}
+          />
         </div>
-        <div
-          className={`${
-            mode === "hosted" ? "flex" : "hidden"
-          } justify-end gap-2 overflow-x-auto pb-1`}
-        >
-          {(
-            [
-              ["all", "전체"],
-              ["active", "진행 중"],
-              ["closed", "모집 종료"],
-            ] as const
-          ).map(([value, label]) => {
-            const isActive = hostedFilter === value;
-
-            return (
-              <button
-                className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive
-                    ? "border-[#CFE86B] bg-[#E4F6A5] text-black shadow-[0_8px_18px_rgba(215,255,95,0.22)]"
-                    : "border-black/10 bg-[#f7f7f7] text-black/45"
-                }`}
-                key={value}
-                onClick={() => setHostedFilter(value)}
-                type="button"
-              >
-                {label}
-              </button>
-            );
-          })}
+        <div className={mode === "hosted" ? "" : "hidden"}>
+          <SlidingFilterChips
+            onChange={setHostedFilter}
+            tabs={[
+              { label: "전체", value: "all" },
+              { label: "진행 중", value: "active" },
+              { label: "모집 종료", value: "closed" },
+            ]}
+            value={hostedFilter}
+          />
         </div>
       </div>
 
@@ -1919,7 +1958,7 @@ export function BidHistoryContent({
             {isBidRecordsLoading ? (
               <BidHistoryListSkeleton />
             ) : records.length === 0 ? (
-              <div className="rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
+              <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                 <p className="text-[14px] font-semibold text-black/70">
                   {authState.isLoggedIn
                     ? "표시할 참여 분철이 없습니다."
@@ -1932,7 +1971,9 @@ export function BidHistoryContent({
                 ) : null}
               </div>
             ) : null}
-            {!isBidRecordsLoading && records.map((bid) => {
+            {!isBidRecordsLoading && records.length > 0 ? (
+            <div className="content-reveal space-y-3">
+            {records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
               const isCancelled = isBidRecordCancelled(bid);
               const cancellationLabel = isCancelledBuncheolStatus(
@@ -2154,6 +2195,8 @@ export function BidHistoryContent({
               );
             })}
             </div>
+            ) : null}
+            </div>
           ) : (
             <div className="space-y-3">
               {hostedMessage ? (
@@ -2166,7 +2209,7 @@ export function BidHistoryContent({
               {isHostedProductsLoading ? (
                 <BidHistoryListSkeleton />
               ) : hostedRecords.length === 0 ? (
-                <div className="rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
+                <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                   <p className="text-[14px] font-semibold text-black/70">
                     {authState.isLoggedIn
                       ? "표시할 개최 분철이 없습니다."
@@ -2179,7 +2222,9 @@ export function BidHistoryContent({
                   ) : null}
                 </div>
               ) : null}
-              {!isHostedProductsLoading && hostedRecords.map((product) => {
+              {!isHostedProductsLoading && hostedRecords.length > 0 ? (
+              <div className="content-reveal space-y-3">
+              {hostedRecords.map((product) => {
                 const isClosed = isHostedProductClosed(product, now);
                 const isCancelled =
                   product.status === "CANCELLED" || product.status === "CANCELED";
@@ -2278,6 +2323,8 @@ export function BidHistoryContent({
                   </article>
                 );
               })}
+              </div>
+              ) : null}
             </div>
           )}
         </div>
