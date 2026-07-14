@@ -77,7 +77,15 @@ type ProductDetailProps = {
   initialReturnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
   startEntered?: boolean;
+  renderShell?: boolean;
+  onExitingChange?: (isExiting: boolean) => void;
 };
+
+export const productDetailShellClassName =
+  "product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]";
+
+export const productPagePanelClassName =
+  "product-page-panel relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-white";
 
 type ProductReturnUnderlayProps = {
   isEntered: boolean;
@@ -757,6 +765,8 @@ export function ProductDetail({
   initialReturnSource,
   initialReturnQuery,
   startEntered = false,
+  renderShell = true,
+  onExitingChange,
 }: ProductDetailProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
@@ -2186,6 +2196,11 @@ export function ProductDetail({
     };
   }, []);
 
+  // renderShell=false일 때 언더레이를 소유한 부모가 퇴장 전환을 따라가도록 알린다.
+  useEffect(() => {
+    onExitingChange?.(isExiting);
+  }, [isExiting, onExitingChange]);
+
   useEffect(() => {
     const historyIndex = getHistoryIndex();
     const expectedEntryIndex = window.sessionStorage.getItem(
@@ -2754,17 +2769,10 @@ export function ProductDetail({
     router.push("/profile/bids");
   }
 
-  return (
-    <main className="product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
-      <ProductReturnUnderlay
-        isEntered={isEntered}
-        isExiting={isExiting}
-        returnQuery={returnQuery}
-        returnSource={initialReturnSource}
-      />
-
+  const panelAndSheets = (
+    <>
       <div
-        className={`product-page-panel relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-white ${
+        className={`${productPagePanelClassName} ${
           isEntered && !isExiting ? "product-page-active" : ""
         } ${
           isExiting ? "product-page-exit" : ""
@@ -3666,6 +3674,22 @@ export function ProductDetail({
           </div>
         ) : null}
       </div>
+    </>
+  );
+
+  if (!renderShell) {
+    return panelAndSheets;
+  }
+
+  return (
+    <main className={productDetailShellClassName}>
+      <ProductReturnUnderlay
+        isEntered={isEntered}
+        isExiting={isExiting}
+        returnQuery={returnQuery}
+        returnSource={initialReturnSource}
+      />
+      {panelAndSheets}
     </main>
   );
 }

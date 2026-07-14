@@ -212,6 +212,7 @@ export function TestAccountSwitcher() {
                 </h2>
               </div>
               <button
+                aria-label="계정 전환 닫기"
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white"
                 onClick={() => setIsOpen(false)}
                 type="button"

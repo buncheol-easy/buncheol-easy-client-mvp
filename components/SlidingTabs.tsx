@@ -113,7 +113,6 @@ export function SlidingTabs<Value extends string>({
     <div
       className={`relative flex gap-1.5 rounded-[0.95rem] p-1.5 ${barClassName}`}
       ref={containerRef}
-      role="tablist"
     >
       <span
         aria-hidden="true"
@@ -125,7 +124,7 @@ export function SlidingTabs<Value extends string>({
 
         return (
           <button
-            aria-selected={isActive}
+            aria-pressed={isActive}
             className={`h-10 flex-1 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${tabTransitionClassName} ${
               isActive ? "text-white" : "text-black/45"
             }`}
@@ -137,7 +136,6 @@ export function SlidingTabs<Value extends string>({
             ref={(element) => {
               setTabRef(tab.value, element);
             }}
-            role="tab"
             type="button"
           >
             {tab.label}
@@ -163,7 +161,6 @@ export function SlidingFilterChips<Value extends string>({
     <div
       className="relative flex justify-end gap-2 overflow-x-auto pb-1"
       ref={containerRef}
-      role="tablist"
     >
       <span
         aria-hidden="true"
@@ -175,7 +172,7 @@ export function SlidingFilterChips<Value extends string>({
 
         return (
           <button
-            aria-selected={isActive}
+            aria-pressed={isActive}
             className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${tabTransitionClassName} ${
               isActive
                 ? "border-transparent text-black"
@@ -189,7 +186,6 @@ export function SlidingFilterChips<Value extends string>({
             ref={(element) => {
               setTabRef(tab.value, element);
             }}
-            role="tab"
             type="button"
           >
             {tab.label}

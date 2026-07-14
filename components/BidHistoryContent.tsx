@@ -1971,7 +1971,9 @@ export function BidHistoryContent({
                 ) : null}
               </div>
             ) : null}
-            {!isBidRecordsLoading && records.map((bid) => {
+            {!isBidRecordsLoading && records.length > 0 ? (
+            <div className="content-reveal space-y-3">
+            {records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
               const isCancelled = isBidRecordCancelled(bid);
               const cancellationLabel = isCancelledBuncheolStatus(
@@ -1987,7 +1989,7 @@ export function BidHistoryContent({
               const shippingAddressLabel = getBidRecordShippingAddressLabel(bid);
               return (
                 <article
-                  className="content-reveal rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
+                  className="rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
                   key={bid.id}
                 >
                   <div className="flex items-start gap-3">
@@ -2193,6 +2195,8 @@ export function BidHistoryContent({
               );
             })}
             </div>
+            ) : null}
+            </div>
           ) : (
             <div className="space-y-3">
               {hostedMessage ? (
@@ -2218,7 +2222,9 @@ export function BidHistoryContent({
                   ) : null}
                 </div>
               ) : null}
-              {!isHostedProductsLoading && hostedRecords.map((product) => {
+              {!isHostedProductsLoading && hostedRecords.length > 0 ? (
+              <div className="content-reveal space-y-3">
+              {hostedRecords.map((product) => {
                 const isClosed = isHostedProductClosed(product, now);
                 const isCancelled =
                   product.status === "CANCELLED" || product.status === "CANCELED";
@@ -2233,7 +2239,7 @@ export function BidHistoryContent({
 
                 return (
                   <article
-                    className="content-reveal rounded-[1rem] border border-black/[0.08] bg-white p-3 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
+                    className="rounded-[1rem] border border-black/[0.08] bg-white p-3 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
                     key={product.id}
                   >
                     <Link
@@ -2317,6 +2323,8 @@ export function BidHistoryContent({
                   </article>
                 );
               })}
+              </div>
+              ) : null}
             </div>
           )}
         </div>

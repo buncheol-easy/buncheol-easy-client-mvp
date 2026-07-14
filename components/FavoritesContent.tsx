@@ -377,7 +377,7 @@ export function FavoritesContent({
             >
               <span>{sort === "recent" ? "최근 찜한 순" : "모집 임박순"}</span>
               <ChevronDownIcon
-                className={`transition-transform ${
+                className={`h-3.5 w-3.5 transition-transform ${
                   isSortOpen ? "rotate-180" : ""
                 }`}
               />
