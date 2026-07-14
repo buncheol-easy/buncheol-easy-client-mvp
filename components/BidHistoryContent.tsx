@@ -1212,9 +1212,13 @@ export function BidHistoryContent({
               // 보강 도착 전에 결제 시트·주기 갱신으로 레코드가 이미 교체됐다면
               // (참조가 다르면) 구 데이터로 되돌리지 않는다.
               setApiBidRecords((bidRecords) =>
-                bidRecords.map((bidRecord) =>
-                  bidRecord === baseBidRecord ? enrichedBidRecord : bidRecord,
-                ),
+                bidRecords
+                  ? bidRecords.map((bidRecord) =>
+                      bidRecord === baseBidRecord
+                        ? enrichedBidRecord
+                        : bidRecord,
+                    )
+                  : bidRecords,
               );
             })
             .catch(() => {

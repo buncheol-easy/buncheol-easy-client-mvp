@@ -511,8 +511,8 @@ function HomeMiniScreen() {
                     backgroundSize: artist.logoSize,
                   }}
                 >
-                  <span className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-[17px] leading-none text-black shadow-[0_2px_7px_rgba(0,0,0,0.18)]">
-                    ♥
+                  <span className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-black shadow-[0_2px_7px_rgba(0,0,0,0.18)]">
+                    <HeartIcon className="h-4 w-4" filled />
                   </span>
                 </span>
               )}
@@ -556,8 +556,8 @@ function HomeMiniScreen() {
                   <span className="absolute bottom-3 left-3 text-[18px] font-semibold tracking-[-0.06em] text-white">
                     {deadline}
                   </span>
-                  <span className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-white text-[20px] text-black/50 shadow-[0_8px_16px_rgba(0,0,0,0.16)]">
-                    ♥
+                  <span className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black/50 shadow-[0_8px_16px_rgba(0,0,0,0.16)]">
+                    <HeartIcon filled />
                   </span>
                 </div>
                 <p className="mt-2 truncate text-[11px] font-semibold text-black/36">
@@ -720,8 +720,8 @@ function SearchMiniScreen() {
                 backgroundSize: "74% auto",
               }}
             >
-              <span className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-[17px] leading-none text-black shadow-[0_2px_7px_rgba(0,0,0,0.18)]">
-                ♡
+              <span className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-black shadow-[0_2px_7px_rgba(0,0,0,0.18)]">
+                <HeartIcon className="h-4 w-4" />
               </span>
             </div>
             <p className="text-center text-[15px] font-semibold tracking-[-0.05em]">
@@ -811,8 +811,8 @@ function SearchMiniScreen() {
                     <span className="absolute bottom-3 left-3 text-[18px] font-semibold tracking-[-0.06em] text-white">
                       {deadline}
                     </span>
-                    <span className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-white text-[20px] text-black/50 shadow-[0_8px_16px_rgba(0,0,0,0.16)]">
-                      ♥
+                    <span className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black/50 shadow-[0_8px_16px_rgba(0,0,0,0.16)]">
+                      <HeartIcon filled />
                     </span>
                   </div>
                   <p className="mt-2 truncate text-[11px] font-semibold text-black/36">

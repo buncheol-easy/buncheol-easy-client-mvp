@@ -10,7 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { BackIcon, SearchIcon } from "@/components/icons";
+import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import {
   addFavoriteGroup,
   removeFavoriteGroup,
@@ -324,8 +324,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           }`}
         >
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-[14px] font-semibold text-white">
-              ♥
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
+              <HeartIcon className="h-3.5 w-3.5" filled />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold tracking-[-0.03em]">
@@ -422,7 +422,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
                       onClick={() => handleFavoriteToggle(group)}
                       type="button"
                     >
-                      {group.favorited ? "♥" : "♡"}
+                      <HeartIcon
+                        className="h-[18px] w-[18px]"
+                        filled={group.favorited}
+                      />
                     </button>
                   </div>
                 </article>

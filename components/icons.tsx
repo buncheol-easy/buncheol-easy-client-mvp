@@ -69,11 +69,17 @@ export function CheckIcon({
   );
 }
 
-export function HeartIcon({ filled = false }: { filled?: boolean }) {
+export function HeartIcon({
+  className = "h-5 w-5",
+  filled = false,
+}: {
+  className?: string;
+  filled?: boolean;
+}) {
   return (
     <Heart
       aria-hidden="true"
-      className={`motion-icon h-5 w-5 ${
+      className={`motion-icon ${className} ${
         filled ? "motion-icon-swap-enter" : ""
       }`}
       fill={filled ? "currentColor" : "none"}
