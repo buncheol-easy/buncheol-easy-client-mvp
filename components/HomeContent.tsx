@@ -796,7 +796,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 variant="wide"
               />
             ) : (
-              <ProductGrid items={listings} variant="wide" />
+              <div className="content-reveal">
+                <ProductGrid items={listings} variant="wide" />
+              </div>
             )}
           </div>
         </section>

@@ -457,9 +457,11 @@ export function FavoritesContent({
           {isFavoriteProductsLoading ? (
             <ProductGridSkeleton ariaLabel="찜한 상품을 불러오는 중" />
           ) : filteredProducts.length > 0 ? (
-            <ProductGrid items={filteredProducts} />
+            <div className="content-reveal">
+              <ProductGrid items={filteredProducts} />
+            </div>
           ) : (
-            <div className="rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
+            <div className="content-reveal rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
                 {authState.isLoggedIn
                   ? "조건에 맞는 찜 상품이 없습니다."

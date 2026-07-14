@@ -386,7 +386,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
             ))}
           </div>
         ) : visibleGroups.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="content-reveal grid grid-cols-2 gap-3">
             {visibleGroups.map((group) => {
               const isPending = pendingGroupId === group.id;
               const isFavoriteLimitReached =

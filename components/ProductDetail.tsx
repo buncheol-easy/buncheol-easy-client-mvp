@@ -3349,7 +3349,10 @@ export function ProductDetail({
                       결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
                     </p>
                     {checkoutError ? (
-                      <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
+                      <p
+                        className="error-shake rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
+                        key={checkoutError}
+                      >
                         {checkoutError}
                       </p>
                     ) : null}

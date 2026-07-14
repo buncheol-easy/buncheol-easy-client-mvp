@@ -318,7 +318,7 @@ export function BoardContent({
             </p>
           ) : displayedItems.length > 0 ? (
             <>
-              <div className="rounded-[1.15rem] border border-black/10 bg-white">
+              <div className="content-reveal rounded-[1.15rem] border border-black/10 bg-white">
                 {displayedItems.map((item, index) => (
                   <Link
                     className={`flex min-h-[4.75rem] items-center gap-3 px-4 py-3 ${
@@ -369,7 +369,7 @@ export function BoardContent({
               ) : null}
             </>
           ) : (
-            <p className="rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
+            <p className="content-reveal rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
               {message || "아직 도착한 소식이 없어요."}
             </p>
           )}
