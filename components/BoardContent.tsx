@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon, BellIcon } from "@/components/icons";
+import { SlidingTabs } from "@/components/SlidingTabs";
 import {
   readCachedNoticeInboxMessages,
   requestCachedNoticeInboxMessages,
@@ -291,23 +292,17 @@ export function BoardContent({
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-1.5 rounded-[0.95rem] bg-[#f5f5f5] p-1.5">
-          {(["all", "notice", "alert"] as const).map((value) => {
-            const isActive = category === value;
-
-            return (
-              <button
-                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive ? "bg-black text-white" : "text-black/45"
-                }`}
-                key={value}
-                onClick={() => setCategory(value)}
-                type="button"
-              >
-                {categoryLabels[value]}
-              </button>
-            );
-          })}
+        <div className="mt-5">
+          <SlidingTabs
+            barClassName="bg-[#f5f5f5]"
+            onChange={setCategory}
+            pillClassName="bg-black"
+            tabs={(["all", "notice", "alert"] as const).map((value) => ({
+              label: categoryLabels[value],
+              value,
+            }))}
+            value={category}
+          />
         </div>
       </header>
 
