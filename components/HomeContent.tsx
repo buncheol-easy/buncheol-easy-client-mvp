@@ -713,6 +713,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         onWheel={resumeHeaderScrollReaction}
         ref={scrollContainerRef}
       >
+        <div className="flex min-h-full flex-col">
         <section className="px-4 pt-4">
           <div
             className="home-banner-carousel motion-carousel flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -800,8 +801,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           </div>
         </section>
 
-        <div className="mt-8">
+        <div className="mt-auto pt-8">
           <BusinessFooter />
+        </div>
         </div>
       </div>
     </div>

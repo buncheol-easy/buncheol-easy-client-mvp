@@ -66,6 +66,7 @@ export function PolicyPageContent({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-2">
+          <div className="flex min-h-full flex-col">
           <section className="border-b border-black/10 pb-5">
             {effectiveDate ? (
               <p className="inline-flex rounded-full bg-[#f7f7f7] px-2.5 py-1 text-[12px] font-semibold tracking-[-0.03em] text-black/45">
@@ -100,8 +101,9 @@ export function PolicyPageContent({
             ))}
           </div>
 
-          <div className="-mx-4 -mb-8 mt-8">
+          <div className="-mx-4 -mb-8 mt-auto pt-8">
             <BusinessFooter />
+          </div>
           </div>
         </div>
       </div>

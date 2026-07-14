@@ -367,6 +367,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
+        <div className="flex min-h-full flex-col">
         {message ? (
           <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
             <p className="text-[13px] font-semibold text-black/45">
@@ -439,8 +440,9 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
             </p>
           </div>
         )}
-        <div className="-mx-4 mt-6">
+        <div className="-mx-4 -mb-6 mt-auto pt-6">
           <BusinessFooter />
+        </div>
         </div>
       </div>
     </div>

@@ -307,7 +307,11 @@ export function BoardContent({
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <section className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}>
+        <section
+          className={`flex min-h-full flex-col ${
+            shouldSkipEnterAnimation ? "" : "tab-content-enter"
+          }`}
+        >
           {isLoading ? (
             <p className="rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
               소식을 불러오는 중이에요.
@@ -375,7 +379,7 @@ export function BoardContent({
               {message}
             </p>
           ) : null}
-          <div className="-mx-4 mt-6">
+          <div className="-mx-4 -mb-6 mt-auto pt-6">
             <BusinessFooter />
           </div>
         </section>
