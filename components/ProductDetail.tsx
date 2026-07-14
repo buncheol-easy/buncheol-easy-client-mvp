@@ -46,7 +46,13 @@ import {
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
-import { BackIcon, CloseIcon, HeartIcon } from "@/components/icons";
+import {
+  BackIcon,
+  CloseIcon,
+  EditIcon,
+  HeartIcon,
+  TrashIcon,
+} from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
@@ -221,47 +227,6 @@ type ProductHistoryState = {
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
 };
-
-function ProductEditIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="motion-icon h-5 w-5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="1.55"
-    >
-      <path
-        d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5l-1 3Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="m14.5 7.5 2 2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ProductDeleteIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="motion-icon h-5 w-5"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="1.55"
-    >
-      <path d="M6.25 7.25h11.5" strokeLinecap="round" />
-      <path d="M9.5 7.25V6a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 6v1.25" />
-      <path
-        d="M8.7 10.25v6.65a2.35 2.35 0 0 0 2.35 2.35h1.9a2.35 2.35 0 0 0 2.35-2.35v-6.65"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function OptionAvatar({
   option,
@@ -2804,7 +2769,7 @@ export function ProductDetail({
                 onClick={openEditProduct}
                 aria-label="분철 수정"
               >
-                <ProductEditIcon />
+                <EditIcon />
               </button>
             ) : null}
             {canDeleteProduct ? (
@@ -2815,7 +2780,7 @@ export function ProductDetail({
                 aria-label="분철 삭제"
                 disabled={isDeletePending}
               >
-                <ProductDeleteIcon />
+                <TrashIcon />
               </button>
             ) : null}
             {!canEditProduct ? (

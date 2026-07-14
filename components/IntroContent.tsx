@@ -16,6 +16,8 @@ import {
   BackIcon,
   BellIcon,
   BidIcon,
+  CheckIcon,
+  CloseIcon,
   HeartIcon,
   HomeIcon,
   PlusIcon,
@@ -751,8 +753,8 @@ function SearchMiniScreen() {
                   }}
                 />
                 {selected ? (
-                  <span className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full bg-black text-[18px] text-white ring-[3px] ring-white">
-                    ✓
+                  <span className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full bg-black text-white ring-[3px] ring-white">
+                    <CheckIcon className="h-[18px] w-[18px]" />
                   </span>
                 ) : null}
               </div>
@@ -1192,8 +1194,8 @@ function PaymentMiniScreen() {
               참여 상품을 받을 주소를 확인해 주세요.
             </p>
           </div>
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-[24px] font-semibold text-white">
-            ×
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white">
+            <CloseIcon className="h-5 w-5" />
           </span>
         </div>
 

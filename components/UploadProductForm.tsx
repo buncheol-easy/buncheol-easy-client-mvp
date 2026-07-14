@@ -12,6 +12,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   BackIcon,
+  CheckIcon,
   CloseIcon,
   MinusIcon,
   PlusIcon,
@@ -2636,7 +2637,7 @@ export function UploadProductForm({
                                       onClick={hideMinimumPricePrompt}
                                       type="button"
                                     >
-                                      ×
+                                      <CloseIcon className="h-3.5 w-3.5" />
                                     </button>
                                     <button
                                       aria-label="비어있는 멤버에 가격 적용"
@@ -2648,7 +2649,7 @@ export function UploadProductForm({
                                       }
                                       type="button"
                                     >
-                                      ✓
+                                      <CheckIcon />
                                     </button>
                                   </div>
                                 </div>

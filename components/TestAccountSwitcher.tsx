@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { CloseIcon } from "@/components/icons";
 import {
   getInitialAuthState,
   readAuthState,
@@ -211,11 +212,11 @@ export function TestAccountSwitcher() {
                 </h2>
               </div>
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-[22px] font-light leading-none text-white"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white"
                 onClick={() => setIsOpen(false)}
                 type="button"
               >
-                ×
+                <CloseIcon className="h-5 w-5" />
               </button>
             </div>
 

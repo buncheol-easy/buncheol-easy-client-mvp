@@ -12,6 +12,7 @@ import type { MouseEvent } from "react";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { ChevronDownIcon } from "@/components/icons";
 import { SlidingTabs } from "@/components/SlidingTabs";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
 import {
@@ -375,8 +376,8 @@ export function FavoritesContent({
               type="button"
             >
               <span>{sort === "recent" ? "최근 찜한 순" : "모집 임박순"}</span>
-              <span
-                className={`h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-current transition-transform ${
+              <ChevronDownIcon
+                className={`transition-transform ${
                   isSortOpen ? "rotate-180" : ""
                 }`}
               />

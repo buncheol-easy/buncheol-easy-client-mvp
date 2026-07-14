@@ -782,8 +782,10 @@ async function getBidRecordWithShippingData(
   accessToken: string,
   participation: MyParticipation,
   buncheolDetailCache?: BuncheolDetailCache,
+  precomputedBidRecord?: BidRecord,
 ): Promise<BidRecord> {
-  const bidRecord = getBidRecordFromParticipation(participation);
+  const bidRecord =
+    precomputedBidRecord ?? getBidRecordFromParticipation(participation);
   // 목록 응답에 배송옵션이 포함돼 있으면(신규 백엔드) 썸네일·배송·계좌 정보도 함께 오므로
   // 참여 건마다 분철 상세/결제 상세를 추가 조회할 필요가 없다.
   const hasListShippingData = Boolean(participation.shippingOptions?.length);
@@ -1193,25 +1195,26 @@ export function BidHistoryContent({
 
         const buncheolDetailCache: BuncheolDetailCache = new Map();
 
-        participations.forEach((participation) => {
+        participations.forEach((participation, participationIndex) => {
+          const baseBidRecord = baseBidRecords[participationIndex];
+
           getBidRecordWithShippingData(
             accessToken,
             participation,
             buncheolDetailCache,
+            baseBidRecord,
           )
             .then((enrichedBidRecord) => {
-              if (!isActive) {
+              if (!isActive || enrichedBidRecord === baseBidRecord) {
                 return;
               }
 
+              // 보강 도착 전에 결제 시트·주기 갱신으로 레코드가 이미 교체됐다면
+              // (참조가 다르면) 구 데이터로 되돌리지 않는다.
               setApiBidRecords((bidRecords) =>
-                bidRecords
-                  ? bidRecords.map((bidRecord) =>
-                      bidRecord.id === enrichedBidRecord.id
-                        ? enrichedBidRecord
-                        : bidRecord,
-                    )
-                  : bidRecords,
+                bidRecords.map((bidRecord) =>
+                  bidRecord === baseBidRecord ? enrichedBidRecord : bidRecord,
+                ),
               );
             })
             .catch(() => {
