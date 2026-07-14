@@ -76,7 +76,81 @@ type ProductDetailProps = {
   backHref?: string;
   initialReturnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
+  startEntered?: boolean;
 };
+
+type ProductReturnUnderlayProps = {
+  isEntered: boolean;
+  isExiting: boolean;
+  returnQuery?: string;
+  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+};
+
+export function ProductReturnUnderlay({
+  isEntered,
+  isExiting,
+  returnQuery,
+  returnSource,
+}: ProductReturnUnderlayProps) {
+  return (
+    <>
+      {returnSource === "home" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <HomeContent skipEnterAnimation />
+          <BottomNavigator />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnSource === "profile" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <ProfileContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Profile" />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnSource === "bids" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <BidHistoryContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Bids" />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnSource === "favorites" ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <FavoritesContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Favorites" />
+        </SwipeUnderlay>
+      ) : null}
+
+      {returnQuery !== undefined ? (
+        <SwipeUnderlay
+          className="product-detail-underlay"
+          constrainWidth={false}
+          isEntered={isEntered}
+          isExiting={isExiting}
+        >
+          <SearchExperience query={returnQuery} skipEnterAnimation />
+        </SwipeUnderlay>
+      ) : null}
+    </>
+  );
+}
 
 const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 const PRODUCT_PROFILE_ENTRY_STATE_KEY = "__buncheolProductFromProfile";
@@ -682,6 +756,7 @@ export function ProductDetail({
   product,
   initialReturnSource,
   initialReturnQuery,
+  startEntered = false,
 }: ProductDetailProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
@@ -705,7 +780,7 @@ export function ProductDetail({
   const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
-  const [isEntered, setIsEntered] = useState(false);
+  const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
@@ -2681,60 +2756,12 @@ export function ProductDetail({
 
   return (
     <main className="product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
-      {initialReturnSource === "home" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <HomeContent skipEnterAnimation />
-          <BottomNavigator />
-        </SwipeUnderlay>
-      ) : null}
-
-      {initialReturnSource === "profile" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <ProfileContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Profile" />
-        </SwipeUnderlay>
-      ) : null}
-
-      {initialReturnSource === "bids" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <BidHistoryContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Bids" />
-        </SwipeUnderlay>
-      ) : null}
-
-      {initialReturnSource === "favorites" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <FavoritesContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Favorites" />
-        </SwipeUnderlay>
-      ) : null}
-
-      {returnQuery !== undefined ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          constrainWidth={false}
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <SearchExperience query={returnQuery} skipEnterAnimation />
-        </SwipeUnderlay>
-      ) : null}
+      <ProductReturnUnderlay
+        isEntered={isEntered}
+        isExiting={isExiting}
+        returnQuery={returnQuery}
+        returnSource={initialReturnSource}
+      />
 
       <div
         className={`product-page-panel relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-white ${

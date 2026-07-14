@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ProductDetail } from "@/components/ProductDetail";
+import {
+  ProductDetail,
+  ProductReturnUnderlay,
+} from "@/components/ProductDetail";
 import { trackEvent } from "@/lib/analytics";
 import type { ProductCardItem } from "@/components/ProductCard";
 import {
@@ -288,11 +291,11 @@ export function ApiProductDetail({
 
   if (!product) {
     return (
-      <main className="system-chrome-white system-chrome-bottom-white flex h-[100dvh] items-center justify-center bg-white px-6 text-center">
-        <div>
-          <p className="text-[15px] font-semibold text-black/45">{message}</p>
-        </div>
-      </main>
+      <ProductDetailLoadingShell
+        message={message}
+        returnQuery={returnQuery}
+        returnSource={returnSource}
+      />
     );
   }
 
@@ -302,6 +305,52 @@ export function ApiProductDetail({
       initialReturnQuery={returnQuery}
       initialReturnSource={returnSource}
       product={product}
+      startEntered
     />
+  );
+}
+
+// 상세 데이터를 불러오는 동안에도 전환 레이아웃(언더레이 + 슬라이드 패널)을
+// 유지해, 라우트 전환 순간 하단 내비게이션이 사라졌다 나타나는 깜빡임을 막는다.
+// 패널 슬라이드 인은 이 셸이 담당하고, ProductDetail은 startEntered로 이어받는다.
+function ProductDetailLoadingShell({
+  message,
+  returnQuery,
+  returnSource,
+}: {
+  message: string;
+  returnQuery?: string;
+  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+}) {
+  const [isEntered, setIsEntered] = useState(false);
+
+  useEffect(() => {
+    const enterAnimationFrame = window.requestAnimationFrame(() => {
+      setIsEntered(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(enterAnimationFrame);
+    };
+  }, []);
+
+  return (
+    <main className="product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+      <ProductReturnUnderlay
+        isEntered={isEntered}
+        isExiting={false}
+        returnQuery={returnQuery}
+        returnSource={returnSource}
+      />
+      <div
+        className={`product-page-panel relative mx-auto flex h-full w-full max-w-[430px] flex-col items-center justify-center overflow-hidden bg-white px-6 ${
+          isEntered ? "product-page-active" : ""
+        }`}
+      >
+        <p className="text-center text-[15px] font-semibold text-black/45">
+          {message}
+        </p>
+      </div>
+    </main>
   );
 }
