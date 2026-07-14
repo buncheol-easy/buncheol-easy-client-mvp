@@ -20,7 +20,7 @@ export function SearchIcon() {
     <Search
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -30,7 +30,7 @@ export function BellIcon() {
     <Bell
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -40,7 +40,7 @@ export function BackIcon() {
     <ChevronLeft
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -50,7 +50,7 @@ export function CloseIcon({ className = "h-4 w-4" }: { className?: string }) {
     <X
       aria-hidden="true"
       className={`motion-icon ${className}`}
-      strokeWidth={1.9}
+      strokeWidth={1.75}
     />
   );
 }
@@ -64,7 +64,7 @@ export function CheckIcon({
     <Check
       aria-hidden="true"
       className={`motion-icon ${className}`}
-      strokeWidth={1.9}
+      strokeWidth={1.75}
     />
   );
 }
@@ -83,7 +83,7 @@ export function HeartIcon({
         filled ? "motion-icon-swap-enter" : ""
       }`}
       fill={filled ? "currentColor" : "none"}
-      strokeWidth={filled ? 1.45 : 1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -93,7 +93,7 @@ export function EditIcon() {
     <Pencil
       aria-hidden="true"
       className="motion-icon h-5 w-5"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -103,7 +103,7 @@ export function TrashIcon() {
     <Trash2
       aria-hidden="true"
       className="motion-icon h-5 w-5"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -113,7 +113,7 @@ export function BidIcon() {
     <ReceiptText
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -123,7 +123,7 @@ export function HomeIcon() {
     <House
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -133,7 +133,7 @@ export function PlusIcon() {
     <Plus
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -143,7 +143,7 @@ export function MinusIcon() {
     <Minus
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -153,7 +153,7 @@ export function ProfileIcon() {
     <UserRound
       aria-hidden="true"
       className="motion-icon h-6 w-6"
-      strokeWidth={1.55}
+      strokeWidth={1.75}
     />
   );
 }
@@ -163,7 +163,7 @@ export function ChevronDownIcon({ className = "" }: { className?: string }) {
     <ChevronDown
       aria-hidden="true"
       className={`motion-icon h-3.5 w-3.5 ${className}`}
-      strokeWidth={2}
+      strokeWidth={1.75}
     />
   );
 }
