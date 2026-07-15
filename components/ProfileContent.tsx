@@ -2461,6 +2461,7 @@ export function ProfileContent({
         className="min-h-0 flex-1 overflow-y-auto bg-[#f7f7f7] px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
+        <div className="flex min-h-full flex-col">
         <section className="rounded-[1.15rem] bg-black p-4 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#AAB67C]/35">
           {authState.isLoggedIn ? (
             <div className="flex items-center gap-3">
@@ -3118,8 +3119,9 @@ export function ProfileContent({
             ) : null}
           </Link>
         ) : null}
-        <div className="relative -mx-4 -mb-6 mt-6 bg-[#f7f7f7]">
+        <div className="relative -mx-4 -mb-6 mt-auto bg-[#f7f7f7] pt-6">
           <BusinessFooter variant="compact" />
+        </div>
         </div>
       </main>
 

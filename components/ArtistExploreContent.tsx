@@ -10,7 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { BackIcon, SearchIcon } from "@/components/icons";
+import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import {
   addFavoriteGroup,
   removeFavoriteGroup,
@@ -338,8 +338,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           }`}
         >
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-[14px] font-semibold text-white">
-              ♥
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
+              <HeartIcon className="h-3.5 w-3.5" filled />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold tracking-[-0.03em]">
@@ -381,6 +381,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
+        <div className="flex min-h-full flex-col">
         {message ? (
           <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
             <p className="text-[13px] font-semibold text-black/45">
@@ -399,7 +400,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
             ))}
           </div>
         ) : visibleGroups.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="content-reveal grid grid-cols-2 gap-3">
             {visibleGroups.map((group) => {
               const isPending = pendingGroupId === group.id;
               const isFavoriteLimitReached =
@@ -436,7 +437,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
                       onClick={() => handleFavoriteToggle(group)}
                       type="button"
                     >
-                      {group.favorited ? "♥" : "♡"}
+                      <HeartIcon
+                        className="h-[18px] w-[18px]"
+                        filled={group.favorited}
+                      />
                     </button>
                   </div>
                 </article>
@@ -450,8 +454,9 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
             </p>
           </div>
         )}
-        <div className="-mx-4 mt-6">
+        <div className="-mx-4 -mb-6 mt-auto pt-6">
           <BusinessFooter />
+        </div>
         </div>
       </div>
     </div>

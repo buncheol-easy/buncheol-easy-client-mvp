@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon, BellIcon } from "@/components/icons";
+import { SlidingTabs } from "@/components/SlidingTabs";
 import {
   readCachedNoticeInboxMessages,
   requestCachedNoticeInboxMessages,
@@ -291,35 +292,33 @@ export function BoardContent({
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-1.5 rounded-[0.95rem] bg-[#f5f5f5] p-1.5">
-          {(["all", "notice", "alert"] as const).map((value) => {
-            const isActive = category === value;
-
-            return (
-              <button
-                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive ? "bg-black text-white" : "text-black/45"
-                }`}
-                key={value}
-                onClick={() => setCategory(value)}
-                type="button"
-              >
-                {categoryLabels[value]}
-              </button>
-            );
-          })}
+        <div className="mt-5">
+          <SlidingTabs
+            barClassName="bg-[#f5f5f5]"
+            onChange={setCategory}
+            pillClassName="bg-black"
+            tabs={(["all", "notice", "alert"] as const).map((value) => ({
+              label: categoryLabels[value],
+              value,
+            }))}
+            value={category}
+          />
         </div>
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <section className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}>
+        <section
+          className={`flex min-h-full flex-col ${
+            shouldSkipEnterAnimation ? "" : "tab-content-enter"
+          }`}
+        >
           {isLoading ? (
             <p className="rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
               소식을 불러오는 중이에요.
             </p>
           ) : displayedItems.length > 0 ? (
             <>
-              <div className="rounded-[1.15rem] border border-black/10 bg-white">
+              <div className="content-reveal rounded-[1.15rem] border border-black/10 bg-white">
                 {displayedItems.map((item, index) => (
                   <Link
                     className={`flex min-h-[4.75rem] items-center gap-3 px-4 py-3 ${
@@ -370,7 +369,7 @@ export function BoardContent({
               ) : null}
             </>
           ) : (
-            <p className="rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
+            <p className="content-reveal rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
               {message || "아직 도착한 소식이 없어요."}
             </p>
           )}
@@ -380,7 +379,7 @@ export function BoardContent({
               {message}
             </p>
           ) : null}
-          <div className="-mx-4 mt-6">
+          <div className="-mx-4 -mb-6 mt-auto pt-6">
             <BusinessFooter />
           </div>
         </section>

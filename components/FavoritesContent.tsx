@@ -12,6 +12,8 @@ import type { MouseEvent } from "react";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { ChevronDownIcon } from "@/components/icons";
+import { SlidingTabs } from "@/components/SlidingTabs";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
 import {
   getInitialAuthState,
@@ -355,30 +357,15 @@ export function FavoritesContent({
           </h1>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f4f5ef] p-1.5 ring-1 ring-black/[0.03]">
-          {(
-            [
-              ["all", "전체"],
-              ["favoriteArtist", "최애 아티스트"],
-            ] as const
-          ).map(([value, label]) => {
-            const isActive = filter === value;
-
-            return (
-              <button
-                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive
-                    ? "bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.12)]"
-                    : "text-black/45"
-                }`}
-                key={value}
-                onClick={() => setFilter(value)}
-                type="button"
-              >
-                {label}
-              </button>
-            );
-          })}
+        <div className="mt-3">
+          <SlidingTabs
+            onChange={setFilter}
+            tabs={[
+              { label: "전체", value: "all" },
+              { label: "최애 아티스트", value: "favoriteArtist" },
+            ]}
+            value={filter}
+          />
         </div>
 
         <div className="relative mt-3 flex items-center justify-between gap-3">
@@ -389,8 +376,8 @@ export function FavoritesContent({
               type="button"
             >
               <span>{sort === "recent" ? "최근 찜한 순" : "모집 임박순"}</span>
-              <span
-                className={`h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-current transition-transform ${
+              <ChevronDownIcon
+                className={`h-3.5 w-3.5 transition-transform ${
                   isSortOpen ? "rotate-180" : ""
                 }`}
               />
@@ -473,9 +460,11 @@ export function FavoritesContent({
               variant="wide"
             />
           ) : filteredProducts.length > 0 ? (
-            <ProductGrid items={filteredProducts} variant="wide" />
+            <div className="content-reveal">
+              <ProductGrid items={filteredProducts} variant="wide" />
+            </div>
           ) : (
-            <div className="rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
+            <div className="content-reveal rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
                 {authState.isLoggedIn
                   ? "조건에 맞는 찜 상품이 없습니다."
