@@ -25,6 +25,7 @@ import {
 const LOGIN_PANEL_TRANSITION_MS = 240;
 
 type LoginExperienceProps = {
+  cancelHref?: string;
   returnHref: string;
 };
 
@@ -34,7 +35,10 @@ function getHistoryIndex() {
   return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
-export function LoginExperience({ returnHref }: LoginExperienceProps) {
+export function LoginExperience({
+  cancelHref,
+  returnHref,
+}: LoginExperienceProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -113,6 +117,15 @@ export function LoginExperience({ returnHref }: LoginExperienceProps) {
   }, [authState.accessToken, authState.isLoggedIn, returnHref, router]);
 
   function finishBackNavigation() {
+    if (cancelHref) {
+      if (cancelHref === "/profile") {
+        window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
+      }
+
+      router.replace(cancelHref);
+      return;
+    }
+
     const historyIndex = getHistoryIndex();
 
     if (returnHref === "/profile") {

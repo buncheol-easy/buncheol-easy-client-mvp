@@ -8,6 +8,10 @@ import {
   addBuncheolBookmark,
   removeBuncheolBookmark,
 } from "@/lib/auth-api";
+import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
@@ -340,7 +344,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     const accessToken = authState.accessToken;
 
     if (!authState.isLoggedIn || !accessToken) {
-      router.push("/login?returnTo=/favorites");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/favorites",
+        }),
+      );
       return;
     }
 

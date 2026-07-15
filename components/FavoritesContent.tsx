@@ -468,9 +468,12 @@ export function FavoritesContent({
             </div>
           ) : null}
           {isFavoriteProductsLoading ? (
-            <ProductGridSkeleton ariaLabel="찜한 상품을 불러오는 중" />
+            <ProductGridSkeleton
+              ariaLabel="찜한 상품을 불러오는 중"
+              variant="wide"
+            />
           ) : filteredProducts.length > 0 ? (
-            <ProductGrid items={filteredProducts} />
+            <ProductGrid items={filteredProducts} variant="wide" />
           ) : (
             <div className="rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">

@@ -34,6 +34,7 @@ import {
   updateBuncheol,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { createLoginHref } from "@/lib/auth-navigation";
 import {
   getInitialAuthState,
   readAuthState,
@@ -773,7 +774,9 @@ export function UploadProductForm({
   }, []);
 
   useEffect(() => {
-    if (authState.isLoggedIn && authState.accessToken) {
+    const currentAuthState = readAuthState();
+
+    if (currentAuthState.isLoggedIn && currentAuthState.accessToken) {
       return;
     }
 
@@ -785,7 +788,9 @@ export function UploadProductForm({
     }
 
     const frame = window.requestAnimationFrame(() => {
-      router.replace(`/login?returnTo=${encodeURIComponent(loginReturnHref)}`);
+      router.replace(
+        createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
+      );
     });
 
     return () => {
@@ -1566,7 +1571,9 @@ export function UploadProductForm({
       !isLocalDraftEdit &&
       (!authState.isLoggedIn || !authState.accessToken)
     ) {
-      router.push(`/login?returnTo=${encodeURIComponent(loginReturnHref)}`);
+      router.push(
+        createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
+      );
       return;
     }
 
