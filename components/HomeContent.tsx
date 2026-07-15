@@ -27,6 +27,10 @@ import {
   type ApiBanner,
 } from "@/lib/auth-api";
 import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
+import {
   clearAuthState,
   getInitialAuthState,
   readAuthState,
@@ -643,14 +647,24 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
   async function handleFavoriteGroupToggle(item: ArtistRailItem) {
     if (!authState.isLoggedIn) {
-      router.push("/login?returnTo=/");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/",
+        }),
+      );
       return;
     }
 
     const accessToken = await getFreshAccessToken();
 
     if (!accessToken) {
-      router.push("/login?returnTo=/");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/",
+        }),
+      );
       return;
     }
 

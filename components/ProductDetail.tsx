@@ -27,6 +27,10 @@ import {
   type BuncheolManagementOption,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
+import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
@@ -1741,7 +1745,12 @@ export function ProductDetail({
 
       if (!accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
-        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        router.push(
+          createLoginHref({
+            cancelTo: getCurrentBrowserHref(),
+            returnTo: returnHref,
+          }),
+        );
         return;
       }
 
@@ -1838,7 +1847,12 @@ export function ProductDetail({
 
       if (!accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
-        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        router.push(
+          createLoginHref({
+            cancelTo: getCurrentBrowserHref(),
+            returnTo: returnHref,
+          }),
+        );
         return;
       }
 
@@ -2316,7 +2330,12 @@ export function ProductDetail({
     const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
 
     if (!authState.isLoggedIn || !accessToken) {
-      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: returnHref,
+        }),
+      );
       return;
     }
 
@@ -2465,7 +2484,12 @@ export function ProductDetail({
     if (isPublicPreview) {
       const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
 
-      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: returnHref,
+        }),
+      );
       return;
     }
 

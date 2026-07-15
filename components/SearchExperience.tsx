@@ -37,6 +37,10 @@ import {
   type ApiGroup,
 } from "@/lib/auth-api";
 import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
+import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
@@ -808,7 +812,12 @@ export function SearchExperience({
 
     if (!authState.isLoggedIn || !accessToken) {
       const returnHref = `/search${keyword ? `?q=${encodeURIComponent(keyword)}` : ""}`;
-      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: returnHref,
+        }),
+      );
       return;
     }
 

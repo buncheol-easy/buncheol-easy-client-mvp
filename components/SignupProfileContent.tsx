@@ -12,6 +12,7 @@ import {
   updateUserProfile,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { createLoginHref } from "@/lib/auth-navigation";
 import {
   authProfileSetupReturnHrefStorageKey,
   authSignupProfileDraftStorageKey,
@@ -145,7 +146,9 @@ export function SignupProfileContent() {
         authProfileSetupReturnHrefStorageKey,
         returnHref,
       );
-      router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.replace(
+        createLoginHref({ cancelTo: "/profile", returnTo: returnHref }),
+      );
     }
   }, [authState.accessToken, authState.isLoggedIn, router]);
 
@@ -237,7 +240,9 @@ export function SignupProfileContent() {
           window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),
         );
 
-        router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        router.replace(
+          createLoginHref({ cancelTo: "/profile", returnTo: returnHref }),
+        );
         return;
       }
 
