@@ -2098,6 +2098,18 @@ export function ProductDetail({
       return;
     }
 
+    if (initialReturnSource === "home") {
+      router.replace("/");
+      return;
+    }
+
+    if (returnQuery !== undefined) {
+      router.replace(
+        returnQuery ? `/search?q=${encodeURIComponent(returnQuery)}` : "/search",
+      );
+      return;
+    }
+
     if (initialReturnSource === "profile") {
       if (hasProfileEntryState()) {
         router.back();
@@ -2133,8 +2145,8 @@ export function ProductDetail({
       return;
     }
 
-    router.back();
-  }, [backHref, initialReturnSource, router]);
+    router.replace("/");
+  }, [backHref, initialReturnSource, returnQuery, router]);
 
   useEffect(() => {
     const enterAnimationFrame = window.requestAnimationFrame(() => {
