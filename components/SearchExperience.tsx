@@ -1023,7 +1023,7 @@ export function SearchExperience({
             </>
           ) : (
             <>
-              <HomeContent />
+              <HomeContent skipEnterAnimation />
               <BottomNavigator />
             </>
           )}

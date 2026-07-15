@@ -84,12 +84,10 @@ export function BoardExperience() {
 
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
-      {!shouldSkipPanelEnter || isExiting ? (
-        <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-          <HomeContent skipEnterAnimation />
-          <BottomNavigator />
-        </SwipeUnderlay>
-      ) : null}
+      <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
+        <HomeContent skipEnterAnimation />
+        <BottomNavigator />
+      </SwipeUnderlay>
 
       <div
         className={`product-page-panel absolute inset-0 z-10 flex flex-col overflow-hidden bg-white ${

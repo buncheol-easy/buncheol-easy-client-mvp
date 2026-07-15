@@ -2752,7 +2752,9 @@ export function ProductDetail({
 
   return (
     <main className="product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
-      {initialReturnSource === "home" ? (
+      {initialReturnSource === "home" ||
+      initialReturnSource === "upload" ||
+      (backHref === "/" && returnQuery === undefined) ? (
         <SwipeUnderlay
           className="product-detail-underlay"
           isEntered={isEntered}
