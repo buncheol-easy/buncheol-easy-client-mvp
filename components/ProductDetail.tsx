@@ -1075,6 +1075,17 @@ export function ProductDetail({
     productStatus === "CONFIRMED" || productStatus === "PAYMENT_CONFIRMED";
   const isPurchasableStatus =
     !productStatus || productStatus === "RECRUITING";
+  const productOptionBlockLabel = isPublicPreview
+    ? null
+    : isCancelledProduct
+      ? "분철 취소"
+      : isDeadlinePassed
+        ? "구매 마감"
+        : isConfirmedProduct
+          ? "진행 확정"
+          : !isPurchasableStatus || isBidUnavailable
+            ? "구매 불가"
+            : null;
   const hasSelectableOption = auctionOptions.some(
     (option) =>
       !getOptionPurchaseOverlayLabel(
@@ -3089,11 +3100,12 @@ export function ProductDetail({
               </div>
               <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
                 {auctionOptions.map((option) => {
-                  const overlayLabel = getOptionPurchaseOverlayLabel(
-                    option,
-                    myBids[option.id],
-                    product.isApiProduct === true,
-                  );
+                  const overlayLabel =
+                    getOptionPurchaseOverlayLabel(
+                      option,
+                      myBids[option.id],
+                      product.isApiProduct === true,
+                    ) ?? productOptionBlockLabel;
                   const blockChipLabel = getOptionPurchaseBlockChipLabel(
                     overlayLabel,
                     option,
@@ -3254,11 +3266,12 @@ export function ProductDetail({
                   <div className="mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const isSelected = bidAmounts[option.id] === "selected";
-                      const overlayLabel = getOptionPurchaseOverlayLabel(
-                        option,
-                        myBids[option.id],
-                        product.isApiProduct === true,
-                      );
+                      const overlayLabel =
+                        getOptionPurchaseOverlayLabel(
+                          option,
+                          myBids[option.id],
+                          product.isApiProduct === true,
+                        ) ?? productOptionBlockLabel;
                       const displayedOverlayLabel =
                         getOptionPurchaseBlockChipLabel(
                           overlayLabel,
