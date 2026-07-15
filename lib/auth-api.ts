@@ -264,6 +264,7 @@ export type BuncheolMember = {
   purchasePaymentDueAt?: string;
   purchasePaymentStatus?: string;
   purchaseParticipationId?: string;
+  saleStatus?: string;
   topBidAmounts: number[];
 };
 
@@ -2013,6 +2014,7 @@ function getBuncheolMemberPurchaseStateFromRecord(
   });
   const hasDirectPaymentState = Boolean(
     getOptionalStringValue(record, [
+      "saleStatus",
       "paymentStatus",
       "participationStatus",
       "paymentConfirmedAt",
@@ -2052,6 +2054,20 @@ function getBuncheolMemberPurchaseStateFromRecord(
       "participationStatus",
       "status",
     ]) ??
+    (() => {
+      const saleStatus = getOptionalStringValue(record, ["saleStatus"])
+        ?.toUpperCase();
+
+      if (saleStatus === "SOLD") {
+        return "CONFIRMED";
+      }
+
+      if (saleStatus === "AWAITING_PAYMENT") {
+        return "AWAITING_PAYMENT";
+      }
+
+      return undefined;
+    })() ??
     (purchasePaymentConfirmedAt
       ? "CONFIRMED"
       : purchasePaymentDueAt || purchaseParticipationId
@@ -2122,9 +2138,12 @@ function getBuncheolMemberFromRecord(
     .map((value) => Number(value.replace(/[^0-9]/g, "")))
     .filter((value) => Number.isFinite(value) && value > 0);
   const purchaseState = getBuncheolMemberPurchaseStateFromRecord(record);
+  const saleStatus = getOptionalStringValue(record, ["saleStatus"]);
 
   return {
-    available: getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
+    available: saleStatus
+      ? saleStatus.toUpperCase() === "AVAILABLE"
+      : getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
     id,
     name,
     bidMinPrice,
@@ -2153,6 +2172,7 @@ function getBuncheolMemberFromRecord(
         "activeParticipationCount",
         "activeParticipantCount",
       ]) ?? 0,
+    saleStatus,
     ...purchaseState,
   };
 }
@@ -3430,6 +3450,7 @@ export function toProductDetailItem(
       purchasePaymentDueAt: member.purchasePaymentDueAt,
       purchasePaymentStatus: member.purchasePaymentStatus,
       purchaseParticipationId: member.purchaseParticipationId,
+      saleStatus: member.saleStatus,
       startingBid: formattedPrice,
       topBids: ["-", "-", "-"] as [string, string, string],
     } satisfies ProductOption;

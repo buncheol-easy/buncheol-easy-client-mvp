@@ -555,9 +555,11 @@ function getMyBidsFromOptions(options: ProductOption[]) {
 
 function isConfirmedOptionPurchase(option: ProductOption) {
   const status = option.purchasePaymentStatus?.toUpperCase();
+  const saleStatus = option.saleStatus?.toUpperCase();
 
   return Boolean(
     option.purchasePaymentConfirmedAt ||
+      saleStatus === "SOLD" ||
       status === "CONFIRMED" ||
       status === "PAYMENT_CONFIRMED" ||
       status === "PAID",
@@ -597,6 +599,20 @@ function getOptionPurchaseOverlayLabel(
   myBid?: number,
   shouldUseParticipantCount = false,
 ) {
+  const saleStatus = option.saleStatus?.toUpperCase();
+
+  if (saleStatus === "AWAITING_PAYMENT") {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  if (saleStatus === "SOLD") {
+    return PURCHASE_OPTION_LABELS.complete;
+  }
+
+  if (saleStatus === "AVAILABLE") {
+    return null;
+  }
+
   const isConfirmed = isConfirmedOptionPurchase(option);
 
   if (myBid) {
@@ -1281,8 +1297,22 @@ export function ProductDetail({
     const shouldTickPaymentDue =
       !Number.isNaN(paymentDueDate.getTime()) &&
       paymentDueDate.getTime() > Date.now();
+    const shouldTickOptionPaymentDue = auctionOptions.some((option) => {
+      const optionPaymentDueDate = parseCheckoutDateTime(
+        option.purchasePaymentDueAt,
+      );
 
-    if (isDeadlineClosed(product.deadline) && !shouldTickPaymentDue) {
+      return (
+        !Number.isNaN(optionPaymentDueDate.getTime()) &&
+        optionPaymentDueDate.getTime() > Date.now()
+      );
+    });
+
+    if (
+      isDeadlineClosed(product.deadline) &&
+      !shouldTickPaymentDue &&
+      !shouldTickOptionPaymentDue
+    ) {
       setDeadlineTick(Date.now());
       return;
     }
@@ -1292,7 +1322,7 @@ export function ProductDetail({
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [checkoutPaymentSummary?.paymentDueAt, product.deadline]);
+  }, [auctionOptions, checkoutPaymentSummary?.paymentDueAt, product.deadline]);
 
   useEffect(() => {
     setIsLiked(product.liked === true);

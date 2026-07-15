@@ -12,6 +12,7 @@ export type ProductOption = {
   purchasePaymentDueAt?: string;
   purchasePaymentStatus?: string;
   purchaseParticipationId?: string;
+  saleStatus?: string;
   label: string;
   price: string;
   startingBid?: string;
