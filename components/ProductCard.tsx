@@ -8,6 +8,10 @@ import {
   addBuncheolBookmark,
   removeBuncheolBookmark,
 } from "@/lib/auth-api";
+import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
@@ -340,7 +344,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     const accessToken = authState.accessToken;
 
     if (!authState.isLoggedIn || !accessToken) {
-      router.push("/login?returnTo=/favorites");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/favorites",
+        }),
+      );
       return;
     }
 
@@ -362,7 +371,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   }
 
   function handleCardClick(event: React.MouseEvent<HTMLAnchorElement>) {
-    writePublicBuncheolCard(item);
+    // 목록에서 방금 토글한 찜 상태가 상세 진입 시 그대로 보이도록 최신 값을 저장한다.
+    writePublicBuncheolCard({ ...item, liked: isLiked });
 
     const pathname = window.location.pathname;
 

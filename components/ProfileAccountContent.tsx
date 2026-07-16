@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { BackIcon, CheckIcon, ProfileIcon } from "@/components/icons";
+import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   isUserProfileComplete,
@@ -403,7 +404,12 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                   PROFILE_ACCOUNT_LOGIN_RETURN_KEY,
                   "true",
                 );
-                router.push("/login?returnTo=/profile/account");
+                router.push(
+                  createLoginHref({
+                    cancelTo: "/profile",
+                    returnTo: "/profile/account",
+                  }),
+                );
               }}
               type="button"
             >

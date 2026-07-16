@@ -37,11 +37,16 @@ import {
   type ApiGroup,
 } from "@/lib/auth-api";
 import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
+import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { FEATURES } from "@/lib/feature-flags";
 import {
   normalizeGroupSearchText,
   rankGroupSearchResults,
@@ -808,7 +813,12 @@ export function SearchExperience({
 
     if (!authState.isLoggedIn || !accessToken) {
       const returnHref = `/search${keyword ? `?q=${encodeURIComponent(keyword)}` : ""}`;
-      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: returnHref,
+        }),
+      );
       return;
     }
 
@@ -958,7 +968,9 @@ export function SearchExperience({
     const rail = (
       <ArtistRail
         items={resultFilters}
-        onFavoriteToggle={handleFavoriteGroupToggle}
+        onFavoriteToggle={
+          FEATURES.favoriteArtists ? handleFavoriteGroupToggle : undefined
+        }
         onItemClick={openRelatedSearch}
         pinFirstItem={!isMemberDisambiguation}
         selectedId={selectedRelatedItemId ?? undefined}
@@ -1016,7 +1028,7 @@ export function SearchExperience({
             </>
           ) : (
             <>
-              <HomeContent />
+              <HomeContent skipEnterAnimation />
               <BottomNavigator />
             </>
           )}

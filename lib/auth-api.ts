@@ -68,6 +68,8 @@ export function isUserProfileComplete(
 export type UpdateUserProfileRequest = {
   nickname: string;
   phoneNumber: string;
+  // 마케팅 정보 수신 동의 여부. 생략하면 서버가 기존 동의 상태를 유지한다.
+  marketingAgreed?: boolean;
 };
 
 export type BankAccountRequest = {
@@ -264,6 +266,7 @@ export type BuncheolMember = {
   purchasePaymentDueAt?: string;
   purchasePaymentStatus?: string;
   purchaseParticipationId?: string;
+  saleStatus?: string;
   topBidAmounts: number[];
 };
 
@@ -2012,18 +2015,26 @@ function getBuncheolMemberPurchaseStateFromRecord(
         ]),
     );
   });
+  const recordSaleStatus = getOptionalStringValue(record, [
+    "saleStatus",
+  ])?.toUpperCase();
+  // saleStatus는 점유 상태(SOLD/AWAITING_PAYMENT)일 때만 구매 상태 근거로 삼는다.
+  // AVAILABLE 레코드까지 열어두면 멤버 자체 필드(id 등)를 구매 정보로 오인할 수 있다.
+  const hasOccupiedSaleStatus =
+    recordSaleStatus === "SOLD" || recordSaleStatus === "AWAITING_PAYMENT";
   const hasDirectPaymentState = Boolean(
-    getOptionalStringValue(record, [
-      "paymentStatus",
-      "participationStatus",
-      "paymentConfirmedAt",
-      "paymentDueAt",
-      "paymentDeadline",
-      "dueAt",
-      "participationId",
-      "winnerParticipationId",
-      "paymentParticipationId",
-    ]),
+    hasOccupiedSaleStatus ||
+      getOptionalStringValue(record, [
+        "paymentStatus",
+        "participationStatus",
+        "paymentConfirmedAt",
+        "paymentDueAt",
+        "paymentDeadline",
+        "dueAt",
+        "participationId",
+        "winnerParticipationId",
+        "paymentParticipationId",
+      ]),
   );
   const source =
     nestedCandidates[0] ?? participantCandidate ?? (hasDirectPaymentState ? record : null);
@@ -2053,6 +2064,11 @@ function getBuncheolMemberPurchaseStateFromRecord(
       "participationStatus",
       "status",
     ]) ??
+    (recordSaleStatus === "SOLD"
+      ? "CONFIRMED"
+      : recordSaleStatus === "AWAITING_PAYMENT"
+        ? "AWAITING_PAYMENT"
+        : undefined) ??
     (purchasePaymentConfirmedAt
       ? "CONFIRMED"
       : purchasePaymentDueAt || purchaseParticipationId
@@ -2123,9 +2139,12 @@ function getBuncheolMemberFromRecord(
     .map((value) => Number(value.replace(/[^0-9]/g, "")))
     .filter((value) => Number.isFinite(value) && value > 0);
   const purchaseState = getBuncheolMemberPurchaseStateFromRecord(record);
+  const saleStatus = getOptionalStringValue(record, ["saleStatus"]);
 
   return {
-    available: getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
+    available: saleStatus
+      ? saleStatus.toUpperCase() === "AVAILABLE"
+      : getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
     id,
     name,
     bidMinPrice,
@@ -2154,6 +2173,7 @@ function getBuncheolMemberFromRecord(
         "activeParticipationCount",
         "activeParticipantCount",
       ]) ?? 0,
+    saleStatus,
     ...purchaseState,
   };
 }
@@ -3437,6 +3457,7 @@ export function toProductDetailItem(
       purchasePaymentDueAt: member.purchasePaymentDueAt,
       purchasePaymentStatus: member.purchasePaymentStatus,
       purchaseParticipationId: member.purchaseParticipationId,
+      saleStatus: member.saleStatus,
       startingBid: formattedPrice,
       topBids: ["-", "-", "-"] as [string, string, string],
     } satisfies ProductOption;
@@ -4167,6 +4188,34 @@ export async function requestMyHostedBuncheols(accessToken: string) {
     accessToken,
     buncheols.filter((buncheol) => !isRemovedBuncheolStatus(buncheol.status)),
   );
+}
+
+// 분철 상세 응답에는 bookmarked 필드가 없어, 상세 화면의 찜 상태는
+// 찜 목록에서 해당 분철 포함 여부로 판별한다 (썸네일 보강 없이 가볍게 조회).
+export async function requestBuncheolBookmarkStatus(
+  accessToken: string,
+  buncheolId: string,
+): Promise<boolean> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/bookmarks/me`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  return getBuncheolList(await readJsonBody(response))
+    .filter(isRecord)
+    .some(
+      (record) =>
+        getStringValue(record, ["buncheolId", "id"]).trim() ===
+        String(buncheolId),
+    );
 }
 
 export async function requestBookmarkedBuncheols(
@@ -5308,6 +5357,30 @@ export async function requestAdminTrackingRegistration(
       method: "PATCH",
     },
     "운송장 등록 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const body = await parseAdminResponse<{
+    succeededIds?: unknown;
+    failures?: unknown;
+  }>(response);
+
+  return getAdminBulkResult(body);
+}
+
+export async function requestAdminReceiptConfirmation(
+  accessToken: string,
+  deliveryIds: string[],
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/deliveries/receipt`,
+    {
+      body: JSON.stringify({
+        deliveryIds: deliveryIds.map(Number),
+      }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+    "수령완료 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
   );
   const body = await parseAdminResponse<{
     succeededIds?: unknown;

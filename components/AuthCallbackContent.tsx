@@ -12,6 +12,7 @@ import {
   requestUserProfile,
   requestUserProfileStatus,
 } from "@/lib/auth-api";
+import { getSafeInternalHref } from "@/lib/auth-navigation";
 
 type AuthCallbackContentProps = {
   initialAccessToken?: string;
@@ -19,7 +20,7 @@ type AuthCallbackContentProps = {
 };
 
 function getSafeReturnHref(value: string | null | undefined) {
-  return value?.startsWith("/") && !value.startsWith("//") ? value : "/profile";
+  return getSafeInternalHref(value, "/profile");
 }
 
 function getHashToken(name: string) {

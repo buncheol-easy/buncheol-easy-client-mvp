@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BellIcon, SearchIcon } from "@/components/icons";
+import { FEATURES } from "@/lib/feature-flags";
 
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
 
@@ -95,16 +96,20 @@ export function AppHeader({ tone = "dark" }: AppHeaderProps) {
             src={logoSrc}
           />
         </button>
-        <a
-          className="motion-card app-header__search flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black shadow-[0_8px_20px_rgba(0,0,0,0.08)]"
-          href="/search"
-          onClick={handleSearchClick}
-        >
-          <span className="min-w-0 truncate text-[16px] text-black/35">
-            포토카드
-          </span>
-          <SearchIcon />
-        </a>
+        {FEATURES.search ? (
+          <a
+            className="motion-card app-header__search flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black shadow-[0_8px_20px_rgba(0,0,0,0.08)]"
+            href="/search"
+            onClick={handleSearchClick}
+          >
+            <span className="min-w-0 truncate text-[16px] text-black/35">
+              포토카드
+            </span>
+            <SearchIcon />
+          </a>
+        ) : (
+          <div aria-hidden="true" className="min-w-0 flex-1" />
+        )}
         <Link
           aria-label="소식함"
           className={`motion-icon-button app-header__notification inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${

@@ -27,6 +27,10 @@ import {
   type BuncheolManagementOption,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
+import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
@@ -100,9 +104,14 @@ export function ProductReturnUnderlay({
   returnQuery,
   returnSource,
 }: ProductReturnUnderlayProps) {
+  const shouldRenderHomeUnderlay =
+    returnSource === "home" ||
+    returnSource === "upload" ||
+    (returnSource === undefined && returnQuery === undefined);
+
   return (
     <>
-      {returnSource === "home" ? (
+      {shouldRenderHomeUnderlay ? (
         <SwipeUnderlay
           className="product-detail-underlay"
           isEntered={isEntered}
@@ -598,9 +607,11 @@ function getMyBidsFromOptions(options: ProductOption[]) {
 
 function isConfirmedOptionPurchase(option: ProductOption) {
   const status = option.purchasePaymentStatus?.toUpperCase();
+  const saleStatus = option.saleStatus?.toUpperCase();
 
   return Boolean(
     option.purchasePaymentConfirmedAt ||
+      saleStatus === "SOLD" ||
       status === "CONFIRMED" ||
       status === "PAYMENT_CONFIRMED" ||
       status === "PAID",
@@ -640,6 +651,20 @@ function getOptionPurchaseOverlayLabel(
   myBid?: number,
   shouldUseParticipantCount = false,
 ) {
+  const saleStatus = option.saleStatus?.toUpperCase();
+
+  if (saleStatus === "AWAITING_PAYMENT") {
+    return PURCHASE_OPTION_LABELS.paymentWaiting;
+  }
+
+  if (saleStatus === "SOLD") {
+    return PURCHASE_OPTION_LABELS.complete;
+  }
+
+  if (saleStatus === "AVAILABLE") {
+    return null;
+  }
+
   const isConfirmed = isConfirmedOptionPurchase(option);
 
   if (myBid) {
@@ -1105,6 +1130,17 @@ export function ProductDetail({
     productStatus === "CONFIRMED" || productStatus === "PAYMENT_CONFIRMED";
   const isPurchasableStatus =
     !productStatus || productStatus === "RECRUITING";
+  const productOptionBlockLabel = isPublicPreview
+    ? null
+    : isCancelledProduct
+      ? "분철 취소"
+      : isDeadlinePassed
+        ? "구매 마감"
+        : isConfirmedProduct
+          ? "진행 확정"
+          : !isPurchasableStatus || isBidUnavailable
+            ? "구매 불가"
+            : null;
   const hasSelectableOption = auctionOptions.some(
     (option) =>
       !getOptionPurchaseOverlayLabel(
@@ -1327,8 +1363,22 @@ export function ProductDetail({
     const shouldTickPaymentDue =
       !Number.isNaN(paymentDueDate.getTime()) &&
       paymentDueDate.getTime() > Date.now();
+    const shouldTickOptionPaymentDue = auctionOptions.some((option) => {
+      const optionPaymentDueDate = parseCheckoutDateTime(
+        option.purchasePaymentDueAt,
+      );
 
-    if (isDeadlineClosed(product.deadline) && !shouldTickPaymentDue) {
+      return (
+        !Number.isNaN(optionPaymentDueDate.getTime()) &&
+        optionPaymentDueDate.getTime() > Date.now()
+      );
+    });
+
+    if (
+      isDeadlineClosed(product.deadline) &&
+      !shouldTickPaymentDue &&
+      !shouldTickOptionPaymentDue
+    ) {
       setDeadlineTick(Date.now());
       return;
     }
@@ -1338,7 +1388,7 @@ export function ProductDetail({
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [checkoutPaymentSummary?.paymentDueAt, product.deadline]);
+  }, [auctionOptions, checkoutPaymentSummary?.paymentDueAt, product.deadline]);
 
   useEffect(() => {
     setIsLiked(product.liked === true);
@@ -1791,7 +1841,12 @@ export function ProductDetail({
 
       if (!accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
-        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        router.push(
+          createLoginHref({
+            cancelTo: getCurrentBrowserHref(),
+            returnTo: returnHref,
+          }),
+        );
         return;
       }
 
@@ -1888,7 +1943,12 @@ export function ProductDetail({
 
       if (!accessToken) {
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
-        router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        router.push(
+          createLoginHref({
+            cancelTo: getCurrentBrowserHref(),
+            returnTo: returnHref,
+          }),
+        );
         return;
       }
 
@@ -2148,6 +2208,18 @@ export function ProductDetail({
       return;
     }
 
+    if (initialReturnSource === "home") {
+      router.replace("/");
+      return;
+    }
+
+    if (returnQuery !== undefined) {
+      router.replace(
+        returnQuery ? `/search?q=${encodeURIComponent(returnQuery)}` : "/search",
+      );
+      return;
+    }
+
     if (initialReturnSource === "profile") {
       if (hasProfileEntryState()) {
         router.back();
@@ -2183,8 +2255,8 @@ export function ProductDetail({
       return;
     }
 
-    router.back();
-  }, [backHref, initialReturnSource, router]);
+    router.replace("/");
+  }, [backHref, initialReturnSource, returnQuery, router]);
 
   useEffect(() => {
     const enterAnimationFrame = window.requestAnimationFrame(() => {
@@ -2359,7 +2431,12 @@ export function ProductDetail({
     const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
 
     if (!authState.isLoggedIn || !accessToken) {
-      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: returnHref,
+        }),
+      );
       return;
     }
 
@@ -2508,7 +2585,12 @@ export function ProductDetail({
     if (isPublicPreview) {
       const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
 
-      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: returnHref,
+        }),
+      );
       return;
     }
 
@@ -3021,11 +3103,12 @@ export function ProductDetail({
               </div>
               <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
                 {auctionOptions.map((option) => {
-                  const overlayLabel = getOptionPurchaseOverlayLabel(
-                    option,
-                    myBids[option.id],
-                    product.isApiProduct === true,
-                  );
+                  const overlayLabel =
+                    getOptionPurchaseOverlayLabel(
+                      option,
+                      myBids[option.id],
+                      product.isApiProduct === true,
+                    ) ?? productOptionBlockLabel;
                   const blockChipLabel = getOptionPurchaseBlockChipLabel(
                     overlayLabel,
                     option,
@@ -3186,11 +3269,12 @@ export function ProductDetail({
                   <div className="mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const isSelected = bidAmounts[option.id] === "selected";
-                      const overlayLabel = getOptionPurchaseOverlayLabel(
-                        option,
-                        myBids[option.id],
-                        product.isApiProduct === true,
-                      );
+                      const overlayLabel =
+                        getOptionPurchaseOverlayLabel(
+                          option,
+                          myBids[option.id],
+                          product.isApiProduct === true,
+                        ) ?? productOptionBlockLabel;
                       const displayedOverlayLabel =
                         getOptionPurchaseBlockChipLabel(
                           overlayLabel,

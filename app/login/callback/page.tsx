@@ -1,4 +1,5 @@
 import { AuthCallbackContent } from "@/components/AuthCallbackContent";
+import { getOptionalSafeInternalHref } from "@/lib/auth-navigation";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -14,12 +15,6 @@ function getFirstSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function getSafeReturnHref(returnTo: string | string[] | undefined) {
-  const value = getFirstSearchParam(returnTo);
-
-  return value?.startsWith("/") && !value.startsWith("//") ? value : undefined;
-}
-
 export default async function LoginCallbackPage({
   searchParams,
 }: LoginCallbackPageProps) {
@@ -28,7 +23,7 @@ export default async function LoginCallbackPage({
   return (
     <AuthCallbackContent
       initialAccessToken={getFirstSearchParam(accessToken)}
-      returnHref={getSafeReturnHref(returnTo)}
+      returnHref={getOptionalSafeInternalHref(returnTo)}
     />
   );
 }

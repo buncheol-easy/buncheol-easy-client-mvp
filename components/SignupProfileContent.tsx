@@ -13,6 +13,10 @@ import {
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
+  createLoginHref,
+  getOptionalSafeInternalHref,
+} from "@/lib/auth-navigation";
+import {
   authProfileSetupReturnHrefStorageKey,
   authSignupProfileDraftStorageKey,
   getInitialAuthState,
@@ -30,17 +34,18 @@ type SignupProfileDraft = {
 };
 
 function getSafeReturnHref(value: string | null | undefined) {
+  const safeValue = getOptionalSafeInternalHref(value);
+
   if (
-    !value?.startsWith("/") ||
-    value.startsWith("//") ||
-    value === "/signup/profile" ||
-    value.startsWith("/signup/profile?") ||
-    value.startsWith("/signup/profile#")
+    !safeValue ||
+    safeValue === "/signup/profile" ||
+    safeValue.startsWith("/signup/profile?") ||
+    safeValue.startsWith("/signup/profile#")
   ) {
     return "/profile";
   }
 
-  return value;
+  return safeValue;
 }
 
 function sanitizePhoneNumber(value: string) {
@@ -145,7 +150,9 @@ export function SignupProfileContent() {
         authProfileSetupReturnHrefStorageKey,
         returnHref,
       );
-      router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.replace(
+        createLoginHref({ cancelTo: "/profile", returnTo: returnHref }),
+      );
     }
   }, [authState.accessToken, authState.isLoggedIn, router]);
 
@@ -237,7 +244,9 @@ export function SignupProfileContent() {
           window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),
         );
 
-        router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        router.replace(
+          createLoginHref({ cancelTo: "/profile", returnTo: returnHref }),
+        );
         return;
       }
 
@@ -254,6 +263,7 @@ export function SignupProfileContent() {
       await updateUserProfile(accessToken, {
         nickname: nickname.trim(),
         phoneNumber: phoneNumber.trim(),
+        marketingAgreed: isMarketingAgreed,
       });
 
       const returnHref = getSafeReturnHref(

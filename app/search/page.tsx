@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { SearchExperience } from "@/components/SearchExperience";
+import { FEATURES } from "@/lib/feature-flags";
 import { blackChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = blackChromeViewport;
@@ -16,6 +18,10 @@ function normalizeQuery(query: string | string[] | undefined) {
 }
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
+  if (!FEATURES.search) {
+    redirect("/");
+  }
+
   const { from, memberId, q } = await searchParams;
 
   return (

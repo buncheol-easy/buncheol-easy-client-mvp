@@ -19,6 +19,10 @@ import {
   type ApiGroup,
 } from "@/lib/auth-api";
 import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
+import {
   clearAuthState,
   getInitialAuthState,
   readAuthState,
@@ -218,14 +222,24 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
 
   async function handleFavoriteToggle(group: ArtistGroup) {
     if (!authState.isLoggedIn) {
-      router.push("/login?returnTo=/artists");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/artists",
+        }),
+      );
       return;
     }
 
     const accessToken = await getFreshAccessToken();
 
     if (!accessToken) {
-      router.push("/login?returnTo=/artists");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/artists",
+        }),
+      );
       return;
     }
 

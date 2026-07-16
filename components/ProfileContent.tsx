@@ -20,6 +20,7 @@ import {
   lastAddedDeliveryAddressIdKey,
   type AddressReturnState,
 } from "@/lib/address-return-state";
+import { createLoginHref } from "@/lib/auth-navigation";
 import {
   authProfileSetupReturnHrefStorageKey,
   clearAuthCookies,
@@ -2479,7 +2480,10 @@ export function ProfileContent({
             <Link
               aria-label="로그인이 필요합니다. 로그인 화면으로 이동"
               className="flex items-center gap-3"
-              href="/login?returnTo=/profile"
+              href={createLoginHref({
+                cancelTo: "/profile",
+                returnTo: "/profile",
+              })}
             >
               {profileSummaryContent}
             </Link>
@@ -2703,7 +2707,10 @@ export function ProfileContent({
               href={
                 authState.isLoggedIn
                   ? "/profile/addresses"
-                  : "/login?returnTo=/profile/addresses"
+                  : createLoginHref({
+                      cancelTo: "/profile",
+                      returnTo: "/profile/addresses",
+                    })
               }
               onClick={rememberProfilePanelEntry}
             >

@@ -1,4 +1,8 @@
+"use client";
+
+import type { MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   BidIcon,
   HeartIcon,
@@ -6,17 +10,23 @@ import {
   PlusIcon,
   ProfileIcon,
 } from "@/components/icons";
+import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
+import { readAuthState } from "@/lib/auth-store";
 
 type NavItem = {
+  authRequired?: boolean;
   href?: string;
   label: string;
 };
 
 const navItems: NavItem[] = [
   { href: "/", label: "Home" },
-  { href: "/upload", label: "Upload" },
-  { href: "/profile/bids", label: "Bids" },
-  { href: "/favorites", label: "Favorites" },
+  { authRequired: true, href: "/upload", label: "Upload" },
+  { authRequired: true, href: "/profile/bids", label: "Bids" },
+  { authRequired: true, href: "/favorites", label: "Favorites" },
   { href: "/profile", label: "Profile" },
 ];
 
@@ -25,6 +35,36 @@ type BottomNavigatorProps = {
 };
 
 export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) {
+  const router = useRouter();
+
+  function handleProtectedNavigation(
+    event: MouseEvent<HTMLAnchorElement>,
+    item: NavItem,
+  ) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    if (!item.authRequired || !item.href || readAuthState().isLoggedIn) {
+      return;
+    }
+
+    event.preventDefault();
+    router.push(
+      createLoginHref({
+        cancelTo: getCurrentBrowserHref(),
+        returnTo: item.href,
+      }),
+    );
+  }
+
   return (
     <nav className="bottom-navigator shrink-0 bg-black px-3 py-2 text-white">
       <div className="bottom-navigator__grid grid grid-cols-5 items-center">
@@ -67,6 +107,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
                 href={item.href}
                 className={className}
                 aria-label={item.label}
+                onClick={(event) => handleProtectedNavigation(event, item)}
               >
                 {content}
               </Link>

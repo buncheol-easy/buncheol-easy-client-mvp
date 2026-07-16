@@ -27,12 +27,17 @@ import {
   type ApiBanner,
 } from "@/lib/auth-api";
 import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
+import {
   clearAuthState,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { FEATURES } from "@/lib/feature-flags";
 import { toArtistRailItem } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 
@@ -554,6 +559,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, []);
 
   useEffect(() => {
+    // 최애 그룹 레일이 꺼져 있으면 그룹 조회 자체를 건너뛴다.
+    if (!FEATURES.favoriteArtists) {
+      return;
+    }
+
     let isActive = true;
     const resetFrame = window.requestAnimationFrame(() => {
       if (!isActive) {
@@ -643,14 +653,24 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
   async function handleFavoriteGroupToggle(item: ArtistRailItem) {
     if (!authState.isLoggedIn) {
-      router.push("/login?returnTo=/");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/",
+        }),
+      );
       return;
     }
 
     const accessToken = await getFreshAccessToken();
 
     if (!accessToken) {
-      router.push("/login?returnTo=/");
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: "/",
+        }),
+      );
       return;
     }
 
@@ -759,29 +779,39 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         </section>
 
         <section className="px-4">
-          <div className="mb-6">
-          {isGroupLoading ? (
-            <HomeArtistRailSkeleton />
-          ) : (
-          <ArtistRail
-            items={favoriteGroups}
-            leadingItem={{ label: "최애 추가", icon: "plus" }}
-            onFavoriteToggle={handleFavoriteGroupToggle}
-            onItemClick={(item) => openGroupSearch(item.name)}
-            onLeadingClick={() => openGroupSearch()}
-          />
-          )}
-          </div>
+          {FEATURES.favoriteArtists ? (
+            <>
+              <div className="mb-6">
+              {isGroupLoading ? (
+                <HomeArtistRailSkeleton />
+              ) : (
+              <ArtistRail
+                items={favoriteGroups}
+                leadingItem={{ label: "최애 추가", icon: "plus" }}
+                onFavoriteToggle={handleFavoriteGroupToggle}
+                onItemClick={(item) => openGroupSearch(item.name)}
+                onLeadingClick={() => openGroupSearch()}
+              />
+              )}
+              </div>
 
-          {groupMessage ? (
-            <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
-              <p className="text-[13px] font-semibold text-black/45">
-                {groupMessage}
-              </p>
-            </div>
+              {groupMessage ? (
+                <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+                  <p className="text-[13px] font-semibold text-black/45">
+                    {groupMessage}
+                  </p>
+                </div>
+              ) : null}
+            </>
           ) : null}
 
-          <div className="border-t border-black/10 pt-5">
+          <div
+            className={
+              FEATURES.favoriteArtists
+                ? "border-t border-black/10 pt-5"
+                : "pt-2"
+            }
+          >
             {listingMessage ? (
               <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
                 <p className="text-[13px] font-semibold text-black/45">

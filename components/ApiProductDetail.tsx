@@ -10,6 +10,7 @@ import {
 import { trackEvent } from "@/lib/analytics";
 import type { ProductCardItem } from "@/components/ProductCard";
 import {
+  requestBuncheolBookmarkStatus,
   requestBuncheolDetail,
   requestBuncheolManagement,
   requestMyHostedBuncheols,
@@ -209,6 +210,11 @@ export function ApiProductDetail({
       }
     });
 
+    // 상세 응답에는 찜 여부가 없어 찜 목록 조회를 병렬로 띄워 보강한다.
+    const bookmarkStatusPromise: Promise<boolean | undefined> = accessToken
+      ? requestBuncheolBookmarkStatus(accessToken, id).catch(() => undefined)
+      : Promise.resolve(undefined);
+
     requestBuncheolDetail(accessToken, id)
       .then(async (detail) => {
         if (!isActive) {
@@ -271,6 +277,15 @@ export function ApiProductDetail({
           }
         }
 
+        if (detailProduct.liked === undefined) {
+          const bookmarked = await bookmarkStatusPromise;
+
+          detailProduct = {
+            ...detailProduct,
+            liked: bookmarked ?? publicCard?.liked,
+          };
+        }
+
         if (!isActive) {
           return;
         }
@@ -324,7 +339,9 @@ export function ApiProductDetail({
       />
       {product && isShellSettled ? (
         <ProductDetail
-          backHref={returnSource ? undefined : "/"}
+          backHref={
+            returnSource || returnQuery !== undefined ? undefined : "/"
+          }
           initialReturnQuery={returnQuery}
           initialReturnSource={returnSource}
           onExitingChange={setIsDetailExiting}

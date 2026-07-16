@@ -19,6 +19,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 
 type HostedBuncheolManageProps = {
@@ -352,7 +353,9 @@ export function HostedBuncheolManage({
 
         setDetail(null);
         setMessage("로그인 후 관리할 수 있어요.");
-        router.replace(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+        router.replace(
+          createLoginHref({ cancelTo: "/", returnTo: returnHref }),
+        );
       });
 
       return () => {
