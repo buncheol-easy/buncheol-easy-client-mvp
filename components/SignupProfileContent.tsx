@@ -263,6 +263,7 @@ export function SignupProfileContent() {
       await updateUserProfile(accessToken, {
         nickname: nickname.trim(),
         phoneNumber: phoneNumber.trim(),
+        marketingAgreed: isMarketingAgreed,
       });
 
       const returnHref = getSafeReturnHref(
