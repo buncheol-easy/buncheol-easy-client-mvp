@@ -33,7 +33,6 @@ import {
 } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
-import { FEATURES } from "@/lib/feature-flags";
 import {
   getDeliveryAddressStateFromSyncedAddresses,
   getInitialDeliveryAddressState,
@@ -2901,7 +2900,7 @@ export function ProductDetail({
                 <TrashIcon />
               </button>
             ) : null}
-            {FEATURES.favorites && !canEditProduct ? (
+            {!canEditProduct ? (
               <button
                 type="button"
                 className={`product-detail-action motion-icon-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 ${

@@ -13,7 +13,6 @@ import {
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
-import { FEATURES } from "@/lib/feature-flags";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
@@ -281,8 +280,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       ? getAvailableMemberSummary(availableMemberNames)
       : "";
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
-  const shouldShowBookmarkButton =
-    FEATURES.favorites && item.isHostedByMe !== true;
+  const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
   useEffect(() => {
     setIsLiked(item.liked === true);

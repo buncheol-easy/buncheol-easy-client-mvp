@@ -969,7 +969,7 @@ export function SearchExperience({
       <ArtistRail
         items={resultFilters}
         onFavoriteToggle={
-          FEATURES.favorites ? handleFavoriteGroupToggle : undefined
+          FEATURES.favoriteArtists ? handleFavoriteGroupToggle : undefined
         }
         onItemClick={openRelatedSearch}
         pinFirstItem={!isMemberDisambiguation}

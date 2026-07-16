@@ -774,7 +774,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         </section>
 
         <section className="px-4">
-          {FEATURES.favorites ? (
+          {FEATURES.favoriteArtists ? (
             <>
               <div className="mb-6">
               {isGroupLoading ? (
@@ -802,7 +802,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
           <div
             className={
-              FEATURES.favorites ? "border-t border-black/10 pt-5" : "pt-2"
+              FEATURES.favoriteArtists
+                ? "border-t border-black/10 pt-5"
+                : "pt-2"
             }
           >
             {listingMessage ? (

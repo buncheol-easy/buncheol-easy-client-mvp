@@ -6,7 +6,7 @@ import { whiteChromeViewport } from "@/lib/system-chrome";
 export const viewport = whiteChromeViewport;
 
 export default function ArtistsPage() {
-  if (!FEATURES.favorites) {
+  if (!FEATURES.favoriteArtists) {
     redirect("/");
   }
 

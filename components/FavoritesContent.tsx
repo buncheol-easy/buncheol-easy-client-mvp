@@ -20,6 +20,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { FEATURES } from "@/lib/feature-flags";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 type FavoriteFilter = "all" | "favoriteArtist";
@@ -155,7 +156,7 @@ export function FavoritesContent({
     readStoredFavoritesViewState(shouldSkipEnterAnimation),
   );
   const [filter, setFilter] = useState<FavoriteFilter>(
-    initialViewState.filter ?? "all",
+    FEATURES.favoriteArtists ? initialViewState.filter ?? "all" : "all",
   );
   const [sort, setSort] = useState<FavoriteSort>(
     initialViewState.sort ?? "recent",
@@ -357,16 +358,18 @@ export function FavoritesContent({
           </h1>
         </div>
 
-        <div className="mt-3">
-          <SlidingTabs
-            onChange={setFilter}
-            tabs={[
-              { label: "전체", value: "all" },
-              { label: "최애 아티스트", value: "favoriteArtist" },
-            ]}
-            value={filter}
-          />
-        </div>
+        {FEATURES.favoriteArtists ? (
+          <div className="mt-3">
+            <SlidingTabs
+              onChange={setFilter}
+              tabs={[
+                { label: "전체", value: "all" },
+                { label: "최애 아티스트", value: "favoriteArtist" },
+              ]}
+              value={filter}
+            />
+          </div>
+        ) : null}
 
         <div className="relative mt-3 flex items-center justify-between gap-3">
           <div className="relative">
