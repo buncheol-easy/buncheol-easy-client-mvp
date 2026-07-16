@@ -559,6 +559,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, []);
 
   useEffect(() => {
+    // 최애 그룹 레일이 꺼져 있으면 그룹 조회 자체를 건너뛴다.
+    if (!FEATURES.favoriteArtists) {
+      return;
+    }
+
     let isActive = true;
     const resetFrame = window.requestAnimationFrame(() => {
       if (!isActive) {
