@@ -30,6 +30,7 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { FEATURES } from "@/lib/feature-flags";
 import {
   ApiRequestError,
   deleteBuncheol,
@@ -2489,7 +2490,11 @@ export function ProfileContent({
             </Link>
           )}
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
+          <div
+            className={`mt-5 grid gap-2 ${
+              FEATURES.favorites ? "grid-cols-3" : "grid-cols-2"
+            }`}
+          >
             <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
               <p className="text-[11px] font-medium text-[#DDE7B8]">참여중</p>
               <p className="mt-1 text-[19px] font-semibold">
@@ -2510,16 +2515,18 @@ export function ProfileContent({
                 )}
               </p>
             </div>
-            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-[#DDE7B8]">찜</p>
-              <p className="mt-1 text-[19px] font-semibold">
-                {isBookmarkedProductCountLoading ? (
-                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
-                ) : (
-                  bookmarkedProductCount ?? 0
-                )}
-              </p>
-            </div>
+            {FEATURES.favorites ? (
+              <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
+                <p className="text-[11px] font-medium text-[#DDE7B8]">찜</p>
+                <p className="mt-1 text-[19px] font-semibold">
+                  {isBookmarkedProductCountLoading ? (
+                    <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
+                  ) : (
+                    bookmarkedProductCount ?? 0
+                  )}
+                </p>
+              </div>
+            ) : null}
           </div>
         </section>
 

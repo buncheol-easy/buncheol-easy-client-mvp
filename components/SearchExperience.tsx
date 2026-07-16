@@ -46,6 +46,7 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { FEATURES } from "@/lib/feature-flags";
 import {
   normalizeGroupSearchText,
   rankGroupSearchResults,
@@ -967,7 +968,9 @@ export function SearchExperience({
     const rail = (
       <ArtistRail
         items={resultFilters}
-        onFavoriteToggle={handleFavoriteGroupToggle}
+        onFavoriteToggle={
+          FEATURES.favorites ? handleFavoriteGroupToggle : undefined
+        }
         onItemClick={openRelatedSearch}
         pinFirstItem={!isMemberDisambiguation}
         selectedId={selectedRelatedItemId ?? undefined}

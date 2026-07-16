@@ -15,6 +15,7 @@ import {
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
 import { readAuthState } from "@/lib/auth-store";
+import { FEATURES } from "@/lib/feature-flags";
 
 type NavItem = {
   authRequired?: boolean;
@@ -28,7 +29,7 @@ const navItems: NavItem[] = [
   { authRequired: true, href: "/profile/bids", label: "Bids" },
   { authRequired: true, href: "/favorites", label: "Favorites" },
   { href: "/profile", label: "Profile" },
-];
+].filter((item) => FEATURES.favorites || item.label !== "Favorites");
 
 type BottomNavigatorProps = {
   activeLabel?: string | null;
@@ -56,7 +57,11 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
 
   return (
     <nav className="bottom-navigator shrink-0 bg-black px-3 py-2 text-white">
-      <div className="bottom-navigator__grid grid grid-cols-5 items-center">
+      <div
+        className={`bottom-navigator__grid grid items-center ${
+          navItems.length === 5 ? "grid-cols-5" : "grid-cols-4"
+        }`}
+      >
         {navItems.map((item) => {
           const isActive = item.label === activeLabel;
           const className = `bottom-navigator__item flex min-w-0 items-center justify-center px-1 ${

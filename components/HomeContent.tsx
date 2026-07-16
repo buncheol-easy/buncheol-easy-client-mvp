@@ -37,6 +37,7 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { FEATURES } from "@/lib/feature-flags";
 import { toArtistRailItem } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 
@@ -773,29 +774,37 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         </section>
 
         <section className="px-4">
-          <div className="mb-6">
-          {isGroupLoading ? (
-            <HomeArtistRailSkeleton />
-          ) : (
-          <ArtistRail
-            items={favoriteGroups}
-            leadingItem={{ label: "최애 추가", icon: "plus" }}
-            onFavoriteToggle={handleFavoriteGroupToggle}
-            onItemClick={(item) => openGroupSearch(item.name)}
-            onLeadingClick={() => openGroupSearch()}
-          />
-          )}
-          </div>
+          {FEATURES.favorites ? (
+            <>
+              <div className="mb-6">
+              {isGroupLoading ? (
+                <HomeArtistRailSkeleton />
+              ) : (
+              <ArtistRail
+                items={favoriteGroups}
+                leadingItem={{ label: "최애 추가", icon: "plus" }}
+                onFavoriteToggle={handleFavoriteGroupToggle}
+                onItemClick={(item) => openGroupSearch(item.name)}
+                onLeadingClick={() => openGroupSearch()}
+              />
+              )}
+              </div>
 
-          {groupMessage ? (
-            <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
-              <p className="text-[13px] font-semibold text-black/45">
-                {groupMessage}
-              </p>
-            </div>
+              {groupMessage ? (
+                <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+                  <p className="text-[13px] font-semibold text-black/45">
+                    {groupMessage}
+                  </p>
+                </div>
+              ) : null}
+            </>
           ) : null}
 
-          <div className="border-t border-black/10 pt-5">
+          <div
+            className={
+              FEATURES.favorites ? "border-t border-black/10 pt-5" : "pt-2"
+            }
+          >
             {listingMessage ? (
               <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
                 <p className="text-[13px] font-semibold text-black/45">
