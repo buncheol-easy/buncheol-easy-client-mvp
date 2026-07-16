@@ -2013,19 +2013,26 @@ function getBuncheolMemberPurchaseStateFromRecord(
         ]),
     );
   });
+  const recordSaleStatus = getOptionalStringValue(record, [
+    "saleStatus",
+  ])?.toUpperCase();
+  // saleStatus는 점유 상태(SOLD/AWAITING_PAYMENT)일 때만 구매 상태 근거로 삼는다.
+  // AVAILABLE 레코드까지 열어두면 멤버 자체 필드(id 등)를 구매 정보로 오인할 수 있다.
+  const hasOccupiedSaleStatus =
+    recordSaleStatus === "SOLD" || recordSaleStatus === "AWAITING_PAYMENT";
   const hasDirectPaymentState = Boolean(
-    getOptionalStringValue(record, [
-      "saleStatus",
-      "paymentStatus",
-      "participationStatus",
-      "paymentConfirmedAt",
-      "paymentDueAt",
-      "paymentDeadline",
-      "dueAt",
-      "participationId",
-      "winnerParticipationId",
-      "paymentParticipationId",
-    ]),
+    hasOccupiedSaleStatus ||
+      getOptionalStringValue(record, [
+        "paymentStatus",
+        "participationStatus",
+        "paymentConfirmedAt",
+        "paymentDueAt",
+        "paymentDeadline",
+        "dueAt",
+        "participationId",
+        "winnerParticipationId",
+        "paymentParticipationId",
+      ]),
   );
   const source =
     nestedCandidates[0] ?? participantCandidate ?? (hasDirectPaymentState ? record : null);
@@ -2055,20 +2062,11 @@ function getBuncheolMemberPurchaseStateFromRecord(
       "participationStatus",
       "status",
     ]) ??
-    (() => {
-      const saleStatus = getOptionalStringValue(record, ["saleStatus"])
-        ?.toUpperCase();
-
-      if (saleStatus === "SOLD") {
-        return "CONFIRMED";
-      }
-
-      if (saleStatus === "AWAITING_PAYMENT") {
-        return "AWAITING_PAYMENT";
-      }
-
-      return undefined;
-    })() ??
+    (recordSaleStatus === "SOLD"
+      ? "CONFIRMED"
+      : recordSaleStatus === "AWAITING_PAYMENT"
+        ? "AWAITING_PAYMENT"
+        : undefined) ??
     (purchasePaymentConfirmedAt
       ? "CONFIRMED"
       : purchasePaymentDueAt || purchaseParticipationId

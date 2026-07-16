@@ -12,7 +12,10 @@ import {
   updateUserProfile,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
-import { createLoginHref } from "@/lib/auth-navigation";
+import {
+  createLoginHref,
+  getOptionalSafeInternalHref,
+} from "@/lib/auth-navigation";
 import {
   authProfileSetupReturnHrefStorageKey,
   authSignupProfileDraftStorageKey,
@@ -31,17 +34,18 @@ type SignupProfileDraft = {
 };
 
 function getSafeReturnHref(value: string | null | undefined) {
+  const safeValue = getOptionalSafeInternalHref(value);
+
   if (
-    !value?.startsWith("/") ||
-    value.startsWith("//") ||
-    value === "/signup/profile" ||
-    value.startsWith("/signup/profile?") ||
-    value.startsWith("/signup/profile#")
+    !safeValue ||
+    safeValue === "/signup/profile" ||
+    safeValue.startsWith("/signup/profile?") ||
+    safeValue.startsWith("/signup/profile#")
   ) {
     return "/profile";
   }
 
-  return value;
+  return safeValue;
 }
 
 function sanitizePhoneNumber(value: string) {

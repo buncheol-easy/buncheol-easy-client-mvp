@@ -41,6 +41,17 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
     event: MouseEvent<HTMLAnchorElement>,
     item: NavItem,
   ) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
     if (!item.authRequired || !item.href || readAuthState().isLoggedIn) {
       return;
     }
