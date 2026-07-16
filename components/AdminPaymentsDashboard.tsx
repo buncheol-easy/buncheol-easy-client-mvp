@@ -16,6 +16,7 @@ import {
   requestAdminMe,
   requestAdminPaymentConfirmation,
   requestAdminPaymentsSummary,
+  requestAdminReceiptConfirmation,
   requestAdminTrackingRegistration,
   requestAllAdminPayments,
   requestCreateNotice,
@@ -133,7 +134,7 @@ function getDeliveryStatusLabel(status: string | undefined) {
   if (!status || status === "SNAPSHOTTED") return "운송장 입력 전";
   if (status === "SHIPPING") return "배송 중";
   if (status === "DELIVERED") return "배송 완료";
-  if (status === "RECEIVED") return "배송 완료";
+  if (status === "RECEIVED") return "수령 완료";
   return status;
 }
 
@@ -292,6 +293,22 @@ function getRecordTrackingTargetIds(record: AdminPaymentRecord) {
 
 function getTrackingBatchId(record: AdminPaymentRecord) {
   return getRecordTrackingTargetIds(record).join("|") || record.participationId;
+}
+
+// 백엔드가 SHIPPING/DELIVERED 만 수령완료로 받으므로, 대상 밖 배송 건은 요청에서 제외한다.
+function getRecordReceiptTargetIds(record: AdminPaymentRecord) {
+  return getUniqueValues(
+    record.deliveries
+      .filter(
+        (delivery) =>
+          delivery.status === "SHIPPING" || delivery.status === "DELIVERED",
+      )
+      .map((delivery) => delivery.deliveryId),
+  );
+}
+
+function getReceiptBatchId(record: AdminPaymentRecord) {
+  return getRecordReceiptTargetIds(record).join("|") || record.participationId;
 }
 
 function groupPaymentRecords(records: AdminPaymentRecord[]) {
@@ -804,6 +821,9 @@ export function AdminPaymentsDashboard() {
   const [registeringDeliveryId, setRegisteringDeliveryId] = useState<
     string | null
   >(null);
+  const [confirmingReceiptBatchId, setConfirmingReceiptBatchId] = useState<
+    string | null
+  >(null);
 
   const handleSessionExpired = useCallback(() => {
     clearAdminAuthState();
@@ -999,6 +1019,17 @@ export function AdminPaymentsDashboard() {
       selectedTrackingValue.trim() &&
       registeringDeliveryId !== selectedTrackingBatchId,
   );
+  const selectedReceiptTargetIds = selectedRecord
+    ? getRecordReceiptTargetIds(selectedRecord)
+    : [];
+  const selectedReceiptBatchId = selectedRecord
+    ? getReceiptBatchId(selectedRecord)
+    : "";
+  // 처리 가능 대상(SHIPPING/DELIVERED)이 없으면 운송장 등록된 건은 전부 수령완료된 상태다.
+  const isReceiptActionable = selectedReceiptTargetIds.length > 0;
+  const canConfirmReceipt = Boolean(
+    isReceiptActionable && confirmingReceiptBatchId !== selectedReceiptBatchId,
+  );
   const verificationItems: Array<{
     key: VerificationKey;
     label: string;
@@ -1126,6 +1157,51 @@ export function AdminPaymentsDashboard() {
       );
     } finally {
       setRegisteringDeliveryId(null);
+    }
+  }
+
+  async function confirmReceipt(record: AdminPaymentRecord) {
+    const receiptTargetIds = getRecordReceiptTargetIds(record);
+    const receiptBatchId = getReceiptBatchId(record);
+
+    if (receiptTargetIds.length === 0) {
+      setMessage("수령완료로 처리할 배송 건이 없어요.");
+      return;
+    }
+
+    const accessToken = readAdminAuthState().accessToken;
+
+    if (!accessToken) {
+      handleSessionExpired();
+      return;
+    }
+
+    setConfirmingReceiptBatchId(receiptBatchId);
+
+    try {
+      const result = await requestAdminReceiptConfirmation(
+        accessToken,
+        receiptTargetIds,
+      );
+
+      await loadRecords(
+        result.failures.length > 0
+          ? getBulkFailureMessage(result.failures)
+          : "수령완료로 처리했어요.",
+      );
+    } catch (error: unknown) {
+      if (isAdminSessionError(error)) {
+        handleSessionExpired();
+        return;
+      }
+
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "수령완료를 처리하지 못했어요.",
+      );
+    } finally {
+      setConfirmingReceiptBatchId(null);
     }
   }
 
@@ -1580,6 +1656,20 @@ export function AdminPaymentsDashboard() {
                                   ? "운송장 수정"
                                   : "운송장 등록"}
                             </button>
+                            {selectedHasTrackingNumber ? (
+                              <button
+                                className="h-11 rounded-full border border-black/10 bg-white text-[15px] font-semibold text-black disabled:border-transparent disabled:bg-black/5 disabled:text-black/30"
+                                disabled={!canConfirmReceipt}
+                                onClick={() => confirmReceipt(selectedRecord)}
+                                type="button"
+                              >
+                                {confirmingReceiptBatchId === selectedReceiptBatchId
+                                  ? "처리 중"
+                                  : isReceiptActionable
+                                    ? "수령완료 처리"
+                                    : "수령완료 처리됨"}
+                              </button>
+                            ) : null}
                           </>
                         ) : (
                           <p className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[12px] font-semibold leading-5 text-black/45">

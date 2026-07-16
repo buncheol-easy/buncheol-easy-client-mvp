@@ -5365,3 +5365,27 @@ export async function requestAdminTrackingRegistration(
 
   return getAdminBulkResult(body);
 }
+
+export async function requestAdminReceiptConfirmation(
+  accessToken: string,
+  deliveryIds: string[],
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/deliveries/receipt`,
+    {
+      body: JSON.stringify({
+        deliveryIds: deliveryIds.map(Number),
+      }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+    "수령완료 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const body = await parseAdminResponse<{
+    succeededIds?: unknown;
+    failures?: unknown;
+  }>(response);
+
+  return getAdminBulkResult(body);
+}
