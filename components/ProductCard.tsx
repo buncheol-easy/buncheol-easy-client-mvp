@@ -371,7 +371,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   }
 
   function handleCardClick(event: React.MouseEvent<HTMLAnchorElement>) {
-    writePublicBuncheolCard(item);
+    // 목록에서 방금 토글한 찜 상태가 상세 진입 시 그대로 보이도록 최신 값을 저장한다.
+    writePublicBuncheolCard({ ...item, liked: isLiked });
 
     const pathname = window.location.pathname;
 

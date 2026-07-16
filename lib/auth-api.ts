@@ -4190,6 +4190,34 @@ export async function requestMyHostedBuncheols(accessToken: string) {
   );
 }
 
+// 분철 상세 응답에는 bookmarked 필드가 없어, 상세 화면의 찜 상태는
+// 찜 목록에서 해당 분철 포함 여부로 판별한다 (썸네일 보강 없이 가볍게 조회).
+export async function requestBuncheolBookmarkStatus(
+  accessToken: string,
+  buncheolId: string,
+): Promise<boolean> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/bookmarks/me`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  return getBuncheolList(await readJsonBody(response))
+    .filter(isRecord)
+    .some(
+      (record) =>
+        getStringValue(record, ["buncheolId", "id"]).trim() ===
+        String(buncheolId),
+    );
+}
+
 export async function requestBookmarkedBuncheols(
   accessToken: string,
   params: Pick<
