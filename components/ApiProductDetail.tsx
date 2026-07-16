@@ -324,7 +324,9 @@ export function ApiProductDetail({
       />
       {product && isShellSettled ? (
         <ProductDetail
-          backHref={returnSource ? undefined : "/"}
+          backHref={
+            returnSource || returnQuery !== undefined ? undefined : "/"
+          }
           initialReturnQuery={returnQuery}
           initialReturnSource={returnSource}
           onExitingChange={setIsDetailExiting}
