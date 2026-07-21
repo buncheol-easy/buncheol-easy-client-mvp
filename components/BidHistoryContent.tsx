@@ -194,6 +194,28 @@ const bidProgressStepLabels = [
   "배송 완료",
 ] as const;
 
+const participationStatusGuide = [
+  {
+    label: "결제 대기",
+    description:
+      "주문 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 결제 정보 버튼에서 확인할 수 있어요.",
+  },
+  {
+    label: "결제 완료",
+    description:
+      "관리자가 입금을 확인해 참여가 확정된 상태예요. 개최자가 배송을 시작하면 배송중으로 바뀌어요.",
+  },
+  {
+    label: "배송중",
+    description:
+      "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
+  },
+  {
+    label: "배송 완료",
+    description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
+  },
+] as const;
+
 const bidHistoryModes: BidHistoryMode[] = ["joined", "hosted"];
 const bidHistoryFilters: BidHistoryFilter[] = ["all", "payment", "confirmed"];
 const hostedHistoryFilters: HostedHistoryFilter[] = [
@@ -975,6 +997,12 @@ export function BidHistoryContent({
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
+  const [isStatusHelpSheetOpen, setIsStatusHelpSheetOpen] = useState(false);
+  const [isStatusHelpSheetEntered, setIsStatusHelpSheetEntered] =
+    useState(false);
+  const [isStatusHelpSheetClosing, setIsStatusHelpSheetClosing] =
+    useState(false);
+  const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
   const [paymentCopyToast, setPaymentCopyToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
@@ -1700,6 +1728,33 @@ export function BidHistoryContent({
     );
   }
 
+  function openStatusHelpSheet() {
+    if (statusHelpSheetCloseTimerRef.current !== null) {
+      window.clearTimeout(statusHelpSheetCloseTimerRef.current);
+      statusHelpSheetCloseTimerRef.current = null;
+    }
+
+    setIsStatusHelpSheetClosing(false);
+    setIsStatusHelpSheetOpen(true);
+    window.requestAnimationFrame(() => {
+      setIsStatusHelpSheetEntered(true);
+    });
+  }
+
+  function closeStatusHelpSheet() {
+    if (statusHelpSheetCloseTimerRef.current !== null) {
+      return;
+    }
+
+    setIsStatusHelpSheetClosing(true);
+    setIsStatusHelpSheetEntered(false);
+    statusHelpSheetCloseTimerRef.current = window.setTimeout(() => {
+      statusHelpSheetCloseTimerRef.current = null;
+      setIsStatusHelpSheetOpen(false);
+      setIsStatusHelpSheetClosing(false);
+    }, 280);
+  }
+
   function rememberScrollPosition() {
     if (!scrollContainerRef.current) {
       return;
@@ -2329,6 +2384,89 @@ export function BidHistoryContent({
           )}
         </div>
       </main>
+
+      {mode === "joined" ? (
+        <button
+          aria-label="참여 상태 안내 보기"
+          className="motion-icon-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)]"
+          onClick={openStatusHelpSheet}
+          type="button"
+        >
+          ?
+        </button>
+      ) : null}
+
+      {isStatusHelpSheetOpen ? (
+        <div
+          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
+            isStatusHelpSheetEntered && !isStatusHelpSheetClosing
+              ? "bid-sheet-backdrop-active"
+              : ""
+          }`}
+        >
+          <button
+            aria-label="참여 상태 안내 닫기"
+            className="absolute inset-0 cursor-default"
+            onClick={closeStatusHelpSheet}
+            type="button"
+          />
+          <section
+            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              isStatusHelpSheetEntered && !isStatusHelpSheetClosing
+                ? "bid-sheet-panel-active"
+                : ""
+            }`}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
+                  참여 상태 안내
+                </h2>
+                <p className="mt-1 text-[13px] font-medium text-black/45">
+                  참여한 분철은 이런 순서로 진행돼요.
+                </p>
+              </div>
+              <button
+                aria-label="닫기"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                onClick={closeStatusHelpSheet}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {participationStatusGuide.map((item) => (
+                <div
+                  className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-3"
+                  key={item.label}
+                >
+                  <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                    {item.label}
+                  </p>
+                  <p className="mt-1 text-[12px] font-medium leading-5 text-black/50">
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+              <p className="px-1 pt-1 text-[12px] font-medium leading-5 text-black/40">
+                분철이 취소되거나 입금 기한이 지나면 참여가 취소될 수 있어요.
+                이미 입금했다면 등록한 환불 계좌로 환불돼요.
+              </p>
+            </div>
+
+            <button
+              className="mt-4 h-12 w-full shrink-0 rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
+              onClick={closeStatusHelpSheet}
+              type="button"
+            >
+              알겠어요!
+            </button>
+          </section>
+        </div>
+      ) : null}
 
       {isPaymentSheetOpen && selectedPaymentBid ? (
         <div
