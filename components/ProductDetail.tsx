@@ -163,6 +163,8 @@ const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
+// 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
+const paymentWindowMs = 30 * 60 * 1000;
 const sheetDragCloseThreshold = 72;
 const kstOffsetHours = 9;
 
@@ -458,7 +460,12 @@ function formatPaymentDueCountdown(
     return "-";
   }
 
-  const remainingMilliseconds = dueDate.getTime() - now;
+  // 입금 기한은 선점 시점 + 30분을 넘을 수 없다. 서버 절대시각과 클라이언트
+  // 시계의 오차로 남은시간이 30분을 초과해 보이지 않도록 상한을 건다.
+  const remainingMilliseconds = Math.min(
+    dueDate.getTime() - now,
+    paymentWindowMs,
+  );
 
   if (remainingMilliseconds <= 0) {
     return "입금 마감";
@@ -481,6 +488,30 @@ function formatPaymentDueCountdown(
   }
 
   return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
+}
+
+// 참여 직후 받은 입금 기한을 응답 수신 시각 + 30분으로 상한 보정한다.
+// 서버·클라이언트 시계가 어긋나도 방금 시작한 카운트다운이 30분을 넘거나
+// 실제 만료보다 늦게 끝나 보이지 않는다 (만료 판정 자체는 서버가 한다).
+function clampPaymentDueAt(
+  dueAt: string | null | undefined,
+  receivedAt: number,
+): string | null | undefined {
+  if (!dueAt) {
+    return dueAt;
+  }
+
+  const dueDate = parseCheckoutDateTime(dueAt);
+
+  if (Number.isNaN(dueDate.getTime())) {
+    return dueAt;
+  }
+
+  const maxDueAtMs = receivedAt + paymentWindowMs;
+
+  return dueDate.getTime() > maxDueAtMs
+    ? new Date(maxDueAtMs).toISOString()
+    : dueAt;
 }
 
 const PURCHASE_OPTION_LABELS = {
@@ -2092,8 +2123,10 @@ export function ProductDetail({
           totalPaymentAmount - totalBidAmount,
           0,
         );
-        const sharedPaymentDueAt =
-          result.paymentDueAt ?? paymentDetail?.paymentDueAt;
+        const sharedPaymentDueAt = clampPaymentDueAt(
+          result.paymentDueAt ?? paymentDetail?.paymentDueAt,
+          Date.now(),
+        );
         const sharedParticipationStatus =
           result.participationStatus ||
           paymentDetail?.paymentStatus ||
