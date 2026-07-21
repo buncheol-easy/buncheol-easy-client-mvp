@@ -30,7 +30,7 @@ type ApiProductDetailProps = {
   id: string;
   isHostedView?: boolean;
   returnQuery?: string;
-  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload";
 };
 
 function isInactivePurchaseStatus(status: string | undefined) {

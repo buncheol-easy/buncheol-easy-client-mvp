@@ -65,10 +65,7 @@ import {
   FavoritesContent,
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
-import {
-  PROFILE_SKIP_ENTER_KEY,
-  ProfileContent,
-} from "@/components/ProfileContent";
+import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
   SearchExperience,
@@ -78,7 +75,7 @@ import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 type ProductDetailProps = {
   product: ProductDetailItem;
   backHref?: string;
-  initialReturnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+  initialReturnSource?: "home" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
   startEntered?: boolean;
   renderShell?: boolean;
@@ -95,7 +92,7 @@ type ProductReturnUnderlayProps = {
   isEntered: boolean;
   isExiting: boolean;
   returnQuery?: string;
-  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload";
 };
 
 export function ProductReturnUnderlay({
@@ -119,17 +116,6 @@ export function ProductReturnUnderlay({
         >
           <HomeContent skipEnterAnimation />
           <BottomNavigator />
-        </SwipeUnderlay>
-      ) : null}
-
-      {returnSource === "profile" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <ProfileContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Profile" />
         </SwipeUnderlay>
       ) : null}
 
@@ -169,8 +155,6 @@ export function ProductReturnUnderlay({
   );
 }
 
-const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
-const PRODUCT_PROFILE_ENTRY_STATE_KEY = "__buncheolProductFromProfile";
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
@@ -314,7 +298,6 @@ function getCheckoutReturnOptionsFromState(
 
 type ProductHistoryState = {
   idx?: unknown;
-  [PRODUCT_PROFILE_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
 };
@@ -358,10 +341,6 @@ function getHistoryIndex() {
   const historyState = getHistoryState();
 
   return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
-
-function hasProfileEntryState() {
-  return getHistoryState()?.[PRODUCT_PROFILE_ENTRY_STATE_KEY] === true;
 }
 
 function hasBidHistoryEntryState() {
@@ -485,7 +464,9 @@ function formatPaymentDueCountdown(
     return "입금 마감";
   }
 
-  const totalSeconds = Math.floor(remainingMilliseconds / 1000);
+  // 서버가 초 단위(UTC)로 내려주는 기한을 내림하면 응답 지연만큼 한 단계
+  // 일찍 줄어들어 보이므로, 진행 중인 초를 포함해 올림으로 표시한다.
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
@@ -1383,6 +1364,10 @@ export function ProductDetail({
       return;
     }
 
+    // 결제 완료 직후 첫 렌더가 이전 tick(최대 1초 전)으로 계산되면
+    // 다음 tick에서 표시가 2초 건너뛰므로 즉시 현재 시각으로 맞춘다.
+    setDeadlineTick(Date.now());
+
     const intervalId = window.setInterval(() => {
       setDeadlineTick(Date.now());
     }, 1000);
@@ -2220,16 +2205,6 @@ export function ProductDetail({
       return;
     }
 
-    if (initialReturnSource === "profile") {
-      if (hasProfileEntryState()) {
-        router.back();
-        return;
-      }
-
-      router.replace("/profile");
-      return;
-    }
-
     if (initialReturnSource === "bids") {
       if (hasBidHistoryEntryState()) {
         router.back();
@@ -2275,32 +2250,14 @@ export function ProductDetail({
 
   useEffect(() => {
     const historyIndex = getHistoryIndex();
-    const expectedEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_PROFILE_ENTRY_INDEX_KEY,
-    );
     const expectedBidHistoryEntryIndex = window.sessionStorage.getItem(
       PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
     );
     const expectedFavoritesEntryIndex = window.sessionStorage.getItem(
       PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
     );
-    window.sessionStorage.removeItem(PRODUCT_PROFILE_ENTRY_INDEX_KEY);
     window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
     window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
-
-    if (
-      initialReturnSource === "profile" &&
-      historyIndex !== null &&
-      expectedEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_PROFILE_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
 
     if (
       initialReturnSource === "bids" &&
@@ -2389,11 +2346,7 @@ export function ProductDetail({
       window.sessionStorage.removeItem(SEARCH_SKIP_ENTER_KEY);
     }
 
-    if (initialReturnSource === "profile") {
-      window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
-    } else {
-      window.sessionStorage.removeItem(PROFILE_SKIP_ENTER_KEY);
-    }
+    window.sessionStorage.removeItem(PROFILE_SKIP_ENTER_KEY);
 
     if (initialReturnSource === "home") {
       window.sessionStorage.setItem(HOME_SKIP_ENTER_KEY, "true");

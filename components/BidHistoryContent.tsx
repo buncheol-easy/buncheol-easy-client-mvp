@@ -2181,11 +2181,6 @@ export function BidHistoryContent({
                                   : "운송장 등록 대기"}
                               </p>
                             </div>
-                            {bid.trackingNumber ? (
-                              <span className="shrink-0 rounded-full bg-[#E4F6A5] px-3 py-2 text-[12px] font-semibold text-black/65">
-                                운송장 등록
-                              </span>
-                            ) : null}
                           </div>
                         </div>
                       ) : null}
