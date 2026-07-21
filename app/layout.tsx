@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import Image from "next/image";
 import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
+import { ProfileCompletionGate } from "@/components/ProfileCompletionGate";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
 import { blackChromeViewport } from "@/lib/system-chrome";
@@ -34,6 +35,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <DisplayModeClassSync />
+        <ProfileCompletionGate />
         <Suspense fallback={null}>
           <SystemChromeColorSync />
         </Suspense>
