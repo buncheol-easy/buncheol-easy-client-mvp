@@ -8,6 +8,7 @@ export type ProductOption = {
   myBidAmount?: number;
   myParticipationId?: string;
   myRank?: number;
+  participatedByMe?: boolean;
   purchasePaymentConfirmedAt?: string;
   purchasePaymentDueAt?: string;
   purchasePaymentStatus?: string;

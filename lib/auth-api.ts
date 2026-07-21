@@ -262,6 +262,7 @@ export type BuncheolMember = {
   myRank?: number;
   name: string;
   participantCount: number;
+  participatedByMe?: boolean;
   purchasePaymentConfirmedAt?: string;
   purchasePaymentDueAt?: string;
   purchasePaymentStatus?: string;
@@ -2173,6 +2174,9 @@ function getBuncheolMemberFromRecord(
         "activeParticipationCount",
         "activeParticipantCount",
       ]) ?? 0,
+    participatedByMe:
+      getBooleanValue(record, ["participatedByMe", "isParticipatedByMe"]) ??
+      undefined,
     saleStatus,
     ...purchaseState,
   };
@@ -2371,6 +2375,37 @@ function getMyParticipationBidsFromRecord(
   );
 }
 
+function getMyParticipationMemberIdsFromRecord(
+  data: Record<string, unknown>,
+): Set<string> {
+  const myParticipation = getNestedData(data.myParticipation);
+
+  if (!isRecord(myParticipation)) {
+    return new Set();
+  }
+
+  return getRecordListValue(myParticipation, ["bids", "participations"]).reduce(
+    (memberIds, record) => {
+      const buncheolMemberId = getStringValue(record, [
+        "buncheolMemberId",
+        "memberSlotId",
+        "optionId",
+      ]);
+      const status = getOptionalStringValue(record, [
+        "status",
+        "participationStatus",
+      ]);
+
+      if (buncheolMemberId && !isInactiveBuncheolPaymentStatus(status)) {
+        memberIds.add(buncheolMemberId);
+      }
+
+      return memberIds;
+    },
+    new Set<string>(),
+  );
+}
+
 function getBuncheolDetailFromBody(body: unknown) {
   const data = getNestedData(body);
 
@@ -2385,6 +2420,7 @@ function getBuncheolDetailFromBody(body: unknown) {
   }
 
   const myParticipationBids = getMyParticipationBidsFromRecord(data);
+  const myParticipationMemberIds = getMyParticipationMemberIdsFromRecord(data);
   const members = mergeBuncheolMemberPurchaseStates(
     getRecordListValue(data, [
       "buncheolMembers",
@@ -2395,10 +2431,16 @@ function getBuncheolDetailFromBody(body: unknown) {
       .map(getBuncheolMemberFromRecord)
       .filter((member): member is BuncheolMember => member !== null)
       .map((member) => {
+        // 멤버 응답에 participatedByMe 가 없으면 myParticipation 목록으로 보완한다.
+        const participatedByMe =
+          member.participatedByMe ??
+          (myParticipationMemberIds.has(member.id) ? true : undefined);
         const myBid = myParticipationBids.get(member.id);
 
         if (!myBid) {
-          return member;
+          return participatedByMe === member.participatedByMe
+            ? member
+            : { ...member, participatedByMe };
         }
 
         return {
@@ -2406,6 +2448,7 @@ function getBuncheolDetailFromBody(body: unknown) {
           myBidAmount: myBid.bidAmount,
           myParticipationId: myBid.participationId,
           myRank: myBid.rank,
+          participatedByMe,
         };
       }),
     data,
@@ -3452,6 +3495,7 @@ export function toProductDetailItem(
       myParticipationId: member.myParticipationId,
       myRank: member.myRank,
       participantCount: member.participantCount,
+      participatedByMe: member.participatedByMe,
       price: formattedPrice,
       purchasePaymentConfirmedAt: member.purchasePaymentConfirmedAt,
       purchasePaymentDueAt: member.purchasePaymentDueAt,

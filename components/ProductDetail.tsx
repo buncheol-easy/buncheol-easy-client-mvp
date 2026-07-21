@@ -489,23 +489,44 @@ const PURCHASE_OPTION_LABELS = {
   unavailable: "선택할 수 없는 멤버예요",
 } as const;
 
-function getOptionPaymentWaitingLabel(option: ProductOption, now = Date.now()) {
+// 멤버 슬롯 칩에 실제로 노출되는 문구. PURCHASE_OPTION_LABELS 는 상태 판별용 내부 값이라 분리한다.
+const MEMBER_STATUS_CHIP_LABELS = {
+  myComplete: "내가 구매한 멤버",
+  myPaymentWaiting: "내 주문이 진행중이에요",
+  otherComplete: "매진",
+  otherPaymentWaiting: "다른 사람이 주문 진행중이에요",
+} as const;
+
+// 서버 participatedByMe(상세 응답) 또는 이 세션에서 방금 참여한 로컬 상태로 "내 참여"를 판별한다.
+function isOptionParticipatedByMe(option: ProductOption, myBid?: number) {
+  return (
+    option.participatedByMe === true ||
+    Boolean(option.myParticipationId) ||
+    Boolean(myBid)
+  );
+}
+
+function getOptionPaymentWaitingLabel(
+  option: ProductOption,
+  now = Date.now(),
+  isMine = false,
+) {
+  const baseLabel = isMine
+    ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
+    : MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
   const dueAt = option.purchasePaymentDueAt;
 
   if (!dueAt) {
-    return PURCHASE_OPTION_LABELS.paymentWaiting;
+    return baseLabel;
   }
 
   const dueDate = parseCheckoutDateTime(dueAt);
 
   if (Number.isNaN(dueDate.getTime()) || dueDate.getTime() <= now) {
-    return PURCHASE_OPTION_LABELS.paymentWaiting;
+    return baseLabel;
   }
 
-  return `${PURCHASE_OPTION_LABELS.paymentWaiting} · ${formatPaymentDueCountdown(
-    dueAt,
-    now,
-  )}`;
+  return `${baseLabel} · ${formatPaymentDueCountdown(dueAt, now)}`;
 }
 
 function getTargetTags(product: ProductDetailItem) {
@@ -679,6 +700,7 @@ function getOptionPurchaseBlockChipLabel(
   overlayLabel: string | null,
   option?: ProductOption,
   now = Date.now(),
+  isMine = false,
 ) {
   if (!overlayLabel) {
     return null;
@@ -689,11 +711,17 @@ function getOptionPurchaseBlockChipLabel(
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.complete) {
-    return "구매 완료";
+    return isMine
+      ? MEMBER_STATUS_CHIP_LABELS.myComplete
+      : MEMBER_STATUS_CHIP_LABELS.otherComplete;
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting) {
-    return option ? getOptionPaymentWaitingLabel(option, now) : overlayLabel;
+    return option
+      ? getOptionPaymentWaitingLabel(option, now, isMine)
+      : isMine
+        ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
+        : MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
   }
 
   return overlayLabel;
@@ -3071,6 +3099,7 @@ export function ProductDetail({
                     overlayLabel,
                     option,
                     deadlineTick,
+                    isOptionParticipatedByMe(option, myBids[option.id]),
                   );
 
                   return (
@@ -3238,6 +3267,7 @@ export function ProductDetail({
                           overlayLabel,
                           option,
                           deadlineTick,
+                          isOptionParticipatedByMe(option, myBids[option.id]),
                         );
 
                       return (
