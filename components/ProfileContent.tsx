@@ -606,7 +606,6 @@ export function ProfileContent({
 
     return shouldSkip;
   });
-  const [initialProfileStateCache] = useState(() => readProfileStateCache());
   const addressSyncRequestIdRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
@@ -637,21 +636,42 @@ export function ProfileContent({
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
   const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(
-    () => initialProfileStateCache?.userProfile ?? null,
-  );
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [userProfileMessage, setUserProfileMessage] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [apiBidEntries, setApiBidEntries] = useState<ProfileBidEntry[] | null>(
-    () => initialProfileStateCache?.apiBidEntries ?? null,
+    null,
   );
   const [apiHostedProducts, setApiHostedProducts] = useState<
     ProductDetailItem[] | null
-  >(() => initialProfileStateCache?.apiHostedProducts ?? null);
+  >(null);
   const [bookmarkedProductCount, setBookmarkedProductCount] = useState<
     number | null
-  >(() => initialProfileStateCache?.bookmarkedProductCount ?? null);
+  >(null);
+
+  // sessionStorage 캐시는 SSR 결과와 하이드레이션 렌더를 일치시키기 위해
+  // 초기 렌더가 아니라 마운트 이후에 주입한다.
+  useEffect(() => {
+    const cachedProfileState = readProfileStateCache();
+
+    if (!cachedProfileState) {
+      return;
+    }
+
+    setUserProfile(
+      (current) => current ?? cachedProfileState.userProfile ?? null,
+    );
+    setApiBidEntries(
+      (current) => current ?? cachedProfileState.apiBidEntries ?? null,
+    );
+    setApiHostedProducts(
+      (current) => current ?? cachedProfileState.apiHostedProducts ?? null,
+    );
+    setBookmarkedProductCount(
+      (current) => current ?? cachedProfileState.bookmarkedProductCount ?? null,
+    );
+  }, []);
 
   const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
   const isHostedProductsLoading =
