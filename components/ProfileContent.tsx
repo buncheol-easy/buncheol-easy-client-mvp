@@ -2900,11 +2900,6 @@ export function ProfileContent({
                                     : "운송장 등록 대기"}
                                 </p>
                               </div>
-                              {bid.trackingNumber ? (
-                                <span className="shrink-0 rounded-full bg-black/10 px-3 py-2 text-[12px] font-semibold text-black/45">
-                                  운송장 등록
-                                </span>
-                              ) : null}
                             </div>
                           </div>
                         ) : null}
