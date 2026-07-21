@@ -11,6 +11,13 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
+import {
+  BanknoteIcon,
+  BidIcon,
+  ClipboardListIcon,
+  CloseIcon,
+  SearchIcon,
+} from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import type { ProductCardItem } from "@/components/ProductCard";
@@ -75,6 +82,33 @@ const HOME_BANNERS: HomeBanner[] = [
     label: "안전한 분철 안내",
   },
 ];
+
+const homeUsageGuide = [
+  {
+    icon: SearchIcon,
+    label: "분철 둘러보기",
+    description:
+      "홈에서 진행 중인 분철을 둘러봐요. 남은 멤버를 보면 어떤 멤버를 구매할 수 있는지 바로 알 수 있어요.",
+  },
+  {
+    icon: ClipboardListIcon,
+    label: "멤버 골라 주문",
+    description:
+      "분철에 들어가 원하는 멤버를 고르고, 택배 받을 편의점을 정해 주문해요.",
+  },
+  {
+    icon: BanknoteIcon,
+    label: "30분 안에 입금",
+    description:
+      "주문하면 개최자 계좌가 보여요. 30분 안에 입금과 개최자 확인까지 끝나야 참여가 확정돼요.",
+  },
+  {
+    icon: BidIcon,
+    label: "참여 내역에서 확인",
+    description:
+      "입금 확인부터 배송, 편의점 수령까지 진행 상황은 참여 내역에서 볼 수 있어요.",
+  },
+] as const;
 
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
@@ -196,6 +230,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const isRestoringReturnScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
+  const [isUsageHelpSheetOpen, setIsUsageHelpSheetOpen] = useState(false);
+  const [isUsageHelpSheetEntered, setIsUsageHelpSheetEntered] =
+    useState(false);
+  const [isUsageHelpSheetClosing, setIsUsageHelpSheetClosing] =
+    useState(false);
+  const usageHelpSheetCloseTimerRef = useRef<number | null>(null);
   const apiListingsRef = useRef<ProductCardItem[] | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
@@ -669,6 +709,33 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     isRestoringReturnScrollRef.current = false;
   }
 
+  function openUsageHelpSheet() {
+    if (usageHelpSheetCloseTimerRef.current !== null) {
+      window.clearTimeout(usageHelpSheetCloseTimerRef.current);
+      usageHelpSheetCloseTimerRef.current = null;
+    }
+
+    setIsUsageHelpSheetClosing(false);
+    setIsUsageHelpSheetOpen(true);
+    window.requestAnimationFrame(() => {
+      setIsUsageHelpSheetEntered(true);
+    });
+  }
+
+  function closeUsageHelpSheet() {
+    if (usageHelpSheetCloseTimerRef.current !== null) {
+      return;
+    }
+
+    setIsUsageHelpSheetClosing(true);
+    setIsUsageHelpSheetEntered(false);
+    usageHelpSheetCloseTimerRef.current = window.setTimeout(() => {
+      usageHelpSheetCloseTimerRef.current = null;
+      setIsUsageHelpSheetOpen(false);
+      setIsUsageHelpSheetClosing(false);
+    }, 280);
+  }
+
   return (
     <div className="scroll-reactive-shell">
       <div
@@ -809,6 +876,92 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         </div>
         </div>
       </div>
+
+      <button
+        aria-label="분철이지 이용 방법 보기"
+        className="motion-icon-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)]"
+        onClick={openUsageHelpSheet}
+        type="button"
+      >
+        ?
+      </button>
+
+      {isUsageHelpSheetOpen ? (
+        <div
+          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
+            isUsageHelpSheetEntered && !isUsageHelpSheetClosing
+              ? "bid-sheet-backdrop-active"
+              : ""
+          }`}
+        >
+          <button
+            aria-label="이용 방법 안내 닫기"
+            className="absolute inset-0 cursor-default"
+            onClick={closeUsageHelpSheet}
+            type="button"
+          />
+          <section
+            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              isUsageHelpSheetEntered && !isUsageHelpSheetClosing
+                ? "bid-sheet-panel-active"
+                : ""
+            }`}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
+                  분철이지 사용법 가이드
+                </h2>
+                <p className="mt-1 text-[13px] font-medium text-black/45">
+                  분철 참여는 이 순서로 진행돼요.
+                </p>
+              </div>
+              <button
+                aria-label="닫기"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                onClick={closeUsageHelpSheet}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {homeUsageGuide.map((item) => (
+                <div
+                  className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-3"
+                  key={item.label}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#DDE7B8]">
+                      <item.icon className="h-3.5 w-3.5" />
+                    </span>
+                    <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                      {item.label}
+                    </p>
+                  </div>
+                  <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/50">
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+              <p className="px-1 pt-1 text-[12px] font-medium leading-5 text-black/40">
+                마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 분철을 직접
+                여는 기능은 준비 중이에요. 조금만 기다려 주세요!
+              </p>
+            </div>
+
+            <button
+              className="mt-4 h-12 w-full shrink-0 rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
+              onClick={closeUsageHelpSheet}
+              type="button"
+            >
+              확인했어요
+            </button>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

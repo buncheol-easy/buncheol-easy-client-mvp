@@ -11,7 +11,13 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { MouseEvent } from "react";
-import { CloseIcon } from "@/components/icons";
+import {
+  BanknoteIcon,
+  CheckIcon,
+  CloseIcon,
+  PackageCheckIcon,
+  TruckIcon,
+} from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
@@ -196,21 +202,25 @@ const bidProgressStepLabels = [
 
 const participationStatusGuide = [
   {
+    icon: BanknoteIcon,
     label: "결제 대기",
     description:
       "주문 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 결제 정보 버튼에서 확인할 수 있어요.",
   },
   {
+    icon: CheckIcon,
     label: "결제 완료",
     description:
       "관리자가 입금을 확인해 참여가 확정된 상태예요. 개최자가 배송을 시작하면 배송중으로 바뀌어요.",
   },
   {
+    icon: TruckIcon,
     label: "배송중",
     description:
       "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
   },
   {
+    icon: PackageCheckIcon,
     label: "배송 완료",
     description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
   },
@@ -2437,21 +2447,36 @@ export function BidHistoryContent({
               </button>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {participationStatusGuide.map((item) => (
-                <div
-                  className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-3"
-                  key={item.label}
-                >
-                  <p className="text-[13px] font-semibold tracking-[-0.04em]">
-                    {item.label}
-                  </p>
-                  <p className="mt-1 text-[12px] font-medium leading-5 text-black/50">
-                    {item.description}
-                  </p>
-                </div>
-              ))}
-              <p className="px-1 pt-1 text-[12px] font-medium leading-5 text-black/40">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                {participationStatusGuide.map((item, index) => (
+                  <div className="flex gap-3" key={item.label}>
+                    <div className="flex flex-col items-center">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-[#CFE86B] bg-[#D7FF5F]">
+                        <item.icon className="h-3.5 w-3.5" />
+                      </span>
+                      {index < participationStatusGuide.length - 1 ? (
+                        <span className="w-px flex-1 bg-[#CAD6A0]" />
+                      ) : null}
+                    </div>
+                    <div
+                      className={
+                        index < participationStatusGuide.length - 1
+                          ? "pb-4"
+                          : ""
+                      }
+                    >
+                      <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                        {item.label}
+                      </p>
+                      <p className="mt-1 text-[12px] font-medium leading-5 text-black/50">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
                 분철이 취소되거나 입금 기한이 지나면 참여가 취소될 수 있어요.
                 이미 입금했다면 등록한 환불 계좌로 환불돼요.
               </p>
@@ -2462,7 +2487,7 @@ export function BidHistoryContent({
               onClick={closeStatusHelpSheet}
               type="button"
             >
-              알겠어요!
+              확인했어요
             </button>
           </section>
         </div>
