@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -32,7 +31,6 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   ApiRequestError,
-  deleteBuncheol,
   deleteShippingAddress,
   isUserProfileComplete,
   requestBookmarkedBuncheols,
@@ -79,12 +77,10 @@ import {
   getDefaultDeliveryAddressesByType,
   getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
-  type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductDetailItem } from "@/lib/mock-products";
 import {
   readCachedParticipationPayment,
-  writeCachedParticipationPayment,
 } from "@/lib/participation-payment-cache";
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
@@ -96,7 +92,6 @@ function formatPrice(price: number) {
 const kstOffsetHours = 9;
 const paymentDeadlineMinutes = 30;
 const settlementAccountPanelExitMs = 180;
-const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
 const profileStateCacheKey = "buncheol-profile-state-cache";
 const profileStateCacheMaxAgeMs = 10 * 60 * 1000;
 
@@ -146,12 +141,6 @@ function getSettlementAccountState(profile: UserProfile | null) {
   };
 }
 
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
-
 function parseDeadline(deadline: string) {
   const match = deadline
     .trim()
@@ -162,27 +151,6 @@ function parseDeadline(deadline: string) {
   }
 
   const [, year, month, day, hour] = match;
-
-  return new Date(
-    Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour) - kstOffsetHours,
-    ),
-  );
-}
-
-function parseHostedDeadline(deadline: string) {
-  const match = deadline
-    .trim()
-    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
-
-  if (!match) {
-    return new Date(Number.NaN);
-  }
-
-  const [, year, month, day, hour = "0"] = match;
 
   return new Date(
     Date.UTC(
@@ -398,41 +366,6 @@ function clearProfileStateCache() {
   }
 
   window.sessionStorage.removeItem(profileStateCacheKey);
-}
-
-function ProfileListSkeleton({ count = 2 }: { count?: number }) {
-  return (
-    <div
-      aria-label="마이페이지 목록을 불러오는 중"
-      className="mt-4 space-y-3"
-      role="status"
-    >
-      {Array.from({ length: count }).map((_, index) => (
-        <div
-          className="rounded-[1rem] border border-black/10 px-4 py-4"
-          key={`profile-list-skeleton-${index}`}
-        >
-          <div className="flex items-start gap-3">
-            <div className="h-14 w-14 shrink-0 animate-pulse rounded-[0.85rem] bg-black/8" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="h-4 w-3/4 animate-pulse rounded-full bg-black/8" />
-                  <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-black/8" />
-                </div>
-                <div className="h-7 w-12 shrink-0 animate-pulse rounded-full bg-black/8" />
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
-                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
-              </div>
-              <div className="mt-2 h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function isRecruitingStatus(status: string | undefined) {
@@ -760,19 +693,6 @@ function findGroupedProfileBidEntryById(
   return mergeProfileBidEntryGroup(groupEntries, now);
 }
 
-function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
-  if (product.status && !isRecruitingStatus(product.status)) {
-    return false;
-  }
-
-  const deadlineDate = parseHostedDeadline(product.deadline);
-
-  return (
-    Number.isNaN(deadlineDate.getTime()) ||
-    deadlineDate.getTime() > now.getTime()
-  );
-}
-
 function formatApiDateTime(value: string) {
   const date = new Date(value);
 
@@ -1009,11 +929,6 @@ export function ProfileContent({
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
-  const [apiPaymentStoreTypes, setApiPaymentStoreTypes] = useState<
-    ConvenienceStoreType[] | null
-  >(null);
-  const [isPaymentStoreTypeLoading, setIsPaymentStoreTypeLoading] =
-    useState(false);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -1037,7 +952,6 @@ export function ProfileContent({
   const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
   const [isDefaultAddressLoading, setIsDefaultAddressLoading] = useState(false);
   const addressSheetCloseTimerRef = useRef<number | null>(null);
-  const paymentStoreTypeRequestIdRef = useRef(0);
   const [manageAddressSnapshot, setManageAddressSnapshot] = useState<
     DeliveryAddress[]
   >([]);
@@ -1068,10 +982,6 @@ export function ProfileContent({
   const [bookmarkedProductCount, setBookmarkedProductCount] = useState<
     number | null
   >(() => initialProfileStateCache?.bookmarkedProductCount ?? null);
-  const [hostedProductMessage, setHostedProductMessage] = useState("");
-  const [deletingHostedProductId, setDeletingHostedProductId] = useState<
-    string | null
-  >(null);
 
   const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
   const isHostedProductsLoading =
@@ -1172,14 +1082,11 @@ export function ProfileContent({
     deliveryAddresses,
     defaultAddressIds,
   );
-  const availablePaymentStoreTypes =
-    apiPaymentStoreTypes ??
-    getAvailableConvenienceStoreTypes(
-      selectedPaymentBid?.shippingMethods,
-      selectedPaymentBid?.courier,
-    );
-  const isApiPaymentStoreTypePending =
-    selectedPaymentBid !== null && isPaymentStoreTypeLoading;
+  const availablePaymentStoreTypes = getAvailableConvenienceStoreTypes(
+    selectedPaymentBid?.shippingMethods,
+    selectedPaymentBid?.courier,
+  );
+  const isApiPaymentStoreTypePending = false;
   const eligiblePaymentAddresses =
     isApiPaymentStoreTypePending
       ? []
@@ -1350,13 +1257,11 @@ export function ProfileContent({
       setApiBidEntries([]);
       setApiHostedProducts([]);
       setBookmarkedProductCount(0);
-      setHostedProductMessage("");
       return;
     }
 
     let isActive = true;
 
-    setHostedProductMessage("");
 
     async function loadApiProfileLists() {
       const accessToken = await getFreshAccessToken();
@@ -1399,7 +1304,6 @@ export function ProfileContent({
 
       if (buncheols.status === "fulfilled") {
         setApiHostedProducts(buncheols.value.map(getHostedProductFromBuncheol));
-        setHostedProductMessage("");
       } else {
         setApiHostedProducts((current) => current ?? []);
       }
@@ -1904,197 +1808,6 @@ export function ProfileContent({
     }
   }
 
-  function openPaymentSheet(bidId: string) {
-    if (paymentSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(paymentSheetCloseTimerRef.current);
-      paymentSheetCloseTimerRef.current = null;
-    }
-
-    const requestId = paymentStoreTypeRequestIdRef.current + 1;
-    const currentTime = new Date();
-    const selectedBid = findGroupedProfileBidEntryById(
-      groupedActiveBids,
-      activeBids,
-      bidId,
-      currentTime,
-    );
-
-    if (!selectedBid) {
-      return;
-    }
-
-    if (isProfileBidPaymentExpired(selectedBid, currentTime)) {
-      setUserProfileMessage(
-        "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
-      );
-      return;
-    }
-
-    const allowedStoreTypes = getAvailableConvenienceStoreTypes(
-      selectedBid.shippingMethods,
-      selectedBid.courier,
-    );
-    const shouldLoadApiStoreTypes =
-      allowedStoreTypes.length === 0;
-    const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
-      deliveryAddresses,
-      defaultAddressIds,
-    );
-    const fallbackAddress = shouldLoadApiStoreTypes
-      ? null
-      : allowedStoreTypes.length > 0
-        ? allowedStoreTypes
-            .map((storeType) => nextDefaultAddresses[storeType])
-            .find((address) => address !== null) ??
-          prioritizedDeliveryAddresses.find((address) =>
-            allowedStoreTypes.includes(address.storeType),
-          ) ??
-          null
-        : prioritizedDeliveryAddresses[0] ?? null;
-
-    paymentStoreTypeRequestIdRef.current = requestId;
-    setApiPaymentStoreTypes(null);
-    setIsPaymentStoreTypeLoading(shouldLoadApiStoreTypes);
-    setSelectedPaymentBidId(bidId);
-    setSelectedPaymentAddressId((current) =>
-      current &&
-      prioritizedDeliveryAddresses.some((address) => {
-        if (address.id !== current) {
-          return false;
-        }
-
-        return (
-          allowedStoreTypes.length === 0 ||
-          allowedStoreTypes.includes(address.storeType)
-        );
-      })
-        ? current
-        : fallbackAddress?.id ?? null,
-    );
-    setIsPaymentSheetOpen(true);
-    setIsPaymentSheetClosing(false);
-
-    if (!selectedBid.hostBankAccount && authState.accessToken) {
-      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
-        .then((paymentDetail) => {
-          if (paymentStoreTypeRequestIdRef.current !== requestId) {
-            return;
-          }
-
-          writeCachedParticipationPayment({
-            bidAmount: paymentDetail.bidAmount,
-            hostBankAccount: paymentDetail.hostBankAccount,
-            participationId: paymentDetail.participationId,
-            participationStatus: paymentDetail.paymentStatus,
-            paymentAmount: paymentDetail.paymentAmount,
-            paymentDueAt: paymentDetail.paymentDueAt,
-            shippingAddress: selectedBid.shippingAddress ?? null,
-            shippingFee: paymentDetail.shippingFee,
-          });
-
-          setApiBidEntries((current) =>
-            current
-              ? current.map((bid) =>
-                  bid.id === selectedBid.id
-                    ? {
-                        ...bid,
-                        amount: paymentDetail.bidAmount || bid.amount,
-                        hostBankAccount:
-                          paymentDetail.hostBankAccount ?? bid.hostBankAccount,
-                        paymentAmount:
-                          paymentDetail.paymentAmount ?? bid.paymentAmount,
-                        paymentDueAt:
-                          paymentDetail.paymentDueAt ?? bid.paymentDueAt,
-                        participationStatus:
-                          paymentDetail.paymentStatus ||
-                          bid.participationStatus,
-                        shippingFee:
-                          paymentDetail.shippingFee ?? bid.shippingFee,
-                      }
-                    : bid,
-                )
-              : current,
-          );
-        })
-        .catch(() => {});
-    }
-
-    const shouldLoadPaymentBuncheolDetail =
-      shouldLoadApiStoreTypes || !selectedBid.hostBankAccount;
-
-    if (shouldLoadPaymentBuncheolDetail) {
-      requestBuncheolDetail(
-        authState.isLoggedIn ? authState.accessToken ?? undefined : undefined,
-        selectedBid.productId,
-      )
-        .then((detail) => {
-          if (paymentStoreTypeRequestIdRef.current !== requestId) {
-            return;
-          }
-
-          const product = toProductDetailItem(detail);
-          setApiBidEntries((current) =>
-            current
-              ? current.map((bid) =>
-                  bid.id === selectedBid.id
-                    ? {
-                        ...bid,
-                        courier: product.courier,
-                        hostBankAccount:
-                          bid.hostBankAccount ?? detail.hostBankAccount,
-                        imageUrl: bid.imageUrl ?? product.imageUrl,
-                        shippingMethods:
-                          bid.shippingMethods ?? product.shippingMethods,
-                      }
-                    : bid,
-                )
-              : current,
-          );
-
-          const storeTypes = getAvailableConvenienceStoreTypes(
-            detail.shippingOptions.map((option) => ({ name: option.method })),
-            undefined,
-          );
-
-          setApiPaymentStoreTypes(storeTypes.length > 0 ? storeTypes : null);
-
-          if (storeTypes.length === 0) {
-            return;
-          }
-
-          setSelectedPaymentAddressId((current) => {
-            const currentAddress = prioritizedDeliveryAddresses.find(
-              (address) => address.id === current,
-            );
-
-            if (currentAddress && storeTypes.includes(currentAddress.storeType)) {
-              return current;
-            }
-
-            return (
-              storeTypes
-                .map((storeType) => nextDefaultAddresses[storeType])
-                .find((address) => address !== null)?.id ??
-              prioritizedDeliveryAddresses.find((address) =>
-                storeTypes.includes(address.storeType),
-              )?.id ??
-              null
-            );
-          });
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (paymentStoreTypeRequestIdRef.current === requestId) {
-            setIsPaymentStoreTypeLoading(false);
-          }
-        });
-    }
-
-    window.requestAnimationFrame(() => {
-      setIsPaymentSheetEntered(true);
-    });
-  }
-
   function closePaymentSheet() {
     if (paymentSheetCloseTimerRef.current !== null) {
       return;
@@ -2155,32 +1868,6 @@ export function ProfileContent({
     setPaymentSheetDragOffset(0);
   }
 
-  function rememberProfileProductEntry(event: MouseEvent<HTMLAnchorElement>) {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-
-    rememberScrollPosition();
-
-    const historyIndex = getHistoryIndex();
-
-    if (historyIndex === null) {
-      window.sessionStorage.removeItem(PRODUCT_PROFILE_ENTRY_INDEX_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      PRODUCT_PROFILE_ENTRY_INDEX_KEY,
-      String(historyIndex + 1),
-    );
-  }
-
   function rememberProfilePanelEntry(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
@@ -2193,46 +1880,6 @@ export function ProfileContent({
     }
 
     rememberProfileReturnState();
-  }
-
-  async function handleDeleteHostedProduct(product: ProductDetailItem) {
-    const buncheolId = product.buncheolId ?? product.id;
-
-    if (!authState.isLoggedIn || deletingHostedProductId) {
-      return;
-    }
-
-    if (!window.confirm("이 분철을 삭제할까요?")) {
-      return;
-    }
-
-    setDeletingHostedProductId(buncheolId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await deleteBuncheol(accessToken, buncheolId);
-      setApiHostedProducts((current) =>
-        current
-          ? current.filter(
-              (item) => (item.buncheolId ?? item.id) !== buncheolId,
-            )
-          : current,
-      );
-      setHostedProductMessage("");
-    } catch (error: unknown) {
-      setHostedProductMessage(
-        error instanceof Error
-          ? error.message
-          : "분철을 삭제하지 못했어요.",
-      );
-    } finally {
-      setDeletingHostedProductId(null);
-    }
   }
 
   async function copyTransferText(value: string, label: string) {
@@ -2757,335 +2404,6 @@ export function ProfileContent({
               );
             })}
           </div>
-        </section>
-
-        <section className="mt-6 border-t border-black/10 pt-5">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                참여 현황
-              </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                참여 상태와 결제 진행을 여기서 확인해요.
-              </p>
-            </div>
-            <span className="shrink-0 text-[13px] font-semibold text-black/45">
-              {isBidEntriesLoading ? "확인 중" : `${activeBids.length}개`}
-            </span>
-          </div>
-
-          {isBidEntriesLoading ? (
-            <ProfileListSkeleton />
-          ) : activeBids.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              {activeBids.map((bid) => {
-                const isPaymentReady = isProfileBidPaymentReady(bid, now);
-                const isPaymentConfirmed = isProfileBidPaymentConfirmed(bid);
-                const isTransferRequested =
-                  isProfileBidTransferRequested(bid);
-                return (
-                  <article
-                    className="rounded-[1rem] border border-black/10 px-4 py-4"
-                    key={bid.id}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Link
-                        aria-label={`${bid.title} 상세 보기`}
-                        className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
-                        href={`/products/${bid.productId}?from=profile`}
-                        onClick={rememberProfileProductEntry}
-                      >
-                        {bid.imageUrl ? (
-                          <Image
-                            alt=""
-                            className="h-full w-full object-cover"
-                            fill
-                            sizes="56px"
-                            src={bid.imageUrl}
-                            unoptimized
-                          />
-                        ) : null}
-                      </Link>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <Link
-                            className="min-w-0"
-                            href={`/products/${bid.productId}?from=profile`}
-                            onClick={rememberProfileProductEntry}
-                          >
-                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                              {bid.title}
-                            </p>
-                            <p className="mt-1 text-[13px] font-medium text-black/45">
-                              {bid.member} · {bid.optionLabel}
-                            </p>
-                          </Link>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              bid.rank === 1
-                                ? "bg-black text-white"
-                                : "bg-[#f1f1f1] text-black/55"
-                            }`}
-                          >
-                            참여
-                          </span>
-                        </div>
-
-                        <div className="mt-4 grid gap-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                              <p className="text-[11px] font-medium text-black/35">
-                                상품 금액
-                              </p>
-                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {formatPrice(bid.amount)}
-                              </p>
-                            </div>
-                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                              <p className="text-[11px] font-medium text-black/35">
-                                상태
-                              </p>
-                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {getProfileBidPaymentStatusLabel(bid, now)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              모집 기한
-                            </p>
-                            <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
-                              {bid.deadline}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-between gap-3">
-                          <div
-                            className={`min-w-0 text-[12px] font-medium ${
-                              isPaymentReady ||
-                              isTransferRequested ||
-                              isPaymentConfirmed
-                                ? "text-black"
-                                : "text-black/35"
-                            }`}
-                          >
-                            <>
-                              <p>{getProfileBidPaymentStatusLabel(bid, now)}</p>
-                              <p className="mt-0.5 text-black/45">
-                                {getProfileBidPaymentStatusDescription(bid, now)}
-                              </p>
-                            </>
-                          </div>
-                          {isPaymentReady ? (
-                            <button
-                              className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
-                              onClick={() => openPaymentSheet(bid.id)}
-                              type="button"
-                            >
-                              결제 정보
-                            </button>
-                          ) : null}
-                        </div>
-                        {bid.deliveryId && isPaymentConfirmed ? (
-                          <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-[11px] font-medium text-black/35">
-                                  배송
-                                </p>
-                                <p className="mt-1 truncate text-[13px] font-semibold text-black/55">
-                                  {bid.trackingNumber
-                                    ? `운송장 ${bid.trackingNumber}`
-                                    : "운송장 등록 대기"}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                {authState.isLoggedIn
-                  ? "참여 중인 분철이 없습니다."
-                  : "로그인 후 이용할 수 있어요."}
-              </p>
-            </div>
-          )}
-
-        </section>
-
-        <section className="mt-6 border-t border-black/10 pt-5">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                개최한 분철
-              </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                결제 확인과 배송 준비를 이어서 확인해요.
-              </p>
-            </div>
-            <span className="shrink-0 text-[13px] font-semibold text-black/45">
-              {isHostedProductsLoading
-                ? "확인 중"
-                : `${hostedProducts.length}개`}
-            </span>
-          </div>
-
-          {hostedProductMessage ? (
-            <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55">
-              {hostedProductMessage}
-            </p>
-          ) : null}
-
-          {isHostedProductsLoading ? (
-            <ProfileListSkeleton />
-          ) : hostedProducts.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              {hostedProducts.map((product) => {
-                const isClosed = !isProfileHostedProductActive(product, now);
-                const isCancelled =
-                  product.status === "CANCELLED" || product.status === "CANCELED";
-                const optionCount =
-                  product.optionCount ??
-                  product.targetMembers?.length ??
-                  product.options.length;
-                const participantCount = product.options.reduce(
-                  (total, option) => total + option.participantCount,
-                  0,
-                );
-
-                return (
-                  <div
-                    className="rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
-                    key={product.id}
-                  >
-                    <Link
-                      className="block"
-                      href={`/products/${product.id}?from=profile`}
-                      onClick={rememberProfileProductEntry}
-                    >
-                      <article className="flex items-start gap-3">
-                      <div
-                        className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-[0.9rem] bg-gradient-to-br ${product.tone}`}
-                      >
-                        {product.imageUrl ? (
-                          <Image
-                            alt=""
-                            className="h-full w-full object-cover"
-                            fill
-                            sizes="64px"
-                            src={product.imageUrl}
-                            unoptimized
-                          />
-                        ) : null}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                              {product.title}
-                            </p>
-                            <p className="mt-1 truncate text-[13px] font-medium text-black/45">
-                              {product.member} · {product.era}
-                            </p>
-                          </div>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              isClosed
-                                ? "bg-[#f1f1f1] text-black/55"
-                                : "bg-black text-white"
-                            }`}
-                          >
-                            {isCancelled ? "취소" : isClosed ? "모집 종료" : "모집중"}
-                          </span>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              옵션
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {optionCount}개
-                            </p>
-                          </div>
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              참여
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {participantCount}명
-                            </p>
-                          </div>
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              상태
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {isCancelled ? "취소" : isClosed ? "모집 종료" : "진행 중"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <p className="mt-3 truncate text-[12px] font-medium text-black/40">
-                          모집 기한 {product.deadline}
-                        </p>
-                      </div>
-                      </article>
-                    </Link>
-                    <div className="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4">
-                      {product.isApiProduct ? (
-                      <Link
-                        className="inline-flex h-9 items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold tracking-[-0.04em] text-white"
-                        href={`/products/${product.buncheolId ?? product.id}/manage`}
-                      >
-                        관리하기
-                      </Link>
-                      ) : null}
-                      {product.isApiProduct ? (
-                        <button
-                          className="h-9 rounded-full border border-black/10 px-4 text-[13px] font-semibold tracking-[-0.04em] text-black/55 disabled:text-black/25"
-                          disabled={
-                            deletingHostedProductId ===
-                            (product.buncheolId ?? product.id)
-                          }
-                          onClick={() => void handleDeleteHostedProduct(product)}
-                          type="button"
-                        >
-                          삭제
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : authState.isLoggedIn ? (
-            <Link
-              className="mt-4 block rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] px-4 py-6"
-              href="/upload"
-            >
-              <p className="text-[14px] font-semibold text-black/70">
-                개최한 분철이 없습니다.
-              </p>
-              <p className="mt-1 text-[13px] font-medium text-black/40">
-                상품 등록으로 첫 분철을 열어보세요.
-              </p>
-            </Link>
-          ) : (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                로그인 후 이용할 수 있어요.
-              </p>
-            </div>
-          )}
         </section>
 
         {authState.isLoggedIn ? (
