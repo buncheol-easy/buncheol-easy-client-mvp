@@ -47,7 +47,6 @@ const HOME_LISTINGS_CACHE_KEY = "home-listings-cache";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
-const HOME_BANNER_AUTO_INTERVAL_MS = 4200;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
 type HomeBanner = {
   href: string;
@@ -60,19 +59,19 @@ const HOME_BANNERS: HomeBanner[] = [
   {
     href: "/board?from=home",
     imageAlt: "분철이지 사용법 한눈에 보기",
-    imageSrc: "/banners/buncheol-guide.png",
+    imageSrc: "/banners/buncheol-guide.png?v=2",
     label: "분철이지 사용법",
   },
   {
     href: "/board/transfer-payment?from=home",
     imageAlt: "분철이지 오픈 안내",
-    imageSrc: "/banners/buncheol-open.png",
+    imageSrc: "/banners/buncheol-open.png?v=2",
     label: "분철이지 오픈",
   },
   {
     href: "/board/closed-bid-status?from=home",
     imageAlt: "안전한 분철을 위한 안내",
-    imageSrc: "/banners/buncheol-safe.png",
+    imageSrc: "/banners/buncheol-safe.png?v=2",
     label: "안전한 분철 안내",
   },
 ];
@@ -329,43 +328,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       left: getBannerSlideLeft(scrollElement, index),
     });
   }
-
-  useEffect(() => {
-    if (banners.length <= 1 || typeof window === "undefined") {
-      return;
-    }
-
-    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-
-    if (motionQuery.matches) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      if (document.visibilityState === "hidden") {
-        return;
-      }
-
-      const scrollElement = bannerScrollerRef.current;
-
-      if (!scrollElement) {
-        return;
-      }
-
-      setActiveBannerIndex((currentIndex) => {
-        const nextIndex = (currentIndex + 1) % banners.length;
-
-        scrollElement.scrollTo({
-          behavior: "auto",
-          left: getBannerSlideLeft(scrollElement, nextIndex),
-        });
-
-        return nextIndex;
-      });
-    }, HOME_BANNER_AUTO_INTERVAL_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [activeBannerIndex, banners.length]);
 
   useLayoutEffect(() => {
     const storedScrollTop = getStoredHomeScrollTop();
@@ -743,15 +705,24 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             {banners.map((banner, index) => (
               <Link
                 aria-label={`${banner.label} 보기`}
-                className="motion-card motion-carousel__slide relative aspect-[1770/533] w-full flex-none snap-start overflow-hidden rounded-[1.15rem] bg-white shadow-[0_14px_34px_rgba(0,0,0,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                className="motion-card motion-carousel__slide relative aspect-[1.72/1] w-full flex-none snap-start overflow-hidden rounded-[1.15rem] bg-white shadow-[0_14px_34px_rgba(0,0,0,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 draggable={false}
                 href={banner.href}
                 key={banner.href}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
+                  alt=""
+                  aria-hidden="true"
+                  className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl"
+                  draggable={false}
+                  loading={index === 0 ? "eager" : "lazy"}
+                  src={banner.imageSrc}
+                />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
                   alt={banner.imageAlt}
-                  className="h-full w-full object-cover"
+                  className="relative h-full w-full object-contain"
                   draggable={false}
                   loading={index === 0 ? "eager" : "lazy"}
                   src={banner.imageSrc}
