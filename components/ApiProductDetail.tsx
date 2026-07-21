@@ -25,6 +25,7 @@ import {
 import { readUploadedProduct } from "@/lib/hosted-products-store";
 import { readPublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
+import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 type ApiProductDetailProps = {
   id: string;
@@ -154,6 +155,8 @@ export function ApiProductDetail({
   returnQuery,
   returnSource,
 }: ApiProductDetailProps) {
+  useProfileCompletionGuard();
+
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,

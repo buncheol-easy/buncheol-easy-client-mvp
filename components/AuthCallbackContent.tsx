@@ -90,8 +90,14 @@ export function AuthCallbackContent({
       })
       .catch(() => {
         if (isActive) {
+          // 완료 여부 확인에 실패해도 서비스로 통과시키지 않는다. 추가정보 화면이
+          // 마운트 시 상태를 재확인해 완료 유저는 저장된 returnHref 로 되돌려보낸다.
+          window.sessionStorage.setItem(
+            authProfileSetupReturnHrefStorageKey,
+            nextReturnHref,
+          );
           window.sessionStorage.removeItem(authReturnHrefStorageKey);
-          router.replace(nextReturnHref);
+          router.replace("/signup/profile");
         }
       });
 
