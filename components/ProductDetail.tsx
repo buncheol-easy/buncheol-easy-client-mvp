@@ -485,7 +485,9 @@ function formatPaymentDueCountdown(
     return "입금 마감";
   }
 
-  const totalSeconds = Math.floor(remainingMilliseconds / 1000);
+  // 서버가 초 단위(UTC)로 내려주는 기한을 내림하면 응답 지연만큼 한 단계
+  // 일찍 줄어들어 보이므로, 진행 중인 초를 포함해 올림으로 표시한다.
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
@@ -1382,6 +1384,10 @@ export function ProductDetail({
       setDeadlineTick(Date.now());
       return;
     }
+
+    // 결제 완료 직후 첫 렌더가 이전 tick(최대 1초 전)으로 계산되면
+    // 다음 tick에서 표시가 2초 건너뛰므로 즉시 현재 시각으로 맞춘다.
+    setDeadlineTick(Date.now());
 
     const intervalId = window.setInterval(() => {
       setDeadlineTick(Date.now());
