@@ -38,13 +38,17 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { FEATURES } from "@/lib/feature-flags";
+import {
+  isCachedHomeListingsFresh,
+  readCachedHomeListings,
+  writeCachedHomeListings,
+} from "@/lib/home-listings-cache";
 import { toArtistRailItem } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
-const HOME_LISTINGS_CACHE_KEY = "home-listings-cache";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
@@ -111,41 +115,6 @@ function getStoredHomeScrollTop() {
   const storedScrollTop = window.sessionStorage.getItem(HOME_SCROLL_TOP_KEY);
 
   return storedScrollTop === null ? null : Number(storedScrollTop);
-}
-
-function readCachedHomeListings() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const rawListings = window.sessionStorage.getItem(HOME_LISTINGS_CACHE_KEY);
-
-    if (rawListings === null) {
-      return null;
-    }
-
-    const parsed = JSON.parse(rawListings);
-
-    return Array.isArray(parsed) ? (parsed as ProductCardItem[]) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedHomeListings(listings: ProductCardItem[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(
-      HOME_LISTINGS_CACHE_KEY,
-      JSON.stringify(listings.slice(0, 80)),
-    );
-  } catch {
-    // The cache is only for swipe-back recovery.
-  }
 }
 
 function withHomeListingsTimeout<T>(request: Promise<T>) {
@@ -233,11 +202,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // hydration 불일치를 피하려고 useState 초기값 대신 layout effect 를 쓴다.
   useLayoutEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- 페인트 전 동기 상태 확정이 목적. rAF 등으로 미루면 첫 프레임에 스켈레톤이 노출된다. */
-    const cachedListings = readCachedHomeListings();
+    const cachedEntry = readCachedHomeListings();
 
-    if (cachedListings !== null) {
+    if (cachedEntry !== null) {
       setShouldRevealListings(false);
-      setApiListings((current) => current ?? cachedListings);
+      setApiListings((current) => current ?? cachedEntry.listings);
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
@@ -489,6 +458,20 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, []);
 
   useEffect(() => {
+    // 신선한 캐시(60초 내·같은 로그인 상태)면 재검증 요청 자체를 보내지 않는다.
+    // 내가 참여하는 등 직접 일으킨 변경은 캐시가 즉시 무효화되므로 이 생략에 걸리지 않고,
+    // 명시적 복구 재시도(listingRefreshKey)는 항상 요청을 태운다.
+    if (listingRefreshKey === 0) {
+      const cachedEntry = readCachedHomeListings();
+
+      if (
+        cachedEntry !== null &&
+        isCachedHomeListingsFresh(cachedEntry, authState.isLoggedIn)
+      ) {
+        return;
+      }
+    }
+
     let isActive = true;
 
     async function loadListings() {
@@ -513,7 +496,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           .map(toProductCardItem)
           .map(mergeCachedProductImage);
 
-        writeCachedHomeListings(nextListings);
+        writeCachedHomeListings(nextListings, authState.isLoggedIn);
 
         // 캐시를 표시한 채 백그라운드 재검증한 결과가 동일하면 setState 를 생략한다
         // — 리렌더가 없으니 "새로 가져와도" 깜빡일 수 없다 (stale-while-revalidate).
@@ -534,7 +517,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         }
 
         const fallbackListings =
-          apiListingsRef.current ?? readCachedHomeListings();
+          apiListingsRef.current ?? readCachedHomeListings()?.listings ?? null;
 
         // 이미 목록을 표시 중이면(= fallback 이 현재 상태) 재검증 실패로 리렌더하지 않는다.
         if (apiListingsRef.current === null) {
@@ -564,7 +547,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         return;
       }
 
-      const cachedListings = readCachedHomeListings();
+      const cachedListings = readCachedHomeListings()?.listings ?? null;
 
       if (cachedListings !== null) {
         setApiListings(cachedListings);

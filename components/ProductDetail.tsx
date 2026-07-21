@@ -59,6 +59,10 @@ import {
 } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
+import {
+  clearCachedHomeListings,
+  updateCachedHomeListing,
+} from "@/lib/home-listings-cache";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
 import {
   FAVORITES_SKIP_ENTER_KEY,
@@ -2012,6 +2016,9 @@ export function ProductDetail({
           refundAccount,
           shippingAddressId,
         });
+
+        // 내 참여로 슬롯 상태가 바뀌었다 — 홈 목록 캐시를 무효화해 복귀 시 fresh 로 가져온다.
+        clearCachedHomeListings();
         const resultParticipationIds =
           result.participationIds.length > 0
             ? result.participationIds
@@ -2407,6 +2414,9 @@ export function ProductDetail({
       } else {
         await removeBuncheolBookmark(accessToken, buncheolId);
       }
+
+      // 내 찜 변경을 홈 카드에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
+      updateCachedHomeListing(buncheolId, { liked: nextLiked });
     } catch {
       setIsLiked(!nextLiked);
     } finally {
