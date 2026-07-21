@@ -17,8 +17,6 @@ const publicBannerCacheTtlMs = 15 * 60 * 1000;
 const publicNoticeListCachePrefix = "inbox-notices:v1";
 const publicNoticeDetailCachePrefix = "inbox-notice-detail:v1";
 const publicNoticeCacheTtlMs = 5 * 60 * 1000;
-const thumbnailDetailFetchConcurrency = 4;
-const thumbnailDetailFetchLimit = 24;
 
 type AccessTokenResponse = {
   accessToken: string;
@@ -3489,69 +3487,6 @@ export function toProductDetailItem(
   };
 }
 
-async function enrichBuncheolSummariesWithThumbnails<T extends BuncheolSummary>(
-  accessToken: string | undefined,
-  summaries: T[],
-) {
-  if (summaries.every((summary) => summary.thumbnailUrl)) {
-    return summaries;
-  }
-
-  const enrichedSummaries = [...summaries];
-  const missingThumbnailIndexes = summaries
-    .map((summary, index) => (summary.thumbnailUrl ? null : index))
-    .filter((index): index is number => index !== null)
-    .slice(0, thumbnailDetailFetchLimit);
-
-  for (
-    let index = 0;
-    index < missingThumbnailIndexes.length;
-    index += thumbnailDetailFetchConcurrency
-  ) {
-    const batchIndexes = missingThumbnailIndexes.slice(
-      index,
-      index + thumbnailDetailFetchConcurrency,
-    );
-    const batchSummaries = await Promise.all(
-      batchIndexes.map(async (summaryIndex) => {
-        const summary = summaries[summaryIndex];
-
-        try {
-          const url = `${getVersionedApiBaseUrl()}/buncheols/${summary.id}`;
-          let response = await fetch(url, {
-            credentials: "omit",
-            headers: getAuthHeaders(accessToken),
-            method: "GET",
-          });
-
-          if (response.status === 401 && accessToken) {
-            response = await fetch(url, {
-              credentials: "omit",
-              method: "GET",
-            });
-          }
-
-          if (!response.ok) {
-            return summary;
-          }
-
-          const detail = getBuncheolDetailFromBody(await readJsonBody(response));
-          const thumbnailUrl = detail?.imageUrls[0];
-
-          return thumbnailUrl ? { ...summary, thumbnailUrl } : summary;
-        } catch {
-          return summary;
-        }
-      }),
-    );
-
-    batchSummaries.forEach((summary, batchIndex) => {
-      enrichedSummaries[batchIndexes[batchIndex]] = summary;
-    });
-  }
-
-  return enrichedSummaries;
-}
 
 export async function requestBuncheols(
   accessToken?: string,
@@ -3587,7 +3522,9 @@ export async function requestBuncheols(
         item !== null && !isDeletedBuncheolStatus(item.status),
     );
 
-  return enrichBuncheolSummariesWithThumbnails(accessToken, summaries);
+  // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
+  // (썸네일이 없는 분철 = 이미지 자체가 없는 분철이라 상세를 조회해도 채울 수 없음)
+  return summaries;
 }
 
 export async function requestAllBuncheols(
@@ -3645,7 +3582,7 @@ export async function requestAllBuncheols(
     pageCount += 1;
   }
 
-  return enrichBuncheolSummariesWithThumbnails(accessToken, allSummaries);
+  return allSummaries;
 }
 
 export async function requestBuncheolDetail(
@@ -4184,9 +4121,8 @@ export async function requestMyHostedBuncheols(accessToken: string) {
       (buncheol): buncheol is MyHostedBuncheol => buncheol !== null,
     );
 
-  return enrichBuncheolSummariesWithThumbnails(
-    accessToken,
-    buncheols.filter((buncheol) => !isRemovedBuncheolStatus(buncheol.status)),
+  return buncheols.filter(
+    (buncheol) => !isRemovedBuncheolStatus(buncheol.status),
   );
 }
 
@@ -4252,9 +4188,8 @@ export async function requestBookmarkedBuncheols(
       return summaries;
     }, []);
 
-  return enrichBuncheolSummariesWithThumbnails(
-    accessToken,
-    summaries.filter((summary) => !isDeletedBuncheolStatus(summary.status)),
+  return summaries.filter(
+    (summary) => !isDeletedBuncheolStatus(summary.status),
   );
 }
 
