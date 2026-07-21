@@ -584,7 +584,7 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
 function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordCancelled(bid)) {
     if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
-      return "취소된 분철이에요.";
+      return "취소된 분철이에요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.";
     }
 
     return "취소된 참여예요.";
@@ -1961,7 +1961,7 @@ export function BidHistoryContent({
               <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                 <p className="text-[14px] font-semibold text-black/70">
                   {authState.isLoggedIn
-                    ? "표시할 참여 분철이 없습니다."
+                    ? "아직 참여한 분철이 없어요."
                     : "로그인 후 이용할 수 있어요."}
                 </p>
                 {authState.isLoggedIn ? (
@@ -2066,10 +2066,15 @@ export function BidHistoryContent({
 
                       <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
                         {isCancelled ? (
-                          <div className="mb-3 flex justify-center">
+                          <div className="mb-3 flex flex-col items-center gap-1.5">
                             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
                               {cancellationLabel}
                             </span>
+                            {isCancelledBuncheolStatus(bid.buncheolStatus) ? (
+                              <p className="text-center text-[11px] font-medium leading-4 text-black/40">
+                                이미 입금했다면 등록한 환불 계좌로 환불돼요.
+                              </p>
+                            ) : null}
                           </div>
                         ) : null}
                         <div className="relative">
@@ -2207,7 +2212,7 @@ export function BidHistoryContent({
                 <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                   <p className="text-[14px] font-semibold text-black/70">
                     {authState.isLoggedIn
-                      ? "표시할 개최 분철이 없습니다."
+                      ? "아직 개최한 분철이 없어요."
                       : "로그인 후 이용할 수 있어요."}
                   </p>
                   {authState.isLoggedIn ? (

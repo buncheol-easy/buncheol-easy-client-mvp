@@ -1195,7 +1195,7 @@ export function ProductDetail({
     }
 
     if (!hasSelectableOption) {
-      return "구매 가능한 옵션이 없어요";
+      return "구매 가능한 멤버가 없어요";
     }
 
     if (productStatus === "CONFIRMED") {
@@ -3006,8 +3006,8 @@ export function ProductDetail({
                     : remainingHeadcount === null
                     ? "개최자가 정한 진행 기준을 확인하고 있어요."
                     : remainingHeadcount > 0
-                      ? `기준까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요.`
-                      : "진행 기준을 채웠어요."}
+                      ? `분철 진행 최소 인원까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요. 인원을 채우면 진행이 확정돼요.`
+                      : "분철 진행 최소 인원을 채웠어요."}
                 </p>
               </div>
             </div>
@@ -3032,6 +3032,11 @@ export function ProductDetail({
                   </div>
                 ))}
               </div>
+              <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
+                이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이
+                중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께
+                입금해요.
+              </p>
             </div>
             ) : null}
 
@@ -3041,7 +3046,7 @@ export function ProductDetail({
               </h2>
               <p className="mt-3 whitespace-pre-line text-[15px] leading-7 tracking-[-0.04em] text-black/65">
                 {product.description.trim() ||
-                  "판매자가 상품 설명을 작성하지 않았습니다."}
+                  "개최자가 아직 상품 설명을 적지 않았어요."}
               </p>
             </div>
 
@@ -3203,7 +3208,7 @@ export function ProductDetail({
                     {checkoutStep === "payment"
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "confirm"
-                        ? "결제 후 입금 계좌와 마감 시각이 안내돼요."
+                        ? "주문하면 입금 계좌와 마감 시각이 안내돼요."
                         : "구매할 옵션을 선택해 주세요."}
                   </p>
                 </div>
@@ -3371,6 +3376,9 @@ export function ProductDetail({
                               : "추가"}
                         </button>
                       </div>
+                      <p className="mt-2.5 text-[12px] font-medium leading-5 text-black/40">
+                        택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요.
+                      </p>
                     </div>
 
                     <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
@@ -3391,7 +3399,7 @@ export function ProductDetail({
                     </div>
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
-                      결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
+                      주문하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
                     </p>
                     {checkoutError ? (
                       <p
@@ -3422,7 +3430,7 @@ export function ProductDetail({
                       onClick={() => void handleSubmitBids()}
                       type="button"
                     >
-                      {isBidSubmitPending ? "결제 처리 중" : "결제하기"}
+                      {isBidSubmitPending ? "주문 접수 중" : "이대로 주문할게요!"}
                     </button>
                   </div>
                 </>
@@ -3520,6 +3528,10 @@ export function ProductDetail({
                             계좌 복사
                           </button>
                         </div>
+                        <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                          송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행
+                          상황은 구매 내역에서 확인할 수 있어요.
+                        </p>
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                             <p className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]">
@@ -3705,7 +3717,7 @@ export function ProductDetail({
                 onClick={confirmCheckoutAddressSelection}
                 type="button"
               >
-                이 배송지로 받기
+                여기서 받을게요!
               </button>
             </section>
           </div>
