@@ -40,6 +40,7 @@ import { getFreshAccessToken } from "@/lib/auth-session";
 import { FEATURES } from "@/lib/feature-flags";
 import { toArtistRailItem } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
+import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
@@ -192,6 +193,8 @@ function HomeArtistRailSkeleton() {
 }
 
 export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
+  useProfileCompletionGuard();
+
   const router = useRouter();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const isRestoringReturnScrollRef = useRef(false);

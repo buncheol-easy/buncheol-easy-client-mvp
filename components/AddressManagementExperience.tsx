@@ -13,6 +13,7 @@ import {
   ProfileContent,
 } from "@/components/ProfileContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 const ADDRESS_PANEL_TRANSITION_MS = 240;
 
@@ -31,6 +32,8 @@ export function AddressManagementExperience({
   openFormOnEntry,
   returnHref,
 }: AddressManagementExperienceProps) {
+  useProfileCompletionGuard();
+
   const router = useRouter();
   const exitTimerRef = useRef<number | null>(null);
   const [isEntered, setIsEntered] = useState(false);
