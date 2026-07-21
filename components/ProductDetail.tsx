@@ -163,6 +163,8 @@ const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
+// 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
+const paymentWindowMs = 30 * 60 * 1000;
 const sheetDragCloseThreshold = 72;
 const kstOffsetHours = 9;
 
@@ -458,7 +460,12 @@ function formatPaymentDueCountdown(
     return "-";
   }
 
-  const remainingMilliseconds = dueDate.getTime() - now;
+  // 입금 기한은 선점 시점 + 30분을 넘을 수 없다. 서버 절대시각과 클라이언트
+  // 시계의 오차로 남은시간이 30분을 초과해 보이지 않도록 상한을 건다.
+  const remainingMilliseconds = Math.min(
+    dueDate.getTime() - now,
+    paymentWindowMs,
+  );
 
   if (remainingMilliseconds <= 0) {
     return "입금 마감";
@@ -483,29 +490,74 @@ function formatPaymentDueCountdown(
   return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
 }
 
+// 참여 직후 받은 입금 기한을 응답 수신 시각 + 30분으로 상한 보정한다.
+// 서버·클라이언트 시계가 어긋나도 방금 시작한 카운트다운이 30분을 넘거나
+// 실제 만료보다 늦게 끝나 보이지 않는다 (만료 판정 자체는 서버가 한다).
+function clampPaymentDueAt(
+  dueAt: string | null | undefined,
+  receivedAt: number,
+): string | null | undefined {
+  if (!dueAt) {
+    return dueAt;
+  }
+
+  const dueDate = parseCheckoutDateTime(dueAt);
+
+  if (Number.isNaN(dueDate.getTime())) {
+    return dueAt;
+  }
+
+  const maxDueAtMs = receivedAt + paymentWindowMs;
+
+  return dueDate.getTime() > maxDueAtMs
+    ? new Date(maxDueAtMs).toISOString()
+    : dueAt;
+}
+
 const PURCHASE_OPTION_LABELS = {
   complete: "구매가 완료됐어요",
   paymentWaiting: "입금 대기중",
   unavailable: "선택할 수 없는 멤버예요",
 } as const;
 
-function getOptionPaymentWaitingLabel(option: ProductOption, now = Date.now()) {
+// 멤버 슬롯 칩에 실제로 노출되는 문구. PURCHASE_OPTION_LABELS 는 상태 판별용 내부 값이라 분리한다.
+const MEMBER_STATUS_CHIP_LABELS = {
+  myComplete: "내가 구매한 멤버",
+  myPaymentWaiting: "내 주문이 진행중이에요",
+  otherComplete: "매진",
+  otherPaymentWaiting: "다른 사람이 주문 진행중이에요",
+} as const;
+
+// 서버 participatedByMe(상세 응답) 또는 이 세션에서 방금 참여한 로컬 상태로 "내 참여"를 판별한다.
+function isOptionParticipatedByMe(option: ProductOption, myBid?: number) {
+  return (
+    option.participatedByMe === true ||
+    Boolean(option.myParticipationId) ||
+    Boolean(myBid)
+  );
+}
+
+function getOptionPaymentWaitingLabel(
+  option: ProductOption,
+  now = Date.now(),
+  isMine = false,
+) {
+  const baseLabel = isMine
+    ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
+    : MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
   const dueAt = option.purchasePaymentDueAt;
 
   if (!dueAt) {
-    return PURCHASE_OPTION_LABELS.paymentWaiting;
+    return baseLabel;
   }
 
   const dueDate = parseCheckoutDateTime(dueAt);
 
   if (Number.isNaN(dueDate.getTime()) || dueDate.getTime() <= now) {
-    return PURCHASE_OPTION_LABELS.paymentWaiting;
+    return baseLabel;
   }
 
-  return `${PURCHASE_OPTION_LABELS.paymentWaiting} · ${formatPaymentDueCountdown(
-    dueAt,
-    now,
-  )}`;
+  return `${baseLabel} · ${formatPaymentDueCountdown(dueAt, now)}`;
 }
 
 function getTargetTags(product: ProductDetailItem) {
@@ -679,6 +731,7 @@ function getOptionPurchaseBlockChipLabel(
   overlayLabel: string | null,
   option?: ProductOption,
   now = Date.now(),
+  isMine = false,
 ) {
   if (!overlayLabel) {
     return null;
@@ -689,11 +742,17 @@ function getOptionPurchaseBlockChipLabel(
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.complete) {
-    return "구매 완료";
+    return isMine
+      ? MEMBER_STATUS_CHIP_LABELS.myComplete
+      : MEMBER_STATUS_CHIP_LABELS.otherComplete;
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting) {
-    return option ? getOptionPaymentWaitingLabel(option, now) : overlayLabel;
+    return option
+      ? getOptionPaymentWaitingLabel(option, now, isMine)
+      : isMine
+        ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
+        : MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
   }
 
   return overlayLabel;
@@ -1195,7 +1254,7 @@ export function ProductDetail({
     }
 
     if (!hasSelectableOption) {
-      return "구매 가능한 옵션이 없어요";
+      return "구매 가능한 멤버가 없어요";
     }
 
     if (productStatus === "CONFIRMED") {
@@ -2064,8 +2123,10 @@ export function ProductDetail({
           totalPaymentAmount - totalBidAmount,
           0,
         );
-        const sharedPaymentDueAt =
-          result.paymentDueAt ?? paymentDetail?.paymentDueAt;
+        const sharedPaymentDueAt = clampPaymentDueAt(
+          result.paymentDueAt ?? paymentDetail?.paymentDueAt,
+          Date.now(),
+        );
         const sharedParticipationStatus =
           result.participationStatus ||
           paymentDetail?.paymentStatus ||
@@ -3006,8 +3067,8 @@ export function ProductDetail({
                     : remainingHeadcount === null
                     ? "개최자가 정한 진행 기준을 확인하고 있어요."
                     : remainingHeadcount > 0
-                      ? `기준까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요.`
-                      : "진행 기준을 채웠어요."}
+                      ? `분철 진행 최소 인원까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요. 인원을 채우면 진행이 확정돼요.`
+                      : "분철 진행 최소 인원을 채웠어요."}
                 </p>
               </div>
             </div>
@@ -3032,6 +3093,11 @@ export function ProductDetail({
                   </div>
                 ))}
               </div>
+              <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
+                이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이
+                중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께
+                입금해요.
+              </p>
             </div>
             ) : null}
 
@@ -3041,7 +3107,7 @@ export function ProductDetail({
               </h2>
               <p className="mt-3 whitespace-pre-line text-[15px] leading-7 tracking-[-0.04em] text-black/65">
                 {product.description.trim() ||
-                  "판매자가 상품 설명을 작성하지 않았습니다."}
+                  "개최자가 아직 상품 설명을 적지 않았어요."}
               </p>
             </div>
 
@@ -3066,6 +3132,7 @@ export function ProductDetail({
                     overlayLabel,
                     option,
                     deadlineTick,
+                    isOptionParticipatedByMe(option, myBids[option.id]),
                   );
 
                   return (
@@ -3203,7 +3270,7 @@ export function ProductDetail({
                     {checkoutStep === "payment"
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "confirm"
-                        ? "결제 후 입금 계좌와 마감 시각이 안내돼요."
+                        ? "주문하면 입금 계좌와 마감 시각이 안내돼요."
                         : "구매할 옵션을 선택해 주세요."}
                   </p>
                 </div>
@@ -3233,6 +3300,7 @@ export function ProductDetail({
                           overlayLabel,
                           option,
                           deadlineTick,
+                          isOptionParticipatedByMe(option, myBids[option.id]),
                         );
 
                       return (
@@ -3371,6 +3439,9 @@ export function ProductDetail({
                               : "추가"}
                         </button>
                       </div>
+                      <p className="mt-2.5 text-[12px] font-medium leading-5 text-black/40">
+                        택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요.
+                      </p>
                     </div>
 
                     <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
@@ -3391,7 +3462,7 @@ export function ProductDetail({
                     </div>
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
-                      결제하기를 누르면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
+                      주문하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
                     </p>
                     {checkoutError ? (
                       <p
@@ -3422,7 +3493,7 @@ export function ProductDetail({
                       onClick={() => void handleSubmitBids()}
                       type="button"
                     >
-                      {isBidSubmitPending ? "결제 처리 중" : "결제하기"}
+                      {isBidSubmitPending ? "주문 접수 중" : "이대로 주문할게요!"}
                     </button>
                   </div>
                 </>
@@ -3520,6 +3591,10 @@ export function ProductDetail({
                             계좌 복사
                           </button>
                         </div>
+                        <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                          송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행
+                          상황은 구매 내역에서 확인할 수 있어요.
+                        </p>
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                             <p className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]">
@@ -3705,7 +3780,7 @@ export function ProductDetail({
                 onClick={confirmCheckoutAddressSelection}
                 type="button"
               >
-                이 배송지로 받기
+                여기서 받을게요!
               </button>
             </section>
           </div>

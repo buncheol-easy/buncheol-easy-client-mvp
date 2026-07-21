@@ -30,19 +30,10 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   isUserProfileComplete,
-  requestBookmarkedBuncheols,
-  requestBuncheolDetail,
   requestLogout,
-  requestMyHostedBuncheols,
-  requestMyParticipations,
-  requestParticipationPaymentDetail,
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
-  toProductDetailItem,
-  type BankAccountInfo,
-  type MyHostedBuncheol,
-  type MyParticipation,
   type UserProfile,
 } from "@/lib/auth-api";
 import { clearHostedProducts } from "@/lib/hosted-products-store";
@@ -66,17 +57,8 @@ import {
   convenienceStoreTypeLabels,
   getDeliveryAddressDisplayBranchName,
   getDefaultDeliveryAddressesByType,
-  type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
-import type { ProductDetailItem } from "@/lib/mock-products";
-import {
-  readCachedParticipationPayment,
-} from "@/lib/participation-payment-cache";
-import { getCachedProductImageUrl } from "@/lib/product-card-image";
-import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
-const kstOffsetHours = 9;
-const paymentDeadlineMinutes = 30;
 const settlementAccountPanelExitMs = 180;
 const profileStateCacheKey = "buncheol-profile-state-cache";
 const profileStateCacheMaxAgeMs = 10 * 60 * 1000;
@@ -107,83 +89,8 @@ function getSettlementAccountState(profile: UserProfile | null) {
   };
 }
 
-function parseDeadline(deadline: string) {
-  const match = deadline
-    .trim()
-    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2}))?/);
-
-  if (!match) {
-    return new Date(Number.NaN);
-  }
-
-  const [, year, month, day, hour] = match;
-
-  return new Date(
-    Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour) - kstOffsetHours,
-    ),
-  );
-}
-
-function getPaymentDeadlineDate(
-  deadline: string,
-  paymentDueAt?: string | null,
-  createdAt?: string | null,
-) {
-  const paymentDeadline = paymentDueAt
-    ? new Date(paymentDueAt)
-    : createdAt
-      ? new Date(createdAt)
-      : parseDeadline(deadline);
-
-  if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
-    paymentDeadline.setUTCMinutes(
-      paymentDeadline.getUTCMinutes() + paymentDeadlineMinutes,
-    );
-  }
-
-  return paymentDeadline;
-}
-
-type ProfileBidEntry = {
-  amount: number;
-  buncheolStatus?: string;
-  deadline: string;
-  id: string;
-  imageUrl?: string;
-  member: string;
-  optionLabel: string;
-  optionLabels?: string[];
-  paidAt?: string | null;
-  payerName?: string;
-  participantCount: number;
-  paymentAmount?: number | null;
-  paymentDueAt?: string | null;
-  createdAt?: string | null;
-  participationStatus?: string;
-  deliveryId?: string | null;
-  deliveryStatus?: string | null;
-  shippingAddress?: DeliveryAddress | null;
-  productId: string;
-  rank: number;
-  courier?: string;
-  shippingFee?: number | null;
-  shippingMethods?: ProductDetailItem["shippingMethods"];
-  submittedAt: string;
-  title: string;
-  tone: string;
-  trackingNumber?: string | null;
-  hostBankAccount?: BankAccountInfo | null;
-};
-
 type ProfileStateCache = {
-  apiBidEntries?: ProfileBidEntry[];
-  apiHostedProducts?: ProductDetailItem[];
   authFingerprint?: string | null;
-  bookmarkedProductCount?: number;
   cachedAt: number;
   userProfile?: UserProfile | null;
 };
@@ -203,15 +110,9 @@ function isProfileStateCache(value: unknown): value is ProfileStateCache {
 
   return (
     typeof record.cachedAt === "number" &&
-    (record.apiBidEntries === undefined ||
-      Array.isArray(record.apiBidEntries)) &&
-    (record.apiHostedProducts === undefined ||
-      Array.isArray(record.apiHostedProducts)) &&
     (record.authFingerprint === undefined ||
       record.authFingerprint === null ||
       typeof record.authFingerprint === "string") &&
-    (record.bookmarkedProductCount === undefined ||
-      typeof record.bookmarkedProductCount === "number") &&
     (record.userProfile === undefined ||
       record.userProfile === null ||
       typeof record.userProfile === "object")
@@ -290,300 +191,6 @@ function clearProfileStateCache() {
   window.sessionStorage.removeItem(profileStateCacheKey);
 }
 
-function isRecruitingStatus(status: string | undefined) {
-  return !status || status === "RECRUITING";
-}
-
-function isDeletedProductStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
-function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
-  if (bid.buncheolStatus && !isRecruitingStatus(bid.buncheolStatus)) {
-    return !isRecruitingStatus(bid.buncheolStatus);
-  }
-
-  const deadlineDate = parseDeadline(bid.deadline);
-
-  return (
-    !Number.isNaN(deadlineDate.getTime()) &&
-    deadlineDate.getTime() <= now.getTime()
-  );
-}
-
-function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
-  return (
-    !isProfileBidCancelled(bid) &&
-    !isProfileBidPaymentConfirmed(bid) &&
-    (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
-      (isProfileBidClosed(bid, now) && bid.rank === 1)) &&
-    !isProfileBidPaymentExpired(bid, now)
-  );
-}
-
-function isPaymentWaitingParticipationStatus(status: string | undefined) {
-  return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
-}
-
-function isPaymentConfirmedParticipationStatus(status: string | undefined) {
-  return status === "CONFIRMED" || status === "PAYMENT_CONFIRMED";
-}
-
-function isProfileBidPaymentConfirmed(bid: ProfileBidEntry) {
-  return (
-    Boolean(bid.paidAt) ||
-    isPaymentConfirmedParticipationStatus(bid.participationStatus)
-  );
-}
-
-function isCancelledParticipationStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "CANCELED";
-}
-
-function isCancelledBuncheolStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "CANCELED";
-}
-
-function isProfileBidCancelled(bid: ProfileBidEntry) {
-  return (
-    isCancelledParticipationStatus(bid.participationStatus) ||
-    isCancelledBuncheolStatus(bid.buncheolStatus)
-  );
-}
-
-function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
-  const isPaymentCandidate =
-    isPaymentWaitingParticipationStatus(bid.participationStatus) ||
-    (isProfileBidClosed(bid, now) && bid.rank === 1);
-
-  if (
-    isProfileBidCancelled(bid) ||
-    isProfileBidPaymentConfirmed(bid) ||
-    isTransferPaymentRequestedStatus(bid.participationStatus) ||
-    !isPaymentCandidate
-  ) {
-    return false;
-  }
-
-  const paymentDeadline = getPaymentDeadlineDate(
-    bid.deadline,
-    bid.paymentDueAt,
-    bid.createdAt,
-  );
-
-  return (
-    !Number.isNaN(paymentDeadline.getTime()) &&
-    paymentDeadline.getTime() <= now.getTime()
-  );
-}
-
-function isProfileBidTransferRequested(bid: ProfileBidEntry) {
-  return (
-    !isProfileBidPaymentConfirmed(bid) &&
-    isTransferPaymentRequestedStatus(bid.participationStatus)
-  );
-}
-
-function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
-  return Boolean(bid.deliveryId && isProfileBidPaymentConfirmed(bid));
-}
-
-function formatApiDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    month: "2-digit",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-
-  return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
-}
-
-function getToneFromId(id: string) {
-  const tones = [
-    "from-black via-zinc-800 to-zinc-500",
-    "from-zinc-700 via-zinc-500 to-zinc-100",
-    "from-zinc-900 via-zinc-700 to-zinc-300",
-    "from-zinc-300 via-zinc-100 to-neutral-400",
-  ];
-  const hash = [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
-
-  return tones[hash % tones.length];
-}
-
-function getProfileBidEntryFromParticipation(
-  participation: MyParticipation,
-): ProfileBidEntry {
-  const cachedPayment = readCachedParticipationPayment(
-    participation.participationId,
-  );
-  const participationStatus =
-    participation.participationStatus ||
-    cachedPayment?.participationStatus ||
-    "";
-  const rank =
-    participation.closedRank ??
-    (isPaymentWaitingParticipationStatus(participationStatus) ? 1 : 0);
-
-  return {
-    id: participation.participationId,
-    amount: cachedPayment?.bidAmount ?? participation.bidAmount,
-    deadline: formatApiDateTime(participation.buncheolDeadline),
-    imageUrl:
-      participation.thumbnailUrl ??
-      getCachedProductImageUrl(participation.buncheolId),
-    member: `${participation.buncheolMemberCount}개 옵션`,
-    optionLabel: participation.memberName,
-    participantCount: 0,
-    paidAt:
-      participation.participationStatus === "CONFIRMED" ||
-      participation.participationStatus === "PAYMENT_CONFIRMED"
-        ? "결제 완료"
-        : null,
-    buncheolStatus: participation.buncheolStatus,
-    deliveryId: participation.deliveryId,
-    deliveryStatus: participation.deliveryStatus,
-    paymentAmount:
-      participation.paymentAmount ?? cachedPayment?.paymentAmount ?? null,
-    paymentDueAt:
-      participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
-    createdAt: participation.createdAt,
-    productId: participation.buncheolId,
-    participationStatus,
-    rank: rank > 0 ? rank : 0,
-    shippingAddress:
-      participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
-    shippingFee: participation.shippingFee ?? cachedPayment?.shippingFee ?? null,
-    trackingNumber: participation.trackingNumber,
-    hostBankAccount:
-      participation.hostBankAccount ?? cachedPayment?.hostBankAccount ?? null,
-    submittedAt: "",
-    title: participation.buncheolTitle,
-    tone: getToneFromId(participation.buncheolId),
-  };
-}
-
-async function getProfileBidEntryWithShippingData(
-  accessToken: string,
-  participation: MyParticipation,
-): Promise<ProfileBidEntry> {
-  const bidEntry = getProfileBidEntryFromParticipation(participation);
-  const shouldFetchParticipationDetail =
-    isProfileBidPaymentConfirmed(bidEntry) ||
-    isProfileBidTransferRequested(bidEntry) ||
-    Boolean(bidEntry.deliveryId);
-  const [productDetailResult, paymentDetailResult] =
-    await Promise.allSettled([
-      requestBuncheolDetail(accessToken, bidEntry.productId),
-      shouldFetchParticipationDetail
-        ? requestParticipationPaymentDetail(accessToken, bidEntry.id)
-        : Promise.resolve(null),
-    ]);
-
-  let mergedBidEntry = bidEntry;
-
-  if (
-    paymentDetailResult.status === "fulfilled" &&
-    paymentDetailResult.value
-  ) {
-    const paymentDetail = paymentDetailResult.value;
-    const participationStatus =
-      paymentDetail.paymentStatus || mergedBidEntry.participationStatus;
-
-    mergedBidEntry = {
-      ...mergedBidEntry,
-      deliveryId: mergedBidEntry.deliveryId ?? paymentDetail.deliveryId ?? null,
-      deliveryStatus:
-        paymentDetail.deliveryStatus ?? mergedBidEntry.deliveryStatus ?? null,
-      hostBankAccount:
-        mergedBidEntry.hostBankAccount ?? paymentDetail.hostBankAccount,
-      paidAt:
-        mergedBidEntry.paidAt ??
-        (isPaymentConfirmedParticipationStatus(participationStatus)
-          ? "결제 완료"
-          : null),
-      participationStatus,
-      paymentAmount:
-        mergedBidEntry.paymentAmount ?? paymentDetail.paymentAmount ?? null,
-      paymentDueAt:
-        mergedBidEntry.paymentDueAt ?? paymentDetail.paymentDueAt ?? null,
-      shippingAddress:
-        mergedBidEntry.shippingAddress ?? paymentDetail.shippingAddress ?? null,
-      shippingFee:
-        mergedBidEntry.shippingFee ?? paymentDetail.shippingFee ?? null,
-      trackingNumber:
-        paymentDetail.trackingNumber ?? mergedBidEntry.trackingNumber ?? null,
-    };
-  }
-
-  if (productDetailResult.status === "fulfilled") {
-    const detail = productDetailResult.value;
-    const product = toProductDetailItem(detail);
-
-    return {
-      ...mergedBidEntry,
-      courier: product.courier,
-      hostBankAccount:
-        mergedBidEntry.hostBankAccount ?? detail.hostBankAccount,
-      imageUrl: mergedBidEntry.imageUrl ?? product.imageUrl,
-      shippingMethods: product.shippingMethods,
-    };
-  }
-
-  return mergedBidEntry;
-}
-
-function getHostedProductFromBuncheol(
-  buncheol: MyHostedBuncheol,
-): ProductDetailItem {
-  const imageUrl =
-    buncheol.thumbnailUrl ?? getCachedProductImageUrl(buncheol.id);
-
-  return {
-    id: buncheol.id,
-    buncheolId: buncheol.id,
-    title: buncheol.title,
-    member: `${buncheol.memberSlotCount}개 옵션`,
-    optionCount: buncheol.memberSlotCount,
-    targetMembers: buncheol.memberNames,
-    uploadedAt: formatApiDateTime(buncheol.createdAt),
-    era: buncheol.groupName,
-    rating: "0.0",
-    reviews: String(buncheol.activeParticipationCount),
-    badge: buncheol.status === "RECRUITING" ? "모집중" : buncheol.status === "CONFIRMED" ? "진행확정" : buncheol.status === "CANCELLED" ? "취소" : "모집종료",
-    liked: buncheol.bookmarked,
-    tone: getToneFromId(buncheol.id),
-    courier: "배송 방법 확인 필요",
-    deadline: formatApiDateTime(buncheol.deadline),
-    description: "",
-    imageUrl,
-    imageUrls: imageUrl ? [imageUrl] : [],
-    isApiProduct: true,
-    options: [
-      {
-        id: `${buncheol.id}-participants`,
-        label: "참여",
-        price: "-",
-        currentBid: "-",
-        participantCount: buncheol.activeParticipationCount,
-      },
-    ],
-    purchaseSource: "",
-    status: buncheol.status,
-  };
-}
-
 type ProfileContentProps = {
   skipEnterAnimation?: boolean;
 };
@@ -606,7 +213,6 @@ export function ProfileContent({
 
     return shouldSkip;
   });
-  const [initialProfileStateCache] = useState(() => readProfileStateCache());
   const addressSyncRequestIdRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
@@ -637,63 +243,23 @@ export function ProfileContent({
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
   const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(
-    () => initialProfileStateCache?.userProfile ?? null,
-  );
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [userProfileMessage, setUserProfileMessage] = useState("");
-  const [now, setNow] = useState(() => new Date());
-  const [apiBidEntries, setApiBidEntries] = useState<ProfileBidEntry[] | null>(
-    () => initialProfileStateCache?.apiBidEntries ?? null,
-  );
-  const [apiHostedProducts, setApiHostedProducts] = useState<
-    ProductDetailItem[] | null
-  >(() => initialProfileStateCache?.apiHostedProducts ?? null);
-  const [bookmarkedProductCount, setBookmarkedProductCount] = useState<
-    number | null
-  >(() => initialProfileStateCache?.bookmarkedProductCount ?? null);
+  // sessionStorage 캐시는 SSR 결과와 하이드레이션 렌더를 일치시키기 위해
+  // 초기 렌더가 아니라 마운트 이후에 주입한다.
+  useEffect(() => {
+    const cachedProfileState = readProfileStateCache();
 
-  const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
-  const isHostedProductsLoading =
-    authState.isLoggedIn && apiHostedProducts === null;
-  const isBookmarkedProductCountLoading =
-    authState.isLoggedIn && bookmarkedProductCount === null;
-  const allBids: ProfileBidEntry[] = useMemo(
-    () => (authState.isLoggedIn ? apiBidEntries ?? [] : []),
-    [apiBidEntries, authState.isLoggedIn],
-  );
-  const activeBids = useMemo(
-    () =>
-      allBids.filter((bid) => {
-        const isClosed = isProfileBidClosed(bid, now);
+    if (!cachedProfileState) {
+      return;
+    }
 
-        if (isProfileBidCancelled(bid)) {
-          return false;
-        }
+    setUserProfile(
+      (current) => current ?? cachedProfileState.userProfile ?? null,
+    );
+  }, []);
 
-        return (
-          !isClosed ||
-          isProfileBidPaymentReady(bid, now) ||
-          isProfileBidTransferRequested(bid) ||
-          isProfileBidPaymentConfirmed(bid) ||
-          shouldKeepProfileDeliveryReachable(bid)
-        );
-      }),
-    [allBids, now],
-  );
-  const shouldRefreshPaymentState = allBids.some(
-    (bid) =>
-      isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid),
-  );
-  const hostedProducts = useMemo(
-    () =>
-      authState.isLoggedIn && apiHostedProducts
-        ? apiHostedProducts.filter((product) =>
-            !isDeletedProductStatus(product.status),
-          )
-        : [],
-    [apiHostedProducts, authState.isLoggedIn],
-  );
   const settlementAccount = useMemo(
     () => {
       if (!authState.isLoggedIn) {
@@ -796,13 +362,7 @@ export function ProfileContent({
   );
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 60_000);
-
     return () => {
-      window.clearInterval(timer);
-
       if (settlementAccountPanelCloseTimerRef.current !== null) {
         window.clearTimeout(settlementAccountPanelCloseTimerRef.current);
       }
@@ -815,152 +375,10 @@ export function ProfileContent({
       return;
     }
 
-    const cachePatch: Partial<Omit<ProfileStateCache, "cachedAt">> = {};
-
-    if (apiBidEntries !== null) {
-      cachePatch.apiBidEntries = apiBidEntries;
-    }
-
-    if (apiHostedProducts !== null) {
-      cachePatch.apiHostedProducts = apiHostedProducts;
-    }
-
-    if (bookmarkedProductCount !== null) {
-      cachePatch.bookmarkedProductCount = bookmarkedProductCount;
-    }
-
     if (userProfile !== null) {
-      cachePatch.userProfile = userProfile;
+      writeProfileStateCache({ userProfile });
     }
-
-    if (Object.keys(cachePatch).length > 0) {
-      writeProfileStateCache(cachePatch);
-    }
-  }, [
-    apiBidEntries,
-    apiHostedProducts,
-    authState.isLoggedIn,
-    bookmarkedProductCount,
-    userProfile,
-  ]);
-
-  useEffect(() => {
-    if (!authState.isLoggedIn || !authState.accessToken) {
-      clearProfileStateCache();
-      setApiBidEntries([]);
-      setApiHostedProducts([]);
-      setBookmarkedProductCount(0);
-      return;
-    }
-
-    let isActive = true;
-
-
-    async function loadApiProfileLists() {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        if (isActive) {
-          setApiBidEntries([]);
-          setApiHostedProducts([]);
-          setBookmarkedProductCount(0);
-        }
-
-        return;
-      }
-
-      const [participations, buncheols, bookmarks] = await Promise.allSettled([
-        requestMyParticipations(accessToken),
-        requestMyHostedBuncheols(accessToken),
-        requestBookmarkedBuncheols(accessToken),
-      ]);
-
-      if (!isActive) {
-        return;
-      }
-
-      if (participations.status === "fulfilled") {
-        const bidEntries = await Promise.all(
-          participations.value.map((participation) =>
-            getProfileBidEntryWithShippingData(accessToken, participation),
-          ),
-        );
-
-        if (!isActive) {
-          return;
-        }
-
-        setApiBidEntries(bidEntries);
-      } else {
-        setApiBidEntries((current) => current ?? []);
-      }
-
-      if (buncheols.status === "fulfilled") {
-        setApiHostedProducts(buncheols.value.map(getHostedProductFromBuncheol));
-      } else {
-        setApiHostedProducts((current) => current ?? []);
-      }
-
-      if (bookmarks.status === "fulfilled") {
-        setBookmarkedProductCount(bookmarks.value.length);
-      } else {
-        setBookmarkedProductCount((current) => current ?? 0);
-      }
-    }
-
-    loadApiProfileLists().catch(() => {
-      if (isActive) {
-        setApiBidEntries((current) => current ?? []);
-        setApiHostedProducts((current) => current ?? []);
-        setBookmarkedProductCount((current) => current ?? 0);
-      }
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.accessToken, authState.isLoggedIn]);
-
-  useEffect(() => {
-    if (!authState.isLoggedIn || !shouldRefreshPaymentState) {
-      return;
-    }
-
-    let isActive = true;
-
-    async function refreshParticipations() {
-      const accessToken = await getFreshAccessToken();
-
-      if (!isActive || !accessToken) {
-        return;
-      }
-
-      try {
-        const participations = await requestMyParticipations(accessToken);
-        const bidEntries = await Promise.all(
-          participations.map((participation) =>
-            getProfileBidEntryWithShippingData(accessToken, participation),
-          ),
-        );
-
-        if (isActive) {
-          setApiBidEntries(bidEntries);
-        }
-      } catch {
-        // Keep the current list while the backend finishes deadline processing.
-      }
-    }
-
-    void refreshParticipations();
-    const timer = window.setInterval(() => {
-      void refreshParticipations();
-    }, 15_000);
-
-    return () => {
-      isActive = false;
-      window.clearInterval(timer);
-    };
-  }, [authState.isLoggedIn, shouldRefreshPaymentState]);
+  }, [authState.isLoggedIn, userProfile]);
 
   useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {
@@ -1313,38 +731,12 @@ export function ProfileContent({
             </Link>
           )}
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-[#DDE7B8]">참여중</p>
-              <p className="mt-1 text-[19px] font-semibold">
-                {isBidEntriesLoading ? (
-                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
-                ) : (
-                  activeBids.length
-                )}
-              </p>
-            </div>
-            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-[#DDE7B8]">개최</p>
-              <p className="mt-1 text-[19px] font-semibold">
-                {isHostedProductsLoading ? (
-                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
-                ) : (
-                  hostedProducts.length
-                )}
-              </p>
-            </div>
-            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-[#DDE7B8]">찜</p>
-              <p className="mt-1 text-[19px] font-semibold">
-                {isBookmarkedProductCountLoading ? (
-                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
-                ) : (
-                  bookmarkedProductCount ?? 0
-                )}
-              </p>
-            </div>
-          </div>
+          <Link
+            className="mt-5 flex h-12 items-center justify-center rounded-full bg-[#CFE86B] text-[15px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
+            href="/profile/bids"
+          >
+            내 참여 내역 보러 가기
+          </Link>
         </section>
 
         <section className="mt-5 rounded-[1.2rem] border border-black/10 bg-white p-3.5 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">

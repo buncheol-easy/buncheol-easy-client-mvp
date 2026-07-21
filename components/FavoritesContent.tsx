@@ -470,7 +470,7 @@ export function FavoritesContent({
             <div className="content-reveal rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
                 {authState.isLoggedIn
-                  ? "조건에 맞는 찜 상품이 없습니다."
+                  ? "조건에 맞는 찜 상품이 없어요."
                   : "로그인 후 이용할 수 있어요."}
               </p>
             </div>

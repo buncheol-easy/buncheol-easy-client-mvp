@@ -470,7 +470,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               {availableMemberNames.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-[#D7FF5F]">
-                    가능 멤버
+                    남은 멤버
                   </span>
                   {availableMemberNames.map((memberName) => (
                     <span

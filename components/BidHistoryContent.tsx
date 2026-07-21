@@ -11,7 +11,13 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { MouseEvent } from "react";
-import { CloseIcon } from "@/components/icons";
+import {
+  BanknoteIcon,
+  CheckIcon,
+  CloseIcon,
+  PackageCheckIcon,
+  TruckIcon,
+} from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
@@ -192,6 +198,32 @@ const bidProgressStepLabels = [
   "결제 완료",
   "배송중",
   "배송 완료",
+] as const;
+
+const participationStatusGuide = [
+  {
+    icon: BanknoteIcon,
+    label: "결제 대기",
+    description:
+      "주문 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 결제 정보 버튼에서 확인할 수 있어요.",
+  },
+  {
+    icon: CheckIcon,
+    label: "결제 완료",
+    description:
+      "관리자가 입금을 확인해 참여가 확정된 상태예요. 개최자가 배송을 시작하면 배송중으로 바뀌어요.",
+  },
+  {
+    icon: TruckIcon,
+    label: "배송중",
+    description:
+      "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
+  },
+  {
+    icon: PackageCheckIcon,
+    label: "배송 완료",
+    description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
+  },
 ] as const;
 
 const bidHistoryModes: BidHistoryMode[] = ["joined", "hosted"];
@@ -584,7 +616,7 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
 function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordCancelled(bid)) {
     if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
-      return "취소된 분철이에요.";
+      return "취소된 분철이에요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.";
     }
 
     return "취소된 참여예요.";
@@ -975,6 +1007,12 @@ export function BidHistoryContent({
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
+  const [isStatusHelpSheetOpen, setIsStatusHelpSheetOpen] = useState(false);
+  const [isStatusHelpSheetEntered, setIsStatusHelpSheetEntered] =
+    useState(false);
+  const [isStatusHelpSheetClosing, setIsStatusHelpSheetClosing] =
+    useState(false);
+  const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
   const [paymentCopyToast, setPaymentCopyToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
@@ -1700,6 +1738,33 @@ export function BidHistoryContent({
     );
   }
 
+  function openStatusHelpSheet() {
+    if (statusHelpSheetCloseTimerRef.current !== null) {
+      window.clearTimeout(statusHelpSheetCloseTimerRef.current);
+      statusHelpSheetCloseTimerRef.current = null;
+    }
+
+    setIsStatusHelpSheetClosing(false);
+    setIsStatusHelpSheetOpen(true);
+    window.requestAnimationFrame(() => {
+      setIsStatusHelpSheetEntered(true);
+    });
+  }
+
+  function closeStatusHelpSheet() {
+    if (statusHelpSheetCloseTimerRef.current !== null) {
+      return;
+    }
+
+    setIsStatusHelpSheetClosing(true);
+    setIsStatusHelpSheetEntered(false);
+    statusHelpSheetCloseTimerRef.current = window.setTimeout(() => {
+      statusHelpSheetCloseTimerRef.current = null;
+      setIsStatusHelpSheetOpen(false);
+      setIsStatusHelpSheetClosing(false);
+    }, 280);
+  }
+
   function rememberScrollPosition() {
     if (!scrollContainerRef.current) {
       return;
@@ -1961,7 +2026,7 @@ export function BidHistoryContent({
               <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                 <p className="text-[14px] font-semibold text-black/70">
                   {authState.isLoggedIn
-                    ? "표시할 참여 분철이 없습니다."
+                    ? "아직 참여한 분철이 없어요."
                     : "로그인 후 이용할 수 있어요."}
                 </p>
                 {authState.isLoggedIn ? (
@@ -2066,10 +2131,15 @@ export function BidHistoryContent({
 
                       <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
                         {isCancelled ? (
-                          <div className="mb-3 flex justify-center">
+                          <div className="mb-3 flex flex-col items-center gap-1.5">
                             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
                               {cancellationLabel}
                             </span>
+                            {isCancelledBuncheolStatus(bid.buncheolStatus) ? (
+                              <p className="text-center text-[11px] font-medium leading-4 text-black/40">
+                                이미 입금했다면 등록한 환불 계좌로 환불돼요.
+                              </p>
+                            ) : null}
                           </div>
                         ) : null}
                         <div className="relative">
@@ -2207,7 +2277,7 @@ export function BidHistoryContent({
                 <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
                   <p className="text-[14px] font-semibold text-black/70">
                     {authState.isLoggedIn
-                      ? "표시할 개최 분철이 없습니다."
+                      ? "아직 개최한 분철이 없어요."
                       : "로그인 후 이용할 수 있어요."}
                   </p>
                   {authState.isLoggedIn ? (
@@ -2324,6 +2394,104 @@ export function BidHistoryContent({
           )}
         </div>
       </main>
+
+      {mode === "joined" ? (
+        <button
+          aria-label="참여 상태 안내 보기"
+          className="motion-icon-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)]"
+          onClick={openStatusHelpSheet}
+          type="button"
+        >
+          ?
+        </button>
+      ) : null}
+
+      {isStatusHelpSheetOpen ? (
+        <div
+          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
+            isStatusHelpSheetEntered && !isStatusHelpSheetClosing
+              ? "bid-sheet-backdrop-active"
+              : ""
+          }`}
+        >
+          <button
+            aria-label="참여 상태 안내 닫기"
+            className="absolute inset-0 cursor-default"
+            onClick={closeStatusHelpSheet}
+            type="button"
+          />
+          <section
+            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              isStatusHelpSheetEntered && !isStatusHelpSheetClosing
+                ? "bid-sheet-panel-active"
+                : ""
+            }`}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
+                  참여 상태 안내
+                </h2>
+                <p className="mt-1 text-[13px] font-medium text-black/45">
+                  참여한 분철은 이런 순서로 진행돼요.
+                </p>
+              </div>
+              <button
+                aria-label="닫기"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                onClick={closeStatusHelpSheet}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                {participationStatusGuide.map((item, index) => (
+                  <div className="flex gap-3" key={item.label}>
+                    <div className="flex flex-col items-center">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-[#CFE86B] bg-[#D7FF5F]">
+                        <item.icon className="h-3.5 w-3.5" />
+                      </span>
+                      {index < participationStatusGuide.length - 1 ? (
+                        <span className="w-px flex-1 bg-[#CAD6A0]" />
+                      ) : null}
+                    </div>
+                    <div
+                      className={
+                        index < participationStatusGuide.length - 1
+                          ? "pb-4"
+                          : ""
+                      }
+                    >
+                      <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                        {item.label}
+                      </p>
+                      <p className="mt-1 text-[12px] font-medium leading-5 text-black/50">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
+                분철이 취소되거나 입금 기한이 지나면 참여가 취소될 수 있어요.
+                이미 입금했다면 등록한 환불 계좌로 환불돼요.
+              </p>
+            </div>
+
+            <button
+              className="mt-4 h-12 w-full shrink-0 rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
+              onClick={closeStatusHelpSheet}
+              type="button"
+            >
+              확인했어요
+            </button>
+          </section>
+        </div>
+      ) : null}
 
       {isPaymentSheetOpen && selectedPaymentBid ? (
         <div
