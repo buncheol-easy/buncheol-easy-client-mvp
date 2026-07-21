@@ -35,7 +35,6 @@ export default async function ProductDetailPage({
         id={id}
         returnSource={
           returnSource === "home" ||
-          returnSource === "profile" ||
           returnSource === "bids" ||
           returnSource === "favorites" ||
           returnSource === "upload"
@@ -53,7 +52,6 @@ export default async function ProductDetailPage({
       returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
       returnSource={
         returnSource === "home" ||
-        returnSource === "profile" ||
         returnSource === "bids" ||
         returnSource === "favorites" ||
         returnSource === "upload"

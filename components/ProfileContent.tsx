@@ -11,13 +11,12 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { MouseEvent, PointerEvent } from "react";
+import type { MouseEvent } from "react";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { CloseIcon, ProfileIcon } from "@/components/icons";
+import { ProfileIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
-  type AddressReturnState,
 } from "@/lib/address-return-state";
 import { createLoginHref } from "@/lib/auth-navigation";
 import {
@@ -30,8 +29,6 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
-  ApiRequestError,
-  deleteShippingAddress,
   isUserProfileComplete,
   requestBookmarkedBuncheols,
   requestBuncheolDetail,
@@ -42,7 +39,6 @@ import {
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
-  updateShippingAddress,
   toProductDetailItem,
   type BankAccountInfo,
   type MyHostedBuncheol,
@@ -62,20 +58,14 @@ import {
   clearDeliveryAddressState,
   getInitialDeliveryAddressState,
   getDeliveryAddressStateFromSyncedAddresses,
-  getDeliveryAddressStateWithDefaultAddress,
   readDeliveryAddressState,
   subscribeDeliveryAddressState,
-  type StoredDeliveryAddressState,
   writeDeliveryAddressState,
 } from "@/lib/delivery-address-store";
 import {
   convenienceStoreTypeLabels,
-  getAvailableConvenienceStoreTypes,
-  getConvenienceStoreLabel,
-  getDeliveryAddressDisplayAlias,
   getDeliveryAddressDisplayBranchName,
   getDefaultDeliveryAddressesByType,
-  getPrioritizedDeliveryAddresses,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
 import type { ProductDetailItem } from "@/lib/mock-products";
@@ -84,10 +74,6 @@ import {
 } from "@/lib/participation-payment-cache";
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
-
-function formatPrice(price: number) {
-  return `${price.toLocaleString("ko-KR")}원`;
-}
 
 const kstOffsetHours = 9;
 const paymentDeadlineMinutes = 30;
@@ -105,26 +91,6 @@ function getEmptySettlementAccountState(): SettlementAccountState {
 
 function sanitizeAccountNumber(value: string) {
   return value.replace(/[^\d-]/g, "");
-}
-
-function getDeliveryAddressDeleteErrorMessage(error: unknown) {
-  if (error instanceof ApiRequestError && error.status === 409) {
-    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
-  }
-
-  if (
-    error instanceof Error &&
-    (error.message.includes("USR-030") ||
-      error.message.includes(
-        "SHIPPING_ADDRESS_DELETE_BLOCKED_BY_ACTIVE_PARTICIPATION",
-      ))
-  ) {
-    return "진행 중인 참여에 사용된 배송지는 삭제할 수 없어요.";
-  }
-
-  return error instanceof Error
-    ? error.message
-    : "배송지를 삭제하지 못했어요.";
 }
 
 function getSettlementAccountState(profile: UserProfile | null) {
@@ -162,30 +128,6 @@ function parseDeadline(deadline: string) {
   );
 }
 
-function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
-  const difference = deadlineDate.getTime() - now.getTime();
-
-  if (Number.isNaN(deadlineDate.getTime()) || difference <= 0) {
-    return "기한 지남";
-  }
-
-  const totalMinutes = Math.ceil(difference / 60000);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-
-  if (days > 0) {
-    return `${days}일 ${hours}시간 남았어요`;
-  }
-
-  if (hours > 0) {
-    return `${hours}시간 ${minutes}분 남았어요`;
-  }
-
-  return `${minutes}분 남았어요`;
-}
-
-
 function getPaymentDeadlineDate(
   deadline: string,
   paymentDueAt?: string | null,
@@ -205,26 +147,6 @@ function getPaymentDeadlineDate(
 
   return paymentDeadline;
 }
-
-function formatPaymentRemainingTime(
-  deadline: string,
-  now: Date,
-  paymentDueAt?: string | null,
-  createdAt?: string | null,
-) {
-  const paymentDeadline = getPaymentDeadlineDate(
-    deadline,
-    paymentDueAt,
-    createdAt,
-  );
-
-  if (Number.isNaN(paymentDeadline.getTime())) {
-    return "결제 기한 확인 필요";
-  }
-
-  return formatRemainingTimeFromDate(paymentDeadline, now);
-}
-const shippingFee = 3200;
 
 type ProfileBidEntry = {
   amount: number;
@@ -462,235 +384,8 @@ function isProfileBidTransferRequested(bid: ProfileBidEntry) {
   );
 }
 
-function getProfileBidPaymentStatusLabel(bid: ProfileBidEntry, now: Date) {
-  if (isProfileBidCancelled(bid)) {
-    return "취소";
-  }
-
-  if (isProfileBidPaymentConfirmed(bid)) {
-    return "결제 완료";
-  }
-
-  if (isProfileBidTransferRequested(bid)) {
-    return "관리자 확인 중";
-  }
-
-  if (isProfileBidPaymentExpired(bid, now)) {
-    return "결제 만료";
-  }
-
-  if (isProfileBidPaymentReady(bid, now)) {
-    return "결제 대기";
-  }
-
-  return isProfileBidClosed(bid, now) ? "모집 종료" : "참여중";
-}
-
-function getProfileBidPaymentStatusDescription(bid: ProfileBidEntry, now: Date) {
-  if (isProfileBidCancelled(bid)) {
-    if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
-      return "취소된 분철이에요.";
-    }
-
-    return "취소된 참여예요.";
-  }
-
-  if (isProfileBidPaymentConfirmed(bid)) {
-    return "관리자가 입금을 확인했어요.";
-  }
-
-  if (isProfileBidTransferRequested(bid)) {
-    return "관리자가 입금을 확인하고 있어요.";
-  }
-
-  if (isProfileBidPaymentExpired(bid, now)) {
-    return "입금 기한이 지나 참여가 취소됐을 수 있어요.";
-  }
-
-  if (isProfileBidPaymentReady(bid, now)) {
-    return `입금 기한까지 ${formatPaymentRemainingTime(
-      bid.deadline,
-      now,
-      bid.paymentDueAt,
-      bid.createdAt,
-    )}`;
-  }
-
-  return isProfileBidClosed(bid, now)
-    ? "모집 종료된 분철이에요."
-    : "진행 중인 참여예요.";
-}
-
 function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
   return Boolean(bid.deliveryId && isProfileBidPaymentConfirmed(bid));
-}
-
-function getProfileUniqueLabels(labels: string[]) {
-  return [...new Set(labels.map((label) => label.trim()).filter(Boolean))];
-}
-
-function formatProfileGroupedOptionLabel(labels: string[]) {
-  const uniqueLabels = getProfileUniqueLabels(labels);
-
-  if (uniqueLabels.length === 0) {
-    return "멤버 확인 필요";
-  }
-
-  if (uniqueLabels.length === 1) {
-    return uniqueLabels[0];
-  }
-
-  return `${uniqueLabels[0]} 외 ${uniqueLabels.length - 1}개`;
-}
-
-function getProfileBidOptionLabels(bid: ProfileBidEntry) {
-  const optionLabels = getProfileUniqueLabels(
-    bid.optionLabels && bid.optionLabels.length > 0
-      ? bid.optionLabels
-      : [bid.optionLabel],
-  );
-
-  return optionLabels.length > 0 ? optionLabels : ["멤버 확인 필요"];
-}
-
-function getProfileBidGroupPriority(bid: ProfileBidEntry, now: Date) {
-  if (isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid)) {
-    return 4;
-  }
-
-  if (shouldKeepProfileDeliveryReachable(bid)) {
-    return 3;
-  }
-
-  if (isProfileBidPaymentConfirmed(bid)) {
-    return 2;
-  }
-
-  return isProfileBidClosed(bid, now) ? 1 : 0;
-}
-
-function mergeProfileBidEntryGroup(
-  groupEntries: ProfileBidEntry[],
-  now: Date,
-) {
-  const sortedEntries = [...groupEntries].sort((left, right) => {
-    const progressDiff =
-      getProfileBidGroupPriority(right, now) -
-      getProfileBidGroupPriority(left, now);
-
-    if (progressDiff !== 0) {
-      return progressDiff;
-    }
-
-    return right.amount - left.amount;
-  });
-  const representative =
-    sortedEntries.find(
-      (bid) =>
-        isProfileBidPaymentReady(bid, now) ||
-        isProfileBidTransferRequested(bid),
-    ) ?? sortedEntries[0];
-  const totalAmount = groupEntries.reduce((sum, bid) => sum + bid.amount, 0);
-  const paymentAmounts = groupEntries.map((bid) => bid.paymentAmount);
-  const hasCompletePaymentAmounts = paymentAmounts.every(
-    (amount): amount is number => typeof amount === "number",
-  );
-  const totalPaymentAmount = hasCompletePaymentAmounts
-    ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
-    : groupEntries.length === 1
-      ? representative.paymentAmount
-      : null;
-  const shippingFees = groupEntries.map((bid) => bid.shippingFee);
-  const totalShippingFee = shippingFees.every(
-    (amount): amount is number => typeof amount === "number",
-  )
-    ? shippingFees.reduce((sum, amount) => sum + amount, 0)
-    : representative.shippingFee;
-  const optionLabels = getProfileUniqueLabels(
-    groupEntries.flatMap((bid) => bid.optionLabels ?? [bid.optionLabel]),
-  );
-
-  return {
-    ...representative,
-    amount: totalAmount,
-    deliveryId:
-      representative.deliveryId ??
-      groupEntries.find((bid) => bid.deliveryId)?.deliveryId ??
-      null,
-    deliveryStatus:
-      representative.deliveryStatus ??
-      groupEntries.find((bid) => bid.deliveryStatus)?.deliveryStatus ??
-      null,
-    hostBankAccount:
-      representative.hostBankAccount ??
-      groupEntries.find((bid) => bid.hostBankAccount)?.hostBankAccount ??
-      null,
-    id: representative.id,
-    optionLabel: formatProfileGroupedOptionLabel(
-      optionLabels,
-    ),
-    optionLabels,
-    paymentAmount: totalPaymentAmount,
-    shippingAddress:
-      representative.shippingAddress ??
-      groupEntries.find((bid) => bid.shippingAddress)?.shippingAddress ??
-      null,
-    shippingFee: totalShippingFee ?? null,
-    trackingNumber:
-      representative.trackingNumber ??
-      groupEntries.find((bid) => bid.trackingNumber)?.trackingNumber ??
-      null,
-  };
-}
-
-function getProfileBidGroupKey(bid: ProfileBidEntry) {
-  return bid.productId || bid.id;
-}
-
-function getGroupedProfileBidEntries(records: ProfileBidEntry[], now: Date) {
-  const groups = new Map<string, ProfileBidEntry[]>();
-
-  records.forEach((bid) => {
-    const key = getProfileBidGroupKey(bid);
-    const group = groups.get(key) ?? [];
-
-    group.push(bid);
-    groups.set(key, group);
-  });
-
-  return [...groups.values()].map((group) =>
-    mergeProfileBidEntryGroup(group, now),
-  );
-}
-
-function findGroupedProfileBidEntryById(
-  groupedEntries: ProfileBidEntry[],
-  sourceEntries: ProfileBidEntry[],
-  bidId: string | null,
-  now: Date,
-) {
-  if (!bidId) {
-    return null;
-  }
-
-  const groupedEntry = groupedEntries.find((bid) => bid.id === bidId);
-
-  if (groupedEntry) {
-    return groupedEntry;
-  }
-
-  const sourceEntry = sourceEntries.find((bid) => bid.id === bidId);
-
-  if (!sourceEntry) {
-    return null;
-  }
-
-  const groupKey = getProfileBidGroupKey(sourceEntry);
-  const groupEntries = sourceEntries.filter(
-    (bid) => getProfileBidGroupKey(bid) === groupKey,
-  );
-
-  return mergeProfileBidEntryGroup(groupEntries, now);
 }
 
 function formatApiDateTime(value: string) {
@@ -894,9 +589,7 @@ type ProfileContentProps = {
 };
 
 export const PROFILE_SKIP_ENTER_KEY = "skip-profile-enter-animation";
-const paymentSheetDragCloseThreshold = 72;
 
-type AddressSheetMode = "manage" | "select";
 export function ProfileContent({
   skipEnterAnimation = false,
 }: ProfileContentProps) {
@@ -914,21 +607,7 @@ export function ProfileContent({
     return shouldSkip;
   });
   const [initialProfileStateCache] = useState(() => readProfileStateCache());
-  const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
-    string | null
-  >(null);
-  const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
-  const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
-  const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
   const addressSyncRequestIdRef = useRef(0);
-  const paymentSheetDragStartYRef = useRef<number | null>(null);
-  const paymentSheetCloseTimerRef = useRef<number | null>(null);
-  const paymentCopyToastTimerRef = useRef<number | null>(null);
-  const [paymentSheetDragOffset, setPaymentSheetDragOffset] = useState(0);
-  const [paymentCopyToast, setPaymentCopyToast] = useState("");
-  const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
-    string | null
-  >(null);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -945,16 +624,7 @@ export function ProfileContent({
     getInitialSettlementAccountState,
   );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
-  const [addressSheetMode, setAddressSheetMode] =
-    useState<AddressSheetMode>("manage");
-  const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
-  const [isAddressSheetEntered, setIsAddressSheetEntered] = useState(false);
-  const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
   const [isDefaultAddressLoading, setIsDefaultAddressLoading] = useState(false);
-  const addressSheetCloseTimerRef = useRef<number | null>(null);
-  const [manageAddressSnapshot, setManageAddressSnapshot] = useState<
-    DeliveryAddress[]
-  >([]);
   const [isEditingSettlementAccount, setIsEditingSettlementAccount] =
     useState(false);
   const [isSettlementAccountPanelExiting, setIsSettlementAccountPanelExiting] =
@@ -1011,10 +681,6 @@ export function ProfileContent({
       }),
     [allBids, now],
   );
-  const groupedActiveBids = useMemo(
-    () => getGroupedProfileBidEntries(activeBids, now),
-    [activeBids, now],
-  );
   const shouldRefreshPaymentState = allBids.some(
     (bid) =>
       isProfileBidPaymentReady(bid, now) || isProfileBidTransferRequested(bid),
@@ -1068,71 +734,10 @@ export function ProfileContent({
     settlementAccountForm.accountHolder.trim().length <= 50 &&
     settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
 
-  const selectedPaymentBid = findGroupedProfileBidEntryById(
-    groupedActiveBids,
-    activeBids,
-    selectedPaymentBidId,
-    now,
-  );
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
   );
-  const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
-    deliveryAddresses,
-    defaultAddressIds,
-  );
-  const availablePaymentStoreTypes = getAvailableConvenienceStoreTypes(
-    selectedPaymentBid?.shippingMethods,
-    selectedPaymentBid?.courier,
-  );
-  const isApiPaymentStoreTypePending = false;
-  const eligiblePaymentAddresses =
-    isApiPaymentStoreTypePending
-      ? []
-      : availablePaymentStoreTypes.length > 0
-      ? prioritizedDeliveryAddresses.filter((address) =>
-          availablePaymentStoreTypes.includes(address.storeType),
-        )
-      : prioritizedDeliveryAddresses;
-  const selectedEligiblePaymentAddress =
-    eligiblePaymentAddresses.find(
-      (address) => address.id === selectedPaymentAddressId,
-    ) ?? null;
-  const lockedPaymentDeliveryAddress =
-    selectedPaymentBid?.shippingAddress ?? null;
-  const paymentDeliveryAddress =
-    lockedPaymentDeliveryAddress ??
-    selectedEligiblePaymentAddress ??
-    eligiblePaymentAddresses[0] ??
-    null;
-  const paymentShippingFee = selectedPaymentBid?.shippingFee ?? shippingFee;
-  const paymentTotalAmount = selectedPaymentBid
-    ? selectedPaymentBid.paymentAmount ??
-      selectedPaymentBid.amount + paymentShippingFee
-    : 0;
-  const selectedPaymentBankAccount =
-    selectedPaymentBid?.hostBankAccount ?? null;
-  const selectedPaymentOptionLabels = selectedPaymentBid
-    ? getProfileBidOptionLabels(selectedPaymentBid)
-    : [];
-  const selectedPaymentStatusLabel = selectedPaymentBid
-    ? getProfileBidPaymentStatusLabel(selectedPaymentBid, now)
-    : "";
-  const selectedPaymentStatusDescription = selectedPaymentBid
-    ? getProfileBidPaymentStatusDescription(selectedPaymentBid, now)
-    : "";
-  const isSelectedPaymentReady = selectedPaymentBid
-    ? isProfileBidPaymentReady(selectedPaymentBid, now)
-    : false;
-  const selectedPaymentRemainingTime = selectedPaymentBid
-    ? formatPaymentRemainingTime(
-        selectedPaymentBid.deadline,
-        now,
-        selectedPaymentBid.paymentDueAt,
-        selectedPaymentBid.createdAt,
-      )
-    : "";
   const syncDeliveryAddresses = useCallback(async (
     accessToken: string,
     options: { clearBeforeSync?: boolean } = {},
@@ -1197,18 +802,6 @@ export function ProfileContent({
 
     return () => {
       window.clearInterval(timer);
-
-      if (paymentSheetCloseTimerRef.current !== null) {
-        window.clearTimeout(paymentSheetCloseTimerRef.current);
-      }
-
-      if (paymentCopyToastTimerRef.current !== null) {
-        window.clearTimeout(paymentCopyToastTimerRef.current);
-      }
-
-      if (addressSheetCloseTimerRef.current !== null) {
-        window.clearTimeout(addressSheetCloseTimerRef.current);
-      }
 
       if (settlementAccountPanelCloseTimerRef.current !== null) {
         window.clearTimeout(settlementAccountPanelCloseTimerRef.current);
@@ -1493,182 +1086,6 @@ export function ProfileContent({
     settlementAccount,
   ]);
 
-  useEffect(() => {
-    const rawReturnState = window.sessionStorage.getItem(addressReturnStateKey);
-
-    if (!rawReturnState) {
-      return;
-    }
-
-    let returnState: AddressReturnState;
-
-    try {
-      returnState = JSON.parse(rawReturnState) as AddressReturnState;
-    } catch {
-      window.sessionStorage.removeItem(addressReturnStateKey);
-      return;
-    }
-
-    if (returnState.source !== "profile") {
-      return;
-    }
-
-    window.sessionStorage.removeItem(addressReturnStateKey);
-    const lastAddedAddressId = window.sessionStorage.getItem(
-      lastAddedDeliveryAddressIdKey,
-    );
-    window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
-
-    const returnBid = findGroupedProfileBidEntryById(
-      groupedActiveBids,
-      activeBids,
-      returnState.bidId ?? null,
-      now,
-    );
-
-    if (!returnBid) {
-      return;
-    }
-
-    const returnAvailableStoreTypes = getAvailableConvenienceStoreTypes(
-      returnBid.shippingMethods,
-      returnBid.courier,
-    );
-    const returnPrioritizedAddresses = getPrioritizedDeliveryAddresses(
-      deliveryAddresses,
-      defaultAddressIds,
-    );
-    const returnEligibleAddresses =
-      returnAvailableStoreTypes.length > 0
-        ? returnPrioritizedAddresses.filter((address) =>
-            returnAvailableStoreTypes.includes(address.storeType),
-          )
-        : returnPrioritizedAddresses;
-    const restoredAddressId = lastAddedAddressId ?? returnState.addressId;
-    const restoredPaymentAddressId =
-      restoredAddressId &&
-      returnEligibleAddresses.some((address) => address.id === restoredAddressId)
-        ? restoredAddressId
-        : null;
-
-    let isRestoreActive = true;
-    const restoreTimer = window.setTimeout(() => {
-      if (!isRestoreActive) {
-        return;
-      }
-
-      setSelectedPaymentBidId(returnBid.id);
-      setSelectedPaymentAddressId(restoredPaymentAddressId);
-      setAddressSheetMode("select");
-      setIsPaymentSheetOpen(true);
-      setIsPaymentSheetClosing(false);
-      setIsPaymentSheetEntered(true);
-      setIsAddressSheetOpen(true);
-      setIsAddressSheetClosing(false);
-
-      window.requestAnimationFrame(() => {
-        if (!isRestoreActive) {
-          return;
-        }
-
-        setIsAddressSheetEntered(true);
-      });
-    }, 0);
-
-    return () => {
-      isRestoreActive = false;
-      window.clearTimeout(restoreTimer);
-    };
-  }, [activeBids, defaultAddressIds, deliveryAddresses, groupedActiveBids, now]);
-
-  useEffect(() => {
-    if (!isAddressSheetOpen) {
-      return;
-    }
-
-    window.scrollTo(0, 0);
-  }, [isAddressSheetOpen]);
-
-  useLayoutEffect(() => {
-    if (!isAddressSheetOpen) {
-      return;
-    }
-
-    const { body, documentElement } = document;
-    const scrollY = window.scrollY;
-    const previousHtmlOverflow = documentElement.style.overflow;
-    const previousBodyOverflow = body.style.overflow;
-    const previousBodyPosition = body.style.position;
-    const previousBodyInset = body.style.inset;
-    const previousBodyTop = body.style.top;
-    const previousBodyWidth = body.style.width;
-
-    documentElement.style.overflow = "hidden";
-    body.style.overflow = "hidden";
-    body.style.position = "fixed";
-    body.style.inset = "0";
-    body.style.top = `-${scrollY}px`;
-    body.style.width = "100%";
-
-    const scrollContainer = scrollContainerRef.current;
-    const previousScrollContainerOverflow = scrollContainer?.style.overflow;
-    const previousScrollContainerOverscrollBehavior =
-      scrollContainer?.style.overscrollBehavior;
-
-    if (scrollContainer) {
-      scrollContainer.style.overflow = "hidden";
-      scrollContainer.style.overscrollBehavior = "none";
-    }
-
-    return () => {
-      documentElement.style.overflow = previousHtmlOverflow;
-      body.style.overflow = previousBodyOverflow;
-      body.style.position = previousBodyPosition;
-      body.style.inset = previousBodyInset;
-      body.style.top = previousBodyTop;
-      body.style.width = previousBodyWidth;
-
-      if (scrollContainer) {
-        scrollContainer.style.overflow = previousScrollContainerOverflow ?? "";
-        scrollContainer.style.overscrollBehavior =
-          previousScrollContainerOverscrollBehavior ?? "";
-      }
-
-      window.scrollTo(0, scrollY);
-    };
-  }, [isAddressSheetOpen]);
-
-  useEffect(() => {
-    document.body.classList.toggle("is-address-sheet-open", isAddressSheetOpen);
-
-    return () => {
-      document.body.classList.remove("is-address-sheet-open");
-    };
-  }, [isAddressSheetOpen]);
-
-  function finishPaymentSheetClose() {
-    if (paymentSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(paymentSheetCloseTimerRef.current);
-      paymentSheetCloseTimerRef.current = null;
-    }
-
-    paymentSheetDragStartYRef.current = null;
-    setPaymentSheetDragOffset(0);
-    setIsPaymentSheetOpen(false);
-    setIsPaymentSheetClosing(false);
-    setSelectedPaymentBidId(null);
-  }
-
-  function finishAddressSheetClose() {
-    if (addressSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(addressSheetCloseTimerRef.current);
-      addressSheetCloseTimerRef.current = null;
-    }
-
-    setIsAddressSheetOpen(false);
-    setIsAddressSheetClosing(false);
-  }
-
   function rememberScrollPosition() {
     if (!scrollContainerRef.current) {
       return;
@@ -1683,22 +1100,6 @@ export function ProfileContent({
   function rememberProfileReturnState() {
     rememberScrollPosition();
     window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
-  }
-
-  function rememberAddressAddReturn() {
-    rememberProfileReturnState();
-
-    const returnState: AddressReturnState = {
-      source: "profile",
-      bidId: selectedPaymentBidId,
-      addressId: selectedPaymentAddressId ?? paymentDeliveryAddress?.id ?? null,
-    };
-
-    window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
-    window.sessionStorage.setItem(
-      addressReturnStateKey,
-      JSON.stringify(returnState),
-    );
   }
 
   function startSettlementAccountEdit() {
@@ -1808,66 +1209,6 @@ export function ProfileContent({
     }
   }
 
-  function closePaymentSheet() {
-    if (paymentSheetCloseTimerRef.current !== null) {
-      return;
-    }
-
-    paymentSheetDragStartYRef.current = null;
-    setPaymentSheetDragOffset(0);
-    setIsPaymentSheetClosing(true);
-    setIsPaymentSheetEntered(false);
-    paymentSheetCloseTimerRef.current = window.setTimeout(
-      finishPaymentSheetClose,
-      280,
-    );
-  }
-
-  function startPaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
-    if (isPaymentSheetClosing) {
-      return;
-    }
-
-    paymentSheetDragStartYRef.current = event.clientY;
-    setPaymentSheetDragOffset(0);
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function movePaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
-    const startY = paymentSheetDragStartYRef.current;
-
-    if (startY === null) {
-      return;
-    }
-
-    event.preventDefault();
-    setPaymentSheetDragOffset(Math.max(0, event.clientY - startY));
-  }
-
-  function finishPaymentSheetDrag(event: PointerEvent<HTMLButtonElement>) {
-    const startY = paymentSheetDragStartYRef.current;
-    paymentSheetDragStartYRef.current = null;
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    if (
-      startY !== null &&
-      event.clientY - startY >= paymentSheetDragCloseThreshold
-    ) {
-      closePaymentSheet();
-      return;
-    }
-
-    setPaymentSheetDragOffset(0);
-  }
-
-  function cancelPaymentSheetDrag() {
-    paymentSheetDragStartYRef.current = null;
-    setPaymentSheetDragOffset(0);
-  }
-
   function rememberProfilePanelEntry(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
@@ -1882,45 +1223,6 @@ export function ProfileContent({
     rememberProfileReturnState();
   }
 
-  async function copyTransferText(value: string, label: string) {
-    if (!value.trim() || value.includes("준비 중")) {
-      return;
-    }
-
-    if (paymentCopyToastTimerRef.current !== null) {
-      window.clearTimeout(paymentCopyToastTimerRef.current);
-    }
-
-    try {
-      await navigator.clipboard.writeText(value);
-      setPaymentCopyToast(`${label}가 복사됐어요.`);
-    } catch {
-      setPaymentCopyToast(`${label}를 복사하지 못했어요.`);
-    }
-
-    paymentCopyToastTimerRef.current = window.setTimeout(() => {
-      setPaymentCopyToast("");
-      paymentCopyToastTimerRef.current = null;
-    }, 1800);
-  }
-
-  function commitDeliveryAddressState(nextState: StoredDeliveryAddressState) {
-    writeDeliveryAddressState(nextState);
-  }
-
-  function closeAddressSheet() {
-    if (addressSheetCloseTimerRef.current !== null) {
-      return;
-    }
-
-    setIsAddressSheetClosing(true);
-    setIsAddressSheetEntered(false);
-    addressSheetCloseTimerRef.current = window.setTimeout(
-      finishAddressSheetClose,
-      280,
-    );
-  }
-
   function clearUserSessionState() {
     invalidateAddressSyncRequests();
     clearAuthCookies();
@@ -1928,9 +1230,6 @@ export function ProfileContent({
     clearDeliveryAddressState();
     clearHostedProducts();
     clearSettlementAccountState();
-    setSelectedPaymentBidId(null);
-    setSelectedPaymentAddressId(null);
-    setManageAddressSnapshot([]);
     setIsEditingSettlementAccount(false);
     setUserProfile(null);
     setSettlementAccountForm(getEmptySettlementAccountState());
@@ -1948,128 +1247,6 @@ export function ProfileContent({
       }
     } finally {
       clearUserSessionState();
-    }
-  }
-
-  function selectPaymentAddress(addressId: string) {
-    setSelectedPaymentAddressId(addressId);
-  }
-
-  async function setAsDefaultAddress(addressId: string) {
-    const selectedAddress = deliveryAddresses.find(
-      (address) => address.id === addressId,
-    );
-
-    if (!selectedAddress) {
-      return;
-    }
-
-    if (authState.isLoggedIn) {
-      try {
-        const accessToken = await getFreshAccessToken();
-
-        if (!accessToken) {
-          return;
-        }
-
-        await updateShippingAddress(accessToken, selectedAddress.id, {
-          alias: selectedAddress.alias,
-          branchName: selectedAddress.branchName,
-          isDefault: true,
-          storeType: selectedAddress.storeType,
-        });
-        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
-
-        if (isLatest) {
-          commitDeliveryAddressState(
-            getDeliveryAddressStateWithDefaultAddress(nextState, addressId),
-          );
-        }
-      } catch (error) {
-        setUserProfileMessage(
-          error instanceof Error
-            ? error.message
-            : "기본 배송지를 변경하지 못했어요.",
-        );
-      }
-
-      return;
-    }
-
-    commitDeliveryAddressState(
-      getDeliveryAddressStateWithDefaultAddress(storedAddressState, addressId),
-    );
-  }
-
-  async function deleteDeliveryAddress(addressId: string) {
-    if (deliveryAddresses.length <= 1) {
-      return;
-    }
-
-    const targetAddress = deliveryAddresses.find(
-      (address) => address.id === addressId,
-    );
-
-    if (!targetAddress) {
-      return;
-    }
-
-    if (authState.isLoggedIn) {
-      try {
-        const accessToken = await getFreshAccessToken();
-
-        if (!accessToken) {
-          return;
-        }
-
-        await deleteShippingAddress(accessToken, addressId);
-        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
-
-        if (isLatest && addressId === selectedPaymentAddressId) {
-          setSelectedPaymentAddressId(nextState.addresses[0]?.id ?? null);
-        }
-
-        if (isLatest && addressSheetMode === "manage") {
-          setManageAddressSnapshot(
-            getPrioritizedDeliveryAddresses(
-              nextState.addresses,
-              nextState.defaultAddressIds,
-            ),
-          );
-        }
-      } catch (error) {
-        setUserProfileMessage(getDeliveryAddressDeleteErrorMessage(error));
-      }
-
-      return;
-    }
-
-    const nextAddresses = deliveryAddresses.filter(
-      (address) => address.id !== addressId,
-    );
-    const sameTypeAddresses = nextAddresses.filter(
-      (address) => address.storeType === targetAddress.storeType,
-    );
-
-    commitDeliveryAddressState({
-      addresses: nextAddresses,
-      defaultAddressIds:
-        defaultAddressIds[targetAddress.storeType] === addressId
-          ? {
-              ...defaultAddressIds,
-              [targetAddress.storeType]: sameTypeAddresses[0]?.id ?? null,
-            }
-          : defaultAddressIds,
-    });
-
-    if (addressId === selectedPaymentAddressId) {
-      setSelectedPaymentAddressId(nextAddresses[0]?.id ?? null);
-    }
-
-    if (addressSheetMode === "manage") {
-      setManageAddressSnapshot((snapshot) =>
-        snapshot.filter((address) => address.id !== addressId),
-      );
     }
   }
 
@@ -2437,558 +1614,6 @@ export function ProfileContent({
         </div>
         </div>
       </main>
-
-      {isPaymentSheetOpen && selectedPaymentBid ? (
-        <div
-          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
-            isPaymentSheetEntered && !isPaymentSheetClosing
-              ? "bid-sheet-backdrop-active"
-              : ""
-          }`}
-        >
-          <button
-            aria-label="결제 정보 닫기"
-            className="absolute inset-0 cursor-default"
-            onClick={closePaymentSheet}
-            type="button"
-          />
-          <section
-            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
-              isPaymentSheetEntered && !isPaymentSheetClosing
-                ? "bid-sheet-panel-active"
-                : ""
-            }`}
-            style={
-              paymentSheetDragOffset > 0 && !isPaymentSheetClosing
-                ? {
-                    transform: `translateY(${paymentSheetDragOffset}px) scale(1)`,
-                    transition: "none",
-                  }
-                : undefined
-            }
-            onTransitionEnd={(event) => {
-              if (
-                isPaymentSheetClosing &&
-                event.currentTarget === event.target &&
-                event.propertyName === "transform"
-              ) {
-                finishPaymentSheetClose();
-              }
-            }}
-          >
-            <button
-              aria-label="결제 정보 창을 아래로 내려 닫기"
-              className="mx-auto mb-3 flex h-5 w-16 touch-none cursor-grab items-center justify-center rounded-full active:cursor-grabbing"
-              onPointerCancel={cancelPaymentSheetDrag}
-              onPointerDown={startPaymentSheetDrag}
-              onPointerMove={movePaymentSheetDrag}
-              onPointerUp={finishPaymentSheetDrag}
-              type="button"
-            >
-              <span className="h-1 w-10 rounded-full bg-black/15" />
-            </button>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  결제 정보
-                </h2>
-                <p className="mt-1 text-[13px] font-medium text-black/45">
-                  계좌와 금액을 확인한 뒤 입금 마감 시간 내에 입금해 주세요.
-                </p>
-              </div>
-              <button
-                aria-label="닫기"
-                className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
-                onClick={closePaymentSheet}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
-              <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                {selectedPaymentBid.title}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {selectedPaymentOptionLabels.map((optionLabel) => (
-                  <span
-                    className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65"
-                    key={optionLabel}
-                  >
-                    {optionLabel}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white ring-1 ring-[#AAB67C]/35">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[12px] font-semibold text-[#DDE7B8]">
-                  {isSelectedPaymentReady ? "입금 마감까지" : "현재 상태"}
-                </p>
-                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
-                  {selectedPaymentStatusLabel}
-                </span>
-              </div>
-              <p className="mt-1 text-[24px] font-semibold tracking-[-0.06em]">
-                {isSelectedPaymentReady
-                  ? selectedPaymentRemainingTime
-                  : selectedPaymentStatusLabel}
-              </p>
-              <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
-                {isSelectedPaymentReady
-                  ? "입금 마감 시간 내에 입금하지 않으면 참여가 자동으로 취소돼요."
-                  : selectedPaymentStatusDescription}
-              </p>
-            </div>
-            <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-black/40">
-                    개최자 계좌
-                  </p>
-                  <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                    {selectedPaymentBankAccount
-                      ? `${selectedPaymentBankAccount.bank} ${selectedPaymentBankAccount.account}`.trim()
-                      : "계좌 정보 확인 중"}
-                  </p>
-                  <p className="mt-1 text-[12px] font-medium text-black/40">
-                    {selectedPaymentBankAccount?.holder
-                      ? `예금주 ${selectedPaymentBankAccount.holder}`
-                      : "개최자가 등록한 계좌로 입금해 주세요."}
-                  </p>
-                </div>
-                <button
-                  className="h-9 shrink-0 rounded-full bg-[#DDE7B8] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.18)] disabled:bg-black/10 disabled:text-black/30"
-                  disabled={!selectedPaymentBankAccount}
-                  onClick={() =>
-                    selectedPaymentBankAccount
-                      ? void copyTransferText(
-                          selectedPaymentBankAccount.account,
-                          "계좌번호",
-                        )
-                      : undefined
-                  }
-                  type="button"
-                >
-                  계좌 복사
-                </button>
-              </div>
-              <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                송금 후 관리자가 입금을 확인하면 참여가 확정돼요.
-              </p>
-              {paymentCopyToast ? (
-                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                  <p
-                    aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]"
-                    role="status"
-                  >
-                    {paymentCopyToast}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    {paymentDeliveryAddress ? (
-                      <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-[#D7FF5F]">
-                        {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
-                      </span>
-                    ) : null}
-                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/55">
-                      배송지 고정
-                    </span>
-                  </div>
-                  <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
-                    {paymentDeliveryAddress
-                      ? getDeliveryAddressDisplayBranchName(paymentDeliveryAddress)
-                      : "결제 요청 배송지 확인 중"}
-                  </p>
-                </div>
-                <span className="shrink-0 text-[11px] font-semibold text-black/40">
-                  변경 불가
-                </span>
-              </div>
-            </div>
-
-            </div>
-
-            <div className="shrink-0 border-t border-black/10 bg-white pt-4">
-              <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
-                <span>상품 금액</span>
-                <span>{formatPrice(selectedPaymentBid.amount)}</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
-                <span>배송비</span>
-                <span>{formatPrice(paymentShippingFee)}</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-[15px] font-semibold tracking-[-0.04em]">
-                  결제 예정 금액
-                </span>
-                <span className="text-[22px] font-semibold tracking-[-0.05em]">
-                  {formatPrice(paymentTotalAmount)}
-                </span>
-              </div>
-            </div>
-
-            <button
-              className="mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white/70"
-              disabled={!selectedPaymentBankAccount}
-              onClick={closePaymentSheet}
-              type="button"
-            >
-              확인했어요
-            </button>
-          </section>
-        </div>
-      ) : null}
-
-      {isAddressSheetOpen ? (
-        <div
-          className={`bid-sheet-backdrop fixed inset-0 z-50 flex items-end ${
-            isAddressSheetEntered && !isAddressSheetClosing
-              ? "bid-sheet-backdrop-active"
-              : ""
-          }`}
-        >
-          <button
-            aria-label={
-              addressSheetMode === "manage"
-                ? "배송지 관리 닫기"
-                : "다른 배송지 선택 닫기"
-            }
-            className="absolute inset-0 cursor-default"
-            onClick={closeAddressSheet}
-            type="button"
-          />
-          <section
-            className={`bid-sheet-panel relative mx-auto flex h-[76dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
-              isAddressSheetEntered && !isAddressSheetClosing
-                ? "bid-sheet-panel-active"
-                : ""
-            }`}
-            onTransitionEnd={(event) => {
-              if (
-                isAddressSheetClosing &&
-                event.currentTarget === event.target &&
-                event.propertyName === "transform"
-              ) {
-                finishAddressSheetClose();
-              }
-            }}
-          >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  {addressSheetMode === "manage"
-                    ? "배송지 관리"
-                    : "다른 배송지 선택"}
-                </h2>
-                <p className="mt-1 text-[13px] font-medium text-black/45">
-                  {addressSheetMode === "manage"
-                    ? "배송지를 추가하고 기본 배송지를 설정해요."
-                    : "이번 결제에 사용할 배송지를 골라 주세요."}
-                </p>
-              </div>
-              <button
-                aria-label="닫기"
-                className="motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
-                onClick={closeAddressSheet}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <div
-              className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4 pr-1"
-              style={{
-                WebkitOverflowScrolling: "touch",
-                overscrollBehavior: "contain",
-              }}
-            >
-              {(
-                addressSheetMode === "select"
-                  ? eligiblePaymentAddresses
-                  : manageAddressSnapshot
-              ).map((address) => {
-                const displayAlias = getDeliveryAddressDisplayAlias(address);
-                const displayBranchName =
-                  getDeliveryAddressDisplayBranchName(address);
-                const isDefault =
-                  address.id === defaultAddressIds[address.storeType];
-                const isSelected =
-                  address.id ===
-                  (selectedPaymentAddressId ?? paymentDeliveryAddress?.id);
-
-                return (
-                  <div
-                    className={`w-full rounded-[0.9rem] border-[1.5px] px-3.5 py-2.5 text-left transition-colors ${
-                      addressSheetMode === "select"
-                        ? isSelected
-                          ? "border-[#C8D4A5] bg-[#F3F5EA]"
-                          : "border-[#ededed] bg-white"
-                        : isDefault
-                        ? "border-[#C8D4A5] bg-[#F3F5EA]"
-                        : "border-[#ededed] bg-white"
-                    }`}
-                    key={address.id}
-                    onKeyDown={(event) => {
-                      if (event.currentTarget !== event.target) {
-                        return;
-                      }
-
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        if (addressSheetMode === "manage") {
-                          setAsDefaultAddress(address.id);
-                        } else {
-                          selectPaymentAddress(address.id);
-                        }
-                      }
-                    }}
-                    onClick={() => {
-                      if (addressSheetMode === "manage") {
-                        setAsDefaultAddress(address.id);
-                        return;
-                      }
-
-                      selectPaymentAddress(address.id);
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1 pr-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                              addressSheetMode === "select"
-                                ? isSelected
-                                  ? "bg-[#DDE7B8] text-black"
-                                  : isDefault
-                                  ? "bg-[#DDE7B8] text-black"
-                                  : "bg-white text-black/45"
-                                : isDefault
-                                ? "bg-[#DDE7B8] text-black"
-                                : "bg-white text-black/45"
-                            }`}
-                          >
-                            {getConvenienceStoreLabel(address.storeType)}
-                          </span>
-                          {displayAlias ? (
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                "bg-black/10 text-black/60"
-                              }`}
-                            >
-                              {displayAlias}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {displayBranchName}
-                        </p>
-                      </div>
-                      {addressSheetMode === "select" ? (
-                        <span
-                        className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
-                          isSelected
-                            ? "bg-[#DDE7B8] text-black"
-                            : "bg-white text-black/45"
-                        }`}
-                        >
-                          {isSelected ? "선택됨" : "선택"}
-                        </span>
-                      ) : isDefault ? (
-                        <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                          <span className="inline-flex h-8 items-center rounded-full bg-[#DDE7B8] px-2.5 text-[12px] font-semibold text-black transition-colors duration-300 ease-out">
-                            기본
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                          <button
-                            className="h-8 rounded-full bg-white px-2.5 text-[12px] font-semibold text-black/55 ring-1 ring-black/10 transition-colors duration-300 ease-out"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setAsDefaultAddress(address.id);
-                            }}
-                            type="button"
-                          >
-                            기본 설정
-                          </button>
-                          <button
-                            aria-label={`${getConvenienceStoreLabel(address.storeType)} ${displayBranchName} 배송지 삭제`}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10 transition-colors duration-300 ease-out"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              deleteDeliveryAddress(address.id);
-                            }}
-                            type="button"
-                          >
-                            <CloseIcon />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {addressSheetMode === "select" && eligiblePaymentAddresses.length === 0 ? (
-                <div className="rounded-[0.95rem] border border-dashed border-black/12 bg-[#f7f7f7] px-4 py-5 text-center text-[14px] font-medium text-black/45">
-                  선택 가능한 배송지가 없어요.
-                </div>
-              ) : null}
-
-              {/*
-                <div
-                  className="idol-selection-enter rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-[#f7f7f7] px-5 pb-4 pt-5"
-                  key="address-form"
-                >
-                    <div className="flex items-center justify-between">
-                      <p className="text-[13px] font-semibold tracking-[-0.04em]">
-                        새 배송지 추가
-                      </p>
-                      <button
-                        className="text-[12px] font-semibold text-black/35"
-                        disabled={!isAddressFormOpen}
-                        onClick={() => {
-                          setIsAddressFormOpen(false);
-                          resetNewAddressDraft();
-                        }}
-                        type="button"
-                      >
-                        닫기
-                      </button>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2 rounded-[0.8rem] bg-white/80 p-1">
-                      {convenienceStoreTypes.map((storeType) => (
-                        <button
-                          className={`h-9 rounded-[0.65rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
-                            newAddressStoreType === storeType
-                              ? "bg-black text-white"
-                              : "text-black/45"
-                          }`}
-                          key={storeType}
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                          }}
-                          onTouchStart={(event) => {
-                            event.preventDefault();
-                          }}
-                          disabled={!isAddressFormOpen}
-                          onClick={() => setNewAddressStoreType(storeType)}
-                          type="button"
-                        >
-                          {convenienceStoreTypeLabels[storeType]}
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                      disabled={!isAddressFormOpen}
-                      onChange={(event) => setNewAddressAlias(event.target.value)}
-                      onFocus={() => {
-                        setIsAddressInputFocused(true);
-                      }}
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          const activeElement = document.activeElement;
-                          if (
-                            activeElement instanceof HTMLInputElement &&
-                            addressListRef.current?.contains(activeElement)
-                          ) {
-                            return;
-                          }
-                          setIsAddressInputFocused(false);
-                        }, 0);
-                      }}
-                      placeholder="별칭 (예: 집, 회사)"
-                      style={{ scrollMarginBottom: "6rem" }}
-                      value={newAddressAlias}
-                    />
-                    <input
-                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                      disabled={!isAddressFormOpen}
-                      onChange={(event) =>
-                        setNewAddressBranchName(event.target.value)
-                      }
-                      onFocus={() => {
-                        setIsAddressInputFocused(true);
-                      }}
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          const activeElement = document.activeElement;
-                          if (
-                            activeElement instanceof HTMLInputElement &&
-                            addressListRef.current?.contains(activeElement)
-                          ) {
-                            return;
-                          }
-                          setIsAddressInputFocused(false);
-                        }, 0);
-                      }}
-                      placeholder="편의점 지점명"
-                      style={{ scrollMarginBottom: "1rem" }}
-                      value={newAddressBranchName}
-                    />
-                    <button
-                      className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-semibold text-white disabled:bg-black/20"
-                      disabled={!isAddressFormOpen || !newAddressBranchName.trim()}
-                      onClick={addDeliveryAddress}
-                      type="button"
-                    >
-                      배송지 추가
-                    </button>
-                  </div>
-              ) : (
-                <div
-                  className="idol-selection-enter"
-                  key="address-add-button"
-                >
-                  <Link
-                    className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-white text-[14px] font-semibold text-black/45"
-                    href="/profile/addresses"
-                  >
-                    + 새 배송지 추가
-                  </Link>
-                </div>
-              )}
-
-              */}
-              <div className="idol-selection-enter" key="address-add-link">
-                <Link
-                  className="flex h-14 w-full items-center justify-center rounded-[0.9rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
-                  href="/profile/addresses?openAdd=1&returnTo=profile"
-                  onNavigate={rememberAddressAddReturn}
-                >
-                  + 새 배송지 추가
-                </Link>
-              </div>
-            </div>
-
-            {addressSheetMode === "select" ? (
-              <button
-                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold text-white"
-                onClick={closeAddressSheet}
-                type="button"
-              >
-                이 배송지로 받기
-              </button>
-            ) : null}
-          </section>
-        </div>
-      ) : null}
 
     </div>
   );

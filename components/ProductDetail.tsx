@@ -65,10 +65,7 @@ import {
   FavoritesContent,
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
-import {
-  PROFILE_SKIP_ENTER_KEY,
-  ProfileContent,
-} from "@/components/ProfileContent";
+import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
   SearchExperience,
@@ -78,7 +75,7 @@ import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 type ProductDetailProps = {
   product: ProductDetailItem;
   backHref?: string;
-  initialReturnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+  initialReturnSource?: "home" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
   startEntered?: boolean;
   renderShell?: boolean;
@@ -95,7 +92,7 @@ type ProductReturnUnderlayProps = {
   isEntered: boolean;
   isExiting: boolean;
   returnQuery?: string;
-  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload";
 };
 
 export function ProductReturnUnderlay({
@@ -119,17 +116,6 @@ export function ProductReturnUnderlay({
         >
           <HomeContent skipEnterAnimation />
           <BottomNavigator />
-        </SwipeUnderlay>
-      ) : null}
-
-      {returnSource === "profile" ? (
-        <SwipeUnderlay
-          className="product-detail-underlay"
-          isEntered={isEntered}
-          isExiting={isExiting}
-        >
-          <ProfileContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Profile" />
         </SwipeUnderlay>
       ) : null}
 
@@ -169,8 +155,6 @@ export function ProductReturnUnderlay({
   );
 }
 
-const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
-const PRODUCT_PROFILE_ENTRY_STATE_KEY = "__buncheolProductFromProfile";
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
@@ -314,7 +298,6 @@ function getCheckoutReturnOptionsFromState(
 
 type ProductHistoryState = {
   idx?: unknown;
-  [PRODUCT_PROFILE_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
 };
@@ -358,10 +341,6 @@ function getHistoryIndex() {
   const historyState = getHistoryState();
 
   return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
-
-function hasProfileEntryState() {
-  return getHistoryState()?.[PRODUCT_PROFILE_ENTRY_STATE_KEY] === true;
 }
 
 function hasBidHistoryEntryState() {
@@ -2226,16 +2205,6 @@ export function ProductDetail({
       return;
     }
 
-    if (initialReturnSource === "profile") {
-      if (hasProfileEntryState()) {
-        router.back();
-        return;
-      }
-
-      router.replace("/profile");
-      return;
-    }
-
     if (initialReturnSource === "bids") {
       if (hasBidHistoryEntryState()) {
         router.back();
@@ -2281,32 +2250,14 @@ export function ProductDetail({
 
   useEffect(() => {
     const historyIndex = getHistoryIndex();
-    const expectedEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_PROFILE_ENTRY_INDEX_KEY,
-    );
     const expectedBidHistoryEntryIndex = window.sessionStorage.getItem(
       PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
     );
     const expectedFavoritesEntryIndex = window.sessionStorage.getItem(
       PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
     );
-    window.sessionStorage.removeItem(PRODUCT_PROFILE_ENTRY_INDEX_KEY);
     window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
     window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
-
-    if (
-      initialReturnSource === "profile" &&
-      historyIndex !== null &&
-      expectedEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_PROFILE_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
 
     if (
       initialReturnSource === "bids" &&
@@ -2395,11 +2346,7 @@ export function ProductDetail({
       window.sessionStorage.removeItem(SEARCH_SKIP_ENTER_KEY);
     }
 
-    if (initialReturnSource === "profile") {
-      window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
-    } else {
-      window.sessionStorage.removeItem(PROFILE_SKIP_ENTER_KEY);
-    }
+    window.sessionStorage.removeItem(PROFILE_SKIP_ENTER_KEY);
 
     if (initialReturnSource === "home") {
       window.sessionStorage.setItem(HOME_SKIP_ENTER_KEY, "true");
