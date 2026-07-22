@@ -2356,8 +2356,19 @@ function getMyParticipationBidsFromRecord(
         "id",
       ]);
       const bidAmount = getNumberValue(record, ["bidAmount", "amount"]);
+      // 활성 참여만 "내 참여"로 취급한다 — 서버가 비활성(취소·만료) 참여를 목록에 포함하게 되더라도
+      // 취소된 참여가 재참여를 막지 않도록 memberIds 쪽과 동일하게 필터한다.
+      const status = getOptionalStringValue(record, [
+        "status",
+        "participationStatus",
+      ]);
 
-      if (buncheolMemberId && participationId && bidAmount !== null) {
+      if (
+        buncheolMemberId &&
+        participationId &&
+        bidAmount !== null &&
+        !isInactiveBuncheolPaymentStatus(status)
+      ) {
         bids.set(buncheolMemberId, {
           bidAmount,
           participationId,
