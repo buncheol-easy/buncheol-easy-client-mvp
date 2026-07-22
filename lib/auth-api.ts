@@ -131,8 +131,7 @@ export type UpdateBuncheolRequest = {
 };
 
 export type ParticipateBuncheolRequest = {
-  buncheolMemberId?: number;
-  buncheolMemberIds?: number[];
+  buncheolMemberId: number;
   refundAccount: BankAccountInfo;
   shippingAddressId: number;
 };
@@ -364,6 +363,7 @@ export type MyParticipation = {
   buncheolMemberCount: number;
   buncheolStatus: string;
   buncheolTitle: string;
+  cancelReason?: string | null;
   closedRank?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
@@ -3816,19 +3816,13 @@ export async function participateBuncheol(
   buncheolId: string,
   body: ParticipateBuncheolRequest,
 ) {
-  const buncheolMemberIds =
-    body.buncheolMemberIds && body.buncheolMemberIds.length > 0
-      ? body.buncheolMemberIds
-      : typeof body.buncheolMemberId === "number"
-        ? [body.buncheolMemberId]
-        : [];
-
-  if (buncheolMemberIds.length === 0) {
+  if (!Number.isFinite(body.buncheolMemberId)) {
     throw new Error("구매할 옵션을 확인하지 못했어요.");
   }
 
+  // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
   const requestBody = {
-    buncheolMemberIds,
+    buncheolMemberId: body.buncheolMemberId,
     refundAccount: body.refundAccount,
     shippingAddressId: body.shippingAddressId,
   };
@@ -3997,6 +3991,8 @@ export async function requestMyParticipations(accessToken: string) {
             "buncheolTitle",
             "title",
           ]) || (buncheol ? getStringValue(buncheol, ["title"]) : ""),
+        cancelReason:
+          getOptionalStringValue(record, ["cancelReason"]) ?? null,
         closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(

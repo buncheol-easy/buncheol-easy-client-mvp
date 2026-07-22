@@ -997,7 +997,10 @@ export function ProductDetail({
   function restoreCheckoutSelectionFromReturnOptions(
     returnOptions: CheckoutAddressReturnOption[],
   ) {
-    const restorableOptionIds = getRestorableCheckoutOptionIds(returnOptions);
+    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전 세션에 다중 선택이 저장돼 있어도 1개만 복원한다.
+    const restorableOptionIds = getRestorableCheckoutOptionIds(
+      returnOptions,
+    ).slice(0, 1);
 
     if (restorableOptionIds.length === 0) {
       return false;
@@ -1528,8 +1531,9 @@ export function ProductDetail({
 
     const restorableOptions =
       getCheckoutReturnOptionsFromState(checkoutReturnState);
-    const restorableOptionIds = auctionOptions.reduce<string[]>(
-      (optionIds, option) => {
+    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전 세션에 다중 선택이 저장돼 있어도 1개만 복원한다.
+    const restorableOptionIds = auctionOptions
+      .reduce<string[]>((optionIds, option) => {
         const isSelected = restorableOptions.some(
           (returnOption) =>
             returnOption.id === option.id ||
@@ -1550,9 +1554,8 @@ export function ProductDetail({
         }
 
         return optionIds;
-      },
-      [],
-    );
+      }, [])
+      .slice(0, 1);
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -1794,10 +1797,8 @@ export function ProductDetail({
         nextAmounts = { ...current };
         delete nextAmounts[optionId];
       } else {
-        nextAmounts = {
-          ...current,
-          [optionId]: "selected",
-        };
+        // 참여 1건 = 멤버 1명(단일 선택 정책). 새 멤버를 선택하면 기존 선택을 해제한다.
+        nextAmounts = { [optionId]: "selected" };
       }
 
       checkoutSelectedOptionsRef.current =
@@ -1973,6 +1974,12 @@ export function ProductDetail({
       return;
     }
 
+    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전에서 저장된 다중 선택 복원 등 예외 경로를 방어한다.
+    if (submittedBids.length > 1) {
+      window.alert("멤버는 한 번에 1명씩 참여할 수 있어요. 참여할 멤버를 하나만 선택해 주세요.");
+      return;
+    }
+
     trackEvent("participation_started", {
       buncheol_id: buncheolId,
       option_count: submittedBids.length,
@@ -2069,9 +2076,7 @@ export function ProductDetail({
           },
         );
         const result = await participateBuncheol(accessToken, buncheolId, {
-          buncheolMemberIds: checkoutRequestItems.map(
-            (item) => item.buncheolMemberId,
-          ),
+          buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
           refundAccount,
           shippingAddressId,
         });
@@ -3281,7 +3286,7 @@ export function ProductDetail({
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "confirm"
                         ? "주문하면 입금 계좌와 마감 시각이 안내돼요."
-                        : "구매할 옵션을 선택해 주세요."}
+                        : "구매할 멤버를 선택해 주세요. 멤버는 1명씩 참여할 수 있고, 여러 멤버를 원하면 참여를 반복하면 돼요."}
                   </p>
                 </div>
                 <button
