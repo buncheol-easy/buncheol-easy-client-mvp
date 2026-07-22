@@ -1,7 +1,9 @@
 import type { BankAccountInfo } from "@/lib/auth-api";
 import type { DeliveryAddress } from "@/lib/mock-delivery-addresses";
 
-const participationPaymentCacheKey = "buncheol-participation-payment-cache";
+// v2: bidAmount 의미가 "입금 총액" → "멤버(상품) 금액"으로 바뀌어(참여 단일 선택 전환),
+// 구 번들이 써둔 총액 엔트리가 새 번들에서 멤버 가격으로 읽히지 않도록 키를 올려 통째로 무효화한다.
+const participationPaymentCacheKey = "buncheol-participation-payment-cache-v2";
 const maxCachedPaymentCount = 40;
 
 export type CachedParticipationPayment = {

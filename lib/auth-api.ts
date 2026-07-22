@@ -3817,7 +3817,7 @@ export async function participateBuncheol(
   body: ParticipateBuncheolRequest,
 ) {
   if (!Number.isFinite(body.buncheolMemberId)) {
-    throw new Error("구매할 옵션을 확인하지 못했어요.");
+    throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
   }
 
   // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
