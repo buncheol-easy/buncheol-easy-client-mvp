@@ -170,7 +170,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
   const apiListingsRef = useRef<ProductCardItem[] | null>(null);
-  const apiBannersRef = useRef<HomeBanner[] | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
     useState(skipEnterAnimation);
@@ -214,10 +213,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   useEffect(() => {
     apiListingsRef.current = apiListings;
   }, [apiListings]);
-
-  useEffect(() => {
-    apiBannersRef.current = apiBanners;
-  }, [apiBanners]);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -402,19 +397,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     };
   }, [isListingLoading, listings.length, skipEnterAnimation]);
 
-  // 배너도 캐시를 페인트 전에 동기 적용한다 (rAF 로 미루면 기본 배너가 한 프레임 보인 뒤 교체).
-  useLayoutEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- 페인트 전 동기 상태 확정이 목적 */
-    const cachedBanners = readCachedBanners();
-
-    if (cachedBanners !== null) {
-      setApiBanners((current) => current ?? cachedBanners.map(toHomeBanner));
-    }
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
-
   useEffect(() => {
     let isActive = true;
+    const cachedBanners = readCachedBanners();
+    const cachedBannerFrame = window.requestAnimationFrame(() => {
+      if (isActive && cachedBanners !== null) {
+        setApiBanners(cachedBanners.map(toHomeBanner));
+      }
+    });
 
     requestCachedBanners()
       .then((items) => {
@@ -422,19 +412,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
-        const nextBanners = items.map(toHomeBanner);
-        // 표시 중인 배너와 내용이 같으면 그대로 둔다 — 복귀할 때마다
-        // 첫 배너로 리셋되던 문제와 불필요한 리렌더를 함께 막는다.
-        const currentBanners = apiBannersRef.current;
-
-        if (
-          currentBanners !== null &&
-          JSON.stringify(currentBanners) === JSON.stringify(nextBanners)
-        ) {
-          return;
-        }
-
-        setApiBanners(nextBanners);
+        setApiBanners(items.map(toHomeBanner));
         setActiveBannerIndex(0);
 
         const scrollElement = bannerScrollerRef.current;
@@ -448,12 +426,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
-        // 네트워크 실패 시 이미 표시 중인 캐시 배너를 지우지 않는다.
-        setApiBanners((current) => current ?? []);
+        setApiBanners([]);
       });
 
     return () => {
       isActive = false;
+      window.cancelAnimationFrame(cachedBannerFrame);
     };
   }, []);
 
