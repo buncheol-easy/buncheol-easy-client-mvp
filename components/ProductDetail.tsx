@@ -997,7 +997,10 @@ export function ProductDetail({
   function restoreCheckoutSelectionFromReturnOptions(
     returnOptions: CheckoutAddressReturnOption[],
   ) {
-    const restorableOptionIds = getRestorableCheckoutOptionIds(returnOptions);
+    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전 세션에 다중 선택이 저장돼 있어도 1개만 복원한다.
+    const restorableOptionIds = getRestorableCheckoutOptionIds(
+      returnOptions,
+    ).slice(0, 1);
 
     if (restorableOptionIds.length === 0) {
       return false;
@@ -1198,10 +1201,16 @@ export function ProductDetail({
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
   const canDeleteProduct = product.isApiProduct && isHostedProduct;
+  // 오픈 이벤트 운영 정책: 분철당 참여 1건(멤버 1명). 상세 응답의 participatedByMe/내 참여 목록은
+  // 활성(입금확인중·확정) 참여만 표시하므로, 취소·만료된 참여는 재참여를 막지 않는다. 서버도 동일하게 거부한다.
+  const hasMyActiveParticipation = auctionOptions.some((option) =>
+    isOptionParticipatedByMe(option, myBids[option.id]),
+  );
   const canBidProduct =
     !isPublicPreview &&
     !isBidUnavailable &&
     !isHostedProduct &&
+    !hasMyActiveParticipation &&
     !isDeadlinePassed &&
     isPurchasableStatus &&
     hasSelectableOption;
@@ -1251,6 +1260,10 @@ export function ProductDetail({
 
     if (isCancelledProduct) {
       return "취소된 분철이에요";
+    }
+
+    if (hasMyActiveParticipation) {
+      return "이미 참여한 분철이에요";
     }
 
     if (isDeadlinePassed) {
@@ -1522,14 +1535,21 @@ export function ProductDetail({
       return;
     }
 
+    // 이미 참여한 분철이면(다른 탭에서 참여 후 복귀 등) 체크아웃을 복원하지 않는다 —
+    // 배송지·계좌까지 채운 뒤 제출 시점에야 거절당하는 헛걸음을 막는다.
+    if (hasMyActiveParticipation) {
+      return;
+    }
+
     const checkoutReturnState = returnState;
 
     didRestoreCheckoutAddressReturnRef.current = true;
 
     const restorableOptions =
       getCheckoutReturnOptionsFromState(checkoutReturnState);
-    const restorableOptionIds = auctionOptions.reduce<string[]>(
-      (optionIds, option) => {
+    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전 세션에 다중 선택이 저장돼 있어도 1개만 복원한다.
+    const restorableOptionIds = auctionOptions
+      .reduce<string[]>((optionIds, option) => {
         const isSelected = restorableOptions.some(
           (returnOption) =>
             returnOption.id === option.id ||
@@ -1550,9 +1570,8 @@ export function ProductDetail({
         }
 
         return optionIds;
-      },
-      [],
-    );
+      }, [])
+      .slice(0, 1);
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -1794,10 +1813,8 @@ export function ProductDetail({
         nextAmounts = { ...current };
         delete nextAmounts[optionId];
       } else {
-        nextAmounts = {
-          ...current,
-          [optionId]: "selected",
-        };
+        // 참여 1건 = 멤버 1명(단일 선택 정책). 새 멤버를 선택하면 기존 선택을 해제한다.
+        nextAmounts = { [optionId]: "selected" };
       }
 
       checkoutSelectedOptionsRef.current =
@@ -1973,6 +1990,12 @@ export function ProductDetail({
       return;
     }
 
+    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전에서 저장된 다중 선택 복원 등 예외 경로를 방어한다.
+    if (submittedBids.length > 1) {
+      window.alert("멤버는 한 번에 1명씩 참여할 수 있어요. 참여할 멤버를 하나만 선택해 주세요.");
+      return;
+    }
+
     trackEvent("participation_started", {
       buncheol_id: buncheolId,
       option_count: submittedBids.length,
@@ -2069,9 +2092,7 @@ export function ProductDetail({
           },
         );
         const result = await participateBuncheol(accessToken, buncheolId, {
-          buncheolMemberIds: checkoutRequestItems.map(
-            (item) => item.buncheolMemberId,
-          ),
+          buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
           refundAccount,
           shippingAddressId,
         });
@@ -3204,6 +3225,14 @@ export function ProductDetail({
         </div>
 
         <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
+          {!isHostedProduct &&
+          !isCancelledProduct &&
+          !isDeadlinePassed &&
+          isPurchasableStatus ? (
+            <p className="mb-2 text-center text-[11px] font-medium text-black/40">
+              오픈 이벤트 기간에는 분철당 1명의 멤버에게 1번만 참여할 수 있어요.
+            </p>
+          ) : null}
           <button
             type="button"
             className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
@@ -3281,7 +3310,7 @@ export function ProductDetail({
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "confirm"
                         ? "주문하면 입금 계좌와 마감 시각이 안내돼요."
-                        : "구매할 옵션을 선택해 주세요."}
+                        : "구매할 멤버를 선택해 주세요. 오픈 이벤트 기간에는 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                   </p>
                 </div>
                 <button

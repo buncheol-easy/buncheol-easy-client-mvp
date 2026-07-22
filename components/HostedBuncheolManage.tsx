@@ -727,8 +727,14 @@ export function HostedBuncheolManage({
                 const isPaymentConfirmed =
                   isPaymentConfirmedStatus(option.winner?.paymentStatus) ||
                   Boolean(option.winner?.paymentConfirmedAt);
+                // 운송장 등록은 분철이 진행확정(CONFIRMED)된 뒤에만 가능하다 — 모집중 발송 후
+                // 분철이 무산(최소 인원 미달 취소)되는 모순을 막는 서버 가드(DLV-009)와 동일 조건.
+                const isBuncheolConfirmedForShipping =
+                  detail.status === "CONFIRMED";
                 const canUseTrackingInput = Boolean(
-                  option.winner?.deliveryId && isPaymentConfirmed,
+                  option.winner?.deliveryId &&
+                    isPaymentConfirmed &&
+                    isBuncheolConfirmedForShipping,
                 );
                 const isRegisteringTracking =
                   registeringTrackingId === option.winner?.deliveryId;
@@ -985,7 +991,9 @@ export function HostedBuncheolManage({
                                   placeholder={
                                     canUseTrackingInput
                                       ? "운송장 번호 입력"
-                                      : "배송 ID 확인 중"
+                                      : isBuncheolConfirmedForShipping
+                                        ? "배송 ID 확인 중"
+                                        : "분철 진행확정 후 등록 가능"
                                   }
                                   value={deliveryState.trackingNumber}
                                 />

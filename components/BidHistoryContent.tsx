@@ -280,15 +280,12 @@ function readStoredBidHistoryViewState(keepStoredState: boolean) {
   }
 }
 
-const shippingFee = 3200;
 type BidRecord = {
   amount: number;
   deadline: string;
   id: string;
   imageUrl?: string;
-  member: string;
   optionLabel: string;
-  optionLabels?: string[];
   paidAt: string | null;
   participantCount: number;
   productId: string;
@@ -306,6 +303,7 @@ type BidRecord = {
   paymentDueAt?: string | null;
   createdAt?: string | null;
   participationStatus?: string;
+  cancelReason?: string | null;
   shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
@@ -367,6 +365,31 @@ function isBidRecordCancelled(bid: BidRecord) {
     isCancelledParticipationStatus(bid.participationStatus) ||
     isCancelledBuncheolStatus(bid.buncheolStatus)
   );
+}
+
+// 취소된 참여의 취소 계열. 분철이 취소된 분철이라도 그 전에 입금 시간 초과로 취소된 참여는
+// cancelReason 이 PAYMENT_TIMEOUT 이므로 분철 취소 건과 구분한다.
+function getBidRecordCancellationKind(bid: BidRecord) {
+  if (!isBidRecordCancelled(bid)) {
+    return null;
+  }
+
+  if (bid.cancelReason === "PAYMENT_TIMEOUT") {
+    return "PAYMENT_TIMEOUT";
+  }
+
+  if (
+    bid.cancelReason === "BUNCHEOL_CANCELLED" ||
+    isCancelledBuncheolStatus(bid.buncheolStatus)
+  ) {
+    return "BUNCHEOL_CANCELLED";
+  }
+
+  return "PAYMENT_TIMEOUT";
+}
+
+function isBuncheolCancelledBidRecord(bid: BidRecord) {
+  return getBidRecordCancellationKind(bid) === "BUNCHEOL_CANCELLED";
 }
 
 function isDeletedProductStatus(status: string | undefined) {
@@ -462,131 +485,19 @@ function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
   }));
 }
 
-function getUniqueLabels(labels: string[]) {
-  return [...new Set(labels.map((label) => label.trim()).filter(Boolean))];
-}
-
-function formatGroupedOptionLabel(labels: string[]) {
-  const uniqueLabels = getUniqueLabels(labels);
-
-  if (uniqueLabels.length === 0) {
-    return "옵션 확인 필요";
-  }
-
-  if (uniqueLabels.length === 1) {
-    return uniqueLabels[0];
-  }
-
-  return `${uniqueLabels[0]} 외 ${uniqueLabels.length - 1}개`;
-}
-
+// 참여 1건 = 멤버 슬롯 1개(단일 선택 정책)라 참여 목록은 그룹핑 없이 참여 1건 = 카드 1장으로 그린다.
 function getBidRecordOptionLabels(bid: BidRecord) {
-  const optionLabels = getUniqueLabels(
-    bid.optionLabels && bid.optionLabels.length > 0
-      ? bid.optionLabels
-      : [bid.optionLabel],
-  );
+  const label = bid.optionLabel.trim();
 
-  return optionLabels.length > 0 ? optionLabels : ["옵션 확인 필요"];
+  return [label || "옵션 확인 필요"];
 }
 
-function mergeBidRecordGroup(groupRecords: BidRecord[], now: Date) {
-  const sortedRecords = [...groupRecords].sort((left, right) => {
-    const rightProgress = getBidRecordProgressStepIndex(right, now);
-    const leftProgress = getBidRecordProgressStepIndex(left, now);
-
-    if (rightProgress !== leftProgress) {
-      return rightProgress - leftProgress;
-    }
-
-    return right.amount - left.amount;
-  });
-  const representative =
-    sortedRecords.find(
-      (bid) =>
-        isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
-    ) ?? sortedRecords[0];
-  const totalAmount = groupRecords.reduce((sum, bid) => sum + bid.amount, 0);
-  const paymentAmounts = groupRecords.map((bid) => bid.paymentAmount);
-  const hasCompletePaymentAmounts = paymentAmounts.every(
-    (amount): amount is number => typeof amount === "number",
-  );
-  const totalPaymentAmount = hasCompletePaymentAmounts
-    ? paymentAmounts.reduce((sum, amount) => sum + amount, 0)
-    : groupRecords.length === 1
-      ? representative.paymentAmount
-      : null;
-  const shippingFees = groupRecords.map((bid) => bid.shippingFee);
-  const totalShippingFee = shippingFees.every(
-    (amount): amount is number => typeof amount === "number",
-  )
-    ? shippingFees.reduce((sum, amount) => sum + amount, 0)
-    : representative.shippingFee;
-  const optionLabels = getUniqueLabels(
-    groupRecords.flatMap((bid) => bid.optionLabels ?? [bid.optionLabel]),
-  );
-
-  return {
-    ...representative,
-    amount: totalAmount,
-    id: representative.id,
-    optionLabel: formatGroupedOptionLabel(optionLabels),
-    optionLabels,
-    paymentAmount: totalPaymentAmount,
-    shippingFee: totalShippingFee ?? null,
-    shippingAddress:
-      representative.shippingAddress ??
-      groupRecords.find((bid) => bid.shippingAddress)?.shippingAddress ??
-      null,
-  };
-}
-
-function getBidRecordGroupKey(bid: BidRecord) {
-  return bid.productId || bid.id;
-}
-
-function getGroupedBidRecords(records: BidRecord[], now: Date) {
-  const groups = new Map<string, BidRecord[]>();
-
-  records.forEach((bid) => {
-    const key = getBidRecordGroupKey(bid);
-    const group = groups.get(key) ?? [];
-
-    group.push(bid);
-    groups.set(key, group);
-  });
-
-  return [...groups.values()].map((group) => mergeBidRecordGroup(group, now));
-}
-
-function findGroupedBidRecordById(
-  groupedRecords: BidRecord[],
-  sourceRecords: BidRecord[],
-  bidId: string | null,
-  now: Date,
-) {
+function findBidRecordById(records: BidRecord[], bidId: string | null) {
   if (!bidId) {
     return null;
   }
 
-  const groupedRecord = groupedRecords.find((bid) => bid.id === bidId);
-
-  if (groupedRecord) {
-    return groupedRecord;
-  }
-
-  const sourceRecord = sourceRecords.find((bid) => bid.id === bidId);
-
-  if (!sourceRecord) {
-    return null;
-  }
-
-  const groupKey = getBidRecordGroupKey(sourceRecord);
-  const groupRecords = sourceRecords.filter(
-    (bid) => getBidRecordGroupKey(bid) === groupKey,
-  );
-
-  return mergeBidRecordGroup(groupRecords, now);
+  return records.find((bid) => bid.id === bidId) ?? null;
 }
 
 function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
@@ -615,11 +526,11 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
 
 function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordCancelled(bid)) {
-    if (isCancelledBuncheolStatus(bid.buncheolStatus)) {
+    if (isBuncheolCancelledBidRecord(bid)) {
       return "취소된 분철이에요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.";
     }
 
-    return "취소된 참여예요.";
+    return "취소된 참여예요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.";
   }
 
   if (isBidRecordPaymentConfirmed(bid)) {
@@ -736,17 +647,24 @@ function getBidRecordFromParticipation(
   const shippingMethods = getShippingMethodsFromOptions(
     participation.shippingOptions ?? [],
   );
+  // 서버 bidAmount 는 배송비 포함 입금 총액이다. shippingFee 를 빼 상품(멤버) 금액으로 환산해
+  // amount 에 담고, 총액은 paymentAmount 로 유지한다. shippingFee 를 안 내려주는 구 응답이면
+  // 분리할 수 없으므로 총액을 그대로 둔다.
+  const serverShippingFee = participation.shippingFee;
+  const serverItemAmount =
+    typeof serverShippingFee === "number"
+      ? Math.max(participation.bidAmount - serverShippingFee, 0)
+      : participation.bidAmount;
 
   return {
     courier: shippingMethods[0]?.name,
     shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
     id: participation.participationId,
-    amount: cachedPayment?.bidAmount ?? participation.bidAmount,
+    amount: cachedPayment?.bidAmount ?? serverItemAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
     imageUrl:
       participation.thumbnailUrl ??
       getCachedProductImageUrl(participation.buncheolId),
-    member: `${participation.buncheolMemberCount}개 옵션`,
     optionLabel: participation.memberName,
     participantCount: 0,
     paidAt:
@@ -758,12 +676,15 @@ function getBidRecordFromParticipation(
     deliveryId: participation.deliveryId,
     deliveryStatus: participation.deliveryStatus,
     paymentAmount:
-      participation.paymentAmount ?? cachedPayment?.paymentAmount ?? null,
+      participation.paymentAmount ??
+      cachedPayment?.paymentAmount ??
+      (typeof serverShippingFee === "number" ? participation.bidAmount : null),
     paymentDueAt:
       participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
     createdAt: participation.createdAt,
     productId: participation.buncheolId,
     participationStatus,
+    cancelReason: participation.cancelReason ?? null,
     rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
@@ -1060,17 +981,10 @@ export function BidHistoryContent({
     () => apiBidRecords ?? [],
     [apiBidRecords],
   );
-  const groupedPaymentBidRecords = useMemo(
-    () => getGroupedBidRecords(paymentBidRecords, now),
-    [now, paymentBidRecords],
+  const selectedPaymentBid = findBidRecordById(
+    paymentBidRecords,
+    selectedPaymentBidId,
   );
-  const selectedPaymentBid =
-    findGroupedBidRecordById(
-      groupedPaymentBidRecords,
-      paymentBidRecords,
-      selectedPaymentBidId,
-      now,
-    );
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
       isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
@@ -1106,10 +1020,16 @@ export function BidHistoryContent({
     selectedEligiblePaymentAddress ??
     eligiblePaymentAddresses[0] ??
     null;
-  const paymentShippingFee = selectedPaymentBid?.shippingFee ?? shippingFee;
+  // 배송비를 모르는 구응답이면 임의 상수를 더하지 않고 amount(총액)만 쓴다 — 카드 쪽 폴백과 동일.
+  const paymentShippingFee =
+    typeof selectedPaymentBid?.shippingFee === "number"
+      ? selectedPaymentBid.shippingFee
+      : null;
   const paymentTotalAmount = selectedPaymentBid
     ? selectedPaymentBid.paymentAmount ??
-      selectedPaymentBid.amount + paymentShippingFee
+      (paymentShippingFee !== null
+        ? selectedPaymentBid.amount + paymentShippingFee
+        : selectedPaymentBid.amount)
     : 0;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
@@ -1376,12 +1296,7 @@ export function BidHistoryContent({
     );
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
 
-    const returnBid = findGroupedBidRecordById(
-      groupedPaymentBidRecords,
-      paymentBidRecords,
-      returnState.bidId,
-      now,
-    );
+    const returnBid = findBidRecordById(paymentBidRecords, returnState.bidId);
 
     if (!returnBid) {
       return;
@@ -1438,8 +1353,6 @@ export function BidHistoryContent({
   }, [
     defaultAddressIds,
     deliveryAddresses,
-    groupedPaymentBidRecords,
-    now,
     paymentBidRecords,
   ]);
 
@@ -1494,12 +1407,10 @@ export function BidHistoryContent({
         return true;
       });
 
-    return getGroupedBidRecords(filteredRecords, now)
-      .sort(
-        (left, right) =>
-          parseDeadline(right.deadline).getTime() -
-          parseDeadline(left.deadline).getTime(),
-      );
+    // 참여 1건 = 카드 1장. 같은 분철이라도 참여(멤버)별로 각각 보여준다.
+    // 서버가 최신 참여순(createdAt DESC)으로 내려주므로 재정렬하지 않고 그 순서를 유지한다
+    // — 마감일 기준으로 다시 정렬하면 방금 참여한 건이 아래로 밀린다.
+    return filteredRecords;
   }, [authState.isLoggedIn, filter, now, paymentBidRecords]);
   const hostedRecords = useMemo(() => {
     if (!authState.isLoggedIn) {
@@ -1546,12 +1457,7 @@ export function BidHistoryContent({
 
     const requestId = paymentStoreTypeRequestIdRef.current + 1;
     const currentTime = new Date();
-    const selectedBid = findGroupedBidRecordById(
-      groupedPaymentBidRecords,
-      paymentBidRecords,
-      bidId,
-      currentTime,
-    );
+    const selectedBid = findBidRecordById(paymentBidRecords, bidId);
 
     if (!selectedBid) {
       return;
@@ -1611,8 +1517,17 @@ export function BidHistoryContent({
             return;
           }
 
+          // paymentDetail.bidAmount 는 파서 폴백 때문에 배송비 포함 총액일 수 있다. shippingFee 를
+          // 알 때만 멤버가로 환산해 반영하고, 모르면 목록에서 계산한 기존 멤버가(amount)를 유지한다
+          // — 총액으로 덮어쓰면 카드/시트의 "상품 금액" 과 캐시(bidAmount=멤버가)가 오염된다.
+          const detailItemAmount =
+            typeof paymentDetail.shippingFee === "number" &&
+            paymentDetail.bidAmount > 0
+              ? Math.max(paymentDetail.bidAmount - paymentDetail.shippingFee, 0)
+              : null;
+
           writeCachedParticipationPayment({
-            bidAmount: paymentDetail.bidAmount,
+            bidAmount: detailItemAmount ?? selectedBid.amount,
             hostBankAccount: paymentDetail.hostBankAccount,
             participationId: paymentDetail.participationId,
             participationStatus: paymentDetail.paymentStatus,
@@ -1628,7 +1543,7 @@ export function BidHistoryContent({
                   bid.id === selectedBid.id
                     ? {
                         ...bid,
-                        amount: paymentDetail.bidAmount || bid.amount,
+                        amount: detailItemAmount ?? bid.amount,
                         hostBankAccount:
                           paymentDetail.hostBankAccount ?? bid.hostBankAccount,
                         paymentAmount:
@@ -2041,9 +1956,7 @@ export function BidHistoryContent({
             {records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
               const isCancelled = isBidRecordCancelled(bid);
-              const cancellationLabel = isCancelledBuncheolStatus(
-                bid.buncheolStatus,
-              )
+              const cancellationLabel = isBuncheolCancelledBidRecord(bid)
                 ? "분철 취소됨"
                 : "참여 취소됨";
               const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
@@ -2052,6 +1965,13 @@ export function BidHistoryContent({
               const isTransferRequested = isBidRecordTransferRequested(bid);
               const progressSteps = getBidRecordProgressSteps(bid, now);
               const shippingAddressLabel = getBidRecordShippingAddressLabel(bid);
+              const cardShippingFee =
+                typeof bid.shippingFee === "number" ? bid.shippingFee : null;
+              const cardTotalAmount =
+                bid.paymentAmount ??
+                (cardShippingFee !== null
+                  ? bid.amount + cardShippingFee
+                  : bid.amount);
               return (
                 <article
                   className="rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
@@ -2086,7 +2006,7 @@ export function BidHistoryContent({
                             {bid.title}
                           </p>
                           <p className="mt-1 text-[13px] font-medium text-black/45">
-                            {bid.member} · {bid.optionLabel}
+                            {bid.optionLabel}
                           </p>
                         </Link>
                         <span
@@ -2108,6 +2028,26 @@ export function BidHistoryContent({
                             </p>
                             <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
                               {formatPrice(bid.amount)}
+                            </p>
+                          </div>
+                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
+                            <p className="text-[11px] font-medium text-black/35">
+                              배송비
+                            </p>
+                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                              {cardShippingFee !== null
+                                ? formatPrice(cardShippingFee)
+                                : "-"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
+                            <p className="text-[11px] font-medium text-black/35">
+                              입금 총액
+                            </p>
+                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                              {formatPrice(cardTotalAmount)}
                             </p>
                           </div>
                           <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
@@ -2135,11 +2075,9 @@ export function BidHistoryContent({
                             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
                               {cancellationLabel}
                             </span>
-                            {isCancelledBuncheolStatus(bid.buncheolStatus) ? (
-                              <p className="text-center text-[11px] font-medium leading-4 text-black/40">
-                                이미 입금했다면 등록한 환불 계좌로 환불돼요.
-                              </p>
-                            ) : null}
+                            <p className="text-center text-[11px] font-medium leading-4 text-black/40">
+                              이미 입금했다면 등록한 환불 계좌로 환불돼요.
+                            </p>
                           </div>
                         ) : null}
                         <div className="relative">
@@ -2663,7 +2601,11 @@ export function BidHistoryContent({
               </div>
               <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
                 <span>배송비</span>
-                <span>{formatPrice(paymentShippingFee)}</span>
+                <span>
+                  {paymentShippingFee !== null
+                    ? formatPrice(paymentShippingFee)
+                    : "-"}
+                </span>
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[15px] font-semibold tracking-[-0.04em]">

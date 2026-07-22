@@ -131,8 +131,7 @@ export type UpdateBuncheolRequest = {
 };
 
 export type ParticipateBuncheolRequest = {
-  buncheolMemberId?: number;
-  buncheolMemberIds?: number[];
+  buncheolMemberId: number;
   refundAccount: BankAccountInfo;
   shippingAddressId: number;
 };
@@ -364,6 +363,7 @@ export type MyParticipation = {
   buncheolMemberCount: number;
   buncheolStatus: string;
   buncheolTitle: string;
+  cancelReason?: string | null;
   closedRank?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
@@ -2356,8 +2356,19 @@ function getMyParticipationBidsFromRecord(
         "id",
       ]);
       const bidAmount = getNumberValue(record, ["bidAmount", "amount"]);
+      // 활성 참여만 "내 참여"로 취급한다 — 서버가 비활성(취소·만료) 참여를 목록에 포함하게 되더라도
+      // 취소된 참여가 재참여를 막지 않도록 memberIds 쪽과 동일하게 필터한다.
+      const status = getOptionalStringValue(record, [
+        "status",
+        "participationStatus",
+      ]);
 
-      if (buncheolMemberId && participationId && bidAmount !== null) {
+      if (
+        buncheolMemberId &&
+        participationId &&
+        bidAmount !== null &&
+        !isInactiveBuncheolPaymentStatus(status)
+      ) {
         bids.set(buncheolMemberId, {
           bidAmount,
           participationId,
@@ -3816,19 +3827,13 @@ export async function participateBuncheol(
   buncheolId: string,
   body: ParticipateBuncheolRequest,
 ) {
-  const buncheolMemberIds =
-    body.buncheolMemberIds && body.buncheolMemberIds.length > 0
-      ? body.buncheolMemberIds
-      : typeof body.buncheolMemberId === "number"
-        ? [body.buncheolMemberId]
-        : [];
-
-  if (buncheolMemberIds.length === 0) {
-    throw new Error("구매할 옵션을 확인하지 못했어요.");
+  if (!Number.isFinite(body.buncheolMemberId)) {
+    throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
   }
 
+  // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
   const requestBody = {
-    buncheolMemberIds,
+    buncheolMemberId: body.buncheolMemberId,
     refundAccount: body.refundAccount,
     shippingAddressId: body.shippingAddressId,
   };
@@ -3997,6 +4002,8 @@ export async function requestMyParticipations(accessToken: string) {
             "buncheolTitle",
             "title",
           ]) || (buncheol ? getStringValue(buncheol, ["title"]) : ""),
+        cancelReason:
+          getOptionalStringValue(record, ["cancelReason"]) ?? null,
         closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(
