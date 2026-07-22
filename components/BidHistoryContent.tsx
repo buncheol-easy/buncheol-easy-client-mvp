@@ -1408,11 +1408,9 @@ export function BidHistoryContent({
       });
 
     // 참여 1건 = 카드 1장. 같은 분철이라도 참여(멤버)별로 각각 보여준다.
-    return filteredRecords.sort(
-      (left, right) =>
-        parseDeadline(right.deadline).getTime() -
-        parseDeadline(left.deadline).getTime(),
-    );
+    // 서버가 최신 참여순(createdAt DESC)으로 내려주므로 재정렬하지 않고 그 순서를 유지한다
+    // — 마감일 기준으로 다시 정렬하면 방금 참여한 건이 아래로 밀린다.
+    return filteredRecords;
   }, [authState.isLoggedIn, filter, now, paymentBidRecords]);
   const hostedRecords = useMemo(() => {
     if (!authState.isLoggedIn) {
