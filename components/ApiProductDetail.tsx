@@ -22,6 +22,10 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import {
+  toProductCardPatch,
+  updateCachedHomeListing,
+} from "@/lib/home-listings-cache";
 import { readUploadedProduct } from "@/lib/hosted-products-store";
 import { readPublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
@@ -292,6 +296,13 @@ export function ApiProductDetail({
         if (!isActive) {
           return;
         }
+
+        // 방금 받은 최신 상세를 홈 목록 캐시의 해당 카드에 되써준다(write-back).
+        // 뒤로가기 복귀 시 방금 상세에서 본 사실(마감 등)과 홈 카드가 어긋나 보이지 않게 한다.
+        updateCachedHomeListing(
+          id,
+          toProductCardPatch({ ...detailProduct, isHostedByMe }),
+        );
 
         setProduct({
           ...detailProduct,
