@@ -290,8 +290,9 @@ export function SignupProfileContent() {
   }
 
   return (
-    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-y-auto bg-white px-5 text-[#111111]">
-      <div className="mx-auto flex min-h-full w-full max-w-[430px] flex-col items-center justify-center py-8">
+    <main className="system-chrome-white system-chrome-bottom-black flex h-[100dvh] overflow-y-auto bg-white px-5 text-[#111111]">
+      {/* m-auto: 콘텐츠가 뷰포트보다 짧으면 수직 중앙, 길면(PC 등) 잘림 없이 스크롤 — justify-center 는 위쪽이 잘린다 */}
+      <div className="m-auto flex w-full max-w-[430px] flex-col items-center py-8">
         <div className="flex h-24 w-24 items-center justify-center rounded-full bg-black text-white shadow-[0_18px_40px_rgba(0,0,0,0.18)]">
           <ProfileIcon />
         </div>
