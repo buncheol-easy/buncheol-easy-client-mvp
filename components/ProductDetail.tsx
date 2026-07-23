@@ -1706,83 +1706,80 @@ export function ProductDetail({
     product.isApiProduct,
   ]);
 
-  useEffect(() => {
+  // 상세 재조회 세대 번호. 겹치거나 늦게 도착한 응답이 최신 상태를 덮어쓰지 않게 한다.
+  const detailRefreshRequestIdRef = useRef(0);
+
+  const refreshDetailOptions = useCallback(async () => {
     if (
       !product.isApiProduct ||
       isPublicPreview ||
       !authState.isLoggedIn ||
       !authState.accessToken
     ) {
-      setIsHostedByMeFromApi(product.isHostedByMe === true);
       return;
     }
 
-    let isCancelled = false;
     const accessToken = authState.accessToken;
+    const requestId = ++detailRefreshRequestIdRef.current;
+    const isStale = () => detailRefreshRequestIdRef.current !== requestId;
 
-    setIsHostedByMeFromApi(product.isHostedByMe === true);
+    try {
+      const detail = await requestBuncheolDetail(accessToken, buncheolId);
 
-    requestBuncheolDetail(accessToken, buncheolId)
-      .then(async (detail) => {
-        if (isCancelled) {
-          return;
-        }
+      if (isStale()) {
+        return;
+      }
 
-        const isHosted = detail.isHostedByMe === true;
-        const refreshedProduct = toProductDetailItem(detail);
-        const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
-        setIsHostedByMeFromApi(isHosted);
-        setAuctionOptions(refreshedProduct.options);
-        setMyBids(refreshedMyBids);
-        setBidAmounts((current) =>
-          refreshedProduct.options.reduce<Record<string, string>>(
-            (nextAmounts, option) => {
-              if (
-                current[option.id] === "selected" &&
-                !getOptionPurchaseOverlayLabel(
-                  option,
-                  refreshedMyBids[option.id],
-                  product.isApiProduct === true,
-                )
-              ) {
-                nextAmounts[option.id] = "selected";
-              }
+      const isHosted = detail.isHostedByMe === true;
+      const refreshedProduct = toProductDetailItem(detail);
+      const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
+      setIsHostedByMeFromApi(isHosted);
+      setAuctionOptions(refreshedProduct.options);
+      setMyBids(refreshedMyBids);
+      setBidAmounts((current) =>
+        refreshedProduct.options.reduce<Record<string, string>>(
+          (nextAmounts, option) => {
+            if (
+              current[option.id] === "selected" &&
+              !getOptionPurchaseOverlayLabel(
+                option,
+                refreshedMyBids[option.id],
+                product.isApiProduct === true,
+              )
+            ) {
+              nextAmounts[option.id] = "selected";
+            }
 
-              return nextAmounts;
-            },
-            {},
-          ),
+            return nextAmounts;
+          },
+          {},
+        ),
+      );
+
+      if (!isHosted && product.isHostedByMe !== true) {
+        return;
+      }
+
+      try {
+        const managementDetail = await requestBuncheolManagement(
+          accessToken,
+          buncheolId,
         );
 
-        if (!isHosted && product.isHostedByMe !== true) {
-          return;
-        }
-
-        try {
-          const managementDetail = await requestBuncheolManagement(
-            accessToken,
-            buncheolId,
+        if (!isStale()) {
+          setAuctionOptions((currentOptions) =>
+            mergeManagementOptionPurchaseStates(
+              currentOptions,
+              managementDetail.options,
+            ),
           );
-
-          if (!isCancelled) {
-            setAuctionOptions((currentOptions) =>
-              mergeManagementOptionPurchaseStates(
-                currentOptions,
-                managementDetail.options,
-              ),
-            );
-          }
-        } catch {
-          // Detail data still renders; management state is only a host-side overlay hint.
         }
-      })
-      .catch(() => {
-        // The submit path still handles permission failures with a user-facing message.
-      });
-
-    return () => {
-      isCancelled = true;
-    };
+      } catch {
+        // Detail data still renders; management state is only a host-side overlay hint.
+      }
+    } catch {
+      // The submit path still handles permission failures with a user-facing message.
+    }
   }, [
     authState.accessToken,
     authState.isLoggedIn,
@@ -1791,6 +1788,55 @@ export function ProductDetail({
     product.isHostedByMe,
     product.isApiProduct,
   ]);
+
+  useEffect(() => {
+    setIsHostedByMeFromApi(product.isHostedByMe === true);
+    void refreshDetailOptions();
+
+    return () => {
+      detailRefreshRequestIdRef.current += 1;
+    };
+  }, [product.isHostedByMe, refreshDetailOptions]);
+
+  // 재조회를 이미 트리거한 만료 기한. 서버 자동 취소가 늦어도 tick마다 재조회가 반복되지 않게 한다.
+  const refreshedExpiredDueAtsRef = useRef<Set<string>>(new Set());
+  const didSeedExpiredDueAtsRef = useRef(false);
+
+  useEffect(() => {
+    const expiredDueAts = auctionOptions
+      .map((option) => option.purchasePaymentDueAt)
+      .filter((dueAt): dueAt is string => {
+        if (!dueAt) {
+          return false;
+        }
+
+        const dueTime = parseCheckoutDateTime(dueAt).getTime();
+
+        return !Number.isNaN(dueTime) && dueTime <= deadlineTick;
+      });
+
+    // 첫 평가 시점에 이미 지나 있던 기한은 마운트 재조회가 커버하므로 기록만 한다.
+    if (!didSeedExpiredDueAtsRef.current) {
+      didSeedExpiredDueAtsRef.current = true;
+      expiredDueAts.forEach((dueAt) =>
+        refreshedExpiredDueAtsRef.current.add(dueAt),
+      );
+      return;
+    }
+
+    const hasNewlyExpiredDueAt = expiredDueAts.some(
+      (dueAt) => !refreshedExpiredDueAtsRef.current.has(dueAt),
+    );
+
+    if (!hasNewlyExpiredDueAt) {
+      return;
+    }
+
+    expiredDueAts.forEach((dueAt) =>
+      refreshedExpiredDueAtsRef.current.add(dueAt),
+    );
+    void refreshDetailOptions();
+  }, [auctionOptions, deadlineTick, refreshDetailOptions]);
 
   function togglePurchaseOption(optionId: string) {
     const option = auctionOptions.find((item) => item.id === optionId);
@@ -1831,6 +1877,8 @@ export function ProductDetail({
     >,
     onlyParticipationResults = false,
   ) {
+    // 진행 중인 재조회를 무효화해, 참여 이전 스냅샷이 방금 반영한 내 참여를 덮어쓰지 않게 한다.
+    detailRefreshRequestIdRef.current += 1;
     setAuctionOptions((currentOptions) =>
       currentOptions.map((option) => {
         if (onlyParticipationResults && !participationResults.has(option.id)) {
@@ -2073,6 +2121,8 @@ export function ProductDetail({
         return;
       }
 
+      let didRequestParticipation = false;
+
       try {
         const checkoutRequestItems = submittedBids.map(
           ({ bidAmount, option }) => {
@@ -2091,6 +2141,8 @@ export function ProductDetail({
             };
           },
         );
+
+        didRequestParticipation = true;
         const result = await participateBuncheol(accessToken, buncheolId, {
           buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
           refundAccount,
@@ -2230,6 +2282,12 @@ export function ProductDetail({
           );
         } else {
           setCheckoutError(errorMessage);
+        }
+
+        // 요청이 서버에 닿은 뒤의 실패는 참여가 생성됐을 수 있다.
+        // 상세를 재조회해 슬롯 상태가 낡은 채 남지 않게 한다.
+        if (didRequestParticipation) {
+          void refreshDetailOptions();
         }
         setIsBidSubmitPending(false);
         return;
@@ -2661,6 +2719,10 @@ export function ProductDetail({
   }
 
   function closeSheet() {
+    if (isSheetClosing) {
+      return;
+    }
+
     if (sheetEnterAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(sheetEnterAnimationFrameRef.current);
       sheetEnterAnimationFrameRef.current = null;
@@ -2678,6 +2740,11 @@ export function ProductDetail({
     sheetCloseFallbackTimerRef.current = window.setTimeout(() => {
       finishCloseSheet();
     }, 260);
+
+    // payment 단계 = 참여가 서버에 반영된 상태. 닫는 즉시 재조회해 슬롯 점유 상태를 맞춘다.
+    if (checkoutStep === "payment") {
+      void refreshDetailOptions();
+    }
   }
 
   function startSheetDrag(event: PointerEvent<HTMLButtonElement>) {

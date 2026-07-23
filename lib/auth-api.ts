@@ -830,6 +830,9 @@ function getParticipationShippingAddressRecord(
       relatedRecord.shipping,
       relatedRecord.shippingInfo,
     ]),
+    // 주소 객체가 따로 없고 delivery 에 storeName/shippingMethod 가
+    // 평평하게 실려오는 응답은 delivery 자체를 주소 레코드로 쓴다.
+    deliveryRecord,
   ];
 
   return addressCandidates.map(getNestedData).find(isRecord) ?? null;
@@ -5014,6 +5017,11 @@ export type AdminPaymentSummary = {
   awaitingAmount: number;
 };
 
+export type AdminRequestedShippingAddress = {
+  shippingMethod?: string;
+  storeName?: string;
+};
+
 export type AdminPaymentRecordItem = {
   participationId: string;
   participantNickname: string | null;
@@ -5026,6 +5034,8 @@ export type AdminPaymentRecordItem = {
   confirmedAt: string | null;
   refundAccount: BankAccountInfo | null;
   delivery: BuncheolManagementDelivery | null;
+  // 참여가 선택한 배송지의 현재 원본. 입금 확인 전(배송 스냅샷 생성 전)에도 배송지를 보여주기 위한 필드.
+  requestedShippingAddress: AdminRequestedShippingAddress | null;
   buncheolId: string;
   buncheolTitle: string;
   buncheolStatus: string;
@@ -5091,6 +5101,25 @@ function getAdminDeliveryFromRecord(
   };
 }
 
+function getAdminRequestedShippingAddressFromRecord(
+  value: unknown,
+): AdminRequestedShippingAddress | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const shippingMethod =
+    typeof value.shippingMethod === "string" ? value.shippingMethod : undefined;
+  const storeName =
+    typeof value.storeName === "string" ? value.storeName : undefined;
+
+  if (!shippingMethod && !storeName) {
+    return null;
+  }
+
+  return { shippingMethod, storeName };
+}
+
 function getAdminRefundAccountFromRecord(
   value: unknown,
 ): BankAccountInfo | null {
@@ -5131,6 +5160,9 @@ function getAdminPaymentRecordItem(value: unknown): AdminPaymentRecordItem | nul
     confirmedCount:
       typeof value.confirmedCount === "number" ? value.confirmedCount : 0,
     delivery: getAdminDeliveryFromRecord(value.delivery),
+    requestedShippingAddress: getAdminRequestedShippingAddressFromRecord(
+      value.requestedShippingAddress,
+    ),
     dueAt: typeof value.dueAt === "string" ? value.dueAt : null,
     groupName: typeof value.groupName === "string" ? value.groupName : "",
     memberName: typeof value.memberName === "string" ? value.memberName : null,

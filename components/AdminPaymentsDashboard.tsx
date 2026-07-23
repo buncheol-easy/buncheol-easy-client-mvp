@@ -23,6 +23,7 @@ import {
   type AdminBulkFailure,
   type AdminPaymentRecordItem,
   type AdminPaymentSummary,
+  type AdminRequestedShippingAddress,
   type BankAccountInfo,
   type BuncheolManagementDelivery,
   type CreateNoticeRequest,
@@ -64,6 +65,7 @@ type AdminPaymentRecord = {
   paymentDueAt?: string | null;
   rawStatus: string;
   refundAccount?: BankAccountInfo | null;
+  requestedShippingAddress?: AdminRequestedShippingAddress | null;
   status: AdminPaymentStatus;
 };
 
@@ -184,6 +186,11 @@ function getMissingDeliveryMessage(record: AdminPaymentRecord) {
     return "입금 확인은 완료됐지만 배송 정보가 아직 응답에 없어요. 배송 정보가 내려오면 이곳에서 운송장을 등록할 수 있어요.";
   }
 
+  if (record.requestedShippingAddress) {
+    return "입금 확인 전이에요. 입금 확인이 완료되면 배송 정보가 생성되고 이 화면에서 운송장을 등록할 수 있어요.";
+  }
+
+  // 결제 요청 배송지를 내려주지 않는 구버전 서버 응답 폴백.
   return "결제 요청 배송지가 응답에 없어 확인할 수 없어요. 입금 확인 전에도 배송지가 필요해요.";
 }
 
@@ -193,6 +200,29 @@ function getRefundAccountLabel(refundAccount: BankAccountInfo | null | undefined
   return [refundAccount.bank, refundAccount.account, refundAccount.holder]
     .filter(Boolean)
     .join(" ");
+}
+
+// 병합된 참여들의 요청 배송지가 서로 다르면(참여 단위 배송지 변경 CAS 존재) 임의로 하나를
+// 보여주지 않고 null(기존 "확인 필요" 폴백)로 둔다.
+function mergeRequestedShippingAddress(records: AdminPaymentRecord[]) {
+  const addresses = records
+    .map((record) => record.requestedShippingAddress)
+    .filter((address): address is AdminRequestedShippingAddress =>
+      Boolean(address),
+    );
+
+  if (addresses.length === 0) {
+    return null;
+  }
+
+  const [first] = addresses;
+  const allSame = addresses.every(
+    (address) =>
+      address.shippingMethod === first.shippingMethod &&
+      address.storeName === first.storeName,
+  );
+
+  return allSame ? first : null;
 }
 
 function getUniqueValues(values: Array<string | undefined | null>) {
@@ -221,6 +251,7 @@ function getSearchText(record: AdminPaymentRecord) {
     record.refundAccount?.holder,
     record.delivery?.storeName,
     record.delivery?.trackingNumber,
+    record.requestedShippingAddress?.storeName,
   ]
     .filter(Boolean)
     .join(" ")
@@ -349,6 +380,7 @@ function groupPaymentRecords(records: AdminPaymentRecord[]) {
         participationId: participationIds[0] ?? primaryRecord.participationId,
         participationIds,
         rawStatus: mergeRawStatuses(groupRecords),
+        requestedShippingAddress: mergeRequestedShippingAddress(groupRecords),
       } satisfies AdminPaymentRecord,
     ];
   });
@@ -390,6 +422,7 @@ function toAdminPaymentRecord(item: AdminPaymentRecordItem): AdminPaymentRecord 
     paymentDueAt: item.dueAt,
     rawStatus,
     refundAccount: item.refundAccount,
+    requestedShippingAddress: item.requestedShippingAddress,
     status: getAdminPaymentStatus(item.paymentStatus),
   };
 }
@@ -1593,12 +1626,19 @@ export function AdminPaymentsDashboard() {
                               : "결제 요청 배송지"
                             : isSelectedPaymentConfirmed
                               ? getAdminDeliveryStatusLabel(selectedRecord)
-                              : "결제 요청 배송지 확인 필요"}
+                              : selectedRecord.requestedShippingAddress
+                                ? "결제 요청 배송지"
+                                : "결제 요청 배송지 확인 필요"}
                         </p>
                       </div>
-                      {selectedRecord.delivery?.shippingMethod ? (
+                      {selectedRecord.delivery?.shippingMethod ||
+                      selectedRecord.requestedShippingAddress?.shippingMethod ? (
                         <span className="rounded-full bg-black px-3 py-1 text-[12px] font-semibold text-white">
-                          {getShippingMethodLabel(selectedRecord.delivery.shippingMethod)}
+                          {getShippingMethodLabel(
+                            selectedRecord.delivery?.shippingMethod ||
+                              selectedRecord.requestedShippingAddress
+                                ?.shippingMethod,
+                          )}
                         </span>
                       ) : null}
                     </div>
@@ -1679,9 +1719,22 @@ export function AdminPaymentsDashboard() {
                         )}
                       </div>
                     ) : (
-                      <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold leading-5 text-black/45">
-                        {getMissingDeliveryMessage(selectedRecord)}
-                      </p>
+                      <div className="mt-3 grid gap-2">
+                        {selectedRecord.requestedShippingAddress ? (
+                          <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold">
+                            <p className="text-[12px] text-black/40">
+                              결제 요청 배송지
+                            </p>
+                            <p className="mt-0.5 truncate">
+                              {selectedRecord.requestedShippingAddress
+                                .storeName || "배송지 미확인"}
+                            </p>
+                          </div>
+                        ) : null}
+                        <p className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3 text-[13px] font-semibold leading-5 text-black/45">
+                          {getMissingDeliveryMessage(selectedRecord)}
+                        </p>
+                      </div>
                     )}
                   </section>
                 ) : null}
