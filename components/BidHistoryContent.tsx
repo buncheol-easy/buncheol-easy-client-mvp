@@ -184,6 +184,45 @@ function formatPaymentRemainingTime(
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
+
+// 결제 정보 시트의 실시간 카운트다운 표기. 분철 상세와 동일하게 서버·클라이언트
+// 시계 오차로 남은 시간이 입금 창(30분)을 초과해 보이지 않도록 상한을 걸고,
+// 진행 중인 초를 포함해 올림으로 표시한다.
+function formatPaymentCountdown(
+  deadline: string,
+  now: Date,
+  paymentDueAt?: string | null,
+  createdAt?: string | null,
+) {
+  const paymentDeadline = getPaymentDeadlineDate(
+    deadline,
+    paymentDueAt,
+    createdAt,
+  );
+
+  if (Number.isNaN(paymentDeadline.getTime())) {
+    return "결제 기한 확인 필요";
+  }
+
+  const remainingMilliseconds = Math.min(
+    paymentDeadline.getTime() - now.getTime(),
+    paymentDeadlineMinutes * 60_000,
+  );
+
+  if (remainingMilliseconds <= 0) {
+    return "기한 지남";
+  }
+
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes > 0) {
+    return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남았어요`;
+  }
+
+  return `${seconds}초 남았어요`;
+}
 type BidHistoryMode = "joined" | "hosted";
 type BidHistoryFilter = "all" | "payment" | "confirmed";
 type HostedHistoryFilter = "all" | "active" | "closed";
@@ -1046,7 +1085,7 @@ export function BidHistoryContent({
     ? isBidRecordPaymentReady(selectedPaymentBid, now)
     : false;
   const selectedPaymentRemainingTime = selectedPaymentBid
-    ? formatPaymentRemainingTime(
+    ? formatPaymentCountdown(
         selectedPaymentBid.deadline,
         now,
         selectedPaymentBid.paymentDueAt,
@@ -1074,6 +1113,24 @@ export function BidHistoryContent({
       }
     };
   }, []);
+
+  // 결제 정보 시트가 열려 있는 동안에는 입금 마감 카운트다운을 분철 상세처럼
+  // 초 단위로 갱신한다. 기한이 지나면 결제 대기 상태가 풀리면서 인터벌도 정리된다.
+  useEffect(() => {
+    if (!isPaymentSheetOpen || !isSelectedPaymentReady) {
+      return;
+    }
+
+    setNow(new Date());
+
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isPaymentSheetOpen, isSelectedPaymentReady]);
 
   useEffect(() => {
     if (!restoreStoredViewState) {
