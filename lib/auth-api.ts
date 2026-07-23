@@ -9,6 +9,7 @@ import {
   writeBrowserApiCache,
 } from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
+import { FEATURES } from "@/lib/feature-flags";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
 const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
@@ -3534,6 +3535,9 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     liked: summary.bookmarked,
     status: summary.status,
     tone: getToneFromId(summary.id),
+    isShippingFeePaybackEvent:
+      FEATURES.shippingFeePayback &&
+      summary.shippingFeePaybackTarget === true,
   };
 }
 
