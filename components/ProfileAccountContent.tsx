@@ -40,6 +40,7 @@ function getHistoryIndex() {
 
 function getEmptyProfileForm() {
   return {
+    name: "",
     nickname: "",
     phoneNumber: "",
   };
@@ -47,6 +48,7 @@ function getEmptyProfileForm() {
 
 function getProfileForm(profile: UserProfile | null) {
   return {
+    name: profile?.name ?? "",
     nickname: profile?.nickname ?? "",
     phoneNumber: profile?.phoneNumber ?? "",
   };
@@ -161,7 +163,9 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isSaveFeedbackVisible, setIsSaveFeedbackVisible] = useState(false);
   const [message, setMessage] = useState("");
+  // 이름은 기존 회원 호환을 위해 빈 값을 허용한다 (값이 있으면 형식 검증, 서버는 미전송 시 기존 값 유지).
   const canSave =
+    (form.name.trim() === "" || /^[가-힣A-Za-z]{1,30}$/.test(form.name.trim())) &&
     /^[가-힣A-Za-z0-9]{1,20}$/.test(form.nickname.trim()) &&
     /^01\d{8,9}$/.test(form.phoneNumber.trim());
 
@@ -285,6 +289,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
       return;
     }
 
+    const nextName = form.name.trim();
     const nextProfile = {
       nickname: form.nickname.trim(),
       phoneNumber: form.phoneNumber.trim(),
@@ -312,14 +317,19 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
         }
       }
 
-      await updateUserProfile(accessToken, nextProfile);
+      // 이름은 비워서 저장하면 서버가 기존 값을 유지하므로, 값이 있을 때만 전송한다.
+      await updateUserProfile(accessToken, {
+        ...nextProfile,
+        ...(nextName ? { name: nextName } : {}),
+      });
       setProfile((current) => ({
         bankAccount: current?.bankAccount ?? null,
         email: current?.email ?? "",
+        name: nextName || (current?.name ?? ""),
         provider: current?.provider ?? "",
         ...nextProfile,
       }));
-      setForm(nextProfile);
+      setForm({ ...nextProfile, name: nextName });
       setIsSaveFeedbackVisible(true);
 
       if (saveFeedbackTimerRef.current !== null) {
@@ -449,6 +459,21 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                 </div>
               </div>
               <div className="mt-4 grid gap-3">
+                <label className="block rounded-[0.95rem] bg-[#f7f7f7] px-3 py-3 ring-1 ring-black/10 transition focus-within:bg-white focus-within:ring-black/35">
+                  <span className="text-[13px] font-semibold text-black/45">
+                    이름
+                  </span>
+                  <input
+                    className="mt-1 h-8 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
+                    disabled={isLoading}
+                    maxLength={30}
+                    onChange={(event) =>
+                      updateForm("name", event.currentTarget.value)
+                    }
+                    placeholder="홍길동"
+                    value={form.name}
+                  />
+                </label>
                 <label className="block rounded-[0.95rem] bg-[#f7f7f7] px-3 py-3 ring-1 ring-black/10 transition focus-within:bg-white focus-within:ring-black/35">
                   <span className="text-[13px] font-semibold text-black/45">
                     닉네임

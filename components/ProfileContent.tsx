@@ -603,6 +603,7 @@ export function ProfileContent({
       });
       setUserProfile((current) => ({
         email: current?.email ?? "",
+        name: current?.name ?? "",
         nickname: current?.nickname ?? "",
         phoneNumber: current?.phoneNumber ?? "",
         provider: current?.provider ?? "",

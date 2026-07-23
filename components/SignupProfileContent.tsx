@@ -29,6 +29,7 @@ type SignupProfileDraft = {
   isMarketingAgreed?: boolean;
   isPrivacyAgreed?: boolean;
   isTermsAgreed?: boolean;
+  name?: string;
   nickname?: string;
   phoneNumber?: string;
 };
@@ -73,6 +74,7 @@ function readSignupProfileDraft(): SignupProfileDraft | null {
       isMarketingAgreed: parsed.isMarketingAgreed === true,
       isPrivacyAgreed: parsed.isPrivacyAgreed === true,
       isTermsAgreed: parsed.isTermsAgreed === true,
+      name: typeof parsed.name === "string" ? parsed.name : "",
       nickname: typeof parsed.nickname === "string" ? parsed.nickname : "",
       phoneNumber:
         typeof parsed.phoneNumber === "string"
@@ -115,6 +117,7 @@ export function SignupProfileContent() {
     getInitialAuthState,
   );
   const [initialDraft] = useState(readSignupProfileDraft);
+  const [name, setName] = useState(initialDraft?.name ?? "");
   const [nickname, setNickname] = useState(initialDraft?.nickname ?? "");
   const [phoneNumber, setPhoneNumber] = useState(
     initialDraft?.phoneNumber ?? "",
@@ -134,6 +137,7 @@ export function SignupProfileContent() {
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const canSave =
+    /^[가-힣A-Za-z]{1,30}$/.test(name.trim()) &&
     /^[가-힣A-Za-z0-9]{1,20}$/.test(nickname.trim()) &&
     /^01\d{8,9}$/.test(phoneNumber.trim()) &&
     isAgeConfirmed &&
@@ -214,6 +218,7 @@ export function SignupProfileContent() {
       isMarketingAgreed,
       isPrivacyAgreed,
       isTermsAgreed,
+      name,
       nickname,
       phoneNumber,
     });
@@ -224,6 +229,7 @@ export function SignupProfileContent() {
     isMarketingAgreed,
     isPrivacyAgreed,
     isTermsAgreed,
+    name,
     nickname,
     phoneNumber,
   ]);
@@ -261,6 +267,7 @@ export function SignupProfileContent() {
       }
 
       await updateUserProfile(accessToken, {
+        name: name.trim(),
         nickname: nickname.trim(),
         phoneNumber: phoneNumber.trim(),
         marketingAgreed: isMarketingAgreed,
@@ -298,6 +305,22 @@ export function SignupProfileContent() {
           </p>
 
           <div className="mt-7 grid gap-3">
+            <label className="block">
+              <span className="text-[13px] font-semibold text-black/45">
+                이름
+              </span>
+              <input
+                className="mt-2 h-13 w-full rounded-[0.9rem] border border-black/10 bg-[#f7f7f7] px-4 text-[16px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                maxLength={30}
+                onChange={(event) => setName(event.currentTarget.value)}
+                placeholder="홍길동"
+                value={name}
+              />
+              <span className="mt-1.5 block text-[12px] font-medium text-black/35">
+                입금 확인과 배송 연락에 사용돼요.
+              </span>
+            </label>
+
             <label className="block">
               <span className="text-[13px] font-semibold text-black/45">
                 닉네임
