@@ -13,6 +13,7 @@ import {
   ProfileContent,
 } from "@/components/ProfileContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 const ADDRESS_PANEL_TRANSITION_MS = 240;
 
@@ -31,6 +32,8 @@ export function AddressManagementExperience({
   openFormOnEntry,
   returnHref,
 }: AddressManagementExperienceProps) {
+  useProfileCompletionGuard();
+
   const router = useRouter();
   const exitTimerRef = useRef<number | null>(null);
   const [isEntered, setIsEntered] = useState(false);
@@ -52,10 +55,17 @@ export function AddressManagementExperience({
 
   function finishBackNavigation() {
     const historyIndex = getHistoryIndex();
+    const isProductReturn =
+      typeof returnHref === "string" && returnHref.startsWith("/products/");
     const skipEnterKey =
       returnHref === "/profile/bids"
         ? BID_HISTORY_SKIP_ENTER_KEY
         : PROFILE_SKIP_ENTER_KEY;
+
+    if (isProductReturn) {
+      router.replace(returnHref);
+      return;
+    }
 
     window.sessionStorage.setItem(skipEnterKey, "true");
 

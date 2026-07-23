@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -14,10 +15,12 @@ import {
   type ArtistRailItem,
 } from "@/components/ArtistRail";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import { BusinessFooter } from "@/components/BusinessFooter";
 import { HomeContent } from "@/components/HomeContent";
 import { CloseIcon } from "@/components/icons";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
+import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { SearchHeader } from "@/components/SearchHeader";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 import {
@@ -34,17 +37,23 @@ import {
   type ApiGroup,
 } from "@/lib/auth-api";
 import {
+  createLoginHref,
+  getCurrentBrowserHref,
+} from "@/lib/auth-navigation";
+import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { FEATURES } from "@/lib/feature-flags";
 import {
   normalizeGroupSearchText,
   rankGroupSearchResults,
   toArtistRailItem,
   toMemberRailItem,
 } from "@/lib/group-presenters";
+import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 type SearchExperienceProps = {
   query?: string;
@@ -59,6 +68,7 @@ type RecentSearchItem = {
 
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
 const SEARCH_QUERY_STACK_KEY = "buncheol-search-query-stack";
+const SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX = "search-result-scroll-top";
 export const SEARCH_SKIP_ENTER_KEY = "buncheol-search-skip-enter";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
@@ -116,6 +126,34 @@ function markNextSearchEnterSkipped() {
   sessionStorage.setItem(SEARCH_SKIP_ENTER_KEY, "true");
 }
 
+function getSearchResultScrollTopKey(
+  keyword: string,
+  selectedMemberId?: string,
+) {
+  return `${SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX}:${keyword}:${selectedMemberId ?? ""}`;
+}
+
+function readStoredSearchResultScrollTop(
+  keyword: string,
+  selectedMemberId?: string,
+) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const storedScrollTop = window.sessionStorage.getItem(
+    getSearchResultScrollTopKey(keyword, selectedMemberId),
+  );
+
+  if (storedScrollTop === null) {
+    return null;
+  }
+
+  const parsedScrollTop = Number(storedScrollTop);
+
+  return Number.isFinite(parsedScrollTop) ? parsedScrollTop : null;
+}
+
 function takeShouldSkipSearchEnter() {
   if (typeof window === "undefined") {
     return false;
@@ -151,6 +189,7 @@ export function SearchExperience({
   const router = useRouter();
   const isOpeningSearchSheetRef = useRef(false);
   const lastResultScrollTopRef = useRef(0);
+  const resultScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [isSearchEntered, setIsSearchEntered] = useState(
     () => skipEnterAnimation || takeShouldSkipSearchEnter(),
   );
@@ -219,6 +258,47 @@ export function SearchExperience({
     authState.isLoggedIn &&
     apiRecentSearches === null &&
     apiRecentSearchesToken === null;
+
+  useLayoutEffect(() => {
+    if (!hasResults || !keyword || isResultLoading) {
+      return;
+    }
+
+    const storedScrollTop = readStoredSearchResultScrollTop(
+      keyword,
+      selectedMemberFilterId,
+    );
+
+    if (storedScrollTop === null || !resultScrollContainerRef.current) {
+      return;
+    }
+
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (!resultScrollContainerRef.current) {
+        return;
+      }
+
+      resultScrollContainerRef.current.scrollTop = storedScrollTop;
+      lastResultScrollTopRef.current = storedScrollTop;
+
+      if (!skipEnterAnimation) {
+        window.sessionStorage.removeItem(
+          getSearchResultScrollTopKey(keyword, selectedMemberFilterId),
+        );
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(restoreFrame);
+    };
+  }, [
+    hasResults,
+    isResultLoading,
+    keyword,
+    resultItems.length,
+    selectedMemberFilterId,
+    skipEnterAnimation,
+  ]);
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -565,7 +645,11 @@ export function SearchExperience({
 
         if (keyword) {
           setApiResultGroups(groupItems);
-          setApiResultItems((productItems ?? []).map(toProductCardItem));
+          setApiResultItems(
+            (productItems ?? [])
+              .map(toProductCardItem)
+              .map(mergeCachedProductImage),
+          );
           setResultMessage("");
         } else {
           setApiPopularGroups(groupItems);
@@ -729,7 +813,12 @@ export function SearchExperience({
 
     if (!authState.isLoggedIn || !accessToken) {
       const returnHref = `/search${keyword ? `?q=${encodeURIComponent(keyword)}` : ""}`;
-      router.push(`/login?returnTo=${encodeURIComponent(returnHref)}`);
+      router.push(
+        createLoginHref({
+          cancelTo: getCurrentBrowserHref(),
+          returnTo: returnHref,
+        }),
+      );
       return;
     }
 
@@ -779,9 +868,19 @@ export function SearchExperience({
 
     const scrollElement = event.currentTarget;
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
-    const nextScrollTop = Math.max(0, Math.min(scrollElement.scrollTop, maxScrollTop));
+    const nextScrollTop = Math.max(
+      0,
+      Math.min(scrollElement.scrollTop, maxScrollTop),
+    );
     const previousScrollTop = lastResultScrollTopRef.current;
     const isNearBottom = maxScrollTop - nextScrollTop <= SCROLL_EDGE_GUARD;
+
+    if (keyword) {
+      window.sessionStorage.setItem(
+        getSearchResultScrollTopKey(keyword, selectedMemberFilterId),
+        String(nextScrollTop),
+      );
+    }
 
     if (nextScrollTop <= SCROLL_REVEAL_THRESHOLD) {
       setIsResultHeaderHidden(false);
@@ -869,7 +968,9 @@ export function SearchExperience({
     const rail = (
       <ArtistRail
         items={resultFilters}
-        onFavoriteToggle={handleFavoriteGroupToggle}
+        onFavoriteToggle={
+          FEATURES.favoriteArtists ? handleFavoriteGroupToggle : undefined
+        }
         onItemClick={openRelatedSearch}
         pinFirstItem={!isMemberDisambiguation}
         selectedId={selectedRelatedItemId ?? undefined}
@@ -896,21 +997,7 @@ export function SearchExperience({
   }
 
   function renderSearchResultSkeleton() {
-    return (
-      <div aria-label="검색 결과를 불러오는 중" className="grid grid-cols-2 gap-3" role="status">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            className="overflow-hidden rounded-[1rem] border border-black/10 bg-white p-3"
-            key={`search-result-skeleton-${index}`}
-          >
-            <div className="aspect-square animate-pulse rounded-[0.85rem] bg-black/8" />
-            <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
-            <div className="mt-2 h-3 w-3/5 animate-pulse rounded-full bg-black/8" />
-            <div className="mt-4 h-8 animate-pulse rounded-full bg-black/8" />
-          </div>
-        ))}
-      </div>
-    );
+    return <ProductGridSkeleton ariaLabel="검색 결과를 불러오는 중" />;
   }
 
   return (
@@ -934,12 +1021,14 @@ export function SearchExperience({
                 onBack={() => undefined}
               />
               <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
-                {renderPreviousSearchResultsContent()}
+                <div className="flex min-h-full flex-col">
+                  {renderPreviousSearchResultsContent()}
+                </div>
               </div>
             </>
           ) : (
             <>
-              <HomeContent />
+              <HomeContent skipEnterAnimation />
               <BottomNavigator />
             </>
           )}
@@ -1005,8 +1094,11 @@ export function SearchExperience({
 
             <div
               className="scroll-reactive-content scroll-reactive-content--search min-h-0 flex-1 overflow-y-auto px-5"
+              data-product-scroll-container="search"
               onScroll={handleResultScroll}
+              ref={resultScrollContainerRef}
             >
+              <div className="flex min-h-full flex-col">
               {hasResults ? (
                 <>
                   <section className="-mx-1">
@@ -1043,6 +1135,9 @@ export function SearchExperience({
                       <ProductGrid items={resultItems} />
                     )}
                   </section>
+                  <div className="-mx-5 mt-auto pt-8">
+                    <BusinessFooter />
+                  </div>
                 </>
               ) : (
                 <>
@@ -1113,8 +1208,12 @@ export function SearchExperience({
                     </div>
                     )}
                   </section>
+                  <div className="-mx-5 mt-auto pt-8">
+                    <BusinessFooter />
+                  </div>
                 </>
               )}
+              </div>
             </div>
           </div>
 
@@ -1231,6 +1330,9 @@ export function SearchExperience({
 
           {isResultLoading ? renderSearchResultSkeleton() : <ProductGrid items={resultItems} />}
       </section>
+        <div className="-mx-5 mt-auto pt-8">
+          <BusinessFooter />
+        </div>
       </>
     );
   }

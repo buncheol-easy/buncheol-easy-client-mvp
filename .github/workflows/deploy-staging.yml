@@ -38,10 +38,13 @@ jobs:
           docker build -t buncheoleasy-frontend:staging .
 
           docker rm -f buncheoleasy-frontend 2>/dev/null || true
+          # 런타임 env(.env.production: NEXT_PUBLIC + 테스트 계정 스위처 토큰)를 컨테이너에 주입.
+          # NEXT_PUBLIC_* 는 빌드 때 이미 박혔고, 서버 런타임 변수(TEST_*)는 여기서만 전달된다.
           docker run -d \
             --name buncheoleasy-frontend \
             --restart unless-stopped \
             -p 127.0.0.1:3000:3000 \
+            --env-file /home/ubuntu/buncheol-easy-client/.env.production \
             buncheoleasy-frontend:staging
 
           docker image prune -f

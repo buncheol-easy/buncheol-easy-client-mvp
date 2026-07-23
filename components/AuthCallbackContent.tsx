@@ -7,7 +7,12 @@ import {
   authReturnHrefStorageKey,
   writeAuthTokens,
 } from "@/lib/auth-store";
-import { requestUserProfileStatus } from "@/lib/auth-api";
+import {
+  isUserProfileComplete,
+  requestUserProfile,
+  requestUserProfileStatus,
+} from "@/lib/auth-api";
+import { getSafeInternalHref } from "@/lib/auth-navigation";
 
 type AuthCallbackContentProps = {
   initialAccessToken?: string;
@@ -15,7 +20,7 @@ type AuthCallbackContentProps = {
 };
 
 function getSafeReturnHref(value: string | null | undefined) {
-  return value?.startsWith("/") && !value.startsWith("//") ? value : "/profile";
+  return getSafeInternalHref(value, "/profile");
 }
 
 function getHashToken(name: string) {
@@ -39,8 +44,6 @@ export function AuthCallbackContent({
     );
     const nextReturnHref = getSafeReturnHref(returnHref ?? storedReturnHref);
 
-    window.sessionStorage.removeItem(authReturnHrefStorageKey);
-
     if (!accessToken) {
       const errorTimer = window.setTimeout(() => {
         setErrorMessage("로그인 토큰을 확인하지 못했어요.");
@@ -56,9 +59,19 @@ export function AuthCallbackContent({
     writeAuthTokens({ accessToken });
 
     requestUserProfileStatus(accessToken)
-      .then(({ isProfileComplete }) => {
+      .then(async ({ isProfileComplete }) => {
         if (!isActive) {
           return;
+        }
+
+        if (isProfileComplete) {
+          const profile = await requestUserProfile(accessToken);
+
+          if (!isActive) {
+            return;
+          }
+
+          isProfileComplete = isUserProfileComplete(profile);
         }
 
         if (!isProfileComplete) {
@@ -66,15 +79,25 @@ export function AuthCallbackContent({
             authProfileSetupReturnHrefStorageKey,
             nextReturnHref,
           );
+          window.sessionStorage.removeItem(authReturnHrefStorageKey);
           router.replace("/signup/profile");
           return;
         }
 
+        window.sessionStorage.removeItem(authReturnHrefStorageKey);
+        window.sessionStorage.removeItem(authProfileSetupReturnHrefStorageKey);
         router.replace(nextReturnHref);
       })
       .catch(() => {
         if (isActive) {
-          router.replace(nextReturnHref);
+          // 완료 여부 확인에 실패해도 서비스로 통과시키지 않는다. 추가정보 화면이
+          // 마운트 시 상태를 재확인해 완료 유저는 저장된 returnHref 로 되돌려보낸다.
+          window.sessionStorage.setItem(
+            authProfileSetupReturnHrefStorageKey,
+            nextReturnHref,
+          );
+          window.sessionStorage.removeItem(authReturnHrefStorageKey);
+          router.replace("/signup/profile");
         }
       });
 

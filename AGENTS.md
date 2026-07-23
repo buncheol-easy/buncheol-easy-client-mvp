@@ -6,6 +6,16 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Git / PR Rules
 
+### Branch Name Format
+
+브랜치명에는 Jira 티켓 키(`KAN-000`)를 붙이지 않아도 된다.
+작업 범위가 드러나는 짧은 이름을 사용한다.
+
+```text
+FE-QA-반영
+상품등록-UI-개선
+```
+
 ### Commit Message Format
 
 커밋 메시지는 제목, 본문 bullet, 티켓 footer 순서로 작성한다.

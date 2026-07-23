@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import {
   BOARD_SKIP_ENTER_KEY,
@@ -10,14 +10,30 @@ import { BoardDetailContent } from "@/components/BoardDetailContent";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
-import type { BoardPost } from "@/lib/board-posts";
+import {
+  readCachedNoticeInboxMessageDetail,
+  requestCachedNoticeInboxMessageDetail,
+  requestInboxMessageDetail,
+  writeCachedNoticeInboxMessageDetail,
+} from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
+import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
+import {
+  getBoardPost,
+  getBoardPostFromInboxMessage,
+  type BoardPost,
+} from "@/lib/board-posts";
 
 const BOARD_DETAIL_PANEL_TRANSITION_MS = 240;
 
 type BoardDetailReturnSource = "board" | "home";
 
 type BoardDetailExperienceProps = {
-  post: BoardPost;
+  messageId: string;
   returnSource: BoardDetailReturnSource;
 };
 
@@ -28,13 +44,21 @@ function getHistoryIndex() {
 }
 
 export function BoardDetailExperience({
-  post,
+  messageId,
   returnSource,
 }: BoardDetailExperienceProps) {
   const router = useRouter();
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
   const exitTimerRef = useRef<number | null>(null);
   const [isEntered, setIsEntered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [post, setPost] = useState<BoardPost | null>(null);
 
   useEffect(() => {
     const enterFrame = window.requestAnimationFrame(() => {
@@ -49,6 +73,67 @@ export function BoardDetailExperience({
       }
     };
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadMessage() {
+      const cachedMessage = readCachedNoticeInboxMessageDetail(messageId);
+
+      if (cachedMessage) {
+        setPost(getBoardPostFromInboxMessage(cachedMessage));
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
+      setMessage("");
+
+      try {
+        const shouldUseNoticeCache =
+          returnSource === "home" || Boolean(cachedMessage);
+        const accessToken = !shouldUseNoticeCache && authState.isLoggedIn
+          ? await getFreshAccessToken()
+          : undefined;
+        const detail = shouldUseNoticeCache
+          ? await requestCachedNoticeInboxMessageDetail(messageId)
+          : await requestInboxMessageDetail(accessToken ?? undefined, messageId);
+
+        if (!isActive) {
+          return;
+        }
+
+        writeCachedNoticeInboxMessageDetail(detail);
+        setPost(getBoardPostFromInboxMessage(detail));
+        setMessage("");
+      } catch (error: unknown) {
+        if (!isActive) {
+          return;
+        }
+
+        const fallbackPost = getBoardPost(messageId);
+
+        setPost(fallbackPost);
+        setMessage(
+          fallbackPost
+            ? ""
+            : error instanceof Error
+              ? error.message
+              : "소식 내용을 불러오지 못했어요.",
+        );
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadMessage();
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.accessToken, authState.isLoggedIn, messageId, returnSource]);
 
   function finishBackNavigation() {
     const historyIndex = getHistoryIndex();
@@ -99,7 +184,12 @@ export function BoardDetailExperience({
           isEntered && !isExiting ? "product-page-active" : ""
         } ${isExiting ? "product-page-exit" : ""}`}
       >
-        <BoardDetailContent onBack={handleBack} post={post} />
+        <BoardDetailContent
+          isLoading={isLoading}
+          message={message}
+          onBack={handleBack}
+          post={post}
+        />
       </div>
     </div>
   );

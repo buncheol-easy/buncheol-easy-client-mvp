@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -13,13 +13,14 @@ import {
 } from "react";
 import type { MouseEvent } from "react";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { CheckIcon, CloseIcon, ProfileIcon } from "@/components/icons";
+import { ProfileIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
   lastAddedDeliveryAddressIdKey,
-  type AddressReturnState,
 } from "@/lib/address-return-state";
+import { createLoginHref } from "@/lib/auth-navigation";
 import {
+  authProfileSetupReturnHrefStorageKey,
   clearAuthCookies,
   clearAuthState,
   getInitialAuthState,
@@ -28,24 +29,11 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
-  cancelBuncheolParticipation,
-  deleteBuncheol,
-  deleteShippingAddress,
-  requestDeliveryReceiptConfirmation,
-  requestBuncheolDetail,
+  isUserProfileComplete,
   requestLogout,
-  requestMyHostedBuncheols,
-  requestMyParticipations,
-  requestParticipationPaymentDetail,
-  requestPaymentReport,
   requestShippingAddresses,
   requestUserProfile,
   updateBankAccount,
-  updateShippingAddress,
-  toProductDetailItem,
-  type BankAccountInfo,
-  type MyHostedBuncheol,
-  type MyParticipation,
   type UserProfile,
 } from "@/lib/auth-api";
 import { clearHostedProducts } from "@/lib/hosted-products-store";
@@ -61,32 +49,19 @@ import {
   clearDeliveryAddressState,
   getInitialDeliveryAddressState,
   getDeliveryAddressStateFromSyncedAddresses,
-  getDeliveryAddressStateWithDefaultAddress,
   readDeliveryAddressState,
   subscribeDeliveryAddressState,
-  type StoredDeliveryAddressState,
   writeDeliveryAddressState,
 } from "@/lib/delivery-address-store";
 import {
   convenienceStoreTypeLabels,
-  getAvailableConvenienceStoreTypes,
-  getConvenienceStoreLabel,
+  getDeliveryAddressDisplayBranchName,
   getDefaultDeliveryAddressesByType,
-  getPrioritizedDeliveryAddresses,
-  type DeliveryAddress,
-  type ConvenienceStoreType,
 } from "@/lib/mock-delivery-addresses";
-import type { ProductDetailItem } from "@/lib/mock-products";
-import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
-function formatPrice(price: number) {
-  return `${price.toLocaleString("ko-KR")}원`;
-}
-
-const kstOffsetHours = 9;
-const paymentDeadlineDays = 3;
 const settlementAccountPanelExitMs = 180;
-const PRODUCT_PROFILE_ENTRY_INDEX_KEY = "product-profile-entry-index";
+const profileStateCacheKey = "buncheol-profile-state-cache";
+const profileStateCacheMaxAgeMs = 10 * 60 * 1000;
 
 function getEmptySettlementAccountState(): SettlementAccountState {
   return {
@@ -114,414 +89,106 @@ function getSettlementAccountState(profile: UserProfile | null) {
   };
 }
 
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
-
-function parseDeadline(deadline: string) {
-  const match = deadline
-    .trim()
-    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2}))?/);
-
-  if (!match) {
-    return new Date(Number.NaN);
-  }
-
-  const [, year, month, day, hour] = match;
-
-  return new Date(
-    Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour) - kstOffsetHours,
-    ),
-  );
-}
-
-function parseHostedDeadline(deadline: string) {
-  const match = deadline
-    .trim()
-    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
-
-  if (!match) {
-    return new Date(Number.NaN);
-  }
-
-  const [, year, month, day, hour = "0"] = match;
-
-  return new Date(
-    Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour) - kstOffsetHours,
-    ),
-  );
-}
-
-function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
-  const difference = deadlineDate.getTime() - now.getTime();
-
-  if (Number.isNaN(deadlineDate.getTime()) || difference <= 0) {
-    return "마감됨";
-  }
-
-  const totalMinutes = Math.ceil(difference / 60000);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
-  const minutes = totalMinutes % 60;
-
-  if (days > 0) {
-    return `${days}일 ${hours}시간 남았어요`;
-  }
-
-  if (hours > 0) {
-    return `${hours}시간 ${minutes}분 남았어요`;
-  }
-
-  return `${minutes}분 남았어요`;
-}
-
-function formatRemainingTime(deadline: string, now: Date) {
-  return formatRemainingTimeFromDate(parseDeadline(deadline), now);
-}
-
-function getPaymentDeadlineDate(
-  deadline: string,
-  paymentDueAt?: string | null,
-) {
-  const paymentDeadline = paymentDueAt
-    ? new Date(paymentDueAt)
-    : parseDeadline(deadline);
-
-  if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
-    paymentDeadline.setUTCDate(
-      paymentDeadline.getUTCDate() + paymentDeadlineDays,
-    );
-  }
-
-  return paymentDeadline;
-}
-
-function formatPaymentRemainingTime(
-  deadline: string,
-  now: Date,
-  paymentDueAt?: string | null,
-) {
-  const paymentDeadline = getPaymentDeadlineDate(deadline, paymentDueAt);
-
-  if (Number.isNaN(paymentDeadline.getTime())) {
-    return "결제 기한 확인 필요";
-  }
-
-  return formatRemainingTimeFromDate(paymentDeadline, now);
-}
-
-const shippingFee = 3200;
-
-type ProfileBidEntry = {
-  amount: number;
-  buncheolStatus?: string;
-  deadline: string;
-  id: string;
-  imageUrl?: string;
-  member: string;
-  optionLabel: string;
-  paidAt?: string | null;
-  payerName?: string;
-  participantCount: number;
-  paymentAmount?: number | null;
-  paymentDueAt?: string | null;
-  participationStatus?: string;
-  deliveryId?: string | null;
-  deliveryStatus?: string | null;
-  productId: string;
-  rank: number;
-  courier?: string;
-  shippingFee?: number | null;
-  shippingMethods?: ProductDetailItem["shippingMethods"];
-  submittedAt: string;
-  title: string;
-  tone: string;
-  trackingNumber?: string | null;
-  hostBankAccount?: BankAccountInfo | null;
+type ProfileStateCache = {
+  authFingerprint?: string | null;
+  cachedAt: number;
+  userProfile?: UserProfile | null;
 };
 
-function ProfileListSkeleton({ count = 2 }: { count?: number }) {
-  return (
-    <div
-      aria-label="마이페이지 목록을 불러오는 중"
-      className="mt-4 space-y-3"
-      role="status"
-    >
-      {Array.from({ length: count }).map((_, index) => (
-        <div
-          className="rounded-[1rem] border border-black/10 px-4 py-4"
-          key={`profile-list-skeleton-${index}`}
-        >
-          <div className="flex items-start gap-3">
-            <div className="h-14 w-14 shrink-0 animate-pulse rounded-[0.85rem] bg-black/8" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="h-4 w-3/4 animate-pulse rounded-full bg-black/8" />
-                  <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-black/8" />
-                </div>
-                <div className="h-7 w-12 shrink-0 animate-pulse rounded-full bg-black/8" />
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
-                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
-              </div>
-              <div className="mt-2 h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+function getAuthCacheFingerprint() {
+  const accessToken = readAuthState().accessToken;
+
+  return accessToken ? accessToken.slice(-16) : null;
 }
 
-function isRecruitingStatus(status: string | undefined) {
-  return !status || status === "RECRUITING";
-}
-
-function isDeletedProductStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "DELETED";
-}
-
-function isProfileBidClosed(bid: ProfileBidEntry, now: Date) {
-  if (bid.buncheolStatus && !isRecruitingStatus(bid.buncheolStatus)) {
-    return !isRecruitingStatus(bid.buncheolStatus);
-  }
-
-  const deadlineDate = parseDeadline(bid.deadline);
-
-  return (
-    !Number.isNaN(deadlineDate.getTime()) &&
-    deadlineDate.getTime() <= now.getTime()
-  );
-}
-
-function isProfileBidPaymentReady(bid: ProfileBidEntry, now: Date) {
-  return (
-    !bid.paidAt &&
-    (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
-      (isProfileBidClosed(bid, now) && bid.rank === 1)) &&
-    !isProfileBidPaymentExpired(bid, now)
-  );
-}
-
-function canRequestProfileBidPaymentReport(bid: ProfileBidEntry, now: Date) {
-  const isRequestableStatus =
-    !bid.participationStatus ||
-    bid.participationStatus === "ACTIVE_BID" ||
-    isPaymentWaitingParticipationStatus(bid.participationStatus);
-
-  return isRequestableStatus && isProfileBidPaymentReady(bid, now);
-}
-
-function isPaymentWaitingParticipationStatus(status: string | undefined) {
-  return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
-}
-
-function isProfileBidPaymentExpired(bid: ProfileBidEntry, now: Date) {
-  const isPaymentCandidate =
-    isPaymentWaitingParticipationStatus(bid.participationStatus) ||
-    (isProfileBidClosed(bid, now) && bid.rank === 1);
-
-  if (
-    bid.paidAt ||
-    isTransferPaymentRequestedStatus(bid.participationStatus) ||
-    !isPaymentCandidate
-  ) {
+function isProfileStateCache(value: unknown): value is ProfileStateCache {
+  if (!value || typeof value !== "object") {
     return false;
   }
 
-  const paymentDeadline = getPaymentDeadlineDate(
-    bid.deadline,
-    bid.paymentDueAt,
-  );
+  const record = value as Partial<ProfileStateCache>;
 
   return (
-    !Number.isNaN(paymentDeadline.getTime()) &&
-    paymentDeadline.getTime() <= now.getTime()
+    typeof record.cachedAt === "number" &&
+    (record.authFingerprint === undefined ||
+      record.authFingerprint === null ||
+      typeof record.authFingerprint === "string") &&
+    (record.userProfile === undefined ||
+      record.userProfile === null ||
+      typeof record.userProfile === "object")
   );
 }
 
-function isProfileBidTransferRequested(bid: ProfileBidEntry) {
-  return (
-    !bid.paidAt && isTransferPaymentRequestedStatus(bid.participationStatus)
-  );
-}
-
-function isDeliveryReceiptCompleteStatus(status: string | undefined | null) {
-  return status === "RECEIVED" || status === "RECEIPT_CONFIRMED";
-}
-
-function canConfirmProfileDeliveryReceipt(bid: ProfileBidEntry) {
-  return Boolean(
-    bid.deliveryId &&
-      bid.paidAt &&
-      bid.trackingNumber &&
-      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
-  );
-}
-
-function shouldKeepProfileDeliveryReachable(bid: ProfileBidEntry) {
-  return Boolean(
-    bid.deliveryId &&
-      bid.paidAt &&
-      !isDeliveryReceiptCompleteStatus(bid.deliveryStatus),
-  );
-}
-
-function isProfileHostedProductActive(product: ProductDetailItem, now: Date) {
-  if (product.status && !isRecruitingStatus(product.status)) {
-    return false;
+function readProfileStateCache({
+  ignoreMaxAge = false,
+}: {
+  ignoreMaxAge?: boolean;
+} = {}) {
+  if (typeof window === "undefined") {
+    return null;
   }
-
-  const deadlineDate = parseHostedDeadline(product.deadline);
-
-  return (
-    Number.isNaN(deadlineDate.getTime()) ||
-    deadlineDate.getTime() > now.getTime()
-  );
-}
-
-function formatApiDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    month: "2-digit",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-
-  return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
-}
-
-function getToneFromId(id: string) {
-  const tones = [
-    "from-black via-zinc-800 to-zinc-500",
-    "from-zinc-700 via-zinc-500 to-zinc-100",
-    "from-zinc-900 via-zinc-700 to-zinc-300",
-    "from-zinc-300 via-zinc-100 to-neutral-400",
-  ];
-  const hash = [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
-
-  return tones[hash % tones.length];
-}
-
-function getProfileBidEntryFromParticipation(
-  participation: MyParticipation,
-): ProfileBidEntry {
-  const rank =
-    participation.closedRank ??
-    (isPaymentWaitingParticipationStatus(participation.participationStatus)
-      ? 1
-      : 0);
-
-  return {
-    id: participation.participationId,
-    amount: participation.bidAmount,
-    deadline: formatApiDateTime(participation.buncheolDeadline),
-    imageUrl: participation.thumbnailUrl,
-    member: `${participation.buncheolMemberCount}개 옵션`,
-    optionLabel: participation.memberName,
-    participantCount: 0,
-    paidAt:
-      participation.participationStatus === "CONFIRMED" ||
-      participation.participationStatus === "PAYMENT_CONFIRMED"
-        ? "결제 완료"
-        : null,
-    buncheolStatus: participation.buncheolStatus,
-    deliveryId: participation.deliveryId,
-    deliveryStatus: participation.deliveryStatus,
-    paymentAmount: participation.paymentAmount,
-    paymentDueAt: participation.paymentDueAt,
-    productId: participation.buncheolId,
-    participationStatus: participation.participationStatus,
-    rank: rank > 0 ? rank : 0,
-    shippingFee: participation.shippingFee,
-    trackingNumber: participation.trackingNumber,
-    hostBankAccount: participation.hostBankAccount,
-    submittedAt: "",
-    title: participation.buncheolTitle,
-    tone: getToneFromId(participation.buncheolId),
-  };
-}
-
-async function getProfileBidEntryWithShippingData(
-  accessToken: string,
-  participation: MyParticipation,
-): Promise<ProfileBidEntry> {
-  const bidEntry = getProfileBidEntryFromParticipation(participation);
 
   try {
-    const detail = await requestBuncheolDetail(accessToken, bidEntry.productId);
-    const product = toProductDetailItem(detail);
+    const rawValue = window.sessionStorage.getItem(profileStateCacheKey);
 
-    return {
-      ...bidEntry,
-      courier: product.courier,
-      hostBankAccount: bidEntry.hostBankAccount ?? detail.hostBankAccount,
-      imageUrl: bidEntry.imageUrl ?? product.imageUrl,
-      shippingMethods: product.shippingMethods,
-    };
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsedValue: unknown = JSON.parse(rawValue);
+
+    if (!isProfileStateCache(parsedValue)) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    if (parsedValue.authFingerprint !== getAuthCacheFingerprint()) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    if (
+      !ignoreMaxAge &&
+      Date.now() - parsedValue.cachedAt > profileStateCacheMaxAgeMs
+    ) {
+      window.sessionStorage.removeItem(profileStateCacheKey);
+      return null;
+    }
+
+    return parsedValue;
   } catch {
-    return bidEntry;
+    window.sessionStorage.removeItem(profileStateCacheKey);
+    return null;
   }
 }
 
-function getHostedProductFromBuncheol(
-  buncheol: MyHostedBuncheol,
-): ProductDetailItem {
-  return {
-    id: buncheol.id,
-    buncheolId: buncheol.id,
-    title: buncheol.title,
-    member: `${buncheol.memberSlotCount}개 옵션`,
-    optionCount: buncheol.memberSlotCount,
-    targetMembers: buncheol.memberNames,
-    uploadedAt: formatApiDateTime(buncheol.createdAt),
-    era: buncheol.groupName,
-    rating: "0.0",
-    reviews: String(buncheol.activeParticipationCount),
-    badge: buncheol.status === "RECRUITING" ? "모집중" : "마감",
-    liked: buncheol.bookmarked,
-    tone: getToneFromId(buncheol.id),
-    courier: "배송 방법 확인 필요",
-    deadline: formatApiDateTime(buncheol.deadline),
-    description: "",
-    imageUrl: buncheol.thumbnailUrl,
-    imageUrls: buncheol.thumbnailUrl ? [buncheol.thumbnailUrl] : [],
-    isApiProduct: true,
-    options: [
-      {
-        id: `${buncheol.id}-participants`,
-        label: "참여",
-        price: "-",
-        currentBid: "-",
-        participantCount: buncheol.activeParticipationCount,
-      },
-    ],
-    purchaseSource: "",
-    status: buncheol.status,
+function writeProfileStateCache(
+  patch: Partial<Omit<ProfileStateCache, "cachedAt">>,
+) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentCache = readProfileStateCache({ ignoreMaxAge: true }) ?? {};
+  const nextCache: ProfileStateCache = {
+    ...currentCache,
+    ...patch,
+    authFingerprint: getAuthCacheFingerprint(),
+    cachedAt: Date.now(),
   };
+
+  window.sessionStorage.setItem(
+    profileStateCacheKey,
+    JSON.stringify(nextCache),
+  );
+}
+
+function clearProfileStateCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(profileStateCacheKey);
 }
 
 type ProfileContentProps = {
@@ -530,10 +197,10 @@ type ProfileContentProps = {
 
 export const PROFILE_SKIP_ENTER_KEY = "skip-profile-enter-animation";
 
-type AddressSheetMode = "manage" | "select";
 export function ProfileContent({
   skipEnterAnimation = false,
 }: ProfileContentProps) {
+  const router = useRouter();
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(() => {
     if (skipEnterAnimation || typeof window === "undefined") {
@@ -546,32 +213,7 @@ export function ProfileContent({
 
     return shouldSkip;
   });
-  const [withdrawnBidIds, setWithdrawnBidIds] = useState<string[]>([]);
-  const [withdrawingBidId, setWithdrawingBidId] = useState<string | null>(null);
-  const [payingBidId, setPayingBidId] = useState<string | null>(null);
-  const [receivingDeliveryId, setReceivingDeliveryId] = useState<string | null>(
-    null,
-  );
-  const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
-    string | null
-  >(null);
-  const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
-  const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
-  const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
-  const [isPaymentReportConfirmOpen, setIsPaymentReportConfirmOpen] =
-    useState(false);
   const addressSyncRequestIdRef = useRef(0);
-  const paymentSheetCloseTimerRef = useRef<number | null>(null);
-  const paymentCopyToastTimerRef = useRef<number | null>(null);
-  const [paymentCopyToast, setPaymentCopyToast] = useState("");
-  const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
-    string | null
-  >(null);
-  const [apiPaymentStoreTypes, setApiPaymentStoreTypes] = useState<
-    ConvenienceStoreType[] | null
-  >(null);
-  const [isPaymentStoreTypeLoading, setIsPaymentStoreTypeLoading] =
-    useState(false);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -588,17 +230,7 @@ export function ProfileContent({
     getInitialSettlementAccountState,
   );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
-  const [addressSheetMode, setAddressSheetMode] =
-    useState<AddressSheetMode>("manage");
-  const [isAddressSheetOpen, setIsAddressSheetOpen] = useState(false);
-  const [isAddressSheetEntered, setIsAddressSheetEntered] = useState(false);
-  const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
   const [isDefaultAddressLoading, setIsDefaultAddressLoading] = useState(false);
-  const addressSheetCloseTimerRef = useRef<number | null>(null);
-  const paymentStoreTypeRequestIdRef = useRef(0);
-  const [manageAddressSnapshot, setManageAddressSnapshot] = useState<
-    DeliveryAddress[]
-  >([]);
   const [isEditingSettlementAccount, setIsEditingSettlementAccount] =
     useState(false);
   const [isSettlementAccountPanelExiting, setIsSettlementAccountPanelExiting] =
@@ -614,59 +246,20 @@ export function ProfileContent({
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [userProfileMessage, setUserProfileMessage] = useState("");
-  const [now, setNow] = useState(() => new Date());
-  const [apiBidEntries, setApiBidEntries] = useState<ProfileBidEntry[] | null>(
-    null,
-  );
-  const [apiHostedProducts, setApiHostedProducts] = useState<
-    ProductDetailItem[] | null
-  >(null);
-  const [hostedProductMessage, setHostedProductMessage] = useState("");
-  const [deletingHostedProductId, setDeletingHostedProductId] = useState<
-    string | null
-  >(null);
+  // sessionStorage 캐시는 SSR 결과와 하이드레이션 렌더를 일치시키기 위해
+  // 초기 렌더가 아니라 마운트 이후에 주입한다.
+  useEffect(() => {
+    const cachedProfileState = readProfileStateCache();
 
-  const isBidEntriesLoading = authState.isLoggedIn && apiBidEntries === null;
-  const isHostedProductsLoading =
-    authState.isLoggedIn && apiHostedProducts === null;
-  const allBids: ProfileBidEntry[] = useMemo(
-    () => {
-      const sourceEntries: ProfileBidEntry[] = apiBidEntries ?? [];
+    if (!cachedProfileState) {
+      return;
+    }
 
-      return authState.isLoggedIn
-        ? sourceEntries.filter((bid) => !withdrawnBidIds.includes(bid.id))
-        : [];
-    },
-    [apiBidEntries, authState.isLoggedIn, withdrawnBidIds],
-  );
-  const activeBids = useMemo(
-    () =>
-      allBids.filter((bid) => {
-        const isClosed = isProfileBidClosed(bid, now);
+    setUserProfile(
+      (current) => current ?? cachedProfileState.userProfile ?? null,
+    );
+  }, []);
 
-        return (
-          !isClosed ||
-          isProfileBidPaymentReady(bid, now) ||
-          isProfileBidTransferRequested(bid) ||
-          shouldKeepProfileDeliveryReachable(bid)
-        );
-      }),
-    [allBids, now],
-  );
-  const shouldRefreshPaymentState = allBids.some(
-    (bid) =>
-      bid.participationStatus === "ACTIVE_BID" && isProfileBidClosed(bid, now),
-  );
-  const activeHostedProducts = useMemo(
-    () =>
-      authState.isLoggedIn && apiHostedProducts
-        ? apiHostedProducts.filter((product) =>
-            !isDeletedProductStatus(product.status) &&
-            isProfileHostedProductActive(product, now),
-          )
-        : [],
-    [apiHostedProducts, authState.isLoggedIn, now],
-  );
   const settlementAccount = useMemo(
     () => {
       if (!authState.isLoggedIn) {
@@ -679,11 +272,20 @@ export function ProfileContent({
         profileSettlementAccount.accountNumber.trim().length > 0 &&
         profileSettlementAccount.accountHolder.trim().length > 0;
 
-      return hasProfileSettlementAccount
-        ? profileSettlementAccount
+      if (hasProfileSettlementAccount || userProfile) {
+        return profileSettlementAccount;
+      }
+
+      return isUserProfileLoading
+        ? getEmptySettlementAccountState()
         : storedSettlementAccount;
     },
-    [authState.isLoggedIn, storedSettlementAccount, userProfile],
+    [
+      authState.isLoggedIn,
+      isUserProfileLoading,
+      storedSettlementAccount,
+      userProfile,
+    ],
   );
   const hasSettlementAccount =
     settlementAccount.bankName.trim().length > 0 &&
@@ -698,68 +300,10 @@ export function ProfileContent({
     settlementAccountForm.accountHolder.trim().length <= 50 &&
     settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
 
-  const highestRankCount = activeBids.filter((bid) => bid.rank === 1).length;
-  const selectedPaymentBid =
-    activeBids.find((bid) => bid.id === selectedPaymentBidId) ?? null;
-  const canSelectedPaymentBidReportPayment = selectedPaymentBid
-    ? canRequestProfileBidPaymentReport(selectedPaymentBid, now)
-    : false;
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
     defaultAddressIds,
   );
-  const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
-    deliveryAddresses,
-    defaultAddressIds,
-  );
-  const availablePaymentStoreTypes =
-    apiPaymentStoreTypes ??
-    getAvailableConvenienceStoreTypes(
-      selectedPaymentBid?.shippingMethods,
-      selectedPaymentBid?.courier,
-    );
-  const isApiPaymentStoreTypePending =
-    selectedPaymentBid !== null && isPaymentStoreTypeLoading;
-  const eligiblePaymentAddresses =
-    isApiPaymentStoreTypePending
-      ? []
-      : availablePaymentStoreTypes.length > 0
-      ? prioritizedDeliveryAddresses.filter((address) =>
-          availablePaymentStoreTypes.includes(address.storeType),
-        )
-      : prioritizedDeliveryAddresses;
-  const selectedEligiblePaymentAddress =
-    eligiblePaymentAddresses.find(
-      (address) => address.id === selectedPaymentAddressId,
-    ) ?? null;
-  const paymentDeliveryAddress =
-    selectedEligiblePaymentAddress ??
-    eligiblePaymentAddresses[0] ??
-    null;
-  const paymentShippingFee = selectedPaymentBid?.shippingFee ?? shippingFee;
-  const paymentTotalAmount = selectedPaymentBid
-    ? selectedPaymentBid.paymentAmount ??
-      selectedPaymentBid.amount + paymentShippingFee
-    : 0;
-  const selectedPaymentBankAccount =
-    selectedPaymentBid?.hostBankAccount ?? null;
-  const visiblePaymentStoreTypes =
-    isApiPaymentStoreTypePending
-      ? []
-      : availablePaymentStoreTypes.length > 0
-      ? availablePaymentStoreTypes
-      : [
-          ...new Set(
-            eligiblePaymentAddresses.map((address) => address.storeType),
-          ),
-        ];
-  const paymentVisibleAddresses = visiblePaymentStoreTypes.map((storeType) => ({
-    storeType,
-    address:
-      paymentDeliveryAddress?.storeType === storeType
-        ? paymentDeliveryAddress
-        : defaultDeliveryAddresses[storeType],
-  }));
   const syncDeliveryAddresses = useCallback(async (
     accessToken: string,
     options: { clearBeforeSync?: boolean } = {},
@@ -818,25 +362,7 @@ export function ProfileContent({
   );
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 60_000);
-
     return () => {
-      window.clearInterval(timer);
-
-      if (paymentSheetCloseTimerRef.current !== null) {
-        window.clearTimeout(paymentSheetCloseTimerRef.current);
-      }
-
-      if (paymentCopyToastTimerRef.current !== null) {
-        window.clearTimeout(paymentCopyToastTimerRef.current);
-      }
-
-      if (addressSheetCloseTimerRef.current !== null) {
-        window.clearTimeout(addressSheetCloseTimerRef.current);
-      }
-
       if (settlementAccountPanelCloseTimerRef.current !== null) {
         window.clearTimeout(settlementAccountPanelCloseTimerRef.current);
       }
@@ -844,116 +370,15 @@ export function ProfileContent({
   }, []);
 
   useEffect(() => {
-    if (!authState.isLoggedIn || !authState.accessToken) {
-      setApiBidEntries([]);
-      setApiHostedProducts([]);
-      setHostedProductMessage("");
+    if (!authState.isLoggedIn) {
+      clearProfileStateCache();
       return;
     }
 
-    let isActive = true;
-
-    setApiBidEntries(null);
-    setApiHostedProducts(null);
-    setHostedProductMessage("");
-
-    async function loadApiProfileLists() {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        if (isActive) {
-          setApiBidEntries([]);
-          setApiHostedProducts([]);
-        }
-
-        return;
-      }
-
-      const [participations, buncheols] = await Promise.allSettled([
-        requestMyParticipations(accessToken),
-        requestMyHostedBuncheols(accessToken),
-      ]);
-
-      if (!isActive) {
-        return;
-      }
-
-      if (participations.status === "fulfilled") {
-        const bidEntries = await Promise.all(
-          participations.value.map((participation) =>
-            getProfileBidEntryWithShippingData(accessToken, participation),
-          ),
-        );
-
-        if (!isActive) {
-          return;
-        }
-
-        setApiBidEntries(bidEntries);
-      } else {
-        setApiBidEntries([]);
-      }
-
-      if (buncheols.status === "fulfilled") {
-        setApiHostedProducts(buncheols.value.map(getHostedProductFromBuncheol));
-        setHostedProductMessage("");
-      } else {
-        setApiHostedProducts([]);
-      }
+    if (userProfile !== null) {
+      writeProfileStateCache({ userProfile });
     }
-
-    loadApiProfileLists().catch(() => {
-      if (isActive) {
-        setApiBidEntries([]);
-        setApiHostedProducts([]);
-      }
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.accessToken, authState.isLoggedIn]);
-
-  useEffect(() => {
-    if (!authState.isLoggedIn || !shouldRefreshPaymentState) {
-      return;
-    }
-
-    let isActive = true;
-
-    async function refreshParticipations() {
-      const accessToken = await getFreshAccessToken();
-
-      if (!isActive || !accessToken) {
-        return;
-      }
-
-      try {
-        const participations = await requestMyParticipations(accessToken);
-        const bidEntries = await Promise.all(
-          participations.map((participation) =>
-            getProfileBidEntryWithShippingData(accessToken, participation),
-          ),
-        );
-
-        if (isActive) {
-          setApiBidEntries(bidEntries);
-        }
-      } catch {
-        // Keep the current list while the backend finishes deadline processing.
-      }
-    }
-
-    void refreshParticipations();
-    const timer = window.setInterval(() => {
-      void refreshParticipations();
-    }, 15_000);
-
-    return () => {
-      isActive = false;
-      window.clearInterval(timer);
-    };
-  }, [authState.isLoggedIn, shouldRefreshPaymentState]);
+  }, [authState.isLoggedIn, userProfile]);
 
   useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {
@@ -984,6 +409,17 @@ export function ProfileContent({
           return;
         }
 
+        if (!isUserProfileComplete(profile)) {
+          clearProfileStateCache();
+          setUserProfile(null);
+          window.sessionStorage.setItem(
+            authProfileSetupReturnHrefStorageKey,
+            "/profile",
+          );
+          router.replace("/signup/profile");
+          return;
+        }
+
         setUserProfile(profile);
         const profileSettlementAccount = getSettlementAccountState(profile);
         const hasProfileSettlementAccount =
@@ -993,6 +429,8 @@ export function ProfileContent({
 
         if (hasProfileSettlementAccount) {
           writeSettlementAccountState(profileSettlementAccount);
+        } else {
+          clearSettlementAccountState();
         }
       })
       .catch((error: unknown) => {
@@ -1015,7 +453,7 @@ export function ProfileContent({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn]);
+  }, [authState.accessToken, authState.isLoggedIn, router]);
 
   useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {
@@ -1031,9 +469,7 @@ export function ProfileContent({
 
     getFreshAccessToken()
       .then((accessToken) =>
-        accessToken
-          ? syncDeliveryAddresses(accessToken, { clearBeforeSync: true })
-          : null,
+        accessToken ? syncDeliveryAddresses(accessToken) : null,
       )
       .then(() => {
         // The sync helper commits only if this is still the newest request.
@@ -1068,245 +504,6 @@ export function ProfileContent({
     settlementAccount,
   ]);
 
-  useEffect(() => {
-    const rawReturnState = window.sessionStorage.getItem(addressReturnStateKey);
-
-    if (!rawReturnState) {
-      return;
-    }
-
-    let returnState: AddressReturnState;
-
-    try {
-      returnState = JSON.parse(rawReturnState) as AddressReturnState;
-    } catch {
-      window.sessionStorage.removeItem(addressReturnStateKey);
-      return;
-    }
-
-    if (returnState.source !== "profile") {
-      return;
-    }
-
-    window.sessionStorage.removeItem(addressReturnStateKey);
-    const lastAddedAddressId = window.sessionStorage.getItem(
-      lastAddedDeliveryAddressIdKey,
-    );
-    window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
-
-    const returnBid = returnState.bidId
-      ? activeBids.find((bid) => bid.id === returnState.bidId)
-      : null;
-
-    if (!returnBid) {
-      return;
-    }
-
-    const returnAvailableStoreTypes = getAvailableConvenienceStoreTypes(
-      returnBid.shippingMethods,
-      returnBid.courier,
-    );
-    const returnPrioritizedAddresses = getPrioritizedDeliveryAddresses(
-      deliveryAddresses,
-      defaultAddressIds,
-    );
-    const returnEligibleAddresses =
-      returnAvailableStoreTypes.length > 0
-        ? returnPrioritizedAddresses.filter((address) =>
-            returnAvailableStoreTypes.includes(address.storeType),
-          )
-        : returnPrioritizedAddresses;
-    const restoredAddressId = lastAddedAddressId ?? returnState.addressId;
-    const restoredPaymentAddressId =
-      restoredAddressId &&
-      returnEligibleAddresses.some((address) => address.id === restoredAddressId)
-        ? restoredAddressId
-        : null;
-
-    let isRestoreActive = true;
-    const restoreTimer = window.setTimeout(() => {
-      if (!isRestoreActive) {
-        return;
-      }
-
-      setSelectedPaymentBidId(returnBid.id);
-      setSelectedPaymentAddressId(restoredPaymentAddressId);
-      setAddressSheetMode("select");
-      setIsPaymentSheetOpen(true);
-      setIsPaymentSheetClosing(false);
-      setIsPaymentSheetEntered(true);
-      setIsAddressSheetOpen(true);
-      setIsAddressSheetClosing(false);
-
-      window.requestAnimationFrame(() => {
-        if (!isRestoreActive) {
-          return;
-        }
-
-        setIsAddressSheetEntered(true);
-      });
-    }, 0);
-
-    return () => {
-      isRestoreActive = false;
-      window.clearTimeout(restoreTimer);
-    };
-  }, [activeBids, defaultAddressIds, deliveryAddresses]);
-
-  useEffect(() => {
-    if (!isAddressSheetOpen) {
-      return;
-    }
-
-    window.scrollTo(0, 0);
-  }, [isAddressSheetOpen]);
-
-  useLayoutEffect(() => {
-    if (!isAddressSheetOpen) {
-      return;
-    }
-
-    const { body, documentElement } = document;
-    const scrollY = window.scrollY;
-    const previousHtmlOverflow = documentElement.style.overflow;
-    const previousBodyOverflow = body.style.overflow;
-    const previousBodyPosition = body.style.position;
-    const previousBodyInset = body.style.inset;
-    const previousBodyTop = body.style.top;
-    const previousBodyWidth = body.style.width;
-
-    documentElement.style.overflow = "hidden";
-    body.style.overflow = "hidden";
-    body.style.position = "fixed";
-    body.style.inset = "0";
-    body.style.top = `-${scrollY}px`;
-    body.style.width = "100%";
-
-    const scrollContainer = scrollContainerRef.current;
-    const previousScrollContainerOverflow = scrollContainer?.style.overflow;
-    const previousScrollContainerOverscrollBehavior =
-      scrollContainer?.style.overscrollBehavior;
-
-    if (scrollContainer) {
-      scrollContainer.style.overflow = "hidden";
-      scrollContainer.style.overscrollBehavior = "none";
-    }
-
-    return () => {
-      documentElement.style.overflow = previousHtmlOverflow;
-      body.style.overflow = previousBodyOverflow;
-      body.style.position = previousBodyPosition;
-      body.style.inset = previousBodyInset;
-      body.style.top = previousBodyTop;
-      body.style.width = previousBodyWidth;
-
-      if (scrollContainer) {
-        scrollContainer.style.overflow = previousScrollContainerOverflow ?? "";
-        scrollContainer.style.overscrollBehavior =
-          previousScrollContainerOverscrollBehavior ?? "";
-      }
-
-      window.scrollTo(0, scrollY);
-    };
-  }, [isAddressSheetOpen]);
-
-  useEffect(() => {
-    document.body.classList.toggle("is-address-sheet-open", isAddressSheetOpen);
-
-    return () => {
-      document.body.classList.remove("is-address-sheet-open");
-    };
-  }, [isAddressSheetOpen]);
-
-  function finishPaymentSheetClose() {
-    if (paymentSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(paymentSheetCloseTimerRef.current);
-      paymentSheetCloseTimerRef.current = null;
-    }
-
-    setIsPaymentSheetOpen(false);
-    setIsPaymentSheetClosing(false);
-    setIsPaymentReportConfirmOpen(false);
-    setSelectedPaymentBidId(null);
-  }
-
-  function finishAddressSheetClose() {
-    if (addressSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(addressSheetCloseTimerRef.current);
-      addressSheetCloseTimerRef.current = null;
-    }
-
-    setIsAddressSheetOpen(false);
-    setIsAddressSheetClosing(false);
-  }
-
-  async function withdrawBid(bidId: string) {
-    if (!authState.isLoggedIn || withdrawingBidId) {
-      return;
-    }
-
-    setWithdrawingBidId(bidId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await cancelBuncheolParticipation(accessToken, bidId);
-      setWithdrawnBidIds((current) =>
-        current.includes(bidId) ? current : [...current, bidId],
-      );
-      setApiBidEntries((current) =>
-        current ? current.filter((bid) => bid.id !== bidId) : current,
-      );
-      setUserProfileMessage("");
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error ? error.message : "입찰을 철회하지 못했어요.",
-      );
-    } finally {
-      setWithdrawingBidId(null);
-    }
-  }
-
-  async function confirmDeliveryReceipt(bid: ProfileBidEntry) {
-    if (!authState.isLoggedIn || !bid.deliveryId || receivingDeliveryId) {
-      return;
-    }
-
-    setReceivingDeliveryId(bid.deliveryId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestDeliveryReceiptConfirmation(accessToken, bid.deliveryId);
-
-      const participations = await requestMyParticipations(accessToken);
-      const bidEntries = await Promise.all(
-        participations.map((participation) =>
-          getProfileBidEntryWithShippingData(accessToken, participation),
-        ),
-      );
-
-      setApiBidEntries(bidEntries);
-      setUserProfileMessage("배송 수령을 확인했어요.");
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error
-          ? error.message
-          : "배송 수령을 확인하지 못했어요.",
-      );
-    } finally {
-      setReceivingDeliveryId(null);
-    }
-  }
-
   function rememberScrollPosition() {
     if (!scrollContainerRef.current) {
       return;
@@ -1318,18 +515,9 @@ export function ProfileContent({
     );
   }
 
-  function rememberAddressAddReturn() {
-    const returnState: AddressReturnState = {
-      source: "profile",
-      bidId: selectedPaymentBidId,
-      addressId: selectedPaymentAddressId,
-    };
-
-    window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
-    window.sessionStorage.setItem(
-      addressReturnStateKey,
-      JSON.stringify(returnState),
-    );
+  function rememberProfileReturnState() {
+    rememberScrollPosition();
+    window.sessionStorage.setItem(PROFILE_SKIP_ENTER_KEY, "true");
   }
 
   function startSettlementAccountEdit() {
@@ -1409,17 +597,18 @@ export function ProfileContent({
       }
 
       await updateBankAccount(accessToken, {
-        account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+        account: nextSettlementAccount.accountNumber,
         bank: nextSettlementAccount.bankName,
         holder: nextSettlementAccount.accountHolder,
       });
       setUserProfile((current) => ({
         email: current?.email ?? "",
+        name: current?.name ?? "",
         nickname: current?.nickname ?? "",
         phoneNumber: current?.phoneNumber ?? "",
         provider: current?.provider ?? "",
         bankAccount: {
-          account: nextSettlementAccount.accountNumber.replace(/\D/g, ""),
+          account: nextSettlementAccount.accountNumber,
           bank: nextSettlementAccount.bankName,
           holder: nextSettlementAccount.accountHolder,
         },
@@ -1439,198 +628,6 @@ export function ProfileContent({
     }
   }
 
-  function openPaymentSheet(bidId: string) {
-    if (paymentSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(paymentSheetCloseTimerRef.current);
-      paymentSheetCloseTimerRef.current = null;
-    }
-
-    const requestId = paymentStoreTypeRequestIdRef.current + 1;
-    const selectedBid = activeBids.find((bid) => bid.id === bidId) ?? null;
-
-    if (!selectedBid) {
-      return;
-    }
-
-    if (isProfileBidPaymentExpired(selectedBid, new Date())) {
-      setUserProfileMessage(
-        "입금 기한이 지나 결제할 수 없어요. 다음 순위로 낙찰이 넘어갔어요.",
-      );
-      return;
-    }
-
-    const allowedStoreTypes = getAvailableConvenienceStoreTypes(
-      selectedBid.shippingMethods,
-      selectedBid.courier,
-    );
-    const shouldLoadApiStoreTypes =
-      allowedStoreTypes.length === 0;
-    const nextDefaultAddresses = getDefaultDeliveryAddressesByType(
-      deliveryAddresses,
-      defaultAddressIds,
-    );
-    const fallbackAddress = shouldLoadApiStoreTypes
-      ? null
-      : allowedStoreTypes.length > 0
-        ? allowedStoreTypes
-            .map((storeType) => nextDefaultAddresses[storeType])
-            .find((address) => address !== null) ??
-          prioritizedDeliveryAddresses.find((address) =>
-            allowedStoreTypes.includes(address.storeType),
-          ) ??
-          null
-        : prioritizedDeliveryAddresses[0] ?? null;
-
-    paymentStoreTypeRequestIdRef.current = requestId;
-    setApiPaymentStoreTypes(null);
-    setIsPaymentStoreTypeLoading(shouldLoadApiStoreTypes);
-    setSelectedPaymentBidId(bidId);
-    setSelectedPaymentAddressId((current) =>
-      current &&
-      prioritizedDeliveryAddresses.some((address) => {
-        if (address.id !== current) {
-          return false;
-        }
-
-        return (
-          allowedStoreTypes.length === 0 ||
-          allowedStoreTypes.includes(address.storeType)
-        );
-      })
-        ? current
-        : fallbackAddress?.id ?? null,
-    );
-    setIsPaymentSheetOpen(true);
-    setIsPaymentSheetClosing(false);
-
-    if (authState.accessToken) {
-      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
-        .then((paymentDetail) => {
-          if (paymentStoreTypeRequestIdRef.current !== requestId) {
-            return;
-          }
-
-          setApiBidEntries((current) =>
-            current
-              ? current.map((bid) =>
-                  bid.id === selectedBid.id
-                    ? {
-                        ...bid,
-                        amount: paymentDetail.bidAmount || bid.amount,
-                        hostBankAccount:
-                          paymentDetail.hostBankAccount ?? bid.hostBankAccount,
-                        paymentAmount:
-                          paymentDetail.paymentAmount ?? bid.paymentAmount,
-                        paymentDueAt:
-                          paymentDetail.paymentDueAt ?? bid.paymentDueAt,
-                        participationStatus:
-                          paymentDetail.paymentStatus ||
-                          bid.participationStatus,
-                        shippingFee:
-                          paymentDetail.shippingFee ?? bid.shippingFee,
-                      }
-                    : bid,
-                )
-              : current,
-          );
-        })
-        .catch(() => {});
-    }
-
-    if (shouldLoadApiStoreTypes) {
-      requestBuncheolDetail(
-        authState.isLoggedIn ? authState.accessToken ?? undefined : undefined,
-        selectedBid.productId,
-      )
-        .then((detail) => {
-          if (paymentStoreTypeRequestIdRef.current !== requestId) {
-            return;
-          }
-
-          const storeTypes = getAvailableConvenienceStoreTypes(
-            detail.shippingOptions.map((option) => ({ name: option.method })),
-            undefined,
-          );
-
-          setApiPaymentStoreTypes(storeTypes.length > 0 ? storeTypes : null);
-
-          if (storeTypes.length === 0) {
-            return;
-          }
-
-          setSelectedPaymentAddressId((current) => {
-            const currentAddress = prioritizedDeliveryAddresses.find(
-              (address) => address.id === current,
-            );
-
-            if (currentAddress && storeTypes.includes(currentAddress.storeType)) {
-              return current;
-            }
-
-            return (
-              storeTypes
-                .map((storeType) => nextDefaultAddresses[storeType])
-                .find((address) => address !== null)?.id ??
-              prioritizedDeliveryAddresses.find((address) =>
-                storeTypes.includes(address.storeType),
-              )?.id ??
-              null
-            );
-          });
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (paymentStoreTypeRequestIdRef.current === requestId) {
-            setIsPaymentStoreTypeLoading(false);
-          }
-        });
-    }
-
-    window.requestAnimationFrame(() => {
-      setIsPaymentSheetEntered(true);
-    });
-  }
-
-  function closePaymentSheet() {
-    if (paymentSheetCloseTimerRef.current !== null) {
-      return;
-    }
-
-    setIsPaymentSheetClosing(true);
-    setIsPaymentSheetEntered(false);
-    setIsPaymentReportConfirmOpen(false);
-    paymentSheetCloseTimerRef.current = window.setTimeout(
-      finishPaymentSheetClose,
-      280,
-    );
-  }
-
-  function rememberProfileProductEntry(event: MouseEvent<HTMLAnchorElement>) {
-    if (
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
-
-    rememberScrollPosition();
-
-    const historyIndex = getHistoryIndex();
-
-    if (historyIndex === null) {
-      window.sessionStorage.removeItem(PRODUCT_PROFILE_ENTRY_INDEX_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      PRODUCT_PROFILE_ENTRY_INDEX_KEY,
-      String(historyIndex + 1),
-    );
-  }
-
   function rememberProfilePanelEntry(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
@@ -1642,183 +639,7 @@ export function ProfileContent({
       return;
     }
 
-    rememberScrollPosition();
-  }
-
-  async function handleDeleteHostedProduct(product: ProductDetailItem) {
-    const buncheolId = product.buncheolId ?? product.id;
-
-    if (!authState.isLoggedIn || deletingHostedProductId) {
-      return;
-    }
-
-    if (!window.confirm("이 분철을 삭제할까요?")) {
-      return;
-    }
-
-    setDeletingHostedProductId(buncheolId);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await deleteBuncheol(accessToken, buncheolId);
-      setApiHostedProducts((current) =>
-        current
-          ? current.filter(
-              (item) => (item.buncheolId ?? item.id) !== buncheolId,
-            )
-          : current,
-      );
-      setHostedProductMessage("");
-    } catch (error: unknown) {
-      setHostedProductMessage(
-        error instanceof Error
-          ? error.message
-          : "분철을 삭제하지 못했어요.",
-      );
-    } finally {
-      setDeletingHostedProductId(null);
-    }
-  }
-
-  async function copyTransferText(value: string, label: string) {
-    if (!value.trim() || value.includes("준비 중")) {
-      return;
-    }
-
-    if (paymentCopyToastTimerRef.current !== null) {
-      window.clearTimeout(paymentCopyToastTimerRef.current);
-    }
-
-    try {
-      await navigator.clipboard.writeText(value);
-      setPaymentCopyToast(`${label}가 복사됐어요.`);
-    } catch {
-      setPaymentCopyToast(`${label}를 복사하지 못했어요.`);
-    }
-
-    paymentCopyToastTimerRef.current = window.setTimeout(() => {
-      setPaymentCopyToast("");
-      paymentCopyToastTimerRef.current = null;
-    }, 1800);
-  }
-
-  function openPaymentReportConfirm() {
-    if (
-      !selectedPaymentBid ||
-      !canSelectedPaymentBidReportPayment ||
-      !paymentDeliveryAddress ||
-      !selectedPaymentBankAccount ||
-      payingBidId
-    ) {
-      return;
-    }
-
-    setIsPaymentReportConfirmOpen(true);
-  }
-
-  async function handleTransferPaymentRequest() {
-    if (
-      !selectedPaymentBid ||
-      !paymentDeliveryAddress ||
-      !selectedPaymentBankAccount ||
-      payingBidId
-    ) {
-      return;
-    }
-
-    if (!canSelectedPaymentBidReportPayment) {
-      setIsPaymentReportConfirmOpen(false);
-      setUserProfileMessage(
-        "입금 완료를 접수할 수 없는 상태예요. 최신 상태를 확인해 주세요.",
-      );
-      closePaymentSheet();
-      return;
-    }
-
-    setPayingBidId(selectedPaymentBid.id);
-    setIsPaymentReportConfirmOpen(false);
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return;
-      }
-
-      await requestPaymentReport(
-        accessToken,
-        selectedPaymentBid.id,
-        paymentDeliveryAddress.id,
-      );
-      setApiBidEntries((current) =>
-        current
-          ? current.map((bid) =>
-              bid.id === selectedPaymentBid.id
-                ? {
-                    ...bid,
-                    paidAt: null,
-                    participationStatus: "PAYMENT_REPORTED",
-                  }
-                : bid,
-            )
-          : current,
-      );
-      setUserProfileMessage(
-        "입금 확인 요청을 보냈어요. 판매자의 확인을 기다려 주세요.",
-      );
-      closePaymentSheet();
-    } catch (error: unknown) {
-      setUserProfileMessage(
-        error instanceof Error
-          ? error.message
-          : "입금 완료를 접수하지 못했어요.",
-      );
-    } finally {
-      setPayingBidId(null);
-    }
-  }
-
-  function commitDeliveryAddressState(nextState: StoredDeliveryAddressState) {
-    writeDeliveryAddressState(nextState);
-  }
-
-  function openAddressSheet(mode: AddressSheetMode = "manage") {
-    if (addressSheetCloseTimerRef.current !== null) {
-      window.clearTimeout(addressSheetCloseTimerRef.current);
-      addressSheetCloseTimerRef.current = null;
-    }
-
-    if (mode === "manage") {
-      setManageAddressSnapshot(
-        getPrioritizedDeliveryAddresses(deliveryAddresses, defaultAddressIds),
-      );
-    }
-
-    setAddressSheetMode(mode);
-    setIsAddressSheetOpen(true);
-    setIsAddressSheetClosing(false);
-
-    window.requestAnimationFrame(() => {
-      setIsAddressSheetEntered(true);
-    });
-  }
-
-  function closeAddressSheet() {
-    if (addressSheetCloseTimerRef.current !== null) {
-      return;
-    }
-
-    setIsAddressSheetClosing(true);
-    setIsAddressSheetEntered(false);
-    addressSheetCloseTimerRef.current = window.setTimeout(
-      finishAddressSheetClose,
-      280,
-    );
+    rememberProfileReturnState();
   }
 
   function clearUserSessionState() {
@@ -1828,10 +649,6 @@ export function ProfileContent({
     clearDeliveryAddressState();
     clearHostedProducts();
     clearSettlementAccountState();
-    setSelectedPaymentBidId(null);
-    setSelectedPaymentAddressId(null);
-    setWithdrawnBidIds([]);
-    setManageAddressSnapshot([]);
     setIsEditingSettlementAccount(false);
     setUserProfile(null);
     setSettlementAccountForm(getEmptySettlementAccountState());
@@ -1849,132 +666,6 @@ export function ProfileContent({
       }
     } finally {
       clearUserSessionState();
-    }
-  }
-
-  function selectPaymentAddress(addressId: string) {
-    setSelectedPaymentAddressId(addressId);
-  }
-
-  async function setAsDefaultAddress(addressId: string) {
-    const selectedAddress = deliveryAddresses.find(
-      (address) => address.id === addressId,
-    );
-
-    if (!selectedAddress) {
-      return;
-    }
-
-    if (authState.isLoggedIn) {
-      try {
-        const accessToken = await getFreshAccessToken();
-
-        if (!accessToken) {
-          return;
-        }
-
-        await updateShippingAddress(accessToken, selectedAddress.id, {
-          alias: selectedAddress.alias,
-          branchName: selectedAddress.branchName,
-          isDefault: true,
-          storeType: selectedAddress.storeType,
-        });
-        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
-
-        if (isLatest) {
-          commitDeliveryAddressState(
-            getDeliveryAddressStateWithDefaultAddress(nextState, addressId),
-          );
-        }
-      } catch (error) {
-        setUserProfileMessage(
-          error instanceof Error
-            ? error.message
-            : "기본 배송지를 변경하지 못했어요.",
-        );
-      }
-
-      return;
-    }
-
-    commitDeliveryAddressState(
-      getDeliveryAddressStateWithDefaultAddress(storedAddressState, addressId),
-    );
-  }
-
-  async function deleteDeliveryAddress(addressId: string) {
-    if (deliveryAddresses.length <= 1) {
-      return;
-    }
-
-    const targetAddress = deliveryAddresses.find(
-      (address) => address.id === addressId,
-    );
-
-    if (!targetAddress) {
-      return;
-    }
-
-    if (authState.isLoggedIn) {
-      try {
-        const accessToken = await getFreshAccessToken();
-
-        if (!accessToken) {
-          return;
-        }
-
-        await deleteShippingAddress(accessToken, addressId);
-        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
-
-        if (isLatest && addressId === selectedPaymentAddressId) {
-          setSelectedPaymentAddressId(nextState.addresses[0]?.id ?? null);
-        }
-
-        if (isLatest && addressSheetMode === "manage") {
-          setManageAddressSnapshot(
-            getPrioritizedDeliveryAddresses(
-              nextState.addresses,
-              nextState.defaultAddressIds,
-            ),
-          );
-        }
-      } catch (error) {
-        setUserProfileMessage(
-          error instanceof Error
-            ? error.message
-            : "배송지를 삭제하지 못했어요.",
-        );
-      }
-
-      return;
-    }
-
-    const nextAddresses = deliveryAddresses.filter(
-      (address) => address.id !== addressId,
-    );
-    const sameTypeAddresses = nextAddresses.filter(
-      (address) => address.storeType === targetAddress.storeType,
-    );
-
-    commitDeliveryAddressState({
-      addresses: nextAddresses,
-      defaultAddressIds:
-        defaultAddressIds[targetAddress.storeType] === addressId
-          ? {
-              ...defaultAddressIds,
-              [targetAddress.storeType]: sameTypeAddresses[0]?.id ?? null,
-            }
-          : defaultAddressIds,
-    });
-
-    if (addressId === selectedPaymentAddressId) {
-      setSelectedPaymentAddressId(nextAddresses[0]?.id ?? null);
-    }
-
-    if (addressSheetMode === "manage") {
-      setManageAddressSnapshot((snapshot) =>
-        snapshot.filter((address) => address.id !== addressId),
-      );
     }
   }
 
@@ -2010,10 +701,11 @@ export function ProfileContent({
       </header>
 
       <main
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        className="min-h-0 flex-1 overflow-y-auto bg-[#f7f7f7] px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
-        <section className="rounded-[1.15rem] bg-black p-4 text-white">
+        <div className="flex min-h-full flex-col">
+        <section className="rounded-[1.15rem] bg-black p-4 text-white shadow-[0_18px_42px_rgba(0,0,0,0.18)] ring-1 ring-[#AAB67C]/35">
           {authState.isLoggedIn ? (
             <div className="flex items-center gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -2031,57 +723,42 @@ export function ProfileContent({
             <Link
               aria-label="로그인이 필요합니다. 로그인 화면으로 이동"
               className="flex items-center gap-3"
-              href="/login?returnTo=/profile"
+              href={createLoginHref({
+                cancelTo: "/profile",
+                returnTo: "/profile",
+              })}
             >
               {profileSummaryContent}
             </Link>
           )}
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">참여중</p>
-              <p className="mt-1 text-[19px] font-semibold">
-                {isBidEntriesLoading ? (
-                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
-                ) : (
-                  activeBids.length
-                )}
-              </p>
-            </div>
-            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">1등</p>
-              <p className="mt-1 text-[19px] font-semibold">
-                {isBidEntriesLoading ? (
-                  <span className="block h-6 w-8 animate-pulse rounded-full bg-white/20" />
-                ) : (
-                  highestRankCount
-                )}
-              </p>
-            </div>
-            <div className="rounded-[0.8rem] bg-white/10 px-3 py-3">
-              <p className="text-[11px] font-medium text-white/45">찜</p>
-              <p className="mt-1 text-[19px] font-semibold">
-                {0}
-              </p>
-            </div>
-          </div>
+          <Link
+            className="mt-5 flex h-12 items-center justify-center rounded-full bg-[#CFE86B] text-[15px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
+            href="/profile/bids"
+          >
+            내 참여 내역 보러 가기
+          </Link>
         </section>
 
-        <section className="mt-5 border-t border-black/10 pt-5">
-          <div className="flex items-end justify-between gap-3">
+        <section className="mt-5 rounded-[1.2rem] border border-black/10 bg-white p-3.5 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                정산 계좌
+                계좌
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                개최한 분철 정산금을 받을 계좌를 입력해 주세요.
+                환불받을 때 사용할 계좌를 확인해요.
               </p>
             </div>
             {authState.isLoggedIn &&
             !isEditingSettlementAccount &&
             !isSettlementAccountPanelExiting ? (
               <button
-                className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55"
+                className={`shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
+                  hasSettlementAccount
+                    ? "bg-[#f4f4f4] text-black/55"
+                    : "bg-[#CFE86B] text-black shadow-[0_8px_20px_rgba(120,132,82,0.22)]"
+                }`}
                 onClick={startSettlementAccountEdit}
                 type="button"
               >
@@ -2098,19 +775,19 @@ export function ProfileContent({
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
             <div
-              className={`mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4 ${
+              className={`mt-3 rounded-[1rem] bg-[#f7f7f7] px-2 py-2 ${
                 isSettlementAccountPanelExiting
                   ? "settlement-account-panel-exit"
                   : "settlement-account-panel-enter"
               }`}
             >
-              <div className="grid gap-3">
-                <label className="block">
-                  <span className="text-[13px] font-semibold text-black/45">
+              <div className="grid gap-1.5">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     은행
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2122,30 +799,30 @@ export function ProfileContent({
                     value={settlementAccountForm.bankName}
                   />
                 </label>
-                <label className="block">
-                  <span className="text-[13px] font-semibold text-black/45">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     계좌번호
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
-                    inputMode="numeric"
-                    maxLength={60}
+                    className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
+                    inputMode="tel"
+                    maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
                         "accountNumber",
                         event.currentTarget.value,
                       )
                     }
-                    placeholder="000000-00-000000"
+                    placeholder="숫자 또는 하이픈 입력"
                     value={settlementAccountForm.accountNumber}
                   />
                 </label>
-                <label className="block">
-                  <span className="text-[13px] font-semibold text-black/45">
+                <label className="block rounded-[0.85rem] bg-white px-3 py-2 ring-1 ring-black/10 transition focus-within:ring-black/35">
+                  <span className="text-[12px] font-semibold text-black/45">
                     예금주
                   </span>
                   <input
-                    className="mt-2 h-12 w-full rounded-[0.8rem] border border-black/10 bg-[#f7f7f7] px-4 text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    className="mt-0.5 h-6 w-full bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25"
                     maxLength={50}
                     onChange={(event) =>
                       updateSettlementAccountForm(
@@ -2159,12 +836,12 @@ export function ProfileContent({
                 </label>
               </div>
 
-              <div className="mt-4 flex items-center gap-2">
+              <div className="mt-2.5 flex items-center gap-2">
                 {hasSettlementAccount ||
                 isSettlementAccountFormDirty ||
                 isEditingSettlementAccount ? (
                   <button
-                    className="h-11 flex-1 rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
+                    className="h-9 flex-1 rounded-full bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
                     disabled={isSettlementAccountPanelExiting}
                     onClick={cancelSettlementAccountEdit}
                     type="button"
@@ -2173,7 +850,7 @@ export function ProfileContent({
                   </button>
                 ) : null}
                 <button
-                  className="h-11 flex-1 rounded-full bg-black text-[14px] font-semibold text-white disabled:bg-black/20"
+                  className="h-9 flex-1 rounded-full bg-[#CFE86B] text-[14px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.2)] disabled:bg-black/20 disabled:text-white"
                   disabled={
                     !canSaveSettlementAccount ||
                     isSavingSettlementAccount ||
@@ -2187,93 +864,111 @@ export function ProfileContent({
               </div>
             </div>
           ) : hasSettlementAccount ? (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+            <div className="mt-4 rounded-[1rem] bg-black px-4 py-4 text-white shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-black/45">
+                  <p className="text-[13px] font-semibold text-white/50">
                     {settlementAccount.bankName}
                   </p>
                   <p className="mt-1 break-all text-[17px] font-semibold tracking-[-0.04em]">
                     {settlementAccount.accountNumber}
                   </p>
-                  <p className="mt-1 text-[13px] font-medium text-black/45">
+                  <p className="mt-1 text-[13px] font-medium text-white/50">
                     예금주 {settlementAccount.accountHolder}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
                   저장됨
                 </span>
               </div>
             </div>
           ) : (
             <button
-              className="mt-4 flex w-full items-center justify-between rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5 text-left"
+              className="mt-4 flex w-full items-center justify-between rounded-[1rem] border border-dashed border-black/15 bg-[#f8f8f8] px-4 py-5 text-left"
               onClick={startSettlementAccountEdit}
               type="button"
             >
               <span>
                 <span className="block text-[14px] font-semibold text-black/70">
-                  정산 계좌를 등록해 주세요.
+                  환불받을 계좌를 등록해 주세요.
                 </span>
                 <span className="mt-1 block text-[13px] font-medium text-black/40">
-                  등록하면 개최한 분철 정산금을 받을 수 있어요.
+                  등록해 두면 환불이 필요할 때 바로 받을 수 있어요.
                 </span>
               </span>
-              <span className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/55">
+              <span className="shrink-0 rounded-full bg-[#CFE86B] px-3 py-2 text-[12px] font-semibold text-black">
                 등록
               </span>
             </button>
           )}
 
           {settlementAccountMessage ? (
-            <p className="mt-2 text-[13px] font-semibold text-black/45">
+            <p className="mt-3 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/45">
               {settlementAccountMessage}
             </p>
           ) : null}
         </section>
 
-        <section className="mt-5 border-t border-black/10 pt-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-              기본 배송지
-            </h2>
+        <section className="mt-4 rounded-[1.2rem] border border-black/10 bg-white p-3.5 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                기본 배송지
+              </h2>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                결제할 때 바로 사용할 지점을 확인해요.
+              </p>
+            </div>
             <Link
-              className="text-[13px] font-semibold text-black/45"
+              className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[13px] font-semibold text-black/55"
               href={
                 authState.isLoggedIn
                   ? "/profile/addresses"
-                  : "/login?returnTo=/profile/addresses"
+                  : createLoginHref({
+                      cancelTo: "/profile",
+                      returnTo: "/profile/addresses",
+                    })
               }
               onClick={rememberProfilePanelEntry}
             >
               배송지 관리
             </Link>
           </div>
-          <div className="mt-3 grid gap-3">
+          <div className="mt-2.5 grid gap-1.5">
             {(["gs25", "cu"] as const).map((storeType) => {
               const address = defaultDeliveryAddresses[storeType];
 
               return (
                 <div
-                  className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4"
+                  className={`rounded-[0.9rem] border px-3.5 py-2.5 ${
+                    address
+                      ? "border-black/10 bg-[#f7f7f7]"
+                      : "border-dashed border-black/15 bg-white"
+                  }`}
                   key={storeType}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
-                      기본
-                    </span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                      {convenienceStoreTypeLabels[storeType]}
-                    </span>
-                    <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                      {!authState.isLoggedIn ? (
-                        "로그인 후 이용할 수 있어요"
-                      ) : isDefaultAddressLoading ? (
-                        <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
-                      ) : (
-                        address?.branchName ?? "등록된 배송지가 없어요"
-                      )}
-                    </p>
+                  <div className="flex min-h-9 items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
+                          {convenienceStoreTypeLabels[storeType]}
+                        </span>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
+                          {address ? "기본" : "미등록"}
+                        </span>
+                      </div>
+                      <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                        {!authState.isLoggedIn ? (
+                          "로그인 후 이용할 수 있어요"
+                        ) : isDefaultAddressLoading ? (
+                          <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
+                        ) : (
+                          address
+                            ? getDeliveryAddressDisplayBranchName(address)
+                            : "등록된 배송지가 없어요"
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </div>
               );
@@ -2281,421 +976,24 @@ export function ProfileContent({
           </div>
         </section>
 
-        <section className="mt-6 border-t border-black/10 pt-5">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                입찰 현황
-              </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                등수 확인과 철회를 여기서 관리해요.
-              </p>
-            </div>
-            <span className="shrink-0 text-[13px] font-semibold text-black/45">
-              {isBidEntriesLoading ? "확인 중" : `${activeBids.length}개`}
-            </span>
-          </div>
-
-          {isBidEntriesLoading ? (
-            <ProfileListSkeleton />
-          ) : activeBids.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              {activeBids.map((bid) => {
-                const isClosed = isProfileBidClosed(bid, now);
-                const isPaymentExpired = isProfileBidPaymentExpired(bid, now);
-                const isPaymentReady = isProfileBidPaymentReady(bid, now);
-                const isTransferRequested =
-                  isProfileBidTransferRequested(bid);
-                const isReceivingDelivery =
-                  receivingDeliveryId === bid.deliveryId;
-                const canConfirmDeliveryReceipt =
-                  canConfirmProfileDeliveryReceipt(bid);
-                const remainingTime = formatRemainingTime(bid.deadline, now);
-                return (
-                  <article
-                    className="rounded-[1rem] border border-black/10 px-4 py-4"
-                    key={bid.id}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Link
-                        aria-label={`${bid.title} 상세 보기`}
-                        className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
-                        href={`/products/${bid.productId}?from=profile`}
-                        onClick={rememberProfileProductEntry}
-                      >
-                        {bid.imageUrl ? (
-                          <Image
-                            alt=""
-                            className="h-full w-full object-cover"
-                            fill
-                            sizes="56px"
-                            src={bid.imageUrl}
-                            unoptimized
-                          />
-                        ) : null}
-                      </Link>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <Link
-                            className="min-w-0"
-                            href={`/products/${bid.productId}?from=profile`}
-                            onClick={rememberProfileProductEntry}
-                          >
-                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                              {bid.title}
-                            </p>
-                            <p className="mt-1 text-[13px] font-medium text-black/45">
-                              {bid.member} · {bid.optionLabel}
-                            </p>
-                          </Link>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              bid.rank === 1
-                                ? "bg-black text-white"
-                                : "bg-[#f1f1f1] text-black/55"
-                            }`}
-                          >
-                            {bid.rank}등
-                          </span>
-                        </div>
-
-                        <div className="mt-4 grid gap-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                              <p className="text-[11px] font-medium text-black/35">
-                                내 입찰가
-                              </p>
-                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {formatPrice(bid.amount)}
-                              </p>
-                            </div>
-                            <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                              <p className="text-[11px] font-medium text-black/35">
-                                상태
-                              </p>
-                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                                {isTransferRequested
-                                  ? "입금 확인 중"
-                                  : isPaymentExpired
-                                  ? "입금 만료"
-                                  : isClosed
-                                  ? bid.rank === 1
-                                    ? "낙찰"
-                                    : "미낙찰"
-                                  : "입찰중"}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              마감
-                            </p>
-                            <p className="mt-1 break-keep text-[14px] font-semibold leading-5 tracking-[-0.04em]">
-                              {bid.deadline}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-between gap-3">
-                          <div
-                            className={`min-w-0 text-[12px] font-medium ${
-                              isPaymentReady || isTransferRequested
-                                ? "text-black"
-                                : "text-black/35"
-                            }`}
-                          >
-                            {isClosed
-                              ? isTransferRequested
-                                ? (
-                                  <>
-                                    <p>입금 확인 중이에요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      판매자의 확인을 기다리고 있어요
-                                    </p>
-                                  </>
-                                )
-                                : isPaymentExpired
-                                ? (
-                                  <>
-                                    <p>입금 기한이 지났어요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      다음 순위로 낙찰이 넘어갔어요
-                                    </p>
-                                  </>
-                                )
-                                : isPaymentReady
-                                ? (
-                                  <>
-                                    <p>결제가 필요해요</p>
-                                    <p className="mt-0.5 text-black/45">
-                                      결제까지{" "}
-                                      {formatPaymentRemainingTime(
-                                        bid.deadline,
-                                        now,
-                                        bid.paymentDueAt,
-                                      )}
-                                    </p>
-                                  </>
-                                )
-                                : <p>마감된 입찰이에요</p>
-                              : `철회까지 ${remainingTime}`}
-                          </div>
-                          {!isClosed ? (
-                            <button
-                              className="shrink-0 rounded-full bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55 disabled:text-black/25"
-                              disabled={withdrawingBidId === bid.id}
-                              onClick={() => void withdrawBid(bid.id)}
-                              type="button"
-                            >
-                              철회
-                            </button>
-                          ) : isPaymentReady ? (
-                            <button
-                              className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white"
-                              onClick={() => openPaymentSheet(bid.id)}
-                              type="button"
-                            >
-                              결제
-                            </button>
-                          ) : null}
-                        </div>
-                        {bid.deliveryId && bid.paidAt ? (
-                          <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-[11px] font-medium text-black/35">
-                                  배송
-                                </p>
-                                <p className="mt-1 truncate text-[13px] font-semibold text-black/55">
-                                  {bid.trackingNumber
-                                    ? `운송장 ${bid.trackingNumber}`
-                                    : "운송장 등록 대기"}
-                                </p>
-                              </div>
-                              {isDeliveryReceiptCompleteStatus(
-                                bid.deliveryStatus,
-                              ) ? (
-                                <span className="shrink-0 rounded-full bg-black/10 px-3 py-2 text-[12px] font-semibold text-black/45">
-                                  수령 완료
-                                </span>
-                              ) : canConfirmDeliveryReceipt ? (
-                                <button
-                                  className="shrink-0 rounded-full bg-black px-3 py-2 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                  disabled={isReceivingDelivery}
-                                  onClick={() =>
-                                    void confirmDeliveryReceipt(bid)
-                                  }
-                                  type="button"
-                                >
-                                  {isReceivingDelivery ? "확인 중" : "수령 확인"}
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                {authState.isLoggedIn
-                  ? "참여 중인 입찰이 없습니다."
-                  : "로그인 후 이용할 수 있어요."}
-              </p>
-            </div>
-          )}
-
-        </section>
-
-        <section className="mt-6 border-t border-black/10 pt-5">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                진행 중인 개최 분철
-              </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                지금 열려 있는 분철만 빠르게 확인해요.
-              </p>
-            </div>
-            <span className="shrink-0 text-[13px] font-semibold text-black/45">
-              {isHostedProductsLoading
-                ? "확인 중"
-                : `${activeHostedProducts.length}개`}
-            </span>
-          </div>
-
-          {hostedProductMessage ? (
-            <p className="mt-3 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2 text-[13px] font-semibold text-black/55">
-              {hostedProductMessage}
-            </p>
-          ) : null}
-
-          {isHostedProductsLoading ? (
-            <ProfileListSkeleton />
-          ) : activeHostedProducts.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              {activeHostedProducts.map((product) => {
-                const isClosed = !isProfileHostedProductActive(product, now);
-                const optionCount =
-                  product.optionCount ??
-                  product.targetMembers?.length ??
-                  product.options.length;
-                const participantCount = product.options.reduce(
-                  (total, option) => total + option.participantCount,
-                  0,
-                );
-
-                return (
-                  <div
-                    className="rounded-[1rem] border border-black/10 px-4 py-4 transition-colors hover:bg-black/[0.02]"
-                    key={product.id}
-                  >
-                    <Link
-                      className="block"
-                      href={`/products/${product.id}?from=profile`}
-                      onClick={rememberProfileProductEntry}
-                    >
-                      <article className="flex items-start gap-3">
-                      <div
-                        className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-[0.9rem] bg-gradient-to-br ${product.tone}`}
-                      >
-                        {product.imageUrl ? (
-                          <Image
-                            alt=""
-                            className="h-full w-full object-cover"
-                            fill
-                            sizes="64px"
-                            src={product.imageUrl}
-                            unoptimized
-                          />
-                        ) : null}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                              {product.title}
-                            </p>
-                            <p className="mt-1 truncate text-[13px] font-medium text-black/45">
-                              {product.member} · {product.era}
-                            </p>
-                          </div>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              isClosed
-                                ? "bg-[#f1f1f1] text-black/55"
-                                : "bg-black text-white"
-                            }`}
-                          >
-                            {isClosed ? "마감" : "모집중"}
-                          </span>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              옵션
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {optionCount}개
-                            </p>
-                          </div>
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              참여
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {participantCount}명
-                            </p>
-                          </div>
-                          <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                            <p className="text-[11px] font-medium text-black/35">
-                              상태
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {isClosed ? "정산 대기" : "진행중"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <p className="mt-3 truncate text-[12px] font-medium text-black/40">
-                          마감 {product.deadline}
-                        </p>
-                      </div>
-                      </article>
-                    </Link>
-                    <div className="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4">
-                      {product.isApiProduct ? (
-                      <Link
-                        className="inline-flex h-9 items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold tracking-[-0.04em] text-white"
-                        href={`/products/${product.buncheolId ?? product.id}/manage`}
-                      >
-                        관리하기
-                      </Link>
-                      ) : null}
-                      {product.isApiProduct ? (
-                        <button
-                          className="h-9 rounded-full border border-black/10 px-4 text-[13px] font-semibold tracking-[-0.04em] text-black/55 disabled:text-black/25"
-                          disabled={
-                            deletingHostedProductId ===
-                            (product.buncheolId ?? product.id)
-                          }
-                          onClick={() => void handleDeleteHostedProduct(product)}
-                          type="button"
-                        >
-                          삭제
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : authState.isLoggedIn ? (
-            <Link
-              className="mt-4 block rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] px-4 py-6"
-              href="/upload"
-            >
-              <p className="text-[14px] font-semibold text-black/70">
-                진행 중인 개최 분철이 없습니다.
-              </p>
-              <p className="mt-1 text-[13px] font-medium text-black/40">
-                상품 등록으로 첫 분철을 열어보세요.
-              </p>
-            </Link>
-          ) : (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                로그인 후 이용할 수 있어요.
-              </p>
-            </div>
-          )}
-        </section>
-
         {authState.isLoggedIn ? (
           <Link
-            className="mt-6 block border-t border-black/10 pt-5"
+            className="mt-4 block rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]"
             href="/profile/account"
             onClick={rememberScrollPosition}
           >
-            <div className="rounded-[1rem] bg-[#f7f7f7] px-4 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
-                    회원 정보
-                  </h2>
-                  <p className="mt-1 truncate text-[13px] font-medium text-black/40">
-                    닉네임, 로그인 계정 관리
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-full bg-white px-3 py-2 text-[12px] font-semibold text-black/45">
-                  수정
-                </span>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
+                  회원 정보
+                </h2>
+                <p className="mt-1 truncate text-[13px] font-medium text-black/40">
+                  닉네임, 로그인 계정 관리
+                </p>
               </div>
+              <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[12px] font-semibold text-black/45">
+                수정
+              </span>
             </div>
             {userProfileMessage ? (
               <p className="mt-2 text-[13px] font-semibold text-black/45">
@@ -2704,615 +1002,11 @@ export function ProfileContent({
             ) : null}
           </Link>
         ) : null}
-        <div className="-mx-4 -mb-6 mt-6">
-          <BusinessFooter />
+        <div className="relative -mx-4 -mb-6 mt-auto bg-[#f7f7f7] pt-6">
+          <BusinessFooter variant="compact" />
+        </div>
         </div>
       </main>
-
-      {isPaymentSheetOpen && selectedPaymentBid ? (
-        <div
-          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
-            isPaymentSheetEntered && !isPaymentSheetClosing
-              ? "bid-sheet-backdrop-active"
-              : ""
-          }`}
-        >
-          <button
-            aria-label="입금 정보 닫기"
-            className="absolute inset-0 cursor-default"
-            onClick={closePaymentSheet}
-            type="button"
-          />
-          <section
-            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
-              isPaymentSheetEntered && !isPaymentSheetClosing
-                ? "bid-sheet-panel-active"
-                : ""
-            }`}
-            onTransitionEnd={(event) => {
-              if (
-                isPaymentSheetClosing &&
-                event.currentTarget === event.target &&
-                event.propertyName === "transform"
-              ) {
-                finishPaymentSheetClose();
-              }
-            }}
-          >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  입금 정보
-                </h2>
-                <p className="mt-1 text-[13px] font-medium text-black/45">
-                  계좌와 배송지를 확인한 뒤 입금 완료를 눌러 주세요.
-                </p>
-              </div>
-              <button
-                aria-label="닫기"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
-                onClick={closePaymentSheet}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
-              <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                {selectedPaymentBid.title}
-              </p>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                {selectedPaymentBid.member} · {selectedPaymentBid.optionLabel}
-              </p>
-            </div>
-
-            <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-black/40">
-                    개최자 계좌
-                  </p>
-                  <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                    {selectedPaymentBankAccount
-                      ? `${selectedPaymentBankAccount.bank} ${selectedPaymentBankAccount.account}`.trim()
-                      : "계좌 정보 확인 중"}
-                  </p>
-                  <p className="mt-1 text-[12px] font-medium text-black/40">
-                    {selectedPaymentBankAccount?.holder
-                      ? `예금주 ${selectedPaymentBankAccount.holder}`
-                      : "개최자가 등록한 계좌로 입금해 주세요."}
-                  </p>
-                </div>
-                <button
-                  className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/10 disabled:text-black/30"
-                  disabled={!selectedPaymentBankAccount}
-                  onClick={() =>
-                    selectedPaymentBankAccount
-                      ? void copyTransferText(
-                          selectedPaymentBankAccount.account,
-                          "계좌번호",
-                        )
-                      : undefined
-                  }
-                  type="button"
-                >
-                  계좌 복사
-                </button>
-              </div>
-              <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                송금 후 입금 완료를 눌러 주세요.
-              </p>
-              {paymentCopyToast ? (
-                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                  <p
-                    aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                    role="status"
-                  >
-                    {paymentCopyToast}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-4 space-y-2">
-              {paymentVisibleAddresses.map(({ storeType, address }) => {
-                const isSelected = address?.id === paymentDeliveryAddress?.id;
-
-                return address ? (
-                  <button
-                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-[background-color,border-color,transform] duration-300 ease-out ${
-                      isSelected
-                        ? "border-[#d8d8d8] bg-[#ececec]"
-                        : "border-[#ededed] bg-white"
-                    }`}
-                    key={storeType}
-                    onClick={() => selectPaymentAddress(address.id)}
-                    type="button"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
-                              isSelected
-                                ? "bg-black text-white"
-                                : "bg-white text-black/45"
-                            }`}
-                          >
-                            {getConvenienceStoreLabel(storeType)}
-                          </span>
-                          {address.alias ? (
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ease-out ${
-                                "bg-black/10 text-black/60"
-                              }`}
-                            >
-                              {address.alias}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
-                        </p>
-                      </div>
-                        <span
-                          className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold transition-colors duration-300 ease-out ${
-                            isSelected
-                              ? "bg-black text-white"
-                              : "bg-white text-black/45"
-                          }`}
-                        >
-                          <span className="flex items-center gap-1">
-                            <span
-                              className={`inline-flex h-3.5 w-3.5 items-center justify-center transition-opacity duration-300 ease-out ${
-                                isSelected ? "opacity-100" : "opacity-0"
-                              }`}
-                            >
-                              <CheckIcon />
-                            </span>
-                            <span>선택</span>
-                          </span>
-                        </span>
-                    </div>
-                  </button>
-                ) : (
-                  <div
-                    className="rounded-[0.95rem] bg-[#f3f4f6] px-4 py-3"
-                    key={storeType}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/45">
-                        {getConvenienceStoreLabel(storeType)}
-                      </span>
-                      <p className="text-[14px] font-semibold tracking-[-0.04em] text-black/45">
-                        기본 배송지가 없어요
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <button
-              className="mt-2 h-11 w-full rounded-full bg-[#f7f7f7] text-[14px] font-semibold text-black/55"
-              onClick={() => openAddressSheet("select")}
-              type="button"
-            >
-              다른 배송지 선택
-            </button>
-
-            </div>
-
-            <div className="shrink-0 border-t border-black/10 bg-white pt-4">
-              <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
-                <span>낙찰가</span>
-                <span>{formatPrice(selectedPaymentBid.amount)}</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
-                <span>배송비</span>
-                <span>{formatPrice(paymentShippingFee)}</span>
-              </div>
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-[15px] font-semibold tracking-[-0.04em]">
-                  결제 예정 금액
-                </span>
-                <span className="text-[22px] font-semibold tracking-[-0.05em]">
-                  {formatPrice(paymentTotalAmount)}
-                </span>
-              </div>
-            </div>
-
-            <button
-              className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20 disabled:text-white/70"
-              disabled={
-                !paymentDeliveryAddress ||
-                !selectedPaymentBankAccount ||
-                !canSelectedPaymentBidReportPayment ||
-                payingBidId === selectedPaymentBid.id
-              }
-              onClick={openPaymentReportConfirm}
-              type="button"
-            >
-              입금 완료
-            </button>
-
-            {isPaymentReportConfirmOpen ? (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-t-[1.4rem] bg-black/35 px-5">
-                <section className="w-full rounded-[1.1rem] bg-white px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.22)]">
-                  <h3 className="text-[22px] font-semibold tracking-[-0.06em]">
-                    입금을 완료하셨나요?
-                  </h3>
-                  <p className="mt-2 text-[14px] font-medium leading-6 text-black/50">
-                    송금 후에만 입금 완료 버튼을 눌러주세요. 허위 신고 시
-                    서비스 이용이 제한될 수 있습니다.
-                  </p>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    <button
-                      className="h-12 rounded-full bg-[#f5f5f5] text-[15px] font-semibold text-black/45"
-                      onClick={() => setIsPaymentReportConfirmOpen(false)}
-                      type="button"
-                    >
-                      취소
-                    </button>
-                    <button
-                      className="h-12 rounded-full bg-black text-[15px] font-semibold text-white disabled:bg-black/20"
-                      disabled={
-                        !selectedPaymentBankAccount ||
-                        !canSelectedPaymentBidReportPayment ||
-                        payingBidId === selectedPaymentBid.id
-                      }
-                      onClick={() => void handleTransferPaymentRequest()}
-                      type="button"
-                    >
-                      입금 완료
-                    </button>
-                  </div>
-                </section>
-              </div>
-            ) : null}
-          </section>
-        </div>
-      ) : null}
-
-      {isAddressSheetOpen ? (
-        <div
-          className={`bid-sheet-backdrop fixed inset-0 z-50 flex items-end ${
-            isAddressSheetEntered && !isAddressSheetClosing
-              ? "bid-sheet-backdrop-active"
-              : ""
-          }`}
-        >
-          <button
-            aria-label={
-              addressSheetMode === "manage"
-                ? "배송지 관리 닫기"
-                : "다른 배송지 선택 닫기"
-            }
-            className="absolute inset-0 cursor-default"
-            onClick={closeAddressSheet}
-            type="button"
-          />
-          <section
-            className={`bid-sheet-panel relative mx-auto flex h-[76dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
-              isAddressSheetEntered && !isAddressSheetClosing
-                ? "bid-sheet-panel-active"
-                : ""
-            }`}
-            onTransitionEnd={(event) => {
-              if (
-                isAddressSheetClosing &&
-                event.currentTarget === event.target &&
-                event.propertyName === "transform"
-              ) {
-                finishAddressSheetClose();
-              }
-            }}
-          >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  {addressSheetMode === "manage"
-                    ? "배송지 관리"
-                    : "다른 배송지 선택"}
-                </h2>
-                <p className="mt-1 text-[13px] font-medium text-black/45">
-                  {addressSheetMode === "manage"
-                    ? "배송지를 추가하고 기본 배송지를 설정해요."
-                    : "이번 결제에 사용할 배송지를 골라 주세요."}
-                </p>
-              </div>
-              <button
-                aria-label="닫기"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white"
-                onClick={closeAddressSheet}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-
-            <div
-              className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4 pr-1"
-              style={{
-                WebkitOverflowScrolling: "touch",
-                overscrollBehavior: "contain",
-              }}
-            >
-              {(
-                addressSheetMode === "select"
-                  ? eligiblePaymentAddresses
-                  : manageAddressSnapshot
-              ).map((address) => {
-                const isDefault =
-                  address.id === defaultAddressIds[address.storeType];
-                const isSelected =
-                  address.id ===
-                  (selectedPaymentAddressId ?? paymentDeliveryAddress?.id);
-
-                return (
-                  <div
-                    className={`w-full rounded-[0.95rem] border-[1.5px] px-4 py-3 text-left transition-colors ${
-                      addressSheetMode === "select"
-                        ? isSelected
-                          ? "border-[#d8d8d8] bg-[#ececec]"
-                          : "border-[#ededed] bg-white"
-                        : isDefault
-                        ? "border-[#d8d8d8] bg-[#ececec]"
-                        : "border-[#ededed] bg-white"
-                    }`}
-                    key={address.id}
-                    onKeyDown={(event) => {
-                      if (event.currentTarget !== event.target) {
-                        return;
-                      }
-
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        if (addressSheetMode === "manage") {
-                          setAsDefaultAddress(address.id);
-                        } else {
-                          selectPaymentAddress(address.id);
-                        }
-                      }
-                    }}
-                    onClick={() => {
-                      if (addressSheetMode === "manage") {
-                        setAsDefaultAddress(address.id);
-                        return;
-                      }
-
-                      selectPaymentAddress(address.id);
-                    }}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1 pr-1">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                              addressSheetMode === "select"
-                                ? isSelected
-                                  ? "bg-black text-white"
-                                  : isDefault
-                                  ? "bg-black text-white"
-                                  : "bg-white text-black/45"
-                                : isDefault
-                                ? "bg-black text-white"
-                                : "bg-white text-black/45"
-                            }`}
-                          >
-                            {getConvenienceStoreLabel(address.storeType)}
-                          </span>
-                          {address.alias ? (
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                "bg-black/10 text-black/60"
-                              }`}
-                            >
-                              {address.alias}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-2 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {address.branchName}
-                        </p>
-                      </div>
-                      {addressSheetMode === "select" ? (
-                        <span
-                        className={`inline-flex h-8 w-[4.25rem] shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
-                          isSelected
-                            ? "bg-black text-white"
-                            : "bg-white text-black/45"
-                        }`}
-                        >
-                          {isSelected ? "선택됨" : "선택"}
-                        </span>
-                      ) : isDefault ? (
-                        <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                          <span className="inline-flex h-8 items-center rounded-full bg-black px-2.5 text-[12px] font-semibold text-white transition-colors duration-300 ease-out">
-                            기본
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
-                          <button
-                            className="h-8 rounded-full bg-white px-2.5 text-[12px] font-semibold text-black/55 ring-1 ring-black/10 transition-colors duration-300 ease-out"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setAsDefaultAddress(address.id);
-                            }}
-                            type="button"
-                          >
-                            기본 설정
-                          </button>
-                          <button
-                            aria-label={`${getConvenienceStoreLabel(address.storeType)} ${address.branchName} 배송지 삭제`}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black/35 ring-1 ring-black/10 transition-colors duration-300 ease-out"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              deleteDeliveryAddress(address.id);
-                            }}
-                            type="button"
-                          >
-                            <CloseIcon />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {addressSheetMode === "select" && eligiblePaymentAddresses.length === 0 ? (
-                <div className="rounded-[0.95rem] border border-dashed border-black/12 bg-[#f7f7f7] px-4 py-5 text-center text-[14px] font-medium text-black/45">
-                  선택 가능한 배송지가 없어요.
-                </div>
-              ) : null}
-
-              {/*
-                <div
-                  className="idol-selection-enter rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-[#f7f7f7] px-5 pb-4 pt-5"
-                  key="address-form"
-                >
-                    <div className="flex items-center justify-between">
-                      <p className="text-[13px] font-semibold tracking-[-0.04em]">
-                        새 배송지 추가
-                      </p>
-                      <button
-                        className="text-[12px] font-semibold text-black/35"
-                        disabled={!isAddressFormOpen}
-                        onClick={() => {
-                          setIsAddressFormOpen(false);
-                          resetNewAddressDraft();
-                        }}
-                        type="button"
-                      >
-                        닫기
-                      </button>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2 rounded-[0.8rem] bg-white/80 p-1">
-                      {convenienceStoreTypes.map((storeType) => (
-                        <button
-                          className={`h-9 rounded-[0.65rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
-                            newAddressStoreType === storeType
-                              ? "bg-black text-white"
-                              : "text-black/45"
-                          }`}
-                          key={storeType}
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                          }}
-                          onTouchStart={(event) => {
-                            event.preventDefault();
-                          }}
-                          disabled={!isAddressFormOpen}
-                          onClick={() => setNewAddressStoreType(storeType)}
-                          type="button"
-                        >
-                          {convenienceStoreTypeLabels[storeType]}
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                      disabled={!isAddressFormOpen}
-                      onChange={(event) => setNewAddressAlias(event.target.value)}
-                      onFocus={() => {
-                        setIsAddressInputFocused(true);
-                      }}
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          const activeElement = document.activeElement;
-                          if (
-                            activeElement instanceof HTMLInputElement &&
-                            addressListRef.current?.contains(activeElement)
-                          ) {
-                            return;
-                          }
-                          setIsAddressInputFocused(false);
-                        }, 0);
-                      }}
-                      placeholder="별칭 (예: 집, 회사)"
-                      style={{ scrollMarginBottom: "6rem" }}
-                      value={newAddressAlias}
-                    />
-                    <input
-                      className="mt-2 h-9 w-full rounded-[0.65rem] bg-white px-3 text-[13px] font-medium outline-none placeholder:text-black/30"
-                      disabled={!isAddressFormOpen}
-                      onChange={(event) =>
-                        setNewAddressBranchName(event.target.value)
-                      }
-                      onFocus={() => {
-                        setIsAddressInputFocused(true);
-                      }}
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          const activeElement = document.activeElement;
-                          if (
-                            activeElement instanceof HTMLInputElement &&
-                            addressListRef.current?.contains(activeElement)
-                          ) {
-                            return;
-                          }
-                          setIsAddressInputFocused(false);
-                        }, 0);
-                      }}
-                      placeholder="편의점 지점명"
-                      style={{ scrollMarginBottom: "1rem" }}
-                      value={newAddressBranchName}
-                    />
-                    <button
-                      className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-semibold text-white disabled:bg-black/20"
-                      disabled={!isAddressFormOpen || !newAddressBranchName.trim()}
-                      onClick={addDeliveryAddress}
-                      type="button"
-                    >
-                      배송지 추가
-                    </button>
-                  </div>
-              ) : (
-                <div
-                  className="idol-selection-enter"
-                  key="address-add-button"
-                >
-                  <Link
-                    className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border-[1.5px] border-[#ededed] bg-white text-[14px] font-semibold text-black/45"
-                    href="/profile/addresses"
-                  >
-                    + 새 배송지 추가
-                  </Link>
-                </div>
-              )}
-
-              */}
-              <div className="idol-selection-enter" key="address-add-link">
-                <Link
-                  className="flex h-[4.25rem] w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
-                  href="/profile/addresses?openAdd=1&returnTo=profile"
-                  onNavigate={rememberAddressAddReturn}
-                >
-                  + 새 배송지 추가
-                </Link>
-              </div>
-            </div>
-
-            {addressSheetMode === "select" ? (
-              <button
-                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold text-white"
-                onClick={closeAddressSheet}
-                type="button"
-              >
-                이 배송지로 받기
-              </button>
-            ) : null}
-          </section>
-        </div>
-      ) : null}
 
     </div>
   );

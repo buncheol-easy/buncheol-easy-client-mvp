@@ -8,61 +8,122 @@ const initialHostedProducts: ProductDetailItem[] = [];
 let cachedHostedProductsFingerprint = "";
 let cachedHostedProducts = initialHostedProducts;
 
+function getWritableStorage() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    if (window.localStorage) {
+      return window.localStorage;
+    }
+  } catch {
+    // Fall back to session storage below.
+  }
+
+  try {
+    return window.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getReadableStorages() {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  const storages: Storage[] = [];
+
+  try {
+    if (window.localStorage) {
+      storages.push(window.localStorage);
+    }
+  } catch {
+    // Ignore blocked storage.
+  }
+
+  try {
+    if (window.sessionStorage && !storages.includes(window.sessionStorage)) {
+      storages.push(window.sessionStorage);
+    }
+  } catch {
+    // Ignore blocked storage.
+  }
+
+  return storages;
+}
+
 function getUploadedProductKey(productId: string) {
   return `${uploadedProductKeyPrefix}${productId}`;
 }
 
 function readHostedProductIds() {
-  try {
-    const rawValue = window.sessionStorage.getItem(hostedProductIdsKey);
+  for (const storage of getReadableStorages()) {
+    try {
+      const rawValue = storage.getItem(hostedProductIdsKey);
 
-    if (!rawValue) {
-      return [];
+      if (!rawValue) {
+        continue;
+      }
+
+      const parsedValue = JSON.parse(rawValue);
+
+      if (Array.isArray(parsedValue)) {
+        return parsedValue.filter((id): id is string => typeof id === "string");
+      }
+    } catch {
+      // Try the next storage.
     }
-
-    const parsedValue = JSON.parse(rawValue);
-
-    return Array.isArray(parsedValue)
-      ? parsedValue.filter((id): id is string => typeof id === "string")
-      : [];
-  } catch {
-    return [];
   }
+
+  return [];
 }
 
 function readUploadedProductIdsFromStorage() {
   const productIds: string[] = [];
 
-  try {
-    for (let index = 0; index < window.sessionStorage.length; index += 1) {
-      const key = window.sessionStorage.key(index);
+  getReadableStorages().forEach((storage) => {
+    try {
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
 
-      if (key?.startsWith(uploadedProductKeyPrefix)) {
-        productIds.push(key.slice(uploadedProductKeyPrefix.length));
+        if (key?.startsWith(uploadedProductKeyPrefix)) {
+          productIds.push(key.slice(uploadedProductKeyPrefix.length));
+        }
       }
+    } catch {
+      // Ignore blocked storage.
     }
-  } catch {
-    return [];
-  }
+  });
 
-  return productIds;
+  return productIds.filter((productId, index, productIds) => {
+    return productIds.indexOf(productId) === index;
+  });
 }
 
 function writeHostedProductIds(productIds: string[]) {
+  const storage = getWritableStorage();
+
+  if (!storage) {
+    return;
+  }
+
   try {
-    window.sessionStorage.setItem(
-      hostedProductIdsKey,
-      JSON.stringify(productIds),
-    );
+    storage.setItem(hostedProductIdsKey, JSON.stringify(productIds));
   } catch {
     // The product itself is already stored; the detail route can still load it.
   }
 }
 
 function removeUploadedProducts(productIds: string[]) {
+  const storages = getReadableStorages();
+
   productIds.forEach((productId) => {
     try {
-      window.sessionStorage.removeItem(getUploadedProductKey(productId));
+      storages.forEach((storage) => {
+        storage.removeItem(getUploadedProductKey(productId));
+      });
     } catch {
       // Ignore storage cleanup failures; the next write may still succeed.
     }
@@ -96,11 +157,19 @@ export function readUploadedProduct(productId: string) {
 }
 
 function readUploadedProductRawValue(productId: string) {
-  try {
-    return window.sessionStorage.getItem(getUploadedProductKey(productId));
-  } catch {
-    return null;
+  for (const storage of getReadableStorages()) {
+    try {
+      const rawValue = storage.getItem(getUploadedProductKey(productId));
+
+      if (rawValue) {
+        return rawValue;
+      }
+    } catch {
+      // Try the next storage.
+    }
   }
+
+  return null;
 }
 
 export function readHostedProducts() {
@@ -148,6 +217,12 @@ export function readHostedProducts() {
 }
 
 export function writeUploadedProduct(product: ProductDetailItem) {
+  const storage = getWritableStorage();
+
+  if (!storage) {
+    return;
+  }
+
   const currentProductIds = readHostedProductIds();
   const nextProductIds = [
     product.id,
@@ -157,10 +232,7 @@ export function writeUploadedProduct(product: ProductDetailItem) {
     (productId) => !nextProductIds.includes(productId),
   );
 
-  window.sessionStorage.setItem(
-    getUploadedProductKey(product.id),
-    JSON.stringify(product),
-  );
+  storage.setItem(getUploadedProductKey(product.id), JSON.stringify(product));
   writeHostedProductIds(nextProductIds);
   removeUploadedProducts(prunedProductIds);
   notifyHostedProductsChanged();
@@ -181,7 +253,9 @@ export function clearHostedProducts() {
   removeUploadedProducts(productIds);
 
   try {
-    window.sessionStorage.removeItem(hostedProductIdsKey);
+    getReadableStorages().forEach((storage) => {
+      storage.removeItem(hostedProductIdsKey);
+    });
   } catch {
     // The in-memory cache is still reset below.
   }

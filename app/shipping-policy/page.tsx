@@ -7,6 +7,7 @@ export default function ShippingPolicyPage() {
   return (
     <PolicyPageContent
       title="배송 정책"
+      effectiveDate="2026.6.16"
       description="분철 상품 수령과 배송 방식 기준을 정리한 초안입니다."
       sections={[
         {
@@ -20,7 +21,7 @@ export default function ShippingPolicyPage() {
           title: "배송비",
           items: [
             "배송비는 분철별로 개최자가 등록한 금액을 기준으로 표시됩니다.",
-            "낙찰가와 배송비가 함께 결제 또는 입금 안내될 수 있습니다.",
+            "상품 금액와 배송비가 함께 결제 또는 입금 안내될 수 있습니다.",
           ],
         },
         {

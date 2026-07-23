@@ -7,7 +7,7 @@ import type { ProductDetailItem } from "@/lib/mock-products";
 
 type UploadedProductDetailProps = {
   id: string;
-  returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload";
 };
 
 export function UploadedProductDetail({

@@ -2,11 +2,18 @@ import type { ProductCardItem } from "@/components/ProductCard";
 
 export type ProductOption = {
   id: string;
+  available?: boolean;
   imageUrl?: string;
   buncheolMemberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
   myRank?: number;
+  participatedByMe?: boolean;
+  purchasePaymentConfirmedAt?: string;
+  purchasePaymentDueAt?: string;
+  purchasePaymentStatus?: string;
+  purchaseParticipationId?: string;
+  saleStatus?: string;
   label: string;
   price: string;
   startingBid?: string;
@@ -29,10 +36,12 @@ export type ProductDetailItem = ProductCardItem & {
   deadline: string;
   imageUrl?: string;
   imageUrls?: string[];
+  imageIds?: number[];
   isApiProduct?: boolean;
   isPublicPreview?: boolean;
   isBidUnavailable?: boolean;
   isHostedByMe?: boolean;
+  minHeadcount?: number | null;
   purchaseSource?: string;
   shippingDeadline?: string;
   shippingMethods?: ShippingMethod[];

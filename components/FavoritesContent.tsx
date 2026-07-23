@@ -11,12 +11,17 @@ import {
 import type { MouseEvent } from "react";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
+import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { ChevronDownIcon } from "@/components/icons";
+import { SlidingTabs } from "@/components/SlidingTabs";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
 import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { FEATURES } from "@/lib/feature-flags";
+import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 type FavoriteFilter = "all" | "favoriteArtist";
 type FavoriteSort = "deadline" | "recent";
@@ -140,24 +145,6 @@ function readStoredFavoritesViewState(keepStoredState: boolean) {
   }
 }
 
-function FavoriteProductGridSkeleton() {
-  return (
-    <div aria-label="찜한 상품을 불러오는 중" className="grid grid-cols-2 gap-3" role="status">
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div
-          className="overflow-hidden rounded-[1rem] border border-black/10 bg-white p-3"
-          key={`favorite-product-skeleton-${index}`}
-        >
-          <div className="aspect-square animate-pulse rounded-[0.85rem] bg-black/8" />
-          <div className="mt-3 h-4 w-4/5 animate-pulse rounded-full bg-black/8" />
-          <div className="mt-2 h-3 w-3/5 animate-pulse rounded-full bg-black/8" />
-          <div className="mt-4 h-8 animate-pulse rounded-full bg-black/8" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function FavoritesContent({
   skipEnterAnimation = false,
 }: FavoritesContentProps) {
@@ -169,7 +156,7 @@ export function FavoritesContent({
     readStoredFavoritesViewState(shouldSkipEnterAnimation),
   );
   const [filter, setFilter] = useState<FavoriteFilter>(
-    initialViewState.filter ?? "all",
+    FEATURES.favoriteArtists ? initialViewState.filter ?? "all" : "all",
   );
   const [sort, setSort] = useState<FavoriteSort>(
     initialViewState.sort ?? "recent",
@@ -225,7 +212,7 @@ export function FavoritesContent({
 
         setApiFavoriteProducts(
           items.map((item, index) => ({
-            ...toProductCardItem(item),
+            ...mergeCachedProductImage(toProductCardItem(item)),
             favoritedOrder: items.length - index,
           })),
         );
@@ -371,42 +358,29 @@ export function FavoritesContent({
           </h1>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-[0.95rem] bg-[#f7f7f7] p-1.5">
-          {(
-            [
-              ["all", "전체"],
-              ["favoriteArtist", "최애 아티스트"],
-            ] as const
-          ).map(([value, label]) => {
-            const isActive = filter === value;
-
-            return (
-              <button
-                className={`h-10 rounded-[0.8rem] text-[13px] font-semibold tracking-[-0.04em] ${
-                  isActive
-                    ? "bg-black text-white"
-                    : "text-black/45"
-                }`}
-                key={value}
-                onClick={() => setFilter(value)}
-                type="button"
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+        {FEATURES.favoriteArtists ? (
+          <div className="mt-3">
+            <SlidingTabs
+              onChange={setFilter}
+              tabs={[
+                { label: "전체", value: "all" },
+                { label: "최애 아티스트", value: "favoriteArtist" },
+              ]}
+              value={filter}
+            />
+          </div>
+        ) : null}
 
         <div className="relative mt-3 flex items-center justify-between gap-3">
           <div className="relative">
             <button
-              className="flex h-9 items-center gap-1.5 rounded-full bg-[#f7f7f7] px-3 text-[12px] font-semibold text-black/55 ring-1 ring-black/10"
+              className="flex h-9 items-center gap-1.5 rounded-full border border-[#CFE86B] bg-[#E4F6A5] px-3 text-[12px] font-semibold text-black shadow-[0_8px_18px_rgba(215,255,95,0.22)]"
               onClick={() => setIsSortOpen((current) => !current)}
               type="button"
             >
-              <span>{sort === "recent" ? "최근 찜한 순" : "마감 임박순"}</span>
-              <span
-                className={`h-0 w-0 border-x-[4px] border-t-[5px] border-x-transparent border-t-current transition-transform ${
+              <span>{sort === "recent" ? "최근 찜한 순" : "모집 임박순"}</span>
+              <ChevronDownIcon
+                className={`h-3.5 w-3.5 transition-transform ${
                   isSortOpen ? "rotate-180" : ""
                 }`}
               />
@@ -417,7 +391,7 @@ export function FavoritesContent({
                 {(
                   [
                     ["recent", "최근 찜한 순"],
-                    ["deadline", "마감 임박순"],
+                    ["deadline", "모집 임박순"],
                   ] as const
                 ).map(([value, label]) => {
                   const isActive = sort === value;
@@ -425,7 +399,9 @@ export function FavoritesContent({
                   return (
                     <button
                       className={`h-10 w-full px-3 text-left text-[13px] font-semibold tracking-[-0.04em] ${
-                        isActive ? "bg-black text-white" : "text-black/55"
+                        isActive
+                          ? "bg-[#E4F6A5] text-black"
+                          : "text-black/55"
                       }`}
                       key={value}
                       onClick={() => {
@@ -444,12 +420,12 @@ export function FavoritesContent({
 
           <div className="mr-1 flex items-center gap-2">
             <span className="text-[12px] font-semibold text-black/45">
-              마감 숨김
+              모집 종료 숨김
             </span>
             <button
               aria-pressed={hideClosed}
               className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${
-                hideClosed ? "bg-black" : "bg-black/10"
+                hideClosed ? "bg-[#CFE86B]" : "bg-black/10"
               }`}
               onClick={() => setHideClosed((current) => !current)}
               type="button"
@@ -475,21 +451,26 @@ export function FavoritesContent({
           key={`${filter}-${hideClosed}-${sort}`}
         >
           {favoriteMessage ? (
-            <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+            <div className="mb-4 rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-3">
               <p className="text-[13px] font-semibold text-black/45">
                 {favoriteMessage}
               </p>
             </div>
           ) : null}
           {isFavoriteProductsLoading ? (
-            <FavoriteProductGridSkeleton />
+            <ProductGridSkeleton
+              ariaLabel="찜한 상품을 불러오는 중"
+              variant="wide"
+            />
           ) : filteredProducts.length > 0 ? (
-            <ProductGrid items={filteredProducts} />
+            <div className="content-reveal">
+              <ProductGrid items={filteredProducts} variant="wide" />
+            </div>
           ) : (
-            <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-6">
+            <div className="content-reveal rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
               <p className="text-[14px] font-medium text-black/45">
                 {authState.isLoggedIn
-                  ? "조건에 맞는 찜 상품이 없습니다."
+                  ? "조건에 맞는 찜 상품이 없어요."
                   : "로그인 후 이용할 수 있어요."}
               </p>
             </div>

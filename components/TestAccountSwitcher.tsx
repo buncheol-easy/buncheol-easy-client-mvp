@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { CloseIcon } from "@/components/icons";
 import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
   writeAuthTokens,
 } from "@/lib/auth-store";
+import { clearDeliveryAddressState } from "@/lib/delivery-address-store";
+import { clearSettlementAccountState } from "@/lib/settlement-account-store";
 
 type TestAccount = {
   id: string;
@@ -142,6 +145,8 @@ export function TestAccountSwitcher() {
       }
 
       writeAuthTokens({ accessToken: data.accessToken });
+      clearDeliveryAddressState();
+      clearSettlementAccountState();
       setActiveAccountId(account.id);
       setIsOpen(false);
       showToast(`${data.label ?? account.label}로 전환했어요.`);
@@ -207,11 +212,12 @@ export function TestAccountSwitcher() {
                 </h2>
               </div>
               <button
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-[22px] font-light leading-none text-white"
+                aria-label="계정 전환 닫기"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white"
                 onClick={() => setIsOpen(false)}
                 type="button"
               >
-                ×
+                <CloseIcon className="h-5 w-5" />
               </button>
             </div>
 

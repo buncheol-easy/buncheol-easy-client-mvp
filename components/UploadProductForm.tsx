@@ -10,21 +10,32 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { BackIcon, CloseIcon, PlusIcon, SearchIcon } from "@/components/icons";
+import {
+  BackIcon,
+  CheckIcon,
+  CloseIcon,
+  MinusIcon,
+  PlusIcon,
+  SearchIcon,
+} from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   readUploadedProduct,
   writeUploadedProduct,
 } from "@/lib/hosted-products-store";
 import {
+  BuncheolHostPermissionError,
   createBuncheol,
   requestBuncheolDetail,
   requestGroupMembers,
   requestGroups,
   requestMyHostedBuncheols,
+  requestUserProfile,
   toProductDetailItem,
   updateBuncheol,
 } from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
+import { createLoginHref } from "@/lib/auth-navigation";
 import {
   getInitialAuthState,
   readAuthState,
@@ -36,9 +47,11 @@ import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 
 type PhotoPreview = {
+  file?: File;
   id: string;
   name: string;
   url: string;
+  existingImageId?: number;
 };
 
 type MinimumPricePrompt = {
@@ -71,7 +84,15 @@ const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
+const memberPriceUnitWon = 100;
 const minimumPricePromptExitDelay = 220;
+const emptyProductDescriptionText =
+  "판매자가 상품 설명을 작성하지 않았습니다.";
+const emptyProductDescriptionPlaceholders = new Set([
+  emptyProductDescriptionText,
+  "판매자가 아직 상품 설명을 작성하지 않았습니다.",
+  "상품 설명이 없어요.",
+]);
 
 type ScheduleField = "closing";
 type SchedulePart = "year" | "month" | "day" | "hour";
@@ -82,6 +103,26 @@ function padNumber(value: number) {
 
 function parsePriceInput(value: string) {
   return Number(value.replace(/[^\d]/g, "")) || 0;
+}
+
+function isHundredWonAmount(value: number) {
+  return Number.isInteger(value) && value > 0 && value % 100 === 0;
+}
+
+function isMemberMinimumPriceAmount(value: number) {
+  return (
+    Number.isInteger(value) && value > 0 && value % memberPriceUnitWon === 0
+  );
+}
+
+function isValidMinHeadcount(value: string, maxHeadcount: number) {
+  const parsedValue = Number(value);
+
+  return (
+    Number.isInteger(parsedValue) &&
+    parsedValue >= 1 &&
+    parsedValue <= maxHeadcount
+  );
 }
 
 function toNumericInput(value: string) {
@@ -100,6 +141,20 @@ function getInitials(value: string) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+function getMemberLookupKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function getEditableDescription(value: string | undefined) {
+  const trimmedValue = value?.trim() ?? "";
+
+  if (!trimmedValue || emptyProductDescriptionPlaceholders.has(trimmedValue)) {
+    return "";
+  }
+
+  return value ?? "";
 }
 
 function getMemberTone(seed: string) {
@@ -267,6 +322,20 @@ async function dataUrlToFile(dataUrl: string, fileName: string) {
   });
 }
 
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.addEventListener("load", () => {
+      resolve(String(reader.result));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error);
+    });
+    reader.readAsDataURL(blob);
+  });
+}
+
 function createUploadedProductId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `uploaded-${crypto.randomUUID()}`;
@@ -324,6 +393,85 @@ function compressImageDataUrl(
 
 function canExportImageThroughCanvas(imageUrl: string) {
   return imageUrl.startsWith("data:") || imageUrl.startsWith("blob:");
+}
+
+const editableImageProxyHosts = new Set([
+  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+]);
+
+function getEditableImageFetchUrl(imageUrl: string) {
+  try {
+    const parsedImageUrl = new URL(imageUrl);
+
+    if (
+      parsedImageUrl.protocol === "https:" &&
+      editableImageProxyHosts.has(parsedImageUrl.hostname) &&
+      parsedImageUrl.pathname.startsWith("/buncheols/")
+    ) {
+      return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
+
+async function imageUrlToUploadFile(imageUrl: string, fileName: string) {
+  if (canExportImageThroughCanvas(imageUrl)) {
+    return dataUrlToFile(imageUrl, fileName);
+  }
+
+  const response = await fetch(getEditableImageFetchUrl(imageUrl));
+
+  if (!response.ok) {
+    throw new Error("Image fetch failed");
+  }
+
+  const blob = await response.blob();
+  const dataUrl = await blobToDataUrl(blob);
+  const compressedDataUrl = await compressImageDataUrl(dataUrl);
+
+  return dataUrlToFile(compressedDataUrl, fileName);
+}
+
+async function writeApiProductPreview(product: ProductDetailItem) {
+  try {
+    writeUploadedProduct(product);
+    return;
+  } catch {
+    // Retry below with smaller images so the API-created page keeps a preview.
+  }
+
+  const imageUrls = product.imageUrls?.length
+    ? product.imageUrls
+    : product.imageUrl
+      ? [product.imageUrl]
+      : [];
+
+  if (imageUrls.length === 0) {
+    return;
+  }
+
+  try {
+    const compressedImageUrls = await Promise.all(
+      imageUrls.map((imageUrl) =>
+        canExportImageThroughCanvas(imageUrl)
+          ? compressImageDataUrl(imageUrl, { maxSize: 560, quality: 0.5 })
+          : Promise.resolve(imageUrl),
+      ),
+    );
+
+    writeUploadedProduct({
+      ...product,
+      imageUrl: compressedImageUrls[0] ?? product.imageUrl,
+      imageUrls: compressedImageUrls,
+    });
+  } catch {
+    // API save succeeded; the preview cache is best-effort.
+  }
 }
 
 function ScheduleWheel({
@@ -422,9 +570,25 @@ export function UploadProductForm({
 }: UploadProductFormProps) {
   const router = useRouter();
   const isEditMode = Boolean(editProductId);
+  const loginReturnHref = (() => {
+    const loginReturnParams = new URLSearchParams();
+
+    if (editProductId && !editProductId.startsWith("uploaded-")) {
+      loginReturnParams.set("edit", editProductId);
+    }
+
+    if (returnSource) {
+      loginReturnParams.set("from", returnSource);
+    }
+
+    const loginReturnQuery = loginReturnParams.toString();
+
+    return loginReturnQuery ? `/upload?${loginReturnQuery}` : "/upload";
+  })();
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
+  const formScrollRef = useRef<HTMLFormElement | null>(null);
   const photoLimitToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -443,6 +607,7 @@ export function UploadProductForm({
   const [memberMinimumPrices, setMemberMinimumPrices] = useState<
     Record<string, string>
   >({});
+  const [minHeadcount, setMinHeadcount] = useState("");
   const [renderedMinimumPricePrompt, setRenderedMinimumPricePrompt] =
     useState<MinimumPricePrompt | null>(null);
   const [isMinimumPricePromptOpen, setIsMinimumPricePromptOpen] =
@@ -463,6 +628,7 @@ export function UploadProductForm({
   const [editingProduct, setEditingProduct] =
     useState<ProductDetailItem | null>(null);
   const [isApiEditLoading, setIsApiEditLoading] = useState(false);
+  const [isHostAccessResolved, setIsHostAccessResolved] = useState(false);
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
@@ -532,20 +698,66 @@ export function UploadProductForm({
     photos.find((photo) => photo.id === coverPhotoId) ?? photos[0] ?? null;
   const isApiEditMode =
     Boolean(editProductId) && !String(editProductId).startsWith("uploaded-");
-  const canSubmit = isApiEditMode
-    ? photos.length > 0 && title.trim().length > 0
-    : photos.length > 0 &&
-      title.trim().length > 0 &&
-      purchaseSource.trim().length > 0 &&
-      targetMembers.length > 0 &&
-      targetMembers.every(
-        (member) => parsePriceInput(memberMinimumPrices[member.id] ?? "") > 0,
-      ) &&
-      selectedShipping.length > 0 &&
-      selectedShipping.every(
-        (option) => parsePriceInput(shippingPrices[option] ?? "") > 0,
-      );
+  const numericMinHeadcount = Number(minHeadcount);
+  const selectedMinHeadcount =
+    Number.isFinite(numericMinHeadcount) && numericMinHeadcount > 0
+      ? Math.min(numericMinHeadcount, Math.max(1, targetMembers.length))
+      : targetMembers.length;
+  const canDecreaseMinHeadcount = !isApiEditMode && selectedMinHeadcount > 1;
+  const canIncreaseMinHeadcount =
+    !isApiEditMode && selectedMinHeadcount < targetMembers.length;
+  const submitBlockReason = (() => {
+    if (photos.length === 0) {
+      return "사진을 1장 이상 올려 주세요.";
+    }
 
+    if (!title.trim()) {
+      return "상품명을 입력해 주세요.";
+    }
+
+    if (isApiEditMode) {
+      return "";
+    }
+
+    if (!purchaseSource.trim()) {
+      return "구매처를 입력해 주세요.";
+    }
+
+    if (targetMembers.length === 0) {
+      return "그룹과 멤버를 선택해 주세요.";
+    }
+
+    if (
+      targetMembers.some(
+        (member) =>
+          !isMemberMinimumPriceAmount(
+            parsePriceInput(memberMinimumPrices[member.id] ?? ""),
+          ),
+      )
+    ) {
+      return "옵션 가격을 100원 단위로 입력해 주세요.";
+    }
+
+    if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
+      return `최소 진행 인원을 1-${targetMembers.length}명으로 입력해 주세요.`;
+    }
+
+    if (selectedShipping.length === 0) {
+      return "배송 방법을 선택해 주세요.";
+    }
+
+    if (
+      selectedShipping.some(
+        (option) =>
+          !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
+      )
+    ) {
+      return "배송비를 100원 단위로 입력해 주세요.";
+    }
+
+    return "";
+  })();
+  const canSubmit = submitBlockReason === "";
   useEffect(() => {
     return () => {
       if (photoLimitToastTimeoutRef.current) {
@@ -561,6 +773,82 @@ export function UploadProductForm({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const currentAuthState = readAuthState();
+
+    if (currentAuthState.isLoggedIn && currentAuthState.accessToken) {
+      return;
+    }
+
+    if (
+      editProductId?.startsWith("uploaded-") &&
+      readUploadedProduct(editProductId)
+    ) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      router.replace(
+        createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
+      );
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    editProductId,
+    loginReturnHref,
+    router,
+  ]);
+
+  useEffect(() => {
+    if (isEditMode || !authState.isLoggedIn) {
+      return;
+    }
+
+    let isActive = true;
+
+    (async () => {
+      try {
+        const accessToken = await getFreshAccessToken();
+
+        if (!isActive) {
+          return;
+        }
+
+        if (!accessToken) {
+          setIsHostAccessResolved(true);
+          return;
+        }
+
+        const profile = await requestUserProfile(accessToken);
+
+        if (!isActive) {
+          return;
+        }
+
+        if (profile.canHost === false) {
+          router.replace("/upload/notice");
+          return;
+        }
+
+        setIsHostAccessResolved(true);
+      } catch {
+        // 권한 확인에 실패하면 양식을 열어준다. 권한 없는 개최는 서버가 403으로 막는다.
+        if (isActive) {
+          setIsHostAccessResolved(true);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.isLoggedIn, isEditMode, router]);
 
   useEffect(() => {
     const query = idolQuery.trim();
@@ -669,20 +957,57 @@ export function UploadProductForm({
           setIsApiEditLoading(true);
           setSubmitError("");
           requestBuncheolDetail(accessToken, editProductId)
-            .then((detail) => {
+            .then(async (detail) => {
               const apiProduct = toProductDetailItem(detail);
+              const memberPresentationByName = new Map<
+                string,
+                { imageUrl?: string; initials: string; tone: string }
+              >();
+
+              try {
+                const [matchedGroup] = rankGroupSearchResults(
+                  await requestGroups(apiProduct.era),
+                  apiProduct.era,
+                  1,
+                );
+
+                if (matchedGroup) {
+                  const groupMembers = await requestGroupMembers(matchedGroup.id);
+
+                  groupMembers.forEach((member) => {
+                    memberPresentationByName.set(
+                      getMemberLookupKey(member.name),
+                      {
+                        imageUrl: member.imageUrl,
+                        initials: getInitials(member.name),
+                        tone: getMemberTone(member.id),
+                      },
+                    );
+                  });
+                }
+              } catch {
+                memberPresentationByName.clear();
+              }
+
               const apiGroup: IdolGroup = {
                 id: `api-edit-${editProductId}`,
                 name: apiProduct.era,
                 label: apiProduct.era,
                 aliases: [apiProduct.era],
-                members: apiProduct.options.map((option) => ({
-                  id: option.buncheolMemberId ?? option.id,
-                  imageUrl: option.imageUrl,
-                  name: option.label,
-                  initials: getInitials(option.label),
-                  tone: getMemberTone(option.id),
-                })),
+                members: apiProduct.options.map((option) => {
+                  const presentation = memberPresentationByName.get(
+                    getMemberLookupKey(option.label),
+                  );
+
+                  return {
+                    id: option.buncheolMemberId ?? option.id,
+                    imageUrl: option.imageUrl ?? presentation?.imageUrl,
+                    name: option.label,
+                    initials:
+                      presentation?.initials ?? getInitials(option.label),
+                    tone: presentation?.tone ?? getMemberTone(option.id),
+                  };
+                }),
               };
 
               setRemoteGroups((current) => [apiGroup, ...current]);
@@ -693,6 +1018,11 @@ export function UploadProductForm({
               setIdolQuery("");
               setTargetMemberIds(apiGroup.members.map((member) => member.id));
               setExcludedMemberIds([]);
+              setMinHeadcount(
+                apiProduct.minHeadcount
+                  ? String(apiProduct.minHeadcount)
+                  : String(apiGroup.members.length),
+              );
               setMemberMinimumPrices(
                 apiGroup.members.reduce<Record<string, string>>(
                   (prices, member) => {
@@ -728,7 +1058,7 @@ export function UploadProductForm({
                   return prices;
                 }, {}),
               );
-              setDescription(apiProduct.description);
+              setDescription(getEditableDescription(apiProduct.description));
 
               const restoredPhotos = (apiProduct.imageUrls?.length
                 ? apiProduct.imageUrls
@@ -741,6 +1071,7 @@ export function UploadProductForm({
                   id: `existing-photo-${index}`,
                   name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
                   url: imageUrl,
+                  existingImageId: apiProduct.imageIds?.[index],
                 }));
 
               setPhotos(restoredPhotos);
@@ -756,6 +1087,11 @@ export function UploadProductForm({
             .finally(() => {
               setIsApiEditLoading(false);
             });
+          return;
+        }
+
+        if (authState.isLoggedIn && authState.accessToken) {
+          router.replace(returnSource ? `/upload?from=${returnSource}` : "/upload");
           return;
         }
 
@@ -809,6 +1145,7 @@ export function UploadProductForm({
       setSelectedGroupId(group?.id ?? null);
       setIdolQuery("");
       setTargetMemberIds(selectedMembers.map((member) => member.id));
+      setMinHeadcount(String(product.minHeadcount ?? Math.max(1, selectedMembers.length)));
       setExcludedMemberIds(
         selectedMembers
           .filter((member) => !optionLabels.has(member.name))
@@ -828,7 +1165,7 @@ export function UploadProductForm({
           return prices;
         }, {}),
       );
-      setDescription(product.description);
+      setDescription(getEditableDescription(product.description));
 
       const storedImageUrls = product.imageUrls?.length
         ? product.imageUrls
@@ -843,6 +1180,7 @@ export function UploadProductForm({
             id: `existing-photo-${index}`,
             name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
             url: imageUrl,
+            existingImageId: product.imageIds?.[index],
           }));
 
         setPhotos(restoredPhotos);
@@ -853,7 +1191,13 @@ export function UploadProductForm({
     return () => {
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [authState.accessToken, editProductId]);
+  }, [
+    authState.accessToken,
+    authState.isLoggedIn,
+    editProductId,
+    returnSource,
+    router,
+  ]);
 
   function showPhotoLimitToast(message: string) {
     setPhotoLimitToast(message);
@@ -939,6 +1283,7 @@ export function UploadProductForm({
     setIdolQuery("");
     setTargetMemberIds(group.members.map((member) => member.id));
     setExcludedMemberIds([]);
+    setMinHeadcount(String(group.members.length));
     setMemberMinimumPrices({});
     setMemberToastMessage("");
     setMemberToastTargetId(null);
@@ -950,6 +1295,7 @@ export function UploadProductForm({
     setIdolQuery("");
     setTargetMemberIds([]);
     setExcludedMemberIds([]);
+    setMinHeadcount("");
     setMemberMinimumPrices({});
     setMemberToastMessage("");
     setMemberToastTargetId(null);
@@ -981,6 +1327,7 @@ export function UploadProductForm({
         photoIdSeed.current += 1;
 
         return {
+          file,
           id: `${file.name}-${file.lastModified}-${photoIdSeed.current}`,
           name: file.name,
           url,
@@ -1023,6 +1370,15 @@ export function UploadProductForm({
     }
 
     setExcludedMemberIds(nextExcludedMemberIds);
+    setMinHeadcount((current) => {
+      const parsedValue = Number(current);
+
+      if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+        return String(nextActiveMemberCount);
+      }
+
+      return String(Math.min(parsedValue, nextActiveMemberCount));
+    });
 
     if (!prompt || isCurrentlyExcluded) {
       return;
@@ -1055,17 +1411,33 @@ export function UploadProductForm({
         !memberMinimumPrices[member.id]?.trim(),
     );
 
-    if (trimmedPrice && hasEmptyActiveMembers) {
+    if (
+      trimmedPrice &&
+      isMemberMinimumPriceAmount(parsePriceInput(trimmedPrice)) &&
+      hasEmptyActiveMembers
+    ) {
       showMinimumPricePrompt({ memberId, price: numericPrice });
     } else {
       hideMinimumPricePrompt();
     }
   }
 
+  function validateMemberMinimumPrice(memberId: string) {
+    const parsedPrice = parsePriceInput(memberMinimumPrices[memberId] ?? "");
+
+    if (parsedPrice > 0 && !isMemberMinimumPriceAmount(parsedPrice)) {
+      showMemberToast(memberId, "가격은 100원 단위로 입력해 주세요");
+    }
+  }
+
   function applyMinimumPriceToEmptyMembers(price: string) {
     const trimmedPrice = price.trim();
 
-    if (!trimmedPrice || targetMembers.length === 0) {
+    if (
+      !trimmedPrice ||
+      !isMemberMinimumPriceAmount(parsePriceInput(trimmedPrice)) ||
+      targetMembers.length === 0
+    ) {
       return;
     }
 
@@ -1093,13 +1465,25 @@ export function UploadProductForm({
     });
   }
 
+  function updateMinHeadcount(value: string) {
+    const numericValue = toNumericInput(value);
+
+    if (!numericValue) {
+      setMinHeadcount("");
+      return;
+    }
+
+    setMinHeadcount(
+      String(Math.min(Number(numericValue), Math.max(1, targetMembers.length))),
+    );
+  }
+
   function updateShippingPrice(option: string, price: string) {
     setShippingPrices((current) => ({
       ...current,
       [option]: toNumericInput(price),
     }));
   }
-
   function getScheduleValue(field: ScheduleField) {
     void field;
     return closingDate;
@@ -1180,6 +1564,20 @@ export function UploadProductForm({
       return;
     }
 
+    const isLocalDraftEdit = Boolean(
+      editingProduct?.id.startsWith("uploaded-"),
+    );
+
+    if (
+      !isLocalDraftEdit &&
+      (!authState.isLoggedIn || !authState.accessToken)
+    ) {
+      router.push(
+        createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
+      );
+      return;
+    }
+
     setSubmitError("");
 
     const productId = editingProduct?.id ?? createUploadedProductId();
@@ -1195,10 +1593,18 @@ export function UploadProductForm({
     const accessToken = authState.accessToken;
     const apiGroupId = Number(selectedGroup.id);
     const apiMembers = targetMembers.map((member) => ({
-      bidMinPrice: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
+      price: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
       memberId: Number(member.id),
     }));
     const isApiEditMode = isEditMode && !productId.startsWith("uploaded-");
+    const parsedMinHeadcount = Number(minHeadcount);
+    const hasInvalidMemberAmount = apiMembers.some(
+      (member) => !isMemberMinimumPriceAmount(member.price),
+    );
+    const hasInvalidShippingAmount = selectedShipping.some(
+      (option) =>
+        !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
+    );
     let storedPhotoUrls: string[];
 
     try {
@@ -1258,6 +1664,7 @@ export function UploadProductForm({
         targetMembers.length > 1
           ? `${firstMember.name} 외 ${targetMembers.length - 1}명`
           : firstMember.name,
+      minHeadcount: parsedMinHeadcount,
       targetMembers: targetMembers.map((member) => member.name),
       uploadedAt:
         editingProduct?.uploadedAt ?? formatDateTimeLabel(new Date().toISOString()),
@@ -1273,8 +1680,7 @@ export function UploadProductForm({
       imageUrls: storedPhotoUrls,
       purchaseSource: purchaseSource.trim(),
       shippingMethods: selectedShippingMethods,
-      description:
-        description.trim() || "판매자가 아직 상품 설명을 작성하지 않았습니다.",
+      description: description.trim(),
       options: productOptions,
     };
     const canUseBuncheolApi =
@@ -1284,8 +1690,24 @@ export function UploadProductForm({
         (Number.isFinite(apiGroupId) &&
           apiMembers.every(
             (member) =>
-              Number.isFinite(member.memberId) && member.bidMinPrice > 0,
+              Number.isFinite(member.memberId) &&
+              isMemberMinimumPriceAmount(member.price),
           )));
+
+    if (!isApiEditMode && hasInvalidMemberAmount) {
+      setSubmitError("옵션 가격은 100원 단위로 입력해 주세요.");
+      return;
+    }
+
+    if (!isApiEditMode && hasInvalidShippingAmount) {
+      setSubmitError("배송비는 100원 단위로 입력해 주세요.");
+      return;
+    }
+
+    if (!isApiEditMode && !isValidMinHeadcount(minHeadcount, targetMembers.length)) {
+      setSubmitError("최소 진행 인원을 대상 멤버 수 안에서 입력해 주세요.");
+      return;
+    }
 
     if (
       !isApiEditMode &&
@@ -1293,7 +1715,7 @@ export function UploadProductForm({
       accessToken &&
       !canUseBuncheolApi
     ) {
-      setSubmitError("최소 입찰가를 1원 이상으로 입력해 주세요.");
+      setSubmitError("가격과 대상 멤버 정보를 다시 확인해 주세요.");
       return;
     }
 
@@ -1305,22 +1727,38 @@ export function UploadProductForm({
         return;
       }
 
+      const keepImageIds = isApiEditMode
+        ? orderedPhotos
+            .map((photo) => photo.existingImageId)
+            .filter((imageId): imageId is number => typeof imageId === "number")
+        : undefined;
+
       let imageFiles: File[];
 
       try {
-        const uploadablePhotoUrls = isApiEditMode
-          ? storedPhotoUrls.filter(
-              (imageUrl) => canExportImageThroughCanvas(imageUrl),
-            )
-          : storedPhotoUrls;
+        const uploadablePhotos = orderedPhotos
+          .map((photo, index) => ({
+            imageUrl: storedPhotoUrls[index] ?? photo.url,
+            photo,
+          }))
+          .filter(
+            ({ imageUrl, photo }) =>
+              !isApiEditMode ||
+              (typeof photo.existingImageId !== "number" && Boolean(imageUrl)),
+          );
 
         imageFiles = await Promise.all(
-          uploadablePhotoUrls.map((imageUrl, index) =>
-            dataUrlToFile(imageUrl, `buncheol-${index + 1}.jpg`),
+          uploadablePhotos.map(({ imageUrl }, index) =>
+            imageUrlToUploadFile(imageUrl, `buncheol-${index + 1}.jpg`),
           ),
         );
       } catch {
         setSubmitError("사진 파일을 업로드 형식으로 변환하지 못했어요.");
+        return;
+      }
+
+      if (((keepImageIds?.length ?? 0) + imageFiles.length) === 0) {
+        setSubmitError("사진을 1장 이상 등록해 주세요.");
         return;
       }
 
@@ -1331,11 +1769,16 @@ export function UploadProductForm({
             productId,
             {
               description: product.description,
-              keepImageIds: undefined,
+              keepImageIds,
               title: product.title,
             },
             imageFiles,
           );
+
+          await writeApiProductPreview({
+            ...product,
+            isApiProduct: true,
+          });
 
           const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
           router.replace(`/products/${productId}${returnSourceQuery}`);
@@ -1351,8 +1794,9 @@ export function UploadProductForm({
                 getStoreShippingFee(selectedShipping, shippingPrices, "CU") ||
                 undefined,
               deadline: deadlineDate.toISOString(),
-              description: product.description,
+              description: product.description || undefined,
               groupId: apiGroupId,
+              minHeadcount: parsedMinHeadcount,
               gs25ShippingFee:
                 getStoreShippingFee(selectedShipping, shippingPrices, "GS") ||
                 undefined,
@@ -1375,6 +1819,14 @@ export function UploadProductForm({
           }
 
           if (nextProductId) {
+            await writeApiProductPreview({
+              ...product,
+              buncheolId: nextProductId,
+              id: nextProductId,
+              isApiProduct: true,
+              productId: nextProductId,
+            });
+
             router.push(`/products/${nextProductId}?from=upload`);
             return;
           }
@@ -1383,11 +1835,21 @@ export function UploadProductForm({
           return;
         }
       } catch (error) {
+        if (error instanceof BuncheolHostPermissionError) {
+          router.replace("/upload/notice");
+          return;
+        }
+
         setSubmitError(
           error instanceof Error ? error.message : "분철 저장에 실패했어요.",
         );
         return;
       }
+    }
+
+    if (!isLocalDraftEdit) {
+      setSubmitError("수정할 분철 정보를 찾을 수 없습니다.");
+      return;
     }
 
     try {
@@ -1413,18 +1875,18 @@ export function UploadProductForm({
       }
     }
 
-    if (isEditMode) {
-      const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+    const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
 
-      router.replace(`/products/${productId}${returnSourceQuery}`);
-      return;
-    }
-
-    router.push(`/products/${productId}?from=upload`);
+    router.replace(`/products/${productId}${returnSourceQuery}`);
   }
 
   const apiEditIsWaiting =
     isApiEditMode && (isApiEditLoading || (!editingProduct && !submitError));
+
+  useEffect(() => {
+    formScrollRef.current?.scrollTo({ left: 0, top: 0 });
+  }, [apiEditIsWaiting, editProductId, isApiEditMode]);
+
   const apiEditShippingRows = selectedShipping.map((option) => {
     const price = shippingPrices[option] ?? "";
 
@@ -1445,6 +1907,51 @@ export function UploadProductForm({
         : "가격 정보 없음",
     };
   });
+
+  if (!isEditMode && !isHostAccessResolved) {
+    return (
+      <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+        <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
+            <div className="absolute inset-0 flex flex-col bg-white">
+              <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
+                <div className="upload-header__inner flex h-10 items-center justify-between">
+                  <button
+                    aria-label="이전 화면"
+                    className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
+                    onClick={() => router.replace("/")}
+                    type="button"
+                  >
+                    <BackIcon />
+                  </button>
+
+                  <div className="upload-header__copy translate-y-0.5 text-right">
+                    <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
+                      Upload
+                    </p>
+                    <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
+                      상품 등록
+                    </h1>
+                  </div>
+                </div>
+              </header>
+
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+                <p className="text-[18px] font-semibold tracking-[-0.05em]">
+                  개최하기 화면을 준비하고 있어요
+                </p>
+                <p className="mt-2 text-[13px] font-semibold text-black/40">
+                  잠시만 기다려 주세요.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <BottomNavigator activeLabel="Upload" />
+        </div>
+      </main>
+    );
+  }
 
   if (isApiEditMode) {
     return (
@@ -1493,6 +2000,7 @@ export function UploadProductForm({
                   event.preventDefault();
                   void handleSubmit();
                 }}
+                ref={formScrollRef}
               >
                 {apiEditIsWaiting ? (
                   <div className="flex min-h-[52vh] flex-col items-center justify-center px-6 text-center">
@@ -1506,7 +2014,7 @@ export function UploadProductForm({
                 ) : (
                   <>
                     <section className="px-4 pt-4">
-                      <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
+                      <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
                         {coverPhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -1515,12 +2023,28 @@ export function UploadProductForm({
                             src={coverPhoto.url}
                           />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-[15px] font-semibold text-white/70">
-                            사진 추가
-                          </div>
+                          <>
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.72),transparent_24%),radial-gradient(circle_at_16%_78%,rgba(255,255,255,0.24),transparent_30%)]" />
+                            <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
+                            <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
+                            <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
+                                Photo Upload
+                              </p>
+                              <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
+                                사진 업로드
+                              </p>
+                            </div>
+                          </>
                         )}
 
-                        <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+                        {coverPhoto ? (
+                          <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
+                            대표 사진
+                          </span>
+                        ) : null}
+
+                        <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                           <PlusIcon />
                         </span>
                         {photoLimitToast ? (
@@ -1544,7 +2068,10 @@ export function UploadProductForm({
                         />
                       </label>
 
-                      <div className="relative z-10 mt-3 grid grid-cols-5 gap-2">
+                      <p className="mt-5 text-[12px] font-semibold text-black/40">
+                        사진을 눌러 대표 사진을 변경할 수 있어요.
+                      </p>
+                      <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
                         {photos.map((photo) => {
                           const isCover = photo.id === coverPhoto?.id;
 
@@ -1553,22 +2080,29 @@ export function UploadProductForm({
                               className="relative"
                               key={photo.id}
                             >
-                              <button
-                                aria-label={`${photo.name} 대표 사진으로 설정`}
-                                className="relative aspect-square w-full overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]"
-                                onClick={() => setCoverPhotoId(photo.id)}
-                                type="button"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  alt={photo.name}
-                                  className="h-full w-full object-cover"
-                                  src={photo.url}
-                                />
+                              <div className="relative aspect-square overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]">
+                                <button
+                                  aria-label={`${photo.name} 대표 사진으로 설정`}
+                                  className="h-full w-full"
+                                  onClick={() => setCoverPhotoId(photo.id)}
+                                  type="button"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    alt={photo.name}
+                                    className="h-full w-full object-cover"
+                                    src={photo.url}
+                                  />
+                                </button>
                                 {isCover ? (
-                                  <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
+                                  <>
+                                    <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
+                                    <span className="absolute bottom-1 left-1 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                                      대표
+                                    </span>
+                                  </>
                                 ) : null}
-                              </button>
+                              </div>
                               <button
                                 aria-label="사진 삭제"
                                 className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white shadow-[0_6px_14px_rgba(0,0,0,0.22)]"
@@ -1582,7 +2116,7 @@ export function UploadProductForm({
                         })}
 
                         {photos.length < maxPhotos ? (
-                          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-black/15 bg-[#f7f7f7] text-black/25">
+                          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45 shadow-[0_8px_18px_rgba(120,132,82,0.08)]">
                             <PlusIcon />
                             <span className="mt-1 text-[11px] font-semibold text-black/35">
                               ({photos.length}/{maxPhotos})
@@ -1640,7 +2174,7 @@ export function UploadProductForm({
                           </div>
                           <div className="col-span-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
                             <p className="text-[12px] font-semibold text-black/35">
-                              입찰 기한
+                              참여 기한
                             </p>
                             <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
                               {formatDateTimeLabel(closingDate) || "-"}
@@ -1705,7 +2239,7 @@ export function UploadProductForm({
                                   {member.name}
                                 </p>
                                 <p className="mt-0.5 text-[12px] font-semibold text-black/35">
-                                  최소 입찰가
+                                  가격
                                 </p>
                               </div>
                               <p className="shrink-0 text-[14px] font-semibold text-black/55">
@@ -1799,9 +2333,10 @@ export function UploadProductForm({
             <form
               className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-6"
               onSubmit={(event) => event.preventDefault()}
+              ref={formScrollRef}
             >
           <section className="px-4 pt-4">
-            <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-zinc-950 via-zinc-700 to-zinc-300">
+            <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
               {coverPhoto ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -1811,11 +2346,11 @@ export function UploadProductForm({
                 />
               ) : (
                 <>
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
-                  <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
-                  <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
-                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.72),transparent_24%),radial-gradient(circle_at_16%_78%,rgba(255,255,255,0.24),transparent_30%)]" />
+                  <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
+                  <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
+                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
                       Photo Upload
                     </p>
                     <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
@@ -1831,7 +2366,7 @@ export function UploadProductForm({
                 </span>
               ) : null}
 
-              <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+              <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                 <PlusIcon />
               </span>
               {photoLimitToast ? (
@@ -1905,7 +2440,7 @@ export function UploadProductForm({
               })}
 
               {photos.length < maxPhotos ? (
-                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-black/15 bg-[#f7f7f7] text-black/25">
+                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45">
                   <PlusIcon />
                   <span className="mt-1 text-[11px] font-semibold text-black/35">
                     ({photos.length}/{maxPhotos})
@@ -2034,10 +2569,13 @@ export function UploadProductForm({
                                 </p>
                                 <label className="flex h-9 w-24 shrink-0 items-center rounded-[0.65rem] bg-white px-2 ring-1 ring-black/10 focus-within:ring-black">
                                   <input
-                                    aria-label={`${member.name} 최소 가격`}
+                                    aria-label={`${member.name} 가격`}
                                     className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
                                     disabled={isApiEditMode || isExcluded}
                                     inputMode="numeric"
+                                    onBlur={() =>
+                                      validateMemberMinimumPrice(member.id)
+                                    }
                                     onChange={(event) =>
                                       updateMemberMinimumPrice(
                                         member.id,
@@ -2101,15 +2639,15 @@ export function UploadProductForm({
                                   </p>
                                   <div className="flex shrink-0 items-center gap-2">
                                     <button
-                                      aria-label="최소 가격 전체 적용 취소"
+                                      aria-label="가격 전체 적용 취소"
                                       className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-[14px] font-semibold text-white"
                                       onClick={hideMinimumPricePrompt}
                                       type="button"
                                     >
-                                      ×
+                                      <CloseIcon className="h-3.5 w-3.5" />
                                     </button>
                                     <button
-                                      aria-label="비어있는 멤버에 최소 가격 적용"
+                                      aria-label="비어있는 멤버에 가격 적용"
                                       className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[13px] font-semibold text-black"
                                       onClick={() =>
                                         applyMinimumPriceToEmptyMembers(
@@ -2118,7 +2656,7 @@ export function UploadProductForm({
                                       }
                                       type="button"
                                     >
-                                      ✓
+                                      <CheckIcon />
                                     </button>
                                   </div>
                                 </div>
@@ -2133,6 +2671,48 @@ export function UploadProductForm({
                       대상 멤버가 없습니다.
                     </p>
                   )}
+                {targetMembers.length > 0 ? (
+                  <label className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
+                    <span className="text-[13px] font-semibold text-black/45">
+                      최소 진행 인원
+                    </span>
+                    <div className="mt-4 grid grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] p-2">
+                      <button
+                        aria-label="최소 진행 인원 줄이기"
+                        className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-white text-black shadow-[0_4px_12px_rgba(0,0,0,0.08)] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none"
+                        disabled={!canDecreaseMinHeadcount}
+                        onClick={() =>
+                          updateMinHeadcount(String(selectedMinHeadcount - 1))
+                        }
+                        type="button"
+                      >
+                        <MinusIcon />
+                      </button>
+                      <div className="min-w-0 text-center">
+                        <p className="text-[24px] font-bold leading-none tracking-[-0.04em] text-black">
+                          {selectedMinHeadcount}
+                          <span className="ml-1 text-[15px] font-semibold text-black/45">
+                            명
+                          </span>
+                        </p>
+                        <p className="mt-1 text-[12px] font-semibold text-black/35">
+                          최대 {targetMembers.length}명
+                        </p>
+                      </div>
+                      <button
+                        aria-label="최소 진행 인원 늘리기"
+                        className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-[#F3FFC6] text-black shadow-[0_4px_12px_rgba(190,230,70,0.2)] ring-1 ring-[#CDEB55] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none disabled:ring-0"
+                        disabled={!canIncreaseMinHeadcount}
+                        onClick={() =>
+                          updateMinHeadcount(String(selectedMinHeadcount + 1))
+                        }
+                        type="button"
+                      >
+                        <PlusIcon />
+                      </button>
+                    </div>
+                  </label>
+                ) : null}
                 </div>
               ) : (
                 <div
@@ -2204,7 +2784,7 @@ export function UploadProductForm({
                       <button
                         className={`flex min-h-12 w-full items-center justify-between rounded-[0.8rem] px-4 text-left ${
                           isSelected
-                            ? "bg-black text-white"
+                            ? "bg-black text-white ring-2 ring-[#CDEB55]"
                             : "bg-[#f7f7f7] text-black"
                         }`}
                         disabled={isApiEditMode}
@@ -2217,7 +2797,7 @@ export function UploadProductForm({
                         <span
                           className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${
                             isSelected
-                              ? "border-white bg-white text-black"
+                              ? "border-[#D7FF5F] bg-[#D7FF5F] text-black"
                               : "border-black/15"
                           }`}
                         >
@@ -2411,13 +2991,18 @@ export function UploadProductForm({
             </div>
 
             <button
-              className="mt-8 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-white disabled:bg-black/20"
+              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
               disabled={!canSubmit}
               onClick={handleSubmit}
               type="button"
             >
               {isEditMode ? "수정 완료" : "등록하기"}
             </button>
+            {!canSubmit && submitBlockReason ? (
+              <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/45">
+                {submitBlockReason}
+              </p>
+            ) : null}
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
                 {submitError}
