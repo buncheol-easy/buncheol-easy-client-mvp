@@ -830,6 +830,9 @@ function getParticipationShippingAddressRecord(
       relatedRecord.shipping,
       relatedRecord.shippingInfo,
     ]),
+    // 주소 객체가 따로 없고 delivery 에 storeName/shippingMethod 가
+    // 평평하게 실려오는 응답은 delivery 자체를 주소 레코드로 쓴다.
+    deliveryRecord,
   ];
 
   return addressCandidates.map(getNestedData).find(isRecord) ?? null;
