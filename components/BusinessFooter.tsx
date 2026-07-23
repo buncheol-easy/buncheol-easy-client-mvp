@@ -127,9 +127,9 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
             : "mt-3.5 text-[10.5px] leading-5"
         }`}
       >
-        분철이지는 통신판매중개자이며 통신판매의 당사자가 아닙니다.
+        분철이지는 본 사이트에서 판매되는 분철 상품의 통신판매 당사자입니다.
         <br />
-        상품·거래 및 회원 간 직접 결제에 대한 책임은 거래 당사자(회원)에게
+        상품·거래 정보, 청약철회·환불 등 거래에 관한 책임은 분철이지에
         있습니다.
       </p>
       <p
