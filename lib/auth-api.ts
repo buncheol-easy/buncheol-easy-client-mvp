@@ -46,6 +46,8 @@ export type UserProfile = {
   provider: string;
   email: string;
   nickname: string;
+  // 실명 (입금 대조·배송 연락 참조). 기존 회원 미입력 시 빈 문자열.
+  name: string;
   phoneNumber: string;
   bankAccount: BankAccountInfo | null;
   // 백엔드 개최 권한 제한 반영 전 응답에는 없는 필드라 undefined를 허용한다.
@@ -66,6 +68,8 @@ export function isUserProfileComplete(
 export type UpdateUserProfileRequest = {
   nickname: string;
   phoneNumber: string;
+  // 실명 (1~30자 한글/영문). 생략하면 서버가 기존 값을 유지한다.
+  name?: string;
   // 마케팅 정보 수신 동의 여부. 생략하면 서버가 기존 동의 상태를 유지한다.
   marketingAgreed?: boolean;
 };
@@ -953,6 +957,7 @@ function getUserProfileFromBody(body: unknown): UserProfile {
     return {
       bankAccount: null,
       email: "",
+      name: "",
       nickname: "",
       phoneNumber: "",
       provider: "",
@@ -975,7 +980,8 @@ function getUserProfileFromBody(body: unknown): UserProfile {
     ]),
     canHost: getBooleanValue(data, ["canHost"]) ?? undefined,
     email: getStringValue(data, ["email", "emailAddress"]),
-    nickname: getStringValue(data, ["nickname", "name", "displayName"]),
+    name: getStringValue(data, ["name", "realName"]),
+    nickname: getStringValue(data, ["nickname", "displayName"]),
     phoneNumber: getStringValue(data, [
       "phoneNumber",
       "phone",
