@@ -2121,6 +2121,8 @@ export function ProductDetail({
         return;
       }
 
+      let didRequestParticipation = false;
+
       try {
         const checkoutRequestItems = submittedBids.map(
           ({ bidAmount, option }) => {
@@ -2139,6 +2141,8 @@ export function ProductDetail({
             };
           },
         );
+
+        didRequestParticipation = true;
         const result = await participateBuncheol(accessToken, buncheolId, {
           buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
           refundAccount,
@@ -2278,6 +2282,12 @@ export function ProductDetail({
           );
         } else {
           setCheckoutError(errorMessage);
+        }
+
+        // 요청이 서버에 닿은 뒤의 실패는 참여가 생성됐을 수 있다.
+        // 상세를 재조회해 슬롯 상태가 낡은 채 남지 않게 한다.
+        if (didRequestParticipation) {
+          void refreshDetailOptions();
         }
         setIsBidSubmitPending(false);
         return;
@@ -2709,6 +2719,10 @@ export function ProductDetail({
   }
 
   function closeSheet() {
+    if (isSheetClosing) {
+      return;
+    }
+
     if (sheetEnterAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(sheetEnterAnimationFrameRef.current);
       sheetEnterAnimationFrameRef.current = null;
