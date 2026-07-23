@@ -45,7 +45,15 @@ import {
   type BankAccountInfo,
   type MyHostedBuncheol,
   type MyParticipation,
+  type ShippingFeePaybackInfo,
 } from "@/lib/auth-api";
+import { FEATURES } from "@/lib/feature-flags";
+import {
+  PAYBACK_CTA_LABEL,
+  PAYBACK_RETRY_CTA_LABEL,
+  PAYBACK_STATUS_LABELS,
+} from "@/lib/shipping-fee-payback";
+import { ShippingFeePaybackSheet } from "@/components/ShippingFeePaybackSheet";
 import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
@@ -347,6 +355,7 @@ type BidRecord = {
   shippingFee?: number | null;
   trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
+  payback?: ShippingFeePaybackInfo | null;
 };
 
 function isRecruitingStatus(status: string | undefined) {
@@ -486,6 +495,29 @@ function isDeliveryInProgress(bid: BidRecord) {
     isDeliveryCompletedStatus(normalizedStatus) ||
     Boolean(bid.trackingNumber)
   );
+}
+
+// 배송비 돌려받기 상태는 서버 파생값(payback.status)을 그대로 신뢰한다 — 슬롯 0원 여부를
+// 프론트에서 재판정하지 않는다. 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
+function getPaybackStatus(bid: BidRecord) {
+  return bid.payback?.status ?? "NONE";
+}
+
+function isPaybackRequestable(bid: BidRecord) {
+  const status = getPaybackStatus(bid);
+
+  return (
+    FEATURES.shippingFeePayback &&
+    (status === "ELIGIBLE" || status === "REJECTED")
+  );
+}
+
+function getPaybackBadgeLabel(bid: BidRecord) {
+  if (!FEATURES.shippingFeePayback) {
+    return null;
+  }
+
+  return PAYBACK_STATUS_LABELS[getPaybackStatus(bid)] ?? null;
 }
 
 function getBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
@@ -734,6 +766,7 @@ function getBidRecordFromParticipation(
     submittedAt: "",
     title: participation.buncheolTitle,
     tone: getToneFromId(participation.buncheolId),
+    payback: participation.payback ?? null,
   };
 }
 
@@ -975,6 +1008,11 @@ export function BidHistoryContent({
   const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
   const [paymentCopyToast, setPaymentCopyToast] = useState("");
+  const [paybackSheetBidId, setPaybackSheetBidId] = useState<string | null>(
+    null,
+  );
+  const paybackToastTimerRef = useRef<number | null>(null);
+  const [paybackToast, setPaybackToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
@@ -1023,6 +1061,10 @@ export function BidHistoryContent({
   const selectedPaymentBid = findBidRecordById(
     paymentBidRecords,
     selectedPaymentBidId,
+  );
+  const selectedPaybackBid = findBidRecordById(
+    paymentBidRecords,
+    paybackSheetBidId,
   );
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
@@ -1106,6 +1148,10 @@ export function BidHistoryContent({
 
       if (paymentCopyToastTimerRef.current !== null) {
         window.clearTimeout(paymentCopyToastTimerRef.current);
+      }
+
+      if (paybackToastTimerRef.current !== null) {
+        window.clearTimeout(paybackToastTimerRef.current);
       }
 
       if (addressSheetCloseTimerRef.current !== null) {
@@ -1710,6 +1756,36 @@ export function BidHistoryContent({
     );
   }
 
+  // 신청 성공 시 서버 재조회 없이 해당 카드만 낙관적으로 REQUESTED 로 갱신한다.
+  function handlePaybackRequested(participationId: string) {
+    setApiBidRecords(
+      (records) =>
+        records?.map((record) =>
+          record.id === participationId
+            ? {
+                ...record,
+                payback: {
+                  ...(record.payback ?? {}),
+                  status: "REQUESTED" as const,
+                  rejectReason: null,
+                  requestedAt: new Date().toISOString(),
+                },
+              }
+            : record,
+        ) ?? records,
+    );
+
+    if (paybackToastTimerRef.current !== null) {
+      window.clearTimeout(paybackToastTimerRef.current);
+    }
+
+    setPaybackToast("돌려받기 신청 완료! 후기 확인 후 배송비를 보내드려요.");
+    paybackToastTimerRef.current = window.setTimeout(() => {
+      setPaybackToast("");
+      paybackToastTimerRef.current = null;
+    }, 3200);
+  }
+
   function openStatusHelpSheet() {
     if (statusHelpSheetCloseTimerRef.current !== null) {
       window.clearTimeout(statusHelpSheetCloseTimerRef.current);
@@ -2249,6 +2325,46 @@ export function BidHistoryContent({
                           </div>
                         </div>
                       ) : null}
+                      {isPaybackRequestable(bid) ? (
+                        <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                          <p className="text-[11px] font-medium text-black/35">
+                            무료 분철 이벤트
+                          </p>
+                          <p className="mt-1 text-[13px] font-semibold leading-5 text-black/60">
+                            {getPaybackStatus(bid) === "REJECTED"
+                              ? bid.payback?.rejectReason
+                                ? `후기를 다시 확인해 주세요 · ${bid.payback.rejectReason}`
+                                : "후기를 다시 확인해 주세요"
+                              : "X에 후기를 올리면 배송비를 돌려드려요"}
+                          </p>
+                          <div className="mt-2 flex justify-end">
+                            <button
+                              className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                              onClick={() => setPaybackSheetBidId(bid.id)}
+                              type="button"
+                            >
+                              {getPaybackStatus(bid) === "REJECTED"
+                                ? PAYBACK_RETRY_CTA_LABEL
+                                : PAYBACK_CTA_LABEL}
+                            </button>
+                          </div>
+                        </div>
+                      ) : getPaybackBadgeLabel(bid) ? (
+                        <div className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                          <p className="text-[11px] font-medium text-black/35">
+                            무료 분철 이벤트
+                          </p>
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
+                              getPaybackStatus(bid) === "COMPLETED"
+                                ? "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
+                                : "bg-white text-black/55 ring-1 ring-black/10"
+                            }`}
+                          >
+                            {getPaybackBadgeLabel(bid)}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -2683,6 +2799,36 @@ export function BidHistoryContent({
               확인했어요
             </button>
           </section>
+        </div>
+      ) : null}
+
+      {selectedPaybackBid ? (
+        <ShippingFeePaybackSheet
+          key={selectedPaybackBid.id}
+          onClose={() => setPaybackSheetBidId(null)}
+          onRequested={handlePaybackRequested}
+          target={{
+            participationId: selectedPaybackBid.id,
+            title: selectedPaybackBid.title,
+            optionLabel: selectedPaybackBid.optionLabel,
+            shippingFee:
+              typeof selectedPaybackBid.shippingFee === "number"
+                ? selectedPaybackBid.shippingFee
+                : null,
+            payback: selectedPaybackBid.payback ?? null,
+          }}
+        />
+      ) : null}
+
+      {paybackToast ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
+          <p
+            aria-live="polite"
+            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+            role="status"
+          >
+            {paybackToast}
+          </p>
         </div>
       ) : null}
 

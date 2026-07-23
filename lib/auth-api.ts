@@ -243,7 +243,7 @@ export type BuncheolSummary = {
   memberNames: string[];
   memberSlotCount?: number;
   minHeadcount?: number | null;
-  // 오픈 이벤트 배송비 돌려받기 대상 분철(전 슬롯 0원 + 이벤트 기간 내 개최 + 이벤트 활성) 여부.
+  // 오픈 이벤트 배송비 돌려받기 대상 분철(전 슬롯 0원 + 이벤트 활성) 여부.
   // 서버가 판정해 내려주며, 필드가 없는 응답이면 undefined → 배지를 노출하지 않는다 (안전 폴백).
   shippingFeePaybackTarget?: boolean;
   status: BuncheolStatus;
@@ -368,6 +368,8 @@ export type ShippingFeePaybackInfo = {
   completedAt?: string | null;
   rejectReason?: string | null;
   amount?: number | null;
+  // 환급을 입금받을 계좌 (참여 시 등록한 환불계좌). 돌려받기 시트에 표시한다.
+  refundAccount?: BankAccountInfo | null;
 };
 
 export type MyParticipation = {
@@ -2040,6 +2042,7 @@ function getShippingFeePaybackFromRecord(
       null,
     amount:
       getOptionalNumberValue(value, ["amount", "paybackAmount"]) ?? null,
+    refundAccount: getNestedBankAccountInfo(value, ["refundAccount"]),
   };
 }
 
