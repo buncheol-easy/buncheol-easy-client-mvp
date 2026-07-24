@@ -3309,14 +3309,14 @@ export function ProductDetail({
                       무료 분철 이벤트
                     </span>
                     <p className="text-[13px] font-semibold tracking-[-0.04em]">
-                      후기 쓰면 배송비도 돌려드려요
+                      배송비는 돌려받는 보증금이에요
                     </p>
                   </div>
                   <ol className="mt-3 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
-                    <li>1. 배송비만 입금하고 참여해요.</li>
+                    <li>1. 지금은 배송비만 입금하고 참여해요.</li>
                     <li>2. 앨범을 수령해요.</li>
                     <li>3. X에 이벤트 트윗을 인용한 후기를 올려요.</li>
-                    <li>4. 참여 내역에서 신청하면 배송비를 돌려받아요.</li>
+                    <li>4. 참여 내역에서 신청하면 배송비를 그대로 돌려받아요.</li>
                   </ol>
                 </div>
               ) : null}
@@ -3600,8 +3600,10 @@ export function ProductDetail({
                       </div>
                       {isShippingFeePaybackProduct ? (
                         <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
-                          후기 작성 시 배송비 {formatPrice(estimatedShippingAmount)}을 등록한
-                          환불 계좌로 돌려드려요.
+                          이 분철은 전액 무료예요. 배송비{" "}
+                          {formatPrice(estimatedShippingAmount)}은 보증금처럼 잠시
+                          맡아두는 금액이라, 앨범 받고 후기를 남기면 등록한 환불
+                          계좌로 그대로 돌려받아요.
                         </p>
                       ) : null}
                     </div>
@@ -3766,9 +3768,10 @@ export function ProductDetail({
                         </div>
                         {isShippingFeePaybackProduct ? (
                           <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
-                            후기 작성 시 배송비{" "}
-                            {formatPrice(checkoutPaymentSummary.shippingAmount)}을 등록한
-                            환불 계좌로 돌려드려요.
+                            이 분철은 전액 무료예요. 배송비{" "}
+                            {formatPrice(checkoutPaymentSummary.shippingAmount)}은
+                            보증금처럼 잠시 맡아두는 금액이라, 앨범 받고 후기를
+                            남기면 등록한 환불 계좌로 그대로 돌려받아요.
                           </p>
                         ) : null}
                       </div>
