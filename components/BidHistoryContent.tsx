@@ -2339,17 +2339,43 @@ export function BidHistoryContent({
                           </div>
                         </div>
                       ) : null}
-                      {isPaybackRequestable(bid) ? (
+                      {isPaybackRequestable(bid) &&
+                      getPaybackStatus(bid) === "REJECTED" ? (
+                        // 반려는 재제출이 필요한 상태라, 이벤트 톤(연두)과 확실히 구분되는 붉은 카드로 표시한다.
+                        <div className="mt-3 rounded-[0.75rem] border border-[#F3C1C1] bg-[#fff2f2] px-3 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[11px] font-medium text-[#c03131]/70">
+                              {PAYBACK_EVENT_BLOCK_LABEL}
+                            </p>
+                            <span className="shrink-0 rounded-full bg-[#c03131] px-2.5 py-1 text-[12px] font-semibold text-white shadow-[0_6px_14px_rgba(192,49,49,0.25)]">
+                              후기 반려
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[13px] font-semibold leading-5 text-[#c03131]">
+                            후기를 다시 확인해 주세요
+                          </p>
+                          {bid.payback?.rejectReason ? (
+                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
+                              {bid.payback.rejectReason}
+                            </p>
+                          ) : null}
+                          <div className="mt-2 flex justify-end">
+                            <button
+                              className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                              onClick={() => setPaybackSheetBidId(bid.id)}
+                              type="button"
+                            >
+                              {PAYBACK_RETRY_CTA_LABEL}
+                            </button>
+                          </div>
+                        </div>
+                      ) : isPaybackRequestable(bid) ? (
                         <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
                           <p className="text-[11px] font-medium text-black/35">
                             {PAYBACK_EVENT_BLOCK_LABEL}
                           </p>
                           <p className="mt-1 text-[13px] font-semibold leading-5 text-black/60">
-                            {getPaybackStatus(bid) === "REJECTED"
-                              ? bid.payback?.rejectReason
-                                ? `후기를 다시 확인해 주세요 · ${bid.payback.rejectReason}`
-                                : "후기를 다시 확인해 주세요"
-                              : "X에 후기를 올리면 배송비를 돌려드려요"}
+                            X에 후기를 올리면 배송비를 돌려드려요
                           </p>
                           <div className="mt-2 flex justify-end">
                             <button
@@ -2357,9 +2383,7 @@ export function BidHistoryContent({
                               onClick={() => setPaybackSheetBidId(bid.id)}
                               type="button"
                             >
-                              {getPaybackStatus(bid) === "REJECTED"
-                                ? PAYBACK_RETRY_CTA_LABEL
-                                : PAYBACK_CTA_LABEL}
+                              {PAYBACK_CTA_LABEL}
                             </button>
                           </div>
                         </div>
