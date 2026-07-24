@@ -3309,14 +3309,17 @@ export function ProductDetail({
                       무료 분철 이벤트
                     </span>
                     <p className="text-[13px] font-semibold tracking-[-0.04em]">
-                      배송비는 돌려받는 보증금이에요
+                      배송비는 환급되니 걱정 마세요!
                     </p>
                   </div>
                   <ol className="mt-3 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
                     <li>1. 지금은 배송비만 입금하고 참여해요.</li>
-                    <li>2. 앨범을 수령해요.</li>
-                    <li>3. X에 이벤트 트윗을 인용한 후기를 올려요.</li>
-                    <li>4. 참여 내역에서 신청하면 배송비를 그대로 돌려받아요.</li>
+                    <li>2. 택배를 수령해요.</li>
+                    <li>
+                      3. 참여 내역의 [후기 쓰고 배송비 돌려받기] 버튼을 눌러 X에
+                      후기를 작성해요.
+                    </li>
+                    <li>4. 작성한 후기 링크로 신청해 주시면 배송비를 환급해 드려요!</li>
                   </ol>
                 </div>
               ) : null}
