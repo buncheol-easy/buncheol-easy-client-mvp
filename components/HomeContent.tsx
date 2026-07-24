@@ -10,7 +10,11 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { AppHeader } from "@/components/AppHeader";
 import {
   BanknoteIcon,
@@ -25,6 +29,7 @@ import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import {
   addFavoriteGroup,
+  readCachedBanners,
   removeFavoriteGroup,
   requestAllBuncheols,
   requestBanners,
@@ -54,6 +59,7 @@ import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
+const HOME_BANNER_SLIDE_KEY = "home-banner-slide";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
@@ -130,6 +136,36 @@ function toHomeBanner(item: ApiBanner): HomeBanner {
   };
 }
 
+function getBannerSlideLeft(scrollElement: HTMLDivElement, index: number) {
+  const slide = scrollElement.children.item(index);
+
+  if (!(slide instanceof HTMLElement)) {
+    return scrollElement.clientWidth * index;
+  }
+
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const slideRect = slide.getBoundingClientRect();
+
+  return slideRect.left - scrollRect.left + scrollElement.scrollLeft;
+}
+
+function getNearestBannerIndex(scrollElement: HTMLDivElement) {
+  const slideOffsets = Array.from(scrollElement.children).map((child, index) =>
+    child instanceof HTMLElement
+      ? getBannerSlideLeft(scrollElement, index)
+      : 0,
+  );
+
+  return slideOffsets.reduce((nearestIndex, offset, index) => {
+    const nearestDistance = Math.abs(
+      slideOffsets[nearestIndex] - scrollElement.scrollLeft,
+    );
+    const distance = Math.abs(offset - scrollElement.scrollLeft);
+
+    return distance < nearestDistance ? index : nearestIndex;
+  }, 0);
+}
+
 function takeShouldSkipHomeEnter() {
   if (typeof window === "undefined") {
     return false;
@@ -150,6 +186,39 @@ function getStoredHomeScrollTop() {
   const storedScrollTop = window.sessionStorage.getItem(HOME_SCROLL_TOP_KEY);
 
   return storedScrollTop === null ? null : Number(storedScrollTop);
+}
+
+type StoredBannerSlide = {
+  fingerprint: string;
+  index: number;
+};
+
+// 저장해 둔 슬라이드가 지금 배너 구성의 것인지 판별하기 위한 지문.
+function getBannersFingerprint(banners: HomeBanner[]) {
+  return banners.map((banner) => banner.href).join("|");
+}
+
+function readStoredBannerSlide(): StoredBannerSlide | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(HOME_BANNER_SLIDE_KEY);
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue) as StoredBannerSlide;
+
+    return typeof parsed?.fingerprint === "string" &&
+      Number.isInteger(parsed?.index)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadHomeListings(loggedIn: boolean) {
@@ -222,6 +291,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const isRestoringReturnScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
+  const bannerDotsRef = useRef<HTMLDivElement | null>(null);
+  // 도트 클릭으로 이동 중인 목표 슬라이드. 이동하는 동안 스크롤 기반 도트 갱신을 억제해
+  // 활성 도트가 이전 슬라이드로 되돌아갔다 오는 왕복(→←→)을 막는다.
+  const bannerScrollTargetRef = useRef<number | null>(null);
   const [isUsageHelpSheetOpen, setIsUsageHelpSheetOpen] = useState(false);
   const [isUsageHelpSheetEntered, setIsUsageHelpSheetEntered] =
     useState(false);
@@ -252,11 +325,33 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     // 로그인 상태가 바뀌어 키가 갈릴 때 이전 목록을 유지해 스켈레톤 재노출을 막는다.
     placeholderData: keepPreviousData,
   });
+  const queryClient = useQueryClient();
   const bannersQuery = useQuery({
     queryKey: bannersQueryKey,
     queryFn: async () => (await requestBanners()).map(toHomeBanner),
     staleTime: HOME_BANNERS_STALE_MS,
   });
+
+  // 새로고침 직후에는 React Query 캐시가 비어 폴백 배너가 먼저 그려지고, API 응답이
+  // 오면 슬라이드가 통째로 교체되며 깜빡인다. localStorage 캐시가 있으면 페인트 전에
+  // 심어 첫 페인트부터 실제 배너를 그린다. SSR HTML 은 폴백 기준이라 initialData 로
+  // 넣으면 hydration 불일치가 나므로 layout effect 를 쓴다. updatedAt: 0 으로 곧바로
+  // stale 처리해 백그라운드 재검증(신선도)은 기존과 동일하게 유지한다.
+  useLayoutEffect(() => {
+    if (queryClient.getQueryData(bannersQueryKey)) {
+      return;
+    }
+
+    const cachedBanners = readCachedBanners();
+
+    if (cachedBanners && cachedBanners.length > 0) {
+      queryClient.setQueryData(
+        bannersQueryKey,
+        cachedBanners.map(toHomeBanner),
+        { updatedAt: 0 },
+      );
+    }
+  }, [queryClient]);
   // 캐시 히트로 마운트하면(첫 렌더부터 데이터 존재) reveal 애니메이션을 생략한다 —
   // 이미 보이던 목록이 사라졌다 나타나는 것처럼 보이는 문제 방지. 마운트 시점 판정을
   // 고정하는 것이 목적이라 초기값 이후 갱신하지 않는다.
@@ -322,36 +417,25 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
-    const slideOffsets = Array.from(scrollElement.children).map((child, index) =>
-      child instanceof HTMLElement
-        ? getBannerSlideLeft(scrollElement, index)
-        : 0,
-    );
-    const nextIndex = slideOffsets.reduce((nearestIndex, offset, index) => {
-      const nearestDistance = Math.abs(
-        slideOffsets[nearestIndex] - scrollElement.scrollLeft,
-      );
-      const distance = Math.abs(offset - scrollElement.scrollLeft);
+    const nextIndex = getNearestBannerIndex(scrollElement);
 
-      return distance < nearestDistance ? index : nearestIndex;
-    }, 0);
+    // 도트 클릭 이동 중에는 목표 도착 전까지 스크롤 기반 갱신을 건너뛴다.
+    if (bannerScrollTargetRef.current !== null) {
+      if (nextIndex === bannerScrollTargetRef.current) {
+        bannerScrollTargetRef.current = null;
+      }
+
+      return;
+    }
 
     setActiveBannerIndex((current) =>
       current === nextIndex ? current : nextIndex,
     );
   }
 
-  function getBannerSlideLeft(scrollElement: HTMLDivElement, index: number) {
-    const slide = scrollElement.children.item(index);
-
-    if (!(slide instanceof HTMLElement)) {
-      return scrollElement.clientWidth * index;
-    }
-
-    const scrollRect = scrollElement.getBoundingClientRect();
-    const slideRect = slide.getBoundingClientRect();
-
-    return slideRect.left - scrollRect.left + scrollElement.scrollLeft;
+  // 도트 이동 중 사용자가 직접 조작하면 억제를 풀어 스크롤 추종으로 되돌린다.
+  function releaseBannerScrollTarget() {
+    bannerScrollTargetRef.current = null;
   }
 
   function handleBannerDotClick(index: number) {
@@ -361,6 +445,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
+    bannerScrollTargetRef.current = index;
     setActiveBannerIndex(index);
     scrollElement.scrollTo({
       behavior: "smooth",
@@ -423,21 +508,71 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     };
   }, [isListingLoading, listings.length, skipEnterAnimation]);
 
-  // 기존 동작 유지: 배너 데이터가 도착하거나 화면이 다시 마운트되면 첫 슬라이드부터.
-  useEffect(() => {
-    if (!bannersQuery.data) {
+  // 재마운트 시 보던 슬라이드를 복원한다(상세를 다녀와도 배너 위치 유지).
+  // 배너 구성이 바뀌면(폴백→API 교체, 배너 갱신) 첫 슬라이드부터 다시 시작한다.
+  // 페인트 전에 위치를 확정해야 첫 슬라이드가 보였다가 이동하는 스냅이 없다.
+  useLayoutEffect(() => {
+    const scrollElement = bannerScrollerRef.current;
+
+    if (!scrollElement) {
       return;
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 마운트 시 이미 0이면 bail-out 되는 1회성 리셋(기존 동작 보존)
-    setActiveBannerIndex(0);
+    const storedSlide = readStoredBannerSlide();
+    const restoredIndex =
+      storedSlide &&
+      storedSlide.fingerprint === getBannersFingerprint(banners) &&
+      storedSlide.index > 0 &&
+      storedSlide.index < banners.length
+        ? storedSlide.index
+        : 0;
 
-    const scrollElement = bannerScrollerRef.current;
+    // 복원으로 활성 도트가 바뀔 때 motion-pill 의 폭·색 transition 이 재생되면
+    // 도트가 스와이프하듯 보인다. 첫 페인트 동안만 transition 을 끄고 되돌린다.
+    const dotsElement = bannerDotsRef.current;
+    let instantFrame: number | null = null;
 
-    if (scrollElement) {
-      scrollElement.scrollTo({ behavior: "auto", left: 0 });
+    if (dotsElement) {
+      dotsElement.classList.add("banner-dots--instant");
+      instantFrame = window.requestAnimationFrame(() => {
+        instantFrame = window.requestAnimationFrame(() => {
+          dotsElement.classList.remove("banner-dots--instant");
+          instantFrame = null;
+        });
+      });
     }
-  }, [bannersQuery.data]);
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 페인트 전 위치 복원(같은 값이면 bail-out)
+    setActiveBannerIndex(restoredIndex);
+    // "auto" 는 CSS scroll-behavior(smooth)를 따라가 복원이 스와이프처럼 보인다.
+    // 점프 없이 복원하려면 "instant" 로 강제해야 한다.
+    scrollElement.scrollTo({
+      behavior: "instant",
+      left:
+        restoredIndex === 0
+          ? 0
+          : getBannerSlideLeft(scrollElement, restoredIndex),
+    });
+
+    return () => {
+      if (instantFrame !== null) {
+        window.cancelAnimationFrame(instantFrame);
+      }
+
+      dotsElement?.classList.remove("banner-dots--instant");
+    };
+  }, [banners]);
+
+  // 현재 슬라이드를 세션에 남겨 상세를 다녀와도 이어 보게 한다.
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      HOME_BANNER_SLIDE_KEY,
+      JSON.stringify({
+        fingerprint: getBannersFingerprint(banners),
+        index: activeBannerIndex,
+      }),
+    );
+  }, [activeBannerIndex, banners]);
 
   useEffect(() => {
     // 최애 그룹 레일이 꺼져 있으면 그룹 조회 자체를 건너뛴다.
@@ -644,8 +779,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         <div className="flex min-h-full flex-col">
         <section className="px-4 pt-4">
           <div
-            className="home-banner-carousel motion-carousel flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className={`home-banner-carousel motion-carousel ${
+              shouldSkipEnterAnimation ? "motion-carousel--skip-enter" : ""
+            } flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
+            onPointerDown={releaseBannerScrollTarget}
             onScroll={handleBannerScroll}
+            onWheel={releaseBannerScrollTarget}
             ref={bannerScrollerRef}
           >
             {banners.map((banner, index) => (
@@ -677,7 +816,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             ))}
           </div>
 
-          <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+          <div
+            className="flex items-center justify-center gap-2 pt-2 pb-4"
+            ref={bannerDotsRef}
+          >
             {banners.map((banner, index) => (
               <button
                 aria-label={`${index + 1}번째 배너 보기`}

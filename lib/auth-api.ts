@@ -4445,7 +4445,7 @@ export async function requestBanners(): Promise<ApiBanner[]> {
     throw new Error(await parseErrorMessage(response));
   }
 
-  return getBannerList(await readJsonBody(response))
+  const banners = getBannerList(await readJsonBody(response))
     .filter(isRecord)
     .map((record) => ({
       bannerImageUrl: getStringValue(record, ["bannerImageUrl", "imageUrl"]),
@@ -4456,21 +4456,9 @@ export async function requestBanners(): Promise<ApiBanner[]> {
       (banner) =>
         Boolean(banner.noticeId) && Boolean(banner.bannerImageUrl),
     );
-}
 
-export function readCachedBanners() {
-  return readBrowserApiCache<ApiBanner[]>(publicBannerCacheKey);
-}
-
-export async function requestCachedBanners() {
-  const cachedBanners = readCachedBanners();
-
-  if (cachedBanners) {
-    return cachedBanners;
-  }
-
-  const banners = await requestBanners();
-
+  // 새로고침 후에도 첫 페인트부터 실제 배너를 그릴 수 있도록 localStorage 에 남긴다
+  // (홈에서 readCachedBanners 로 읽어 폴백 배너 → API 배너 교체 깜빡임을 막는다).
   writeBrowserApiCache(
     publicBannerCacheKey,
     banners,
@@ -4478,6 +4466,14 @@ export async function requestCachedBanners() {
   );
 
   return banners;
+}
+
+export function readCachedBanners() {
+  return readBrowserApiCache<ApiBanner[]>(publicBannerCacheKey);
+}
+
+export async function requestCachedBanners() {
+  return readCachedBanners() ?? requestBanners();
 }
 
 function getPublicNoticeListCacheKey(params: InboxMessagesParams = {}) {
