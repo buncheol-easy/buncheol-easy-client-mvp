@@ -18,16 +18,18 @@ export type ShippingFeePaybackStatus =
 
 export const PAYBACK_CTA_LABEL = "후기 쓰고 배송비 돌려받기";
 export const PAYBACK_RETRY_CTA_LABEL = "후기 다시 제출하기";
+// 검수 전(REQUESTED) 잘못 올린 트윗 링크를 고치는 동선. 같은 신청 API 로 재제출한다.
+export const PAYBACK_EDIT_CTA_LABEL = "후기 링크 수정";
 
-// 상태 배지/안내 워딩. REQUESTED 는 카드 배지("돌려받기 확인 중")와
-// 신청 직후 완료 안내("돌려받기 신청 완료")를 구분해 쓴다.
+// 참여 내역 카드의 이벤트 블록 라벨·상태 안내 문장.
+export const PAYBACK_EVENT_BLOCK_LABEL = "오픈 기념 무료 이벤트";
 export const PAYBACK_STATUS_LABELS: Partial<
   Record<ShippingFeePaybackStatus, string>
 > = {
-  REQUESTED: "돌려받기 확인 중",
-  COMPLETED: "배송비를 돌려드렸어요",
+  REQUESTED: "배송비 환급 신청 완료! 운영자가 확인하고 있어요.",
+  COMPLETED: "배송비를 돌려드렸어요!",
   REJECTED: "후기를 다시 확인해 주세요",
-  EXPIRED: "돌려받기 기간이 지났어요",
+  EXPIRED: "배송비 환급 신청 기간이 지났어요.",
 };
 
 // 트윗 퍼머링크 형식 (서버 검증과 동일). 쿼리스트링은 서버가 제거 후 저장하므로 허용한다.

@@ -29,8 +29,8 @@ export type ShippingFeePaybackSheetTarget = {
 type ShippingFeePaybackSheetProps = {
   target: ShippingFeePaybackSheetTarget;
   onClose: () => void;
-  // 신청 성공 시 부모가 참여 목록을 낙관적으로 REQUESTED 로 갱신하고 완료 토스트를 띄운다.
-  onRequested: (participationId: string) => void;
+  // 제출 성공 시 부모가 참여 목록을 낙관적으로 REQUESTED 로 갱신하고 완료 토스트를 띄운다.
+  onRequested: (participationId: string, tweetUrl: string) => void;
 };
 
 // 오픈 이벤트 "배송비 돌려받기" 신청 바텀시트. 기존 결제 정보 시트와 동일한
@@ -44,12 +44,18 @@ export function ShippingFeePaybackSheet({
   const [isEntered, setIsEntered] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const closeTimerRef = useRef<number | null>(null);
-  const [tweetUrl, setTweetUrl] = useState("");
+  // 검수 전(REQUESTED) 링크 수정 모드면 제출해 둔 링크를 미리 채워 바로 고칠 수 있게 한다.
+  const [tweetUrl, setTweetUrl] = useState(() =>
+    target.payback?.status === "REQUESTED"
+      ? target.payback?.tweetUrl ?? ""
+      : "",
+  );
   const [inputError, setInputError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isRejected = target.payback?.status === "REJECTED";
+  const isEditingSubmittedUrl = target.payback?.status === "REQUESTED";
   const refundAccount = target.payback?.refundAccount ?? null;
   const paybackAmountLabel =
     target.shippingFee !== null ? formatPrice(target.shippingFee) : "배송비 전액";
@@ -113,7 +119,7 @@ export function ShippingFeePaybackSheet({
         target.participationId,
         trimmedUrl,
       );
-      onRequested(target.participationId);
+      onRequested(target.participationId, trimmedUrl);
       closeSheet();
     } catch (error) {
       setSubmitError(
@@ -159,7 +165,9 @@ export function ShippingFeePaybackSheet({
               배송비 돌려받기
             </h2>
             <p className="mt-1 text-[13px] font-medium text-black/45">
-              X에 후기를 올리고 링크를 제출하면 배송비를 돌려드려요.
+              {isEditingSubmittedUrl
+                ? "제출한 후기 링크를 확인하고 수정할 수 있어요."
+                : "X에 후기를 올리고 링크를 제출하면 배송비를 돌려드려요."}
             </p>
           </div>
           <button
@@ -177,7 +185,10 @@ export function ShippingFeePaybackSheet({
             <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
               {target.title}
             </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[12px] font-semibold text-black/40">
+                참여한 멤버
+              </span>
               <span className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65">
                 {target.optionLabel}
               </span>
@@ -264,6 +275,8 @@ export function ShippingFeePaybackSheet({
             )}
             <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
               후기 확인이 끝나면 배송비 {paybackAmountLabel}을 위 계좌로 보내드려요.
+              <br />
+              계좌 정보 수정은 마이페이지에서 할 수 있어요.
             </p>
           </div>
 
@@ -282,7 +295,9 @@ export function ShippingFeePaybackSheet({
             type="button"
           >
             {isSubmitting
-              ? "신청 중..."
+              ? "제출 중..."
+              : isEditingSubmittedUrl
+              ? "후기 링크 수정하기"
               : isRejected
               ? "후기 다시 제출하기"
               : "돌려받기 신청"}

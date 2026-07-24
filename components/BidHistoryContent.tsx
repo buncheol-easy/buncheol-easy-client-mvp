@@ -50,6 +50,8 @@ import {
 import { FEATURES } from "@/lib/feature-flags";
 import {
   PAYBACK_CTA_LABEL,
+  PAYBACK_EDIT_CTA_LABEL,
+  PAYBACK_EVENT_BLOCK_LABEL,
   PAYBACK_RETRY_CTA_LABEL,
   PAYBACK_STATUS_LABELS,
 } from "@/lib/shipping-fee-payback";
@@ -1756,8 +1758,15 @@ export function BidHistoryContent({
     );
   }
 
-  // 신청 성공 시 서버 재조회 없이 해당 카드만 낙관적으로 REQUESTED 로 갱신한다.
-  function handlePaybackRequested(participationId: string) {
+  // 제출 성공 시 서버 재조회 없이 해당 카드만 낙관적으로 REQUESTED 로 갱신한다.
+  // 이미 REQUESTED 였던 건의 재제출은 잘못 올린 후기 링크 수정이라 토스트 문구를 구분한다.
+  function handlePaybackRequested(participationId: string, tweetUrl: string) {
+    const wasRequested = paymentBidRecords.some(
+      (record) =>
+        record.id === participationId &&
+        record.payback?.status === "REQUESTED",
+    );
+
     setApiBidRecords(
       (records) =>
         records?.map((record) =>
@@ -1769,6 +1778,7 @@ export function BidHistoryContent({
                   status: "REQUESTED" as const,
                   rejectReason: null,
                   requestedAt: new Date().toISOString(),
+                  tweetUrl,
                 },
               }
             : record,
@@ -1779,7 +1789,11 @@ export function BidHistoryContent({
       window.clearTimeout(paybackToastTimerRef.current);
     }
 
-    setPaybackToast("돌려받기 신청 완료! 후기 확인 후 배송비를 보내드려요.");
+    setPaybackToast(
+      wasRequested
+        ? "후기 링크를 수정했어요!"
+        : "배송비 환급 신청 완료! 후기 확인 후 배송비를 보내드려요.",
+    );
     paybackToastTimerRef.current = window.setTimeout(() => {
       setPaybackToast("");
       paybackToastTimerRef.current = null;
@@ -2328,7 +2342,7 @@ export function BidHistoryContent({
                       {isPaybackRequestable(bid) ? (
                         <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
                           <p className="text-[11px] font-medium text-black/35">
-                            무료 분철 이벤트
+                            {PAYBACK_EVENT_BLOCK_LABEL}
                           </p>
                           <p className="mt-1 text-[13px] font-semibold leading-5 text-black/60">
                             {getPaybackStatus(bid) === "REJECTED"
@@ -2350,19 +2364,31 @@ export function BidHistoryContent({
                           </div>
                         </div>
                       ) : getPaybackBadgeLabel(bid) ? (
-                        <div className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
-                          <p className="text-[11px] font-medium text-black/35">
-                            무료 분철 이벤트
-                          </p>
-                          <span
-                            className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              getPaybackStatus(bid) === "COMPLETED"
-                                ? "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
-                                : "bg-white text-black/55 ring-1 ring-black/10"
-                            }`}
-                          >
+                        <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[11px] font-medium text-black/35">
+                              {PAYBACK_EVENT_BLOCK_LABEL}
+                            </p>
+                            {getPaybackStatus(bid) === "COMPLETED" ? (
+                              <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[12px] font-semibold text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]">
+                                환급 완료
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-[13px] font-semibold leading-5 text-black/60">
                             {getPaybackBadgeLabel(bid)}
-                          </span>
+                          </p>
+                          {getPaybackStatus(bid) === "REQUESTED" ? (
+                            <div className="mt-2 flex justify-end">
+                              <button
+                                className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black/55 ring-1 ring-black/10"
+                                onClick={() => setPaybackSheetBidId(bid.id)}
+                                type="button"
+                              >
+                                {PAYBACK_EDIT_CTA_LABEL}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
