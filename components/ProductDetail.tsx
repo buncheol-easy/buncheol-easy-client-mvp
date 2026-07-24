@@ -854,6 +854,12 @@ export function ProductDetail({
   );
   const didNavigateBack = useRef(false);
   const didRestoreCheckoutAddressReturnRef = useRef(false);
+  // 복원한 체크아웃 상태 보관용. StrictMode 재실행·상세 재조회로 아래 리셋
+  // effect가 복원 직후 다시 돌면 상태가 지워지므로, 리셋될 때마다 재적용한다.
+  const pendingCheckoutRestoreRef = useRef<CheckoutAddressReturnState | null>(
+    null,
+  );
+  const shouldApplyCheckoutRestoreRef = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const sheetDragStartYRef = useRef<number | null>(null);
@@ -1294,7 +1300,10 @@ export function ProductDetail({
   }
 
   function getProductDetailReturnHref(
-    options: { restoreCheckoutAddressSheet?: boolean } = {},
+    options: {
+      restoreCheckoutAddressSheet?: boolean;
+      restoreCheckoutConfirm?: boolean;
+    } = {},
   ) {
     const fallbackHref = `/products/${encodeURIComponent(buncheolId)}`;
 
@@ -1304,9 +1313,15 @@ export function ProductDetail({
 
     const params = new URLSearchParams(window.location.search);
 
-    if (options.restoreCheckoutAddressSheet) {
+    if (options.restoreCheckoutAddressSheet || options.restoreCheckoutConfirm) {
       params.set("checkoutStep", "confirm");
-      params.set("addressSheet", "1");
+
+      if (options.restoreCheckoutAddressSheet) {
+        params.set("addressSheet", "1");
+      } else {
+        params.delete("addressSheet");
+      }
+
       params.delete("checkoutOption");
       getSelectedCheckoutOptionIds().forEach((optionId) => {
         params.append("checkoutOption", optionId);
@@ -1426,6 +1441,18 @@ export function ProductDetail({
     router.push(getAddressManagementHref(openAdd, options));
   }
 
+  // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
+  function navigateToProfileForRefundAccount() {
+    rememberCheckoutAddressReturnState(false);
+
+    const params = new URLSearchParams({
+      openAccount: "1",
+      returnTo: getProductDetailReturnHref({ restoreCheckoutConfirm: true }),
+    });
+
+    router.push(`/profile?${params.toString()}`);
+  }
+
   useEffect(() => {
     const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
     const paymentDueDate = parseCheckoutDateTime(paymentDueAt);
@@ -1479,83 +1506,95 @@ export function ProductDetail({
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
     setCheckoutCopyToast("");
-  }, [product.id, product.isHostedByMe, product.options]);
+
+    // 이 리셋이 복원된 체크아웃 상태를 지웠을 수 있으므로 재적용을 예약한다.
+    if (pendingCheckoutRestoreRef.current?.productId === buncheolId) {
+      shouldApplyCheckoutRestoreRef.current = true;
+    }
+  }, [buncheolId, product.id, product.isHostedByMe, product.options]);
 
   useEffect(() => {
-    if (
-      didRestoreCheckoutAddressReturnRef.current ||
-      typeof window === "undefined"
-    ) {
+    if (typeof window === "undefined") {
       return;
     }
 
-    let returnState: CheckoutAddressReturnState | null = null;
-    const rawState = window.sessionStorage.getItem(
-      CHECKOUT_ADDRESS_RETURN_STATE_KEY,
-    );
-    const draftState = parseCheckoutAddressReturnState(
-      window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
-      buncheolId,
-    );
+    if (!didRestoreCheckoutAddressReturnRef.current) {
+      let returnState: CheckoutAddressReturnState | null = null;
+      const rawState = window.sessionStorage.getItem(
+        CHECKOUT_ADDRESS_RETURN_STATE_KEY,
+      );
+      const draftState = parseCheckoutAddressReturnState(
+        window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+        buncheolId,
+      );
 
-    returnState = parseCheckoutAddressReturnState(rawState, buncheolId);
+      returnState = parseCheckoutAddressReturnState(rawState, buncheolId);
 
-    window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
+      window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
 
-    if (!returnState) {
-      const params = new URLSearchParams(window.location.search);
-      const shouldRestoreCheckout =
-        params.get("checkoutStep") === "confirm" ||
-        params.get("addressSheet") === "1";
-      const queryOptionIds = [
-        ...params.getAll("checkoutOption"),
-        ...(params.get("checkoutOptions")?.split(",") ?? []),
-      ].filter(Boolean);
+      if (!returnState) {
+        const params = new URLSearchParams(window.location.search);
+        const shouldRestoreCheckout =
+          params.get("checkoutStep") === "confirm" ||
+          params.get("addressSheet") === "1";
+        const queryOptionIds = [
+          ...params.getAll("checkoutOption"),
+          ...(params.get("checkoutOptions")?.split(",") ?? []),
+        ].filter(Boolean);
 
-      if (shouldRestoreCheckout) {
-        returnState = {
-          createdAt: Date.now(),
-          addressId: params.get("checkoutAddress"),
-          optionIds: [...new Set(queryOptionIds)],
-          options: [...new Set(queryOptionIds)].map((optionId) => ({
-            id: optionId,
-          })),
-          productId: buncheolId,
-          reopenAddressSheet: params.get("addressSheet") === "1",
-        };
+        if (shouldRestoreCheckout) {
+          returnState = {
+            createdAt: Date.now(),
+            addressId: params.get("checkoutAddress"),
+            optionIds: [...new Set(queryOptionIds)],
+            options: [...new Set(queryOptionIds)].map((optionId) => ({
+              id: optionId,
+            })),
+            productId: buncheolId,
+            reopenAddressSheet: params.get("addressSheet") === "1",
+          };
+        }
       }
-    }
 
-    if (returnState && draftState) {
-      const returnOptions = getCheckoutReturnOptionsFromState(returnState);
-      const draftOptions = getCheckoutReturnOptionsFromState(draftState);
+      if (returnState && draftState) {
+        const returnOptions = getCheckoutReturnOptionsFromState(returnState);
+        const draftOptions = getCheckoutReturnOptionsFromState(draftState);
 
-      if (returnOptions.length === 0 && draftOptions.length > 0) {
-        returnState = {
-          ...draftState,
-          addressId: returnState.addressId ?? draftState.addressId,
-          createdAt: Math.max(returnState.createdAt, draftState.createdAt),
-          reopenAddressSheet: returnState.reopenAddressSheet,
-        };
+        if (returnOptions.length === 0 && draftOptions.length > 0) {
+          returnState = {
+            ...draftState,
+            addressId: returnState.addressId ?? draftState.addressId,
+            createdAt: Math.max(returnState.createdAt, draftState.createdAt),
+            reopenAddressSheet: returnState.reopenAddressSheet,
+          };
+        }
       }
+
+      if (
+        !returnState ||
+        Date.now() - returnState.createdAt > checkoutDraftMaxAgeMs
+      ) {
+        return;
+      }
+
+      // 이미 참여한 분철이면(다른 탭에서 참여 후 복귀 등) 체크아웃을 복원하지 않는다 —
+      // 배송지·계좌까지 채운 뒤 제출 시점에야 거절당하는 헛걸음을 막는다.
+      if (hasMyActiveParticipation) {
+        return;
+      }
+
+      didRestoreCheckoutAddressReturnRef.current = true;
+      pendingCheckoutRestoreRef.current = returnState;
+      shouldApplyCheckoutRestoreRef.current = true;
     }
 
-    if (
-      !returnState ||
-      Date.now() - returnState.createdAt > checkoutDraftMaxAgeMs
-    ) {
+    const checkoutReturnState = pendingCheckoutRestoreRef.current;
+
+    if (!shouldApplyCheckoutRestoreRef.current || !checkoutReturnState) {
       return;
     }
 
-    // 이미 참여한 분철이면(다른 탭에서 참여 후 복귀 등) 체크아웃을 복원하지 않는다 —
-    // 배송지·계좌까지 채운 뒤 제출 시점에야 거절당하는 헛걸음을 막는다.
-    if (hasMyActiveParticipation) {
-      return;
-    }
-
-    const checkoutReturnState = returnState;
-
-    didRestoreCheckoutAddressReturnRef.current = true;
+    shouldApplyCheckoutRestoreRef.current = false;
 
     const restorableOptions =
       getCheckoutReturnOptionsFromState(checkoutReturnState);
@@ -1956,6 +1995,8 @@ export function ProductDetail({
       return;
     }
 
+    // 사용자가 직접 선택을 다시 진행하면 이전 복귀 복원 상태는 폐기한다.
+    pendingCheckoutRestoreRef.current = null;
     checkoutSelectedOptionsRef.current =
       getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
     setCheckoutError("");
@@ -2017,9 +2058,7 @@ export function ProductDetail({
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
         window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
-        rememberCheckoutAddressReturnState(false);
-        router.push("/profile");
+        navigateToProfileForRefundAccount();
         return;
       }
 
@@ -2127,9 +2166,7 @@ export function ProductDetail({
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
         window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
-        rememberCheckoutAddressReturnState(false);
-        router.push("/profile");
+        navigateToProfileForRefundAccount();
         return;
       }
 
@@ -2324,6 +2361,7 @@ export function ProductDetail({
           0,
         ),
       });
+      pendingCheckoutRestoreRef.current = null;
       setCheckoutStep("payment");
       setIsBidSubmitPending(false);
       return;
@@ -2746,6 +2784,9 @@ export function ProductDetail({
     if (isSheetClosing) {
       return;
     }
+
+    // 시트를 직접 닫으면 복귀 복원 상태는 소진된 것으로 본다.
+    pendingCheckoutRestoreRef.current = null;
 
     if (sheetEnterAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(sheetEnterAnimationFrameRef.current);
