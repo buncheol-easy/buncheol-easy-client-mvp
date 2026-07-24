@@ -2257,7 +2257,7 @@ export function ProductDetail({
 
         if (bankAccountKeys.size > 1) {
           throw new Error(
-            "선택한 옵션의 입금 계좌가 달라요. 구매 내역에서 각각 확인해 주세요.",
+            "선택한 옵션의 입금 계좌가 달라요. 참여 내역에서 각각 확인해 주세요.",
           );
         }
       } catch (error: unknown) {
@@ -3725,7 +3725,7 @@ export function ProductDetail({
                             <p className="mt-1 text-[12px] font-medium text-black/40">
                               {checkoutPaymentSummary.hostBankAccount?.holder
                                 ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
-                                : "구매 내역에서 다시 확인해 주세요."}
+                                : "참여 내역에서 다시 확인해 주세요."}
                             </p>
                           </div>
                           <button
@@ -3746,7 +3746,7 @@ export function ProductDetail({
                         </div>
                         <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                           송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행
-                          상황은 구매 내역에서 확인할 수 있어요.
+                          상황은 참여 내역에서 확인할 수 있어요.
                         </p>
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
@@ -3801,7 +3801,7 @@ export function ProductDetail({
                         onClick={openBidHistory}
                         type="button"
                       >
-                        구매 내역 보기
+                        참여 내역 보기
                       </button>
                     </div>
                   </>
