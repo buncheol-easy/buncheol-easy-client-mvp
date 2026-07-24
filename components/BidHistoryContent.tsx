@@ -2100,7 +2100,7 @@ export function BidHistoryContent({
                     {PAYBACK_EVENT_BLOCK_LABEL}
                   </p>
                   <p className="mt-0.5 text-[14px] font-semibold tracking-[-0.04em] text-white">
-                    💸 배송비 돌려받을 수 있는 참여가{" "}
+                    💸 배송비를 돌려받을 수 있는 참여가{" "}
                     {actionablePaybackRecords.length}건 있어요
                   </p>
                 </div>
@@ -2175,7 +2175,7 @@ export function BidHistoryContent({
                         <span className="min-w-0 truncate text-[12px] font-semibold tracking-[-0.02em]">
                           {isPaybackRejected
                             ? "후기를 다시 확인해 주세요"
-                            : "💸 후기 쓰고 배송비를 돌려받을 수 있어요"}
+                            : "💸 후기를 작성하고 배송비를 돌려받을 수 있어요"}
                         </span>
                         <span aria-hidden="true" className="shrink-0 text-[13px] font-semibold">
                           →
