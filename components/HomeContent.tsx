@@ -10,6 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AppHeader } from "@/components/AppHeader";
 import {
   BanknoteIcon,
@@ -20,15 +21,13 @@ import {
 } from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import {
   addFavoriteGroup,
   removeFavoriteGroup,
   requestAllBuncheols,
-  readCachedBanners,
-  requestCachedBanners,
+  requestBanners,
   requestFavoriteGroups,
   toProductCardItem,
   type ApiBanner,
@@ -46,10 +45,9 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { FEATURES } from "@/lib/feature-flags";
 import {
-  isCachedHomeListingsFresh,
-  readCachedHomeListings,
-  writeCachedHomeListings,
-} from "@/lib/home-listings-cache";
+  bannersQueryKey,
+  homeListingsQueryKey,
+} from "@/lib/query-keys";
 import { toArtistRailItem } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
@@ -60,6 +58,10 @@ const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
+// "상세 봤다가 바로 뒤로" 동선은 재요청 없이 캐시를 재사용하는 신선 창(멘토 권고).
+// 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
+const HOME_LISTINGS_STALE_MS = 60 * 1000;
+const HOME_BANNERS_STALE_MS = 15 * 60 * 1000;
 type HomeBanner = {
   href: string;
   imageAlt: string;
@@ -150,6 +152,24 @@ function getStoredHomeScrollTop() {
   return storedScrollTop === null ? null : Number(storedScrollTop);
 }
 
+async function loadHomeListings(loggedIn: boolean) {
+  let accessToken: string | null = null;
+
+  if (loggedIn) {
+    try {
+      accessToken = await getFreshAccessToken();
+    } catch {
+      accessToken = null;
+    }
+  }
+
+  const items = await withHomeListingsTimeout(
+    requestAllBuncheols(accessToken ?? undefined),
+  );
+
+  return items.map(toProductCardItem).map(mergeCachedProductImage);
+}
+
 function withHomeListingsTimeout<T>(request: Promise<T>) {
   if (typeof window === "undefined") {
     return request;
@@ -208,50 +228,54 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [isUsageHelpSheetClosing, setIsUsageHelpSheetClosing] =
     useState(false);
   const usageHelpSheetCloseTimerRef = useRef<number | null>(null);
-  const apiListingsRef = useRef<ProductCardItem[] | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
   const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
     useState(skipEnterAnimation);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
-  const [apiBanners, setApiBanners] = useState<HomeBanner[] | null>(null);
-  const [apiListings, setApiListings] = useState<ProductCardItem[] | null>(null);
-  // 스켈레톤 → 데이터 전환(최초 네트워크 로드)에만 reveal 애니메이션을 재생한다.
-  // 캐시로 페인트 전에 채워진 화면에서 재생하면 목록이 사라졌다 나타나 보인다.
-  const [shouldRevealListings, setShouldRevealListings] = useState(true);
   const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
-  const [listingMessage, setListingMessage] = useState("");
   const [groupMessage, setGroupMessage] = useState("");
-  const [listingRefreshKey, setListingRefreshKey] = useState(0);
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
     getInitialAuthState,
   );
-  const isListingLoading = apiListings === null;
+
+  // 캐시는 루트 레이아웃의 QueryClient 에 살아있으므로, 뒤로가기 복귀 시 첫 렌더부터
+  // 데이터가 있다(스켈레톤 없음). staleTime 내에는 재요청도 없고, 지나면 캐시를 보여준
+  // 채 백그라운드 재검증한다. 참여·업로드·삭제는 invalidateQueries 로 즉시 무효화.
+  const listingsQuery = useQuery({
+    queryKey: homeListingsQueryKey(authState.isLoggedIn),
+    queryFn: () => loadHomeListings(authState.isLoggedIn),
+    staleTime: HOME_LISTINGS_STALE_MS,
+    // 로그인 상태가 바뀌어 키가 갈릴 때 이전 목록을 유지해 스켈레톤 재노출을 막는다.
+    placeholderData: keepPreviousData,
+  });
+  const bannersQuery = useQuery({
+    queryKey: bannersQueryKey,
+    queryFn: async () => (await requestBanners()).map(toHomeBanner),
+    staleTime: HOME_BANNERS_STALE_MS,
+  });
+  // 캐시 히트로 마운트하면(첫 렌더부터 데이터 존재) reveal 애니메이션을 생략한다 —
+  // 이미 보이던 목록이 사라졌다 나타나는 것처럼 보이는 문제 방지. 마운트 시점 판정을
+  // 고정하는 것이 목적이라 초기값 이후 갱신하지 않는다.
+  const [shouldRevealListings] = useState(() => listingsQuery.isPending);
+
+  const isListingLoading = listingsQuery.data === undefined;
   const isGroupLoading = apiGroups === null;
-  const banners = apiBanners && apiBanners.length > 0 ? apiBanners : HOME_BANNERS;
-  const listings = apiListings ?? [];
+  const banners =
+    bannersQuery.data && bannersQuery.data.length > 0
+      ? bannersQuery.data
+      : HOME_BANNERS;
+  const listings = listingsQuery.data ?? [];
+  const listingMessage =
+    listingsQuery.isError && listings.length === 0
+      ? listingsQuery.error instanceof Error
+        ? listingsQuery.error.message
+        : "분철 목록을 불러오지 못했어요."
+      : "";
   const favoriteGroups = apiGroups ?? [];
-
-  // 캐시 복원을 rAF(페인트 후)로 미루면 뒤로가기 복귀 첫 프레임에 스켈레톤이 강제 노출된다.
-  // useLayoutEffect 동기 setState 로 페인트 전에 목록을 확정한다. SSR 프리렌더와의
-  // hydration 불일치를 피하려고 useState 초기값 대신 layout effect 를 쓴다.
-  useLayoutEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- 페인트 전 동기 상태 확정이 목적. rAF 등으로 미루면 첫 프레임에 스켈레톤이 노출된다. */
-    const cachedEntry = readCachedHomeListings();
-
-    if (cachedEntry !== null) {
-      setShouldRevealListings(false);
-      setApiListings((current) => current ?? cachedEntry.listings);
-    }
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
-
-  useEffect(() => {
-    apiListingsRef.current = apiListings;
-  }, [apiListings]);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -399,163 +423,21 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     };
   }, [isListingLoading, listings.length, skipEnterAnimation]);
 
+  // 기존 동작 유지: 배너 데이터가 도착하거나 화면이 다시 마운트되면 첫 슬라이드부터.
   useEffect(() => {
-    let isActive = true;
-    const cachedBanners = readCachedBanners();
-    const cachedBannerFrame = window.requestAnimationFrame(() => {
-      if (isActive && cachedBanners !== null) {
-        setApiBanners(cachedBanners.map(toHomeBanner));
-      }
-    });
-
-    requestCachedBanners()
-      .then((items) => {
-        if (!isActive) {
-          return;
-        }
-
-        setApiBanners(items.map(toHomeBanner));
-        setActiveBannerIndex(0);
-
-        const scrollElement = bannerScrollerRef.current;
-
-        if (scrollElement) {
-          scrollElement.scrollTo({ behavior: "auto", left: 0 });
-        }
-      })
-      .catch(() => {
-        if (!isActive) {
-          return;
-        }
-
-        setApiBanners([]);
-      });
-
-    return () => {
-      isActive = false;
-      window.cancelAnimationFrame(cachedBannerFrame);
-    };
-  }, []);
-
-  useEffect(() => {
-    // 신선한 캐시(60초 내·같은 로그인 상태)면 재검증 요청 자체를 보내지 않는다.
-    // 내가 참여하는 등 직접 일으킨 변경은 캐시가 즉시 무효화되므로 이 생략에 걸리지 않고,
-    // 명시적 복구 재시도(listingRefreshKey)는 항상 요청을 태운다.
-    if (listingRefreshKey === 0) {
-      const cachedEntry = readCachedHomeListings();
-
-      if (
-        cachedEntry !== null &&
-        isCachedHomeListingsFresh(cachedEntry, authState.isLoggedIn)
-      ) {
-        return;
-      }
+    if (!bannersQuery.data) {
+      return;
     }
 
-    let isActive = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 마운트 시 이미 0이면 bail-out 되는 1회성 리셋(기존 동작 보존)
+    setActiveBannerIndex(0);
 
-    async function loadListings() {
-      let accessToken: string | null = null;
+    const scrollElement = bannerScrollerRef.current;
 
-      try {
-        accessToken = authState.isLoggedIn ? await getFreshAccessToken() : null;
-      } catch {
-        accessToken = null;
-      }
-
-      return requestAllBuncheols(accessToken ?? undefined);
+    if (scrollElement) {
+      scrollElement.scrollTo({ behavior: "auto", left: 0 });
     }
-
-    withHomeListingsTimeout(loadListings())
-      .then((items) => {
-        if (!isActive) {
-          return;
-        }
-
-        const nextListings = items
-          .map(toProductCardItem)
-          .map(mergeCachedProductImage);
-
-        writeCachedHomeListings(nextListings, authState.isLoggedIn);
-
-        // 캐시를 표시한 채 백그라운드 재검증한 결과가 동일하면 setState 를 생략한다
-        // — 리렌더가 없으니 "새로 가져와도" 깜빡일 수 없다 (stale-while-revalidate).
-        const currentListings = apiListingsRef.current;
-
-        if (
-          currentListings === null ||
-          JSON.stringify(currentListings) !== JSON.stringify(nextListings)
-        ) {
-          setApiListings(nextListings);
-        }
-
-        setListingMessage("");
-      })
-      .catch((error: unknown) => {
-        if (!isActive) {
-          return;
-        }
-
-        const fallbackListings =
-          apiListingsRef.current ?? readCachedHomeListings()?.listings ?? null;
-
-        // 이미 목록을 표시 중이면(= fallback 이 현재 상태) 재검증 실패로 리렌더하지 않는다.
-        if (apiListingsRef.current === null) {
-          setApiListings(fallbackListings ?? []);
-        }
-
-        if (fallbackListings && fallbackListings.length > 0) {
-          setListingMessage("");
-          return;
-        }
-
-        setListingMessage(
-          error instanceof Error
-            ? error.message
-            : "분철 목록을 불러오지 못했어요.",
-        );
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.accessToken, authState.isLoggedIn, listingRefreshKey]);
-
-  useEffect(() => {
-    function recoverStalledListings() {
-      if (apiListingsRef.current !== null) {
-        return;
-      }
-
-      const cachedListings = readCachedHomeListings()?.listings ?? null;
-
-      if (cachedListings !== null) {
-        setApiListings(cachedListings);
-      }
-
-      setListingRefreshKey((current) => current + 1);
-    }
-
-    function handlePageShow(event: PageTransitionEvent) {
-      if (event.persisted) {
-        recoverStalledListings();
-      }
-    }
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        recoverStalledListings();
-      }
-    }
-
-    window.addEventListener("pageshow", handlePageShow);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("pageshow", handlePageShow);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
+  }, [bannersQuery.data]);
 
   useEffect(() => {
     // 최애 그룹 레일이 꺼져 있으면 그룹 조회 자체를 건너뛴다.

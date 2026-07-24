@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
   BackIcon,
   CheckIcon,
@@ -569,6 +571,7 @@ export function UploadProductForm({
   returnSource,
 }: UploadProductFormProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const isEditMode = Boolean(editProductId);
   const loginReturnHref = (() => {
     const loginReturnParams = new URLSearchParams();
@@ -1775,6 +1778,9 @@ export function UploadProductForm({
             imageFiles,
           );
 
+          // 수정된 제목·이미지가 홈 목록에 바로 반영되도록 목록 쿼리를 무효화한다.
+          void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+
           await writeApiProductPreview({
             ...product,
             isApiProduct: true,
@@ -1805,6 +1811,9 @@ export function UploadProductForm({
             },
             imageFiles,
           );
+          // 새로 개최한 분철이 홈 목록에 바로 뜨도록 목록 쿼리를 무효화한다.
+          void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+
           let nextProductId = createdBuncheolId;
 
           if (!nextProductId) {

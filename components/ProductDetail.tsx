@@ -59,10 +59,12 @@ import {
 } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
+import { useQueryClient } from "@tanstack/react-query";
+import type { ProductCardItem } from "@/components/ProductCard";
 import {
-  clearCachedHomeListings,
-  updateCachedHomeListing,
-} from "@/lib/home-listings-cache";
+  buncheolsQueryKey,
+  homeListingsQueryKey,
+} from "@/lib/query-keys";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
 import {
   FAVORITES_SKIP_ENTER_KEY,
@@ -838,6 +840,7 @@ export function ProductDetail({
   onExitingChange,
 }: ProductDetailProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -2149,8 +2152,8 @@ export function ProductDetail({
           shippingAddressId,
         });
 
-        // 내 참여로 슬롯 상태가 바뀌었다 — 홈 목록 캐시를 무효화해 복귀 시 fresh 로 가져온다.
-        clearCachedHomeListings();
+        // 내 참여로 슬롯 상태가 바뀌었다 — 목록 쿼리를 무효화해 복귀 시 fresh 로 가져온다.
+        void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
         const resultParticipationIds =
           result.participationIds.length > 0
             ? result.participationIds
@@ -2556,7 +2559,16 @@ export function ProductDetail({
       }
 
       // 내 찜 변경을 홈 카드에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
-      updateCachedHomeListing(buncheolId, { liked: nextLiked });
+      // 찜은 로그인 상태에서만 가능하므로 로그인 목록 캐시만 갱신하면 된다.
+      queryClient.setQueryData<ProductCardItem[]>(
+        homeListingsQueryKey(true),
+        (current) =>
+          current?.map((item) =>
+            (item.productId ?? item.id) === buncheolId
+              ? { ...item, liked: nextLiked }
+              : item,
+          ),
+      );
     } catch {
       setIsLiked(!nextLiked);
     } finally {
@@ -2579,6 +2591,9 @@ export function ProductDetail({
 
     try {
       await deleteBuncheol(accessToken, buncheolId);
+
+      // 삭제된 분철이 목록에 남지 않도록 목록 쿼리를 무효화한다.
+      void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
 
       if (initialReturnSource === "bids") {
         window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");

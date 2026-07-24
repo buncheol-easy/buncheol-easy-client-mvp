@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import Image from "next/image";
 import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
+import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
 import { blackChromeViewport } from "@/lib/system-chrome";
@@ -88,7 +89,7 @@ export default function RootLayout({
             </div>
           </div>
         </aside>
-        {children}
+        <QueryProvider>{children}</QueryProvider>
         <TestAccountSwitcher />
       </body>
       {process.env.NEXT_PUBLIC_GA_ID && (
