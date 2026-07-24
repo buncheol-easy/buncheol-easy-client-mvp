@@ -518,8 +518,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 페인트 전 위치 복원(같은 값이면 bail-out)
     setActiveBannerIndex(restoredIndex);
+    // "auto" 는 CSS scroll-behavior(smooth)를 따라가 복원이 스와이프처럼 보인다.
+    // 점프 없이 복원하려면 "instant" 로 강제해야 한다.
     scrollElement.scrollTo({
-      behavior: "auto",
+      behavior: "instant",
       left:
         restoredIndex === 0
           ? 0
