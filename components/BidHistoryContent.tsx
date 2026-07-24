@@ -2343,20 +2343,15 @@ export function BidHistoryContent({
                       getPaybackStatus(bid) === "REJECTED" ? (
                         // 반려는 재제출이 필요한 상태라, 이벤트 톤(연두)과 확실히 구분되는 붉은 카드로 표시한다.
                         <div className="mt-3 rounded-[0.75rem] border border-[#F3C1C1] bg-[#fff2f2] px-3 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-[11px] font-medium text-[#c03131]/70">
-                              {PAYBACK_EVENT_BLOCK_LABEL}
-                            </p>
-                            <span className="shrink-0 rounded-full bg-[#c03131] px-2.5 py-1 text-[12px] font-semibold text-white shadow-[0_6px_14px_rgba(192,49,49,0.25)]">
-                              후기 반려
-                            </span>
-                          </div>
+                          <p className="text-[11px] font-medium text-[#c03131]/70">
+                            {PAYBACK_EVENT_BLOCK_LABEL}
+                          </p>
                           <p className="mt-1 text-[13px] font-semibold leading-5 text-[#c03131]">
                             후기를 다시 확인해 주세요
                           </p>
                           {bid.payback?.rejectReason ? (
                             <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
-                              {bid.payback.rejectReason}
+                              반려 사유: {bid.payback.rejectReason}
                             </p>
                           ) : null}
                           <div className="mt-2 flex justify-end">
