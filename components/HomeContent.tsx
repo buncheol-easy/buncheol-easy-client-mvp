@@ -59,6 +59,7 @@ import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
+const HOME_BANNER_SLIDE_KEY = "home-banner-slide";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
@@ -186,6 +187,39 @@ function getStoredHomeScrollTop() {
   const storedScrollTop = window.sessionStorage.getItem(HOME_SCROLL_TOP_KEY);
 
   return storedScrollTop === null ? null : Number(storedScrollTop);
+}
+
+type StoredBannerSlide = {
+  fingerprint: string;
+  index: number;
+};
+
+// 저장해 둔 슬라이드가 지금 배너 구성의 것인지 판별하기 위한 지문.
+function getBannersFingerprint(banners: HomeBanner[]) {
+  return banners.map((banner) => banner.href).join("|");
+}
+
+function readStoredBannerSlide(): StoredBannerSlide | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(HOME_BANNER_SLIDE_KEY);
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue) as StoredBannerSlide;
+
+    return typeof parsed?.fingerprint === "string" &&
+      Number.isInteger(parsed?.index)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function loadHomeListings(loggedIn: boolean) {
@@ -463,21 +497,46 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     };
   }, [isListingLoading, listings.length, skipEnterAnimation]);
 
-  // 기존 동작 유지: 배너 데이터가 도착하거나 화면이 다시 마운트되면 첫 슬라이드부터.
-  useEffect(() => {
-    if (!bannersQuery.data) {
+  // 재마운트 시 보던 슬라이드를 복원한다(상세를 다녀와도 배너 위치 유지).
+  // 배너 구성이 바뀌면(폴백→API 교체, 배너 갱신) 첫 슬라이드부터 다시 시작한다.
+  // 페인트 전에 위치를 확정해야 첫 슬라이드가 보였다가 이동하는 스냅이 없다.
+  useLayoutEffect(() => {
+    const scrollElement = bannerScrollerRef.current;
+
+    if (!scrollElement) {
       return;
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 마운트 시 이미 0이면 bail-out 되는 1회성 리셋(기존 동작 보존)
-    setActiveBannerIndex(0);
+    const storedSlide = readStoredBannerSlide();
+    const restoredIndex =
+      storedSlide &&
+      storedSlide.fingerprint === getBannersFingerprint(banners) &&
+      storedSlide.index > 0 &&
+      storedSlide.index < banners.length
+        ? storedSlide.index
+        : 0;
 
-    const scrollElement = bannerScrollerRef.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 페인트 전 위치 복원(같은 값이면 bail-out)
+    setActiveBannerIndex(restoredIndex);
+    scrollElement.scrollTo({
+      behavior: "auto",
+      left:
+        restoredIndex === 0
+          ? 0
+          : getBannerSlideLeft(scrollElement, restoredIndex),
+    });
+  }, [banners]);
 
-    if (scrollElement) {
-      scrollElement.scrollTo({ behavior: "auto", left: 0 });
-    }
-  }, [bannersQuery.data]);
+  // 현재 슬라이드를 세션에 남겨 상세를 다녀와도 이어 보게 한다.
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      HOME_BANNER_SLIDE_KEY,
+      JSON.stringify({
+        fingerprint: getBannersFingerprint(banners),
+        index: activeBannerIndex,
+      }),
+    );
+  }, [activeBannerIndex, banners]);
 
   // 배너 자동 넘김. 스와이프·도트·휠 조작 후에는 한 주기가 지날 때까지 쉬고,
   // 탭이 백그라운드거나 모션 최소화 설정이면 넘기지 않는다.
