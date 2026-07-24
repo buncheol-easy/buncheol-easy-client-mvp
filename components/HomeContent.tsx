@@ -10,7 +10,11 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { AppHeader } from "@/components/AppHeader";
 import {
   BanknoteIcon,
@@ -25,6 +29,7 @@ import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import {
   addFavoriteGroup,
+  readCachedBanners,
   removeFavoriteGroup,
   requestAllBuncheols,
   requestBanners,
@@ -252,11 +257,33 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     // 로그인 상태가 바뀌어 키가 갈릴 때 이전 목록을 유지해 스켈레톤 재노출을 막는다.
     placeholderData: keepPreviousData,
   });
+  const queryClient = useQueryClient();
   const bannersQuery = useQuery({
     queryKey: bannersQueryKey,
     queryFn: async () => (await requestBanners()).map(toHomeBanner),
     staleTime: HOME_BANNERS_STALE_MS,
   });
+
+  // 새로고침 직후에는 React Query 캐시가 비어 폴백 배너가 먼저 그려지고, API 응답이
+  // 오면 슬라이드가 통째로 교체되며 깜빡인다. localStorage 캐시가 있으면 페인트 전에
+  // 심어 첫 페인트부터 실제 배너를 그린다. SSR HTML 은 폴백 기준이라 initialData 로
+  // 넣으면 hydration 불일치가 나므로 layout effect 를 쓴다. updatedAt: 0 으로 곧바로
+  // stale 처리해 백그라운드 재검증(신선도)은 기존과 동일하게 유지한다.
+  useLayoutEffect(() => {
+    if (queryClient.getQueryData(bannersQueryKey)) {
+      return;
+    }
+
+    const cachedBanners = readCachedBanners();
+
+    if (cachedBanners && cachedBanners.length > 0) {
+      queryClient.setQueryData(
+        bannersQueryKey,
+        cachedBanners.map(toHomeBanner),
+        { updatedAt: 0 },
+      );
+    }
+  }, [queryClient]);
   // 캐시 히트로 마운트하면(첫 렌더부터 데이터 존재) reveal 애니메이션을 생략한다 —
   // 이미 보이던 목록이 사라졌다 나타나는 것처럼 보이는 문제 방지. 마운트 시점 판정을
   // 고정하는 것이 목적이라 초기값 이후 갱신하지 않는다.
@@ -644,7 +671,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         <div className="flex min-h-full flex-col">
         <section className="px-4 pt-4">
           <div
-            className="home-banner-carousel motion-carousel flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className={`home-banner-carousel motion-carousel ${
+              shouldSkipEnterAnimation ? "motion-carousel--skip-enter" : ""
+            } flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
             onScroll={handleBannerScroll}
             ref={bannerScrollerRef}
           >

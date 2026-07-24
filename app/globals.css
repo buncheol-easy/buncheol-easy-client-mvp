@@ -760,6 +760,12 @@ body.is-pwa-standalone {
   animation-delay: 70ms;
 }
 
+/* 복귀 진입(enter 애니메이션 스킵)에서는 슬라이드 등장 애니메이션도 건너뛴다 —
+   캐시된 배너가 opacity 0 부터 다시 떠오르며 깜빡이는 것을 방지. */
+.motion-carousel--skip-enter .motion-carousel__slide {
+  animation: none;
+}
+
 .motion-carousel__hint {
   animation: motion-carousel-hint 1300ms var(--motion-pop) 520ms 1 both;
 }
