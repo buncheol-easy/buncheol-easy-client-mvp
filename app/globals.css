@@ -741,6 +741,11 @@ body.is-pwa-standalone {
     width 260ms var(--motion-snap);
 }
 
+/* 배너 위치 복원 커밋 동안 도트 transition 을 잠깐 끈다 — 복원이 스와이프처럼 보이는 것 방지. */
+.banner-dots--instant .motion-pill {
+  transition: none;
+}
+
 .motion-carousel {
   scroll-behavior: smooth;
   scroll-padding-inline: 1rem;

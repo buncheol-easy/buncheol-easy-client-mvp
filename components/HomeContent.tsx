@@ -292,6 +292,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const isRestoringReturnScrollRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
+  const bannerDotsRef = useRef<HTMLDivElement | null>(null);
   const lastBannerInteractionRef = useRef(0);
   const [isUsageHelpSheetOpen, setIsUsageHelpSheetOpen] = useState(false);
   const [isUsageHelpSheetEntered, setIsUsageHelpSheetEntered] =
@@ -516,6 +517,21 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         ? storedSlide.index
         : 0;
 
+    // 복원으로 활성 도트가 바뀔 때 motion-pill 의 폭·색 transition 이 재생되면
+    // 도트가 스와이프하듯 보인다. 첫 페인트 동안만 transition 을 끄고 되돌린다.
+    const dotsElement = bannerDotsRef.current;
+    let instantFrame: number | null = null;
+
+    if (dotsElement) {
+      dotsElement.classList.add("banner-dots--instant");
+      instantFrame = window.requestAnimationFrame(() => {
+        instantFrame = window.requestAnimationFrame(() => {
+          dotsElement.classList.remove("banner-dots--instant");
+          instantFrame = null;
+        });
+      });
+    }
+
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 페인트 전 위치 복원(같은 값이면 bail-out)
     setActiveBannerIndex(restoredIndex);
     // "auto" 는 CSS scroll-behavior(smooth)를 따라가 복원이 스와이프처럼 보인다.
@@ -527,6 +543,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           ? 0
           : getBannerSlideLeft(scrollElement, restoredIndex),
     });
+
+    return () => {
+      if (instantFrame !== null) {
+        window.cancelAnimationFrame(instantFrame);
+      }
+
+      dotsElement?.classList.remove("banner-dots--instant");
+    };
   }, [banners]);
 
   // 현재 슬라이드를 세션에 남겨 상세를 다녀와도 이어 보게 한다.
@@ -818,7 +842,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             ))}
           </div>
 
-          <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+          <div
+            className="flex items-center justify-center gap-2 pt-2 pb-4"
+            ref={bannerDotsRef}
+          >
             {banners.map((banner, index) => (
               <button
                 aria-label={`${index + 1}번째 배너 보기`}
