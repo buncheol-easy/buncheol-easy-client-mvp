@@ -7,6 +7,11 @@
 export const EVENT_TWEET_URL =
   "https://x.com/BuncheolEasy/status/2072210832600264848";
 
+// 분철별 인용 대상 트윗. 무료 분철마다 홍보 트윗이 따로 올라가는 경우 여기에
+// "분철 ID": "트윗 퍼머링크" 한 줄을 추가하고 배포한다. 맵에 없는 분철은 EVENT_TWEET_URL 을 인용한다.
+// 한시 이벤트용 빌드타임 관리 — 이벤트가 끝나면 이 맵을 비우거나 파일째 정리한다.
+const EVENT_TWEET_URL_BY_BUNCHEOL: Record<string, string> = {};
+
 export type ShippingFeePaybackStatus =
   | "NONE"
   | "ELIGIBLE"
@@ -42,7 +47,10 @@ export function isValidTweetUrl(url: string) {
 
 // X 트윗 작성창을 여는 intent URL. url 파라미터의 이벤트 트윗은 게시 시 인용 트윗으로 렌더링된다.
 // 프리필 문구는 유저가 수정할 수 있으므로 조건 충족의 최종 확인은 운영진 검수로 한다.
-export function buildReviewTweetIntentUrl(productTitle: string) {
+export function buildReviewTweetIntentUrl(
+  productTitle: string,
+  buncheolId: string,
+) {
   const text = [
     `분철이지에서 "${productTitle}" 무료 분철 참여하고 앨범 받았어요! 🎁`,
     "",
@@ -51,6 +59,6 @@ export function buildReviewTweetIntentUrl(productTitle: string) {
 
   return `https://x.com/intent/tweet?${new URLSearchParams({
     text,
-    url: EVENT_TWEET_URL,
+    url: EVENT_TWEET_URL_BY_BUNCHEOL[buncheolId] ?? EVENT_TWEET_URL,
   })}`;
 }

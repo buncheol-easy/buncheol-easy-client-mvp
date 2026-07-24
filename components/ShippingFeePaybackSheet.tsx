@@ -20,6 +20,8 @@ function formatPrice(price: number) {
 
 export type ShippingFeePaybackSheetTarget = {
   participationId: string;
+  // 분철별 인용 트윗(EVENT_TWEET_URL_BY_BUNCHEOL) 조회 키.
+  buncheolId: string;
   title: string;
   optionLabel: string;
   shippingFee: number | null;
@@ -86,7 +88,7 @@ export function ShippingFeePaybackSheet({
 
   function openTweetComposer() {
     window.open(
-      buildReviewTweetIntentUrl(target.title),
+      buildReviewTweetIntentUrl(target.title, target.buncheolId),
       "_blank",
       "noopener,noreferrer",
     );

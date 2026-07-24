@@ -1068,6 +1068,10 @@ export function BidHistoryContent({
     paymentBidRecords,
     paybackSheetBidId,
   );
+  // 리스트 상단 집계 배너용 — 필터와 무관하게 전체 참여에서 신청/재신청 가능한 건을 센다.
+  const actionablePaybackRecords = paymentBidRecords.filter((bid) =>
+    isPaybackRequestable(bid),
+  );
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
       isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
@@ -2082,6 +2086,29 @@ export function BidHistoryContent({
                 </p>
               </div>
             ) : null}
+            {!isBidRecordsLoading && actionablePaybackRecords.length > 0 ? (
+              // 환급 액션이 카드 하단에 묻히지 않게, 목록 진입 즉시 보이는 집계 배너로 알린다.
+              <button
+                className="flex w-full items-center justify-between gap-3 rounded-[0.95rem] bg-black px-4 py-3.5 text-left shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+                onClick={() =>
+                  setPaybackSheetBidId(actionablePaybackRecords[0].id)
+                }
+                type="button"
+              >
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
+                    {PAYBACK_EVENT_BLOCK_LABEL}
+                  </p>
+                  <p className="mt-0.5 text-[14px] font-semibold tracking-[-0.04em] text-white">
+                    💸 배송비를 돌려받을 수 있는 참여가{" "}
+                    {actionablePaybackRecords.length}건 있어요
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-[#D7FF5F] px-3 py-1.5 text-[12px] font-semibold text-black">
+                  돌려받기
+                </span>
+              </button>
+            ) : null}
             {isBidRecordsLoading ? (
               <BidHistoryListSkeleton />
             ) : records.length === 0 ? (
@@ -2119,11 +2146,43 @@ export function BidHistoryContent({
                 (cardShippingFee !== null
                   ? bid.amount + cardShippingFee
                   : bid.amount);
+              const isPaybackActionable = isPaybackRequestable(bid);
+              const isPaybackRejected =
+                isPaybackActionable && getPaybackStatus(bid) === "REJECTED";
               return (
                 <article
-                  className="rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
+                  className={`overflow-hidden rounded-[1rem] border bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7] ${
+                    isPaybackRejected
+                      ? "border-[#F3C1C1]"
+                      : isPaybackActionable
+                        ? "border-[#CFE86B]"
+                        : "border-black/[0.08]"
+                  }`}
                   key={bid.id}
                 >
+                  {isPaybackActionable ? (
+                    // 배송 완료 카드에서 지금 중요한 액션이라, 카드 하단 블록과 별개로 상단 스트립으로도 노출한다.
+                    <div className="-mx-4 -mt-4 mb-3.5">
+                      <button
+                        className={`flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left ${
+                          isPaybackRejected
+                            ? "bg-[#c03131] text-white"
+                            : "bg-[#D7FF5F] text-black"
+                        }`}
+                        onClick={() => setPaybackSheetBidId(bid.id)}
+                        type="button"
+                      >
+                        <span className="min-w-0 truncate text-[12px] font-semibold tracking-[-0.02em]">
+                          {isPaybackRejected
+                            ? "후기를 다시 확인해 주세요"
+                            : "💸 후기를 작성하고 배송비를 돌려받을 수 있어요"}
+                        </span>
+                        <span aria-hidden="true" className="shrink-0 text-[13px] font-semibold">
+                          →
+                        </span>
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="flex items-start gap-3">
                     <Link
                       aria-label={`${bid.title} 상세 보기`}
@@ -2854,6 +2913,7 @@ export function BidHistoryContent({
           onRequested={handlePaybackRequested}
           target={{
             participationId: selectedPaybackBid.id,
+            buncheolId: selectedPaybackBid.productId,
             title: selectedPaybackBid.title,
             optionLabel: selectedPaybackBid.optionLabel,
             shippingFee:
