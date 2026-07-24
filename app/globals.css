@@ -747,8 +747,25 @@ body.is-pwa-standalone {
   touch-action: pan-x;
 }
 
+/* 스냅 캐러셀 슬라이드 등장용 — motion-blur-enter 에서 scale 만 뺀 변형.
+   snap-mandatory 컨테이너 안에서 슬라이드에 scale 이 걸리면 스냅 좌표가 변형된
+   박스 기준으로 계산돼 scrollLeft 가 몇 px 밀리는 재스냅이 발생한다. */
+@keyframes motion-blur-enter-snap {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
 .motion-carousel__slide {
-  animation: motion-blur-enter 360ms var(--motion-pop) both;
+  animation: motion-blur-enter-snap 360ms var(--motion-pop) both;
   transform-origin: center;
 }
 
