@@ -68,7 +68,6 @@ const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
 const HOME_BANNERS_STALE_MS = 15 * 60 * 1000;
-const HOME_BANNER_AUTO_ADVANCE_MS = 5000;
 type HomeBanner = {
   href: string;
   imageAlt: string;
@@ -293,7 +292,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
   const bannerDotsRef = useRef<HTMLDivElement | null>(null);
-  const lastBannerInteractionRef = useRef(0);
+  // 도트 클릭으로 이동 중인 목표 슬라이드. 이동하는 동안 스크롤 기반 도트 갱신을 억제해
+  // 활성 도트가 이전 슬라이드로 되돌아갔다 오는 왕복(→←→)을 막는다.
+  const bannerScrollTargetRef = useRef<number | null>(null);
   const [isUsageHelpSheetOpen, setIsUsageHelpSheetOpen] = useState(false);
   const [isUsageHelpSheetEntered, setIsUsageHelpSheetEntered] =
     useState(false);
@@ -418,15 +419,23 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     const nextIndex = getNearestBannerIndex(scrollElement);
 
+    // 도트 클릭 이동 중에는 목표 도착 전까지 스크롤 기반 갱신을 건너뛴다.
+    if (bannerScrollTargetRef.current !== null) {
+      if (nextIndex === bannerScrollTargetRef.current) {
+        bannerScrollTargetRef.current = null;
+      }
+
+      return;
+    }
+
     setActiveBannerIndex((current) =>
       current === nextIndex ? current : nextIndex,
     );
   }
 
-  // 자동 넘김이 사용자 조작 직후에 끼어들지 않도록 마지막 조작 시각을 남긴다.
-  // (performance.now() 와 같은 시계인 event.timeStamp 를 쓴다)
-  function markBannerInteraction(event: { timeStamp: number }) {
-    lastBannerInteractionRef.current = event.timeStamp;
+  // 도트 이동 중 사용자가 직접 조작하면 억제를 풀어 스크롤 추종으로 되돌린다.
+  function releaseBannerScrollTarget() {
+    bannerScrollTargetRef.current = null;
   }
 
   function handleBannerDotClick(index: number) {
@@ -436,6 +445,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
+    bannerScrollTargetRef.current = index;
     setActiveBannerIndex(index);
     scrollElement.scrollTo({
       behavior: "smooth",
@@ -563,42 +573,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       }),
     );
   }, [activeBannerIndex, banners]);
-
-  // 배너 자동 넘김. 스와이프·도트·휠 조작 후에는 한 주기가 지날 때까지 쉬고,
-  // 탭이 백그라운드거나 모션 최소화 설정이면 넘기지 않는다.
-  useEffect(() => {
-    if (
-      banners.length < 2 ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      const scrollElement = bannerScrollerRef.current;
-
-      if (
-        !scrollElement ||
-        scrollElement.children.length < 2 ||
-        document.hidden ||
-        performance.now() - lastBannerInteractionRef.current <
-          HOME_BANNER_AUTO_ADVANCE_MS
-      ) {
-        return;
-      }
-
-      const nextIndex =
-        (getNearestBannerIndex(scrollElement) + 1) %
-        scrollElement.children.length;
-
-      scrollElement.scrollTo({
-        behavior: "smooth",
-        left: getBannerSlideLeft(scrollElement, nextIndex),
-      });
-    }, HOME_BANNER_AUTO_ADVANCE_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [banners.length]);
 
   useEffect(() => {
     // 최애 그룹 레일이 꺼져 있으면 그룹 조회 자체를 건너뛴다.
@@ -808,9 +782,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             className={`home-banner-carousel motion-carousel ${
               shouldSkipEnterAnimation ? "motion-carousel--skip-enter" : ""
             } flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
-            onPointerDown={markBannerInteraction}
+            onPointerDown={releaseBannerScrollTarget}
             onScroll={handleBannerScroll}
-            onWheel={markBannerInteraction}
+            onWheel={releaseBannerScrollTarget}
             ref={bannerScrollerRef}
           >
             {banners.map((banner, index) => (
@@ -855,10 +829,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                     : "w-2 bg-zinc-300"
                 }`}
                 key={banner.href}
-                onClick={(event) => {
-                  markBannerInteraction(event);
-                  handleBannerDotClick(index);
-                }}
+                onClick={() => handleBannerDotClick(index)}
                 type="button"
               />
             ))}
