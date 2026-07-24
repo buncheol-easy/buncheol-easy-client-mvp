@@ -182,10 +182,7 @@ export function ShippingFeePaybackSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
-            <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-              {target.title}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[12px] font-semibold text-black/40">
                 참여한 멤버
               </span>
