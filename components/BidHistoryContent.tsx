@@ -45,7 +45,17 @@ import {
   type BankAccountInfo,
   type MyHostedBuncheol,
   type MyParticipation,
+  type ShippingFeePaybackInfo,
 } from "@/lib/auth-api";
+import { FEATURES } from "@/lib/feature-flags";
+import {
+  PAYBACK_CTA_LABEL,
+  PAYBACK_EDIT_CTA_LABEL,
+  PAYBACK_EVENT_BLOCK_LABEL,
+  PAYBACK_RETRY_CTA_LABEL,
+  PAYBACK_STATUS_LABELS,
+} from "@/lib/shipping-fee-payback";
+import { ShippingFeePaybackSheet } from "@/components/ShippingFeePaybackSheet";
 import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
@@ -184,6 +194,45 @@ function formatPaymentRemainingTime(
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
 }
+
+// 결제 정보 시트의 실시간 카운트다운 표기. 분철 상세와 동일하게 서버·클라이언트
+// 시계 오차로 남은 시간이 입금 창(30분)을 초과해 보이지 않도록 상한을 걸고,
+// 진행 중인 초를 포함해 올림으로 표시한다.
+function formatPaymentCountdown(
+  deadline: string,
+  now: Date,
+  paymentDueAt?: string | null,
+  createdAt?: string | null,
+) {
+  const paymentDeadline = getPaymentDeadlineDate(
+    deadline,
+    paymentDueAt,
+    createdAt,
+  );
+
+  if (Number.isNaN(paymentDeadline.getTime())) {
+    return "결제 기한 확인 필요";
+  }
+
+  const remainingMilliseconds = Math.min(
+    paymentDeadline.getTime() - now.getTime(),
+    paymentDeadlineMinutes * 60_000,
+  );
+
+  if (remainingMilliseconds <= 0) {
+    return "기한 지남";
+  }
+
+  const totalSeconds = Math.ceil(remainingMilliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes > 0) {
+    return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남았어요`;
+  }
+
+  return `${seconds}초 남았어요`;
+}
 type BidHistoryMode = "joined" | "hosted";
 type BidHistoryFilter = "all" | "payment" | "confirmed";
 type HostedHistoryFilter = "all" | "active" | "closed";
@@ -308,6 +357,7 @@ type BidRecord = {
   shippingFee?: number | null;
   trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
+  payback?: ShippingFeePaybackInfo | null;
 };
 
 function isRecruitingStatus(status: string | undefined) {
@@ -447,6 +497,29 @@ function isDeliveryInProgress(bid: BidRecord) {
     isDeliveryCompletedStatus(normalizedStatus) ||
     Boolean(bid.trackingNumber)
   );
+}
+
+// 배송비 돌려받기 상태는 서버 파생값(payback.status)을 그대로 신뢰한다 — 슬롯 0원 여부를
+// 프론트에서 재판정하지 않는다. 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
+function getPaybackStatus(bid: BidRecord) {
+  return bid.payback?.status ?? "NONE";
+}
+
+function isPaybackRequestable(bid: BidRecord) {
+  const status = getPaybackStatus(bid);
+
+  return (
+    FEATURES.shippingFeePayback &&
+    (status === "ELIGIBLE" || status === "REJECTED")
+  );
+}
+
+function getPaybackBadgeLabel(bid: BidRecord) {
+  if (!FEATURES.shippingFeePayback) {
+    return null;
+  }
+
+  return PAYBACK_STATUS_LABELS[getPaybackStatus(bid)] ?? null;
 }
 
 function getBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
@@ -695,6 +768,7 @@ function getBidRecordFromParticipation(
     submittedAt: "",
     title: participation.buncheolTitle,
     tone: getToneFromId(participation.buncheolId),
+    payback: participation.payback ?? null,
   };
 }
 
@@ -936,6 +1010,11 @@ export function BidHistoryContent({
   const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
   const paymentCopyToastTimerRef = useRef<number | null>(null);
   const [paymentCopyToast, setPaymentCopyToast] = useState("");
+  const [paybackSheetBidId, setPaybackSheetBidId] = useState<string | null>(
+    null,
+  );
+  const paybackToastTimerRef = useRef<number | null>(null);
+  const [paybackToast, setPaybackToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
@@ -984,6 +1063,10 @@ export function BidHistoryContent({
   const selectedPaymentBid = findBidRecordById(
     paymentBidRecords,
     selectedPaymentBidId,
+  );
+  const selectedPaybackBid = findBidRecordById(
+    paymentBidRecords,
+    paybackSheetBidId,
   );
   const shouldRefreshPaymentState = paymentBidRecords.some(
     (bid) =>
@@ -1046,7 +1129,7 @@ export function BidHistoryContent({
     ? isBidRecordPaymentReady(selectedPaymentBid, now)
     : false;
   const selectedPaymentRemainingTime = selectedPaymentBid
-    ? formatPaymentRemainingTime(
+    ? formatPaymentCountdown(
         selectedPaymentBid.deadline,
         now,
         selectedPaymentBid.paymentDueAt,
@@ -1069,11 +1152,33 @@ export function BidHistoryContent({
         window.clearTimeout(paymentCopyToastTimerRef.current);
       }
 
+      if (paybackToastTimerRef.current !== null) {
+        window.clearTimeout(paybackToastTimerRef.current);
+      }
+
       if (addressSheetCloseTimerRef.current !== null) {
         window.clearTimeout(addressSheetCloseTimerRef.current);
       }
     };
   }, []);
+
+  // 결제 정보 시트가 열려 있는 동안에는 입금 마감 카운트다운을 분철 상세처럼
+  // 초 단위로 갱신한다. 기한이 지나면 결제 대기 상태가 풀리면서 인터벌도 정리된다.
+  useEffect(() => {
+    if (!isPaymentSheetOpen || !isSelectedPaymentReady) {
+      return;
+    }
+
+    setNow(new Date());
+
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isPaymentSheetOpen, isSelectedPaymentReady]);
 
   useEffect(() => {
     if (!restoreStoredViewState) {
@@ -1653,6 +1758,48 @@ export function BidHistoryContent({
     );
   }
 
+  // 제출 성공 시 서버 재조회 없이 해당 카드만 낙관적으로 REQUESTED 로 갱신한다.
+  // 이미 REQUESTED 였던 건의 재제출은 잘못 올린 후기 링크 수정이라 토스트 문구를 구분한다.
+  function handlePaybackRequested(participationId: string, tweetUrl: string) {
+    const wasRequested = paymentBidRecords.some(
+      (record) =>
+        record.id === participationId &&
+        record.payback?.status === "REQUESTED",
+    );
+
+    setApiBidRecords(
+      (records) =>
+        records?.map((record) =>
+          record.id === participationId
+            ? {
+                ...record,
+                payback: {
+                  ...(record.payback ?? {}),
+                  status: "REQUESTED" as const,
+                  rejectReason: null,
+                  requestedAt: new Date().toISOString(),
+                  tweetUrl,
+                },
+              }
+            : record,
+        ) ?? records,
+    );
+
+    if (paybackToastTimerRef.current !== null) {
+      window.clearTimeout(paybackToastTimerRef.current);
+    }
+
+    setPaybackToast(
+      wasRequested
+        ? "후기 링크를 수정했어요!"
+        : "배송비 환급 신청 완료! 후기 확인 후 배송비를 보내드려요.",
+    );
+    paybackToastTimerRef.current = window.setTimeout(() => {
+      setPaybackToast("");
+      paybackToastTimerRef.current = null;
+    }, 3200);
+  }
+
   function openStatusHelpSheet() {
     if (statusHelpSheetCloseTimerRef.current !== null) {
       window.clearTimeout(statusHelpSheetCloseTimerRef.current);
@@ -2192,6 +2339,77 @@ export function BidHistoryContent({
                           </div>
                         </div>
                       ) : null}
+                      {isPaybackRequestable(bid) &&
+                      getPaybackStatus(bid) === "REJECTED" ? (
+                        // 반려는 재제출이 필요한 상태라, 이벤트 톤(연두)과 확실히 구분되는 붉은 카드로 표시한다.
+                        <div className="mt-3 rounded-[0.75rem] border border-[#F3C1C1] bg-[#fff2f2] px-3 py-3">
+                          <p className="text-[11px] font-medium text-[#c03131]/70">
+                            {PAYBACK_EVENT_BLOCK_LABEL}
+                          </p>
+                          <p className="mt-1 text-[13px] font-semibold leading-5 text-[#c03131]">
+                            후기를 다시 확인해 주세요
+                          </p>
+                          {bid.payback?.rejectReason ? (
+                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
+                              반려 사유: {bid.payback.rejectReason}
+                            </p>
+                          ) : null}
+                          <div className="mt-2 flex justify-end">
+                            <button
+                              className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                              onClick={() => setPaybackSheetBidId(bid.id)}
+                              type="button"
+                            >
+                              {PAYBACK_RETRY_CTA_LABEL}
+                            </button>
+                          </div>
+                        </div>
+                      ) : isPaybackRequestable(bid) ? (
+                        <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                          <p className="text-[11px] font-medium text-black/35">
+                            {PAYBACK_EVENT_BLOCK_LABEL}
+                          </p>
+                          <p className="mt-1 text-[13px] font-semibold leading-5 text-black/60">
+                            X에 후기를 올리면 배송비를 돌려드려요
+                          </p>
+                          <div className="mt-2 flex justify-end">
+                            <button
+                              className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                              onClick={() => setPaybackSheetBidId(bid.id)}
+                              type="button"
+                            >
+                              {PAYBACK_CTA_LABEL}
+                            </button>
+                          </div>
+                        </div>
+                      ) : getPaybackBadgeLabel(bid) ? (
+                        <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[11px] font-medium text-black/35">
+                              {PAYBACK_EVENT_BLOCK_LABEL}
+                            </p>
+                            {getPaybackStatus(bid) === "COMPLETED" ? (
+                              <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[12px] font-semibold text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]">
+                                환급 완료
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-[13px] font-semibold leading-5 text-black/60">
+                            {getPaybackBadgeLabel(bid)}
+                          </p>
+                          {getPaybackStatus(bid) === "REQUESTED" ? (
+                            <div className="mt-2 flex justify-end">
+                              <button
+                                className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black/55 ring-1 ring-black/10"
+                                onClick={() => setPaybackSheetBidId(bid.id)}
+                                type="button"
+                              >
+                                {PAYBACK_EDIT_CTA_LABEL}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -2626,6 +2844,36 @@ export function BidHistoryContent({
               확인했어요
             </button>
           </section>
+        </div>
+      ) : null}
+
+      {selectedPaybackBid ? (
+        <ShippingFeePaybackSheet
+          key={selectedPaybackBid.id}
+          onClose={() => setPaybackSheetBidId(null)}
+          onRequested={handlePaybackRequested}
+          target={{
+            participationId: selectedPaybackBid.id,
+            title: selectedPaybackBid.title,
+            optionLabel: selectedPaybackBid.optionLabel,
+            shippingFee:
+              typeof selectedPaybackBid.shippingFee === "number"
+                ? selectedPaybackBid.shippingFee
+                : null,
+            payback: selectedPaybackBid.payback ?? null,
+          }}
+        />
+      ) : null}
+
+      {paybackToast ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
+          <p
+            aria-live="polite"
+            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+            role="status"
+          >
+            {paybackToast}
+          </p>
         </div>
       ) : null}
 

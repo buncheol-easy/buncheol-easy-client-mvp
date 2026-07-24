@@ -33,6 +33,7 @@ import {
 } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import { FEATURES } from "@/lib/feature-flags";
 import {
   getDeliveryAddressStateFromSyncedAddresses,
   getInitialDeliveryAddressState,
@@ -1201,6 +1202,14 @@ export function ProductDetail({
   );
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
+  // 오픈 이벤트 무료 분철(전 슬롯 0원) 판정. 참여 전 화면이라 서버 payback 상태가 없어
+  // 옵션 가격으로 판정하고, 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
+  const isShippingFeePaybackProduct =
+    FEATURES.shippingFeePayback &&
+    auctionOptions.length > 0 &&
+    auctionOptions.every(
+      (option) => priceToNumber(getBidBaseline(option)) === 0,
+    );
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
   const canDeleteProduct = product.isApiProduct && isHostedProduct;
@@ -2251,7 +2260,7 @@ export function ProductDetail({
 
         if (bankAccountKeys.size > 1) {
           throw new Error(
-            "선택한 옵션의 입금 계좌가 달라요. 구매 내역에서 각각 확인해 주세요.",
+            "선택한 옵션의 입금 계좌가 달라요. 참여 내역에서 각각 확인해 주세요.",
           );
         }
       } catch (error: unknown) {
@@ -3287,6 +3296,11 @@ export function ProductDetail({
                         <p className="mt-0.5 text-[16px] font-semibold">
                           {getBidBaseline(option)}
                         </p>
+                        {isShippingFeePaybackProduct ? (
+                          <p className="mt-0.5 text-[11px] font-semibold text-[#7A8A3A]">
+                            배송비만 결제
+                          </p>
+                        ) : null}
                       </div>
                       {blockChipLabel ? (
                         <div
@@ -3302,6 +3316,28 @@ export function ProductDetail({
                   );
                 })}
               </div>
+
+              {isShippingFeePaybackProduct ? (
+                <div className="mt-4 rounded-[0.95rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-4">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F]">
+                      무료 분철 이벤트
+                    </span>
+                    <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                      배송비는 환급되니 걱정 마세요!
+                    </p>
+                  </div>
+                  <ol className="mt-3 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
+                    <li>1. 지금은 배송비만 입금하고 참여해요.</li>
+                    <li>2. 택배를 수령해요.</li>
+                    <li>
+                      3. 참여 내역의 [후기 쓰고 배송비 돌려받기] 버튼을 눌러 X에
+                      후기를 작성해요.
+                    </li>
+                    <li>4. 작성한 후기 링크로 신청해 주시면 배송비를 환급해 드려요!</li>
+                  </ol>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
@@ -3580,6 +3616,17 @@ export function ProductDetail({
                           {formatPrice(estimatedCheckoutTotal)}
                         </span>
                       </div>
+                      {isShippingFeePaybackProduct ? (
+                        <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
+                          이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
+                          <br />
+                          배송비 {formatPrice(estimatedShippingAmount)}은 보증금
+                          개념으로 받고 있어요.
+                          <br />
+                          택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
+                          계좌로 그대로 돌려드려요.
+                        </p>
+                      ) : null}
                     </div>
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
@@ -3693,7 +3740,7 @@ export function ProductDetail({
                             <p className="mt-1 text-[12px] font-medium text-black/40">
                               {checkoutPaymentSummary.hostBankAccount?.holder
                                 ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
-                                : "구매 내역에서 다시 확인해 주세요."}
+                                : "참여 내역에서 다시 확인해 주세요."}
                             </p>
                           </div>
                           <button
@@ -3714,7 +3761,7 @@ export function ProductDetail({
                         </div>
                         <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                           송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행
-                          상황은 구매 내역에서 확인할 수 있어요.
+                          상황은 참여 내역에서 확인할 수 있어요.
                         </p>
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
@@ -3740,6 +3787,18 @@ export function ProductDetail({
                             {formatPrice(checkoutPaymentSummary.totalAmount)}
                           </span>
                         </div>
+                        {isShippingFeePaybackProduct ? (
+                          <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
+                            이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
+                            <br />
+                            배송비{" "}
+                            {formatPrice(checkoutPaymentSummary.shippingAmount)}은
+                            보증금 개념으로 받고 있어요.
+                            <br />
+                            택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
+                            계좌로 그대로 돌려드려요.
+                          </p>
+                        ) : null}
                       </div>
 
                     </div>
@@ -3757,7 +3816,7 @@ export function ProductDetail({
                         onClick={openBidHistory}
                         type="button"
                       >
-                        구매 내역 보기
+                        참여 내역 보기
                       </button>
                     </div>
                   </>
