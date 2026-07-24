@@ -3600,10 +3600,13 @@ export function ProductDetail({
                       </div>
                       {isShippingFeePaybackProduct ? (
                         <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
-                          이 분철은 전액 무료예요. 배송비{" "}
-                          {formatPrice(estimatedShippingAmount)}은 보증금처럼 잠시
-                          맡아두는 금액이라, 앨범 받고 후기를 남기면 등록한 환불
-                          계좌로 그대로 돌려받아요.
+                          이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
+                          <br />
+                          배송비 {formatPrice(estimatedShippingAmount)}은 보증금
+                          개념으로 받고 있어요.
+                          <br />
+                          택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
+                          계좌로 그대로 돌려드려요.
                         </p>
                       ) : null}
                     </div>
@@ -3768,10 +3771,14 @@ export function ProductDetail({
                         </div>
                         {isShippingFeePaybackProduct ? (
                           <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
-                            이 분철은 전액 무료예요. 배송비{" "}
+                            이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
+                            <br />
+                            배송비{" "}
                             {formatPrice(checkoutPaymentSummary.shippingAmount)}은
-                            보증금처럼 잠시 맡아두는 금액이라, 앨범 받고 후기를
-                            남기면 등록한 환불 계좌로 그대로 돌려받아요.
+                            보증금 개념으로 받고 있어요.
+                            <br />
+                            택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
+                            계좌로 그대로 돌려드려요.
                           </p>
                         ) : null}
                       </div>
