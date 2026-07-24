@@ -2913,6 +2913,7 @@ export function BidHistoryContent({
           onRequested={handlePaybackRequested}
           target={{
             participationId: selectedPaybackBid.id,
+            buncheolId: selectedPaybackBid.productId,
             title: selectedPaybackBid.title,
             optionLabel: selectedPaybackBid.optionLabel,
             shippingFee:
