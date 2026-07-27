@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useLayoutEffect,
@@ -15,6 +16,7 @@ import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { ChevronDownIcon } from "@/components/icons";
 import { SlidingTabs } from "@/components/SlidingTabs";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
+import { createLoginHref } from "@/lib/auth-navigation";
 import {
   getInitialAuthState,
   readAuthState,
@@ -148,6 +150,7 @@ function readStoredFavoritesViewState(keepStoredState: boolean) {
 export function FavoritesContent({
   skipEnterAnimation = false,
 }: FavoritesContentProps) {
+  const router = useRouter();
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(
     () => skipEnterAnimation || takeShouldSkipFavoritesEnter(),
@@ -175,6 +178,22 @@ export function FavoritesContent({
     readAuthState,
     getInitialAuthState,
   );
+
+  useEffect(() => {
+    if (authState.isLoggedIn) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      router.replace(
+        createLoginHref({ cancelTo: "/", returnTo: "/favorites" }),
+      );
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [authState.isLoggedIn, router]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
