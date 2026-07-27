@@ -3446,7 +3446,7 @@ function getMemberLabel(memberNames: string[]) {
 
 function getStatusBadge(status: string) {
   const statusLabels: Record<string, string> = {
-    CANCELLED: "취소",
+    CANCELLED: "분철 취소",
     CONFIRMED: "진행확정",
     CLOSED: "모집종료",
     FINISHED: "진행확정",

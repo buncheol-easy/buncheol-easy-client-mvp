@@ -205,6 +205,25 @@ function isPurchasableCardStatus(status: string | undefined) {
   return normalizedStatus === "RECRUITING" || normalizedStatus === "PUBLIC_PREVIEW";
 }
 
+function isCancelledCardStatus(status: string | undefined) {
+  const normalizedStatus = status?.trim().toUpperCase();
+
+  return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
+}
+
+// 진행확정 이후 상태군. 조기 확정은 매진+전원 입금확인일 때만 일어나므로 "진행 확정 = 참여 불가"가 항상 성립한다.
+function isConfirmedCardStatus(status: string | undefined) {
+  const normalizedStatus = status?.trim().toUpperCase();
+
+  return [
+    "CONFIRMED",
+    "PAYMENT_CONFIRMED",
+    "PAID",
+    "SETTLING",
+    "FINISHED",
+  ].includes(normalizedStatus ?? "");
+}
+
 function isCardDeadlineOpen(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
@@ -219,7 +238,14 @@ function isProductCardPurchasable(item: ProductCardItem) {
 
 function getProductCardBadge(item: ProductCardItem) {
   if (!isProductCardPurchasable(item)) {
-    return { label: "모집 종료", value: null };
+    return {
+      label: isCancelledCardStatus(item.status)
+        ? "분철 취소"
+        : isConfirmedCardStatus(item.status)
+          ? "진행 확정"
+          : "모집 종료",
+      value: null,
+    };
   }
 
   return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
@@ -433,6 +459,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : (
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
           )}
+          {isPurchasable ? null : (
+            <div className="absolute inset-0 bg-black/45" />
+          )}
           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
             <div className="flex min-w-0 flex-col items-start gap-1.5">
               <span
@@ -473,7 +502,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : null}
         </div>
 
-        <div className="px-3.5 py-3.5">
+        <div
+          className={`px-3.5 py-3.5 ${isPurchasable ? "" : "opacity-60"}`}
+        >
           {shouldShowAvailableMembers ? (
             <div>
               {availableMemberNames.length > 0 ? (
@@ -548,6 +579,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             신규
           </div>
         ) : null}
+        {isPurchasable ? null : (
+          <div className="absolute inset-0 bg-black/45" />
+        )}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
           <p
             className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
@@ -581,7 +615,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : null}
       </div>
 
-      <div>
+      <div className={isPurchasable ? "" : "opacity-60"}>
         {shouldShowAvailableMembers ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (

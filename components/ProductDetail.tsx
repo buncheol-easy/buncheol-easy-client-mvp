@@ -1187,6 +1187,9 @@ export function ProductDetail({
     productStatus === "CONFIRMED" || productStatus === "PAYMENT_CONFIRMED";
   const isPurchasableStatus =
     !productStatus || productStatus === "RECRUITING";
+  const shouldDimProductMedia =
+    !isPublicPreview &&
+    (!isPurchasableStatus || isCancelledProduct || isDeadlinePassed);
   const productOptionBlockLabel = isPublicPreview
     ? null
     : isCancelledProduct
@@ -3137,6 +3140,9 @@ export function ProductDetail({
                       ))}
                     </div>
                   </div>
+                  {shouldDimProductMedia ? (
+                    <div className="pointer-events-none absolute inset-0 bg-black/35" />
+                  ) : null}
                   {productImages.length > 1 ? (
                     <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
                       {visibleProductImageIndex + 1}/{productImages.length}
