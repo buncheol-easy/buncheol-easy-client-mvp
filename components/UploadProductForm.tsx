@@ -84,6 +84,8 @@ type UploadProductFormProps = {
 
 const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
+const maxTitleLength = 200;
+const maxDescriptionLength = 700;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const memberPriceUnitWon = 100;
@@ -2172,12 +2174,16 @@ export function UploadProductForm({
                         </span>
                         <input
                           className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                          maxLength={maxTitleLength}
                           onChange={(event) =>
                             setTitle(event.currentTarget.value)
                           }
                           placeholder="분철 제목"
                           value={title}
                         />
+                        <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                          {title.length}/{maxTitleLength}자
+                        </span>
                       </label>
 
                       <div className="mt-7">
@@ -2285,12 +2291,16 @@ export function UploadProductForm({
                         </span>
                         <textarea
                           className="mt-2 min-h-[150px] w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-4 text-[15px] font-semibold leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                          maxLength={maxDescriptionLength}
                           onChange={(event) =>
                             setDescription(event.currentTarget.value)
                           }
                           placeholder="분철 설명"
                           value={description}
                         />
+                        <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                          {description.length}/{maxDescriptionLength}자
+                        </span>
                       </label>
 
                       {submitError ? (
@@ -2496,10 +2506,14 @@ export function UploadProductForm({
               </span>
               <input
                 className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                maxLength={maxTitleLength}
                 onChange={(event) => setTitle(event.currentTarget.value)}
                 placeholder="예: LOVE DIVE 원영 미공포 분철"
                 value={title}
               />
+              <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                {title.length}/{maxTitleLength}자
+              </span>
             </label>
 
             <label className="mt-5 block">
@@ -3012,10 +3026,14 @@ export function UploadProductForm({
                 </span>
                 <textarea
                   className="mt-2 min-h-28 w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-3 text-[15px] leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                  maxLength={maxDescriptionLength}
                   onChange={(event) => setDescription(event.currentTarget.value)}
                   placeholder="구성, 하자, 포장 방식 등을 적어주세요."
                   value={description}
                 />
+                <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                  {description.length}/{maxDescriptionLength}자
+                </span>
               </label>
             </div>
 
