@@ -1187,6 +1187,9 @@ export function ProductDetail({
     productStatus === "CONFIRMED" || productStatus === "PAYMENT_CONFIRMED";
   const isPurchasableStatus =
     !productStatus || productStatus === "RECRUITING";
+  const shouldDimProductMedia =
+    !isPublicPreview &&
+    (!isPurchasableStatus || isCancelledProduct || isDeadlinePassed);
   const productOptionBlockLabel = isPublicPreview
     ? null
     : isCancelledProduct
@@ -3103,7 +3106,9 @@ export function ProductDetail({
               {productImages.length > 0 ? (
                 <>
                   <div
-                    className="h-full touch-none select-none overflow-hidden"
+                    className={`h-full touch-none select-none overflow-hidden ${
+                      shouldDimProductMedia ? "grayscale opacity-70" : ""
+                    }`}
                     onPointerCancel={cancelProductImageSwipe}
                     onPointerDown={startProductImageSwipe}
                     onPointerMove={moveProductImageSwipe}

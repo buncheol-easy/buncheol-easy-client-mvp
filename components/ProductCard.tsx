@@ -205,6 +205,12 @@ function isPurchasableCardStatus(status: string | undefined) {
   return normalizedStatus === "RECRUITING" || normalizedStatus === "PUBLIC_PREVIEW";
 }
 
+function isCancelledCardStatus(status: string | undefined) {
+  const normalizedStatus = status?.trim().toUpperCase();
+
+  return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
+}
+
 function isCardDeadlineOpen(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
@@ -219,7 +225,10 @@ function isProductCardPurchasable(item: ProductCardItem) {
 
 function getProductCardBadge(item: ProductCardItem) {
   if (!isProductCardPurchasable(item)) {
-    return { label: "모집 종료", value: null };
+    return {
+      label: isCancelledCardStatus(item.status) ? "분철 취소" : "모집 종료",
+      value: null,
+    };
   }
 
   return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
@@ -426,7 +435,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             <img
               src={item.imageUrl}
               alt={item.title}
-              className="absolute inset-0 h-full w-full object-cover"
+              className={`absolute inset-0 h-full w-full object-cover ${
+                isPurchasable ? "" : "grayscale opacity-70"
+              }`}
               draggable={false}
               loading="lazy"
             />
@@ -473,7 +484,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : null}
         </div>
 
-        <div className="px-3.5 py-3.5">
+        <div
+          className={`px-3.5 py-3.5 ${isPurchasable ? "" : "opacity-60"}`}
+        >
           {shouldShowAvailableMembers ? (
             <div>
               {availableMemberNames.length > 0 ? (
@@ -581,7 +594,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : null}
       </div>
 
-      <div>
+      <div className={isPurchasable ? "" : "opacity-60"}>
         {shouldShowAvailableMembers ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (
