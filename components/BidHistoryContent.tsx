@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useLayoutEffect,
@@ -33,6 +34,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   deleteBuncheol,
@@ -990,6 +992,7 @@ export function BidHistoryContent({
   restoreStoredViewState = true,
   skipEnterAnimation = false,
 }: BidHistoryContentProps) {
+  const router = useRouter();
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(
     () => skipEnterAnimation || takeShouldSkipBidHistoryEnter(),
@@ -1038,6 +1041,23 @@ export function BidHistoryContent({
     readAuthState,
     getInitialAuthState,
   );
+
+  useEffect(() => {
+    if (authState.isLoggedIn) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      router.replace(
+        createLoginHref({ cancelTo: "/", returnTo: "/profile/bids" }),
+      );
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [authState.isLoggedIn, router]);
+
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [mode, setMode] = useState<BidHistoryMode>("joined");
   const [filter, setFilter] = useState<BidHistoryFilter>("all");
