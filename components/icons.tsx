@@ -16,6 +16,7 @@ import {
   Trash2,
   Truck,
   UserRound,
+  UsersRound,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -57,6 +58,7 @@ export const ChevronDownIcon = createIcon(ChevronDown, "h-3.5 w-3.5");
 export const BanknoteIcon = createIcon(Banknote, "h-3.5 w-3.5");
 export const ClipboardListIcon = createIcon(ClipboardList, "h-3.5 w-3.5");
 export const TruckIcon = createIcon(Truck, "h-3.5 w-3.5");
+export const UsersRoundIcon = createIcon(UsersRound, "h-3.5 w-3.5");
 export const PackageCheckIcon = createIcon(PackageCheck, "h-3.5 w-3.5");
 
 export function HeartIcon({
