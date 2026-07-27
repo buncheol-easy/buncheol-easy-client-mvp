@@ -868,6 +868,7 @@ export function ProductDetail({
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
   const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
+  const wasProductImageDraggedRef = useRef(false);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
   const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
@@ -908,6 +909,7 @@ export function ProductDetail({
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [deadlineTick, setDeadlineTick] = useState(() => Date.now());
   const buncheolId = product.buncheolId ?? product.id;
 
@@ -2708,6 +2710,7 @@ export function ProductDetail({
     }
 
     const distance = event.clientX - startX;
+    wasProductImageDraggedRef.current = Math.abs(distance) >= 10;
 
     if (Math.abs(distance) < 44) {
       return;
@@ -2724,6 +2727,16 @@ export function ProductDetail({
     productImagePointerStartXRef.current = null;
     setIsProductImageDragging(false);
     setProductImageDragOffset(0);
+  }
+
+  // 스와이프 후 발생하는 click 을 탭으로 오인하지 않도록 걸러낸다.
+  function consumeProductImageTap() {
+    if (wasProductImageDraggedRef.current) {
+      wasProductImageDraggedRef.current = false;
+      return false;
+    }
+
+    return true;
   }
 
   function openSheet() {
@@ -3106,7 +3119,12 @@ export function ProductDetail({
               {productImages.length > 0 ? (
                 <>
                   <div
-                    className="h-full touch-none select-none overflow-hidden"
+                    className="h-full cursor-zoom-in touch-none select-none overflow-hidden"
+                    onClick={() => {
+                      if (consumeProductImageTap()) {
+                        setIsImageViewerOpen(true);
+                      }
+                    }}
                     onPointerCancel={cancelProductImageSwipe}
                     onPointerDown={startProductImageSwipe}
                     onPointerMove={moveProductImageSwipe}
@@ -4010,6 +4028,67 @@ export function ProductDetail({
                 여기서 받을게요!
               </button>
             </section>
+          </div>
+        ) : null}
+
+        {isImageViewerOpen && productImages.length > 0 ? (
+          <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+            <div className="flex items-center justify-between px-4 pb-2 pt-[calc(env(safe-area-inset-top)+12px)]">
+              {productImages.length > 1 ? (
+                <span className="rounded-full bg-white/15 px-2.5 py-1 text-[12px] font-semibold text-white">
+                  {visibleProductImageIndex + 1}/{productImages.length}
+                </span>
+              ) : (
+                <span />
+              )}
+              <button
+                aria-label="이미지 크게 보기 닫기"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
+                onClick={() => setIsImageViewerOpen(false)}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+            <div
+              className="min-h-0 flex-1 touch-none select-none overflow-hidden"
+              onClick={() => {
+                if (consumeProductImageTap()) {
+                  setIsImageViewerOpen(false);
+                }
+              }}
+              onPointerCancel={cancelProductImageSwipe}
+              onPointerDown={startProductImageSwipe}
+              onPointerMove={moveProductImageSwipe}
+              onPointerUp={finishProductImageSwipe}
+            >
+              <div
+                className={`flex h-full ${
+                  isProductImageDragging
+                    ? ""
+                    : "transition-transform duration-300 ease-out"
+                }`}
+                style={{
+                  transform: `translateX(${productImageTrackOffset})`,
+                }}
+              >
+                {productImages.map((imageUrl, imageIndex) => (
+                  <div
+                    className="flex h-full w-full shrink-0 items-center justify-center"
+                    key={imageUrl}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt={`${product.title} 이미지 ${imageIndex + 1}`}
+                      className="max-h-full w-full object-contain"
+                      draggable={false}
+                      src={imageUrl}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="pb-[calc(env(safe-area-inset-bottom)+16px)]" />
           </div>
         ) : null}
       </div>
