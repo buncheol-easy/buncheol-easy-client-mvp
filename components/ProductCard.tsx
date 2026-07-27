@@ -460,19 +460,19 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
           )}
           {isPurchasable ? null : (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-              <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
-                {deadlineBadge.label}
-              </span>
-            </div>
+            <div className="absolute inset-0 bg-black/45" />
           )}
           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
             <div className="flex min-w-0 flex-col items-start gap-1.5">
-              {isPurchasable ? (
-                <span className="inline-flex rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)] backdrop-blur-sm">
-                  {deadlineBadge.label}
-                </span>
-              ) : null}
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
+                  isPurchasable
+                    ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
+                    : "bg-black/55 text-white/80"
+                }`}
+              >
+                {deadlineBadge.label}
+              </span>
               {item.isShippingFeePaybackEvent ? (
                 <span className="inline-flex rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
                   배송비 돌려받는 무료 분철
@@ -579,24 +579,25 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             신규
           </div>
         ) : null}
-        {isPurchasable ? (
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
-            <p className="inline-flex rounded-full bg-[#DDE7B8] px-2 py-0.5 text-[10px] font-semibold text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)] backdrop-blur-sm">
-              {deadlineBadge.label}
-            </p>
-            {deadlineBadge.value ? (
-              <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em] drop-shadow-[0_1px_6px_rgba(0,0,0,0.65)]">
-                {deadlineBadge.value}
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-            <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
-              {deadlineBadge.label}
-            </span>
-          </div>
+        {isPurchasable ? null : (
+          <div className="absolute inset-0 bg-black/45" />
         )}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
+          <p
+            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
+              isPurchasable
+                ? "bg-[#DDE7B8] text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)]"
+                : "bg-black/40 text-white/75"
+            }`}
+          >
+            {deadlineBadge.label}
+          </p>
+          {deadlineBadge.value ? (
+            <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em] drop-shadow-[0_1px_6px_rgba(0,0,0,0.65)]">
+              {deadlineBadge.value}
+            </p>
+          ) : null}
+        </div>
         {shouldShowBookmarkButton ? (
           <button
             type="button"
