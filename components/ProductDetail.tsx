@@ -3348,7 +3348,7 @@ export function ProductDetail({
                           aria-hidden="true"
                           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
                         >
-                          <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                          <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
                             {blockChipLabel}
                           </span>
                         </div>
@@ -3556,7 +3556,7 @@ export function ProductDetail({
                           </div>
                           {overlayLabel ? (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
-                              <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                              <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
                                 {displayedOverlayLabel}
                               </span>
                             </div>
