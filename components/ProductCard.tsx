@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
 import {
   addBuncheolBookmark,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/auth-navigation";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
+import { homeListingsQueryKey } from "@/lib/query-keys";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
@@ -287,6 +289,7 @@ function isRecentlyUploaded(uploadedAt?: string) {
 
 export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -391,6 +394,19 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       } else {
         await removeBuncheolBookmark(accessToken, productId);
       }
+
+      // 홈 목록은 React Query 캐시를 그대로 다시 그리므로, 캐시의 liked 도
+      // 같이 고쳐야 상세를 갔다 돌아와도 하트 상태가 유지된다.
+      // 찜은 로그인 상태에서만 가능하므로 로그인 목록 캐시만 갱신하면 된다.
+      queryClient.setQueryData<ProductCardItem[]>(
+        homeListingsQueryKey(true),
+        (current) =>
+          current?.map((cachedItem) =>
+            (cachedItem.productId ?? cachedItem.id) === productId
+              ? { ...cachedItem, liked: nextLiked }
+              : cachedItem,
+          ),
+      );
     } catch {
       setIsLiked(!nextLiked);
     } finally {
