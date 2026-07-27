@@ -18,6 +18,7 @@ import {
   CloseIcon,
   PackageCheckIcon,
   TruckIcon,
+  UsersRoundIcon,
 } from "@/components/icons";
 import {
   addressReturnStateKey,
@@ -244,9 +245,12 @@ type BidHistoryViewState = {
   mode?: BidHistoryMode;
 };
 
+// "진행 확정"은 내 결제·배송 축이 아니라 분철 축(마감 때 최소 인원 충족) 단계지만,
+// 참여자 입장에서는 결제 완료 다음에 기다리는 관문이라 하나의 여정으로 묶어 보여준다.
 const bidProgressStepLabels = [
   "결제 대기",
   "결제 완료",
+  "진행 확정",
   "배송중",
   "배송 완료",
 ] as const;
@@ -262,7 +266,13 @@ const participationStatusGuide = [
     icon: CheckIcon,
     label: "결제 완료",
     description:
-      "관리자가 입금을 확인해 참여가 확정된 상태예요. 개최자가 배송을 시작하면 배송중으로 바뀌어요.",
+      "관리자가 입금을 확인한 상태예요. 마감 때 최소 인원이 모이면 진행 확정으로 바뀌어요.",
+  },
+  {
+    icon: UsersRoundIcon,
+    label: "진행 확정",
+    description:
+      "최소 인원이 모여 분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
   },
   {
     icon: TruckIcon,
@@ -412,10 +422,13 @@ function isCancelledBuncheolStatus(status: string | undefined) {
   return status === "CANCELLED" || status === "CANCELED";
 }
 
+// 분철이 취소(자동/개최자)됐는데 참여 취소가 아직 전파되지 않은 응답도 취소로 본다 —
+// 취소 배지 아래 결제 대기 CTA 가 노출되는 모순을 막는다.
 function isBidRecordCancelled(bid: BidRecord) {
   return (
     isCancelledParticipationStatus(bid.participationStatus) ||
-    isCancelledBuncheolStatus(bid.buncheolStatus)
+    isCancelledBuncheolStatus(bid.buncheolStatus) ||
+    isHostCancelledBuncheolStatus(bid.buncheolStatus)
   );
 }
 
@@ -432,7 +445,8 @@ function getBidRecordCancellationKind(bid: BidRecord) {
 
   if (
     bid.cancelReason === "BUNCHEOL_CANCELLED" ||
-    isCancelledBuncheolStatus(bid.buncheolStatus)
+    isCancelledBuncheolStatus(bid.buncheolStatus) ||
+    isHostCancelledBuncheolStatus(bid.buncheolStatus)
   ) {
     return "BUNCHEOL_CANCELLED";
   }
@@ -440,8 +454,39 @@ function getBidRecordCancellationKind(bid: BidRecord) {
   return "PAYMENT_TIMEOUT";
 }
 
-function isBuncheolCancelledBidRecord(bid: BidRecord) {
-  return getBidRecordCancellationKind(bid) === "BUNCHEOL_CANCELLED";
+function isHostCancelledBuncheolStatus(status: string | undefined) {
+  return status === "HOST_CANCELLED";
+}
+
+// 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
+// (CANCELLED = 최소 인원 미달 자동 취소, HOST_CANCELLED = 개최자 취소 — 워딩은 "개최자 사정"으로 완곡하게).
+function getBidRecordCancellationNotice(bid: BidRecord) {
+  const cancellationKind = getBidRecordCancellationKind(bid);
+
+  if (!cancellationKind) {
+    return null;
+  }
+
+  if (cancellationKind === "PAYMENT_TIMEOUT") {
+    return {
+      label: "참여 취소됨",
+      description:
+        "입금 기한이 지나 참여가 취소됐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.",
+    };
+  }
+
+  const buncheolCancelDescription = isHostCancelledBuncheolStatus(
+    bid.buncheolStatus,
+  )
+    ? "개최자 사정으로 분철이 취소됐어요."
+    : isCancelledBuncheolStatus(bid.buncheolStatus)
+      ? "최소 인원이 모이지 않아 분철이 취소됐어요."
+      : "취소된 분철이에요.";
+
+  return {
+    label: "분철 취소됨",
+    description: `${buncheolCancelDescription} 이미 입금했다면 등록한 환불 계좌로 환불돼요.`,
+  };
 }
 
 function isDeletedProductStatus(status: string | undefined) {
@@ -533,15 +578,15 @@ function getBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   }
 
   if (isDeliveryCompletedStatus(bid.deliveryStatus)) {
-    return 3;
+    return 4;
   }
 
   if (isDeliveryInProgress(bid)) {
-    return 2;
+    return 3;
   }
 
   if (isBidRecordPaymentConfirmed(bid)) {
-    return 1;
+    return bid.buncheolStatus === "CONFIRMED" ? 2 : 1;
   }
 
   if (isBidRecordTransferRequested(bid) || isBidRecordPaymentReady(bid, now)) {
@@ -601,11 +646,10 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
 
 function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordCancelled(bid)) {
-    if (isBuncheolCancelledBidRecord(bid)) {
-      return "취소된 분철이에요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.";
-    }
-
-    return "취소된 참여예요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.";
+    return (
+      getBidRecordCancellationNotice(bid)?.description ??
+      "취소된 참여예요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
+    );
   }
 
   if (isBidRecordPaymentConfirmed(bid)) {
@@ -799,11 +843,10 @@ function getCachedBuncheolDetail(
 }
 
 // 취소·삭제된 분철은 상세 조회가 404 를 반환하므로 호출하지 않는다.
+// HOST_CANCELLED 는 isBidRecordCancelled 가 취소로 판정하므로 별도 검사가 필요 없다.
 function isBuncheolDetailInaccessible(bid: BidRecord) {
   return (
-    isBidRecordCancelled(bid) ||
-    isDeletedProductStatus(bid.buncheolStatus) ||
-    bid.buncheolStatus === "HOST_CANCELLED"
+    isBidRecordCancelled(bid) || isDeletedProductStatus(bid.buncheolStatus)
   );
 }
 
@@ -968,12 +1011,9 @@ function BidHistoryListSkeleton({ count = 2 }: { count?: number }) {
           <div className="flex items-start gap-3">
             <div className="h-14 w-14 shrink-0 animate-pulse rounded-[0.85rem] bg-black/8" />
             <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="h-4 w-3/4 animate-pulse rounded-full bg-black/8" />
-                  <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-black/8" />
-                </div>
-                <div className="h-7 w-12 shrink-0 animate-pulse rounded-full bg-black/8" />
+              <div className="min-w-0">
+                <div className="h-4 w-3/4 animate-pulse rounded-full bg-black/8" />
+                <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-black/8" />
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
@@ -2150,9 +2190,7 @@ export function BidHistoryContent({
             {records.map((bid) => {
               const isClosed = isBidRecordClosed(bid, now);
               const isCancelled = isBidRecordCancelled(bid);
-              const cancellationLabel = isBuncheolCancelledBidRecord(bid)
-                ? "분철 취소됨"
-                : "참여 취소됨";
+              const cancellationNotice = getBidRecordCancellationNotice(bid);
               const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
               const isPaymentConfirmed = isBidRecordPaymentConfirmed(bid);
@@ -2222,29 +2260,18 @@ export function BidHistoryContent({
                       ) : null}
                     </Link>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <Link
-                          className="min-w-0"
-                          href={`/products/${bid.productId}?from=bids`}
-                          onClick={rememberBidHistoryProductEntry}
-                        >
-                          <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                            {bid.title}
-                          </p>
-                          <p className="mt-1 text-[13px] font-medium text-black/45">
-                            {bid.optionLabel}
-                          </p>
-                        </Link>
-                        <span
-                          className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                            bid.rank === 1
-                              ? "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
-                              : "bg-[#f1f1f1] text-black/55"
-                          }`}
-                        >
-                          참여
-                        </span>
-                      </div>
+                      <Link
+                        className="block min-w-0"
+                        href={`/products/${bid.productId}?from=bids`}
+                        onClick={rememberBidHistoryProductEntry}
+                      >
+                        <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                          {bid.title}
+                        </p>
+                        <p className="mt-1 text-[13px] font-medium text-black/45">
+                          {bid.optionLabel}
+                        </p>
+                      </Link>
 
                       <div className="mt-4 grid gap-2">
                         <div className="grid grid-cols-2 gap-2">
@@ -2296,19 +2323,19 @@ export function BidHistoryContent({
                       </div>
 
                       <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
-                        {isCancelled ? (
+                        {isCancelled && cancellationNotice ? (
                           <div className="mb-3 flex flex-col items-center gap-1.5">
                             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
-                              {cancellationLabel}
+                              {cancellationNotice.label}
                             </span>
                             <p className="text-center text-[11px] font-medium leading-4 text-black/40">
-                              이미 입금했다면 등록한 환불 계좌로 환불돼요.
+                              {cancellationNotice.description}
                             </p>
                           </div>
                         ) : null}
                         <div className="relative">
-                          <div className="absolute left-[12.5%] right-[12.5%] top-[9px] h-px bg-[#CAD6A0]" />
-                          <div className="relative grid grid-cols-4 gap-1">
+                          <div className="absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]" />
+                          <div className="relative grid grid-cols-5 gap-1">
                             {progressSteps.map((step) => (
                               <div
                                 className="flex min-w-0 flex-col items-center gap-1.5"
@@ -2527,7 +2554,9 @@ export function BidHistoryContent({
               {hostedRecords.map((product) => {
                 const isClosed = isHostedProductClosed(product, now);
                 const isCancelled =
-                  product.status === "CANCELLED" || product.status === "CANCELED";
+                  product.status === "CANCELLED" ||
+                  product.status === "CANCELED" ||
+                  product.status === "HOST_CANCELLED";
                 const optionCount =
                   product.optionCount ??
                   product.targetMembers?.length ??
@@ -2571,12 +2600,20 @@ export function BidHistoryContent({
                           </div>
                           <span
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              isClosed
-                                ? "bg-[#f3f3f3] text-black/50"
-                                : "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
+                              product.status === "CONFIRMED"
+                                ? "bg-black text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                                : isClosed
+                                  ? "bg-[#f3f3f3] text-black/50"
+                                  : "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
                             }`}
                           >
-                            {isCancelled ? "취소" : isClosed ? "모집 종료" : "모집중"}
+                            {isCancelled
+                              ? "취소"
+                              : product.status === "CONFIRMED"
+                                ? "진행확정"
+                                : isClosed
+                                  ? "모집 종료"
+                                  : "모집중"}
                           </span>
                         </div>
                         <p className="mt-1 truncate text-[13px] font-medium text-black/45">
@@ -2712,8 +2749,8 @@ export function BidHistoryContent({
                 ))}
               </div>
               <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
-                분철이 취소되거나 입금 기한이 지나면 참여가 취소될 수 있어요.
-                이미 입금했다면 등록한 환불 계좌로 환불돼요.
+                마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
+                취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.
               </p>
             </div>
 
