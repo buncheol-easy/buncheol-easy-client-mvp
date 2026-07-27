@@ -3106,9 +3106,7 @@ export function ProductDetail({
               {productImages.length > 0 ? (
                 <>
                   <div
-                    className={`h-full touch-none select-none overflow-hidden ${
-                      shouldDimProductMedia ? "grayscale opacity-70" : ""
-                    }`}
+                    className="h-full touch-none select-none overflow-hidden"
                     onPointerCancel={cancelProductImageSwipe}
                     onPointerDown={startProductImageSwipe}
                     onPointerMove={moveProductImageSwipe}
@@ -3142,6 +3140,9 @@ export function ProductDetail({
                       ))}
                     </div>
                   </div>
+                  {shouldDimProductMedia ? (
+                    <div className="pointer-events-none absolute inset-0 bg-black/35" />
+                  ) : null}
                   {productImages.length > 1 ? (
                     <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
                       {visibleProductImageIndex + 1}/{productImages.length}
