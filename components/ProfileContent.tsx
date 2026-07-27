@@ -192,12 +192,16 @@ function clearProfileStateCache() {
 }
 
 type ProfileContentProps = {
+  openSettlementAccountOnEntry?: boolean;
+  settlementAccountReturnHref?: string | null;
   skipEnterAnimation?: boolean;
 };
 
 export const PROFILE_SKIP_ENTER_KEY = "skip-profile-enter-animation";
 
 export function ProfileContent({
+  openSettlementAccountOnEntry = false,
+  settlementAccountReturnHref = null,
   skipEnterAnimation = false,
 }: ProfileContentProps) {
   const router = useRouter();
@@ -231,8 +235,10 @@ export function ProfileContent({
   );
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [isDefaultAddressLoading, setIsDefaultAddressLoading] = useState(false);
-  const [isEditingSettlementAccount, setIsEditingSettlementAccount] =
-    useState(false);
+  // 체크아웃에서 계좌 등록을 위해 넘어온 경우 등록 패널을 바로 연다.
+  const [isEditingSettlementAccount, setIsEditingSettlementAccount] = useState(
+    openSettlementAccountOnEntry,
+  );
   const [isSettlementAccountPanelExiting, setIsSettlementAccountPanelExiting] =
     useState(false);
   const [settlementAccountForm, setSettlementAccountForm] =
@@ -615,6 +621,13 @@ export function ProfileContent({
       }));
 
       writeSettlementAccountState(nextSettlementAccount);
+
+      // 체크아웃 도중 계좌 등록으로 넘어온 경우, 저장 즉시 참여하던 화면으로 복귀한다.
+      if (settlementAccountReturnHref) {
+        router.replace(settlementAccountReturnHref);
+        return;
+      }
+
       closeSettlementAccountPanel({
         message: "계좌 정보가 저장됐어요.",
         nextForm: nextSettlementAccount,
@@ -734,7 +747,14 @@ export function ProfileContent({
 
           <Link
             className="mt-5 flex h-12 items-center justify-center rounded-full bg-[#CFE86B] text-[15px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
-            href="/profile/bids"
+            href={
+              authState.isLoggedIn
+                ? "/profile/bids"
+                : createLoginHref({
+                    cancelTo: "/profile",
+                    returnTo: "/profile/bids",
+                  })
+            }
           >
             내 참여 내역 보러 가기
           </Link>
@@ -835,6 +855,12 @@ export function ProfileContent({
                   />
                 </label>
               </div>
+
+              {settlementAccountReturnHref ? (
+                <p className="mt-2 px-1 text-[12px] font-medium text-black/40">
+                  저장하면 참여하던 분철 화면으로 돌아가요.
+                </p>
+              ) : null}
 
               <div className="mt-2.5 flex items-center gap-2">
                 {hasSettlementAccount ||

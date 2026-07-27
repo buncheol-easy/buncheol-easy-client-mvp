@@ -33,6 +33,7 @@ import {
 } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import { FEATURES } from "@/lib/feature-flags";
 import {
   getDeliveryAddressStateFromSyncedAddresses,
   getInitialDeliveryAddressState,
@@ -853,6 +854,12 @@ export function ProductDetail({
   );
   const didNavigateBack = useRef(false);
   const didRestoreCheckoutAddressReturnRef = useRef(false);
+  // 복원한 체크아웃 상태 보관용. StrictMode 재실행·상세 재조회로 아래 리셋
+  // effect가 복원 직후 다시 돌면 상태가 지워지므로, 리셋될 때마다 재적용한다.
+  const pendingCheckoutRestoreRef = useRef<CheckoutAddressReturnState | null>(
+    null,
+  );
+  const shouldApplyCheckoutRestoreRef = useRef(false);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const sheetDragStartYRef = useRef<number | null>(null);
@@ -861,6 +868,7 @@ export function ProductDetail({
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
   const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
+  const wasProductImageDraggedRef = useRef(false);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
   const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
@@ -901,6 +909,7 @@ export function ProductDetail({
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [deadlineTick, setDeadlineTick] = useState(() => Date.now());
   const buncheolId = product.buncheolId ?? product.id;
 
@@ -1180,6 +1189,9 @@ export function ProductDetail({
     productStatus === "CONFIRMED" || productStatus === "PAYMENT_CONFIRMED";
   const isPurchasableStatus =
     !productStatus || productStatus === "RECRUITING";
+  const shouldDimProductMedia =
+    !isPublicPreview &&
+    (!isPurchasableStatus || isCancelledProduct || isDeadlinePassed);
   const productOptionBlockLabel = isPublicPreview
     ? null
     : isCancelledProduct
@@ -1201,6 +1213,14 @@ export function ProductDetail({
   );
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
+  // 오픈 이벤트 무료 분철(전 슬롯 0원) 판정. 참여 전 화면이라 서버 payback 상태가 없어
+  // 옵션 가격으로 판정하고, 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
+  const isShippingFeePaybackProduct =
+    FEATURES.shippingFeePayback &&
+    auctionOptions.length > 0 &&
+    auctionOptions.every(
+      (option) => priceToNumber(getBidBaseline(option)) === 0,
+    );
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
   const canDeleteProduct = product.isApiProduct && isHostedProduct;
@@ -1285,7 +1305,10 @@ export function ProductDetail({
   }
 
   function getProductDetailReturnHref(
-    options: { restoreCheckoutAddressSheet?: boolean } = {},
+    options: {
+      restoreCheckoutAddressSheet?: boolean;
+      restoreCheckoutConfirm?: boolean;
+    } = {},
   ) {
     const fallbackHref = `/products/${encodeURIComponent(buncheolId)}`;
 
@@ -1295,9 +1318,15 @@ export function ProductDetail({
 
     const params = new URLSearchParams(window.location.search);
 
-    if (options.restoreCheckoutAddressSheet) {
+    if (options.restoreCheckoutAddressSheet || options.restoreCheckoutConfirm) {
       params.set("checkoutStep", "confirm");
-      params.set("addressSheet", "1");
+
+      if (options.restoreCheckoutAddressSheet) {
+        params.set("addressSheet", "1");
+      } else {
+        params.delete("addressSheet");
+      }
+
       params.delete("checkoutOption");
       getSelectedCheckoutOptionIds().forEach((optionId) => {
         params.append("checkoutOption", optionId);
@@ -1417,6 +1446,18 @@ export function ProductDetail({
     router.push(getAddressManagementHref(openAdd, options));
   }
 
+  // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
+  function navigateToProfileForRefundAccount() {
+    rememberCheckoutAddressReturnState(false);
+
+    const params = new URLSearchParams({
+      openAccount: "1",
+      returnTo: getProductDetailReturnHref({ restoreCheckoutConfirm: true }),
+    });
+
+    router.push(`/profile?${params.toString()}`);
+  }
+
   useEffect(() => {
     const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
     const paymentDueDate = parseCheckoutDateTime(paymentDueAt);
@@ -1470,83 +1511,95 @@ export function ProductDetail({
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
     setCheckoutCopyToast("");
-  }, [product.id, product.isHostedByMe, product.options]);
+
+    // 이 리셋이 복원된 체크아웃 상태를 지웠을 수 있으므로 재적용을 예약한다.
+    if (pendingCheckoutRestoreRef.current?.productId === buncheolId) {
+      shouldApplyCheckoutRestoreRef.current = true;
+    }
+  }, [buncheolId, product.id, product.isHostedByMe, product.options]);
 
   useEffect(() => {
-    if (
-      didRestoreCheckoutAddressReturnRef.current ||
-      typeof window === "undefined"
-    ) {
+    if (typeof window === "undefined") {
       return;
     }
 
-    let returnState: CheckoutAddressReturnState | null = null;
-    const rawState = window.sessionStorage.getItem(
-      CHECKOUT_ADDRESS_RETURN_STATE_KEY,
-    );
-    const draftState = parseCheckoutAddressReturnState(
-      window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
-      buncheolId,
-    );
+    if (!didRestoreCheckoutAddressReturnRef.current) {
+      let returnState: CheckoutAddressReturnState | null = null;
+      const rawState = window.sessionStorage.getItem(
+        CHECKOUT_ADDRESS_RETURN_STATE_KEY,
+      );
+      const draftState = parseCheckoutAddressReturnState(
+        window.sessionStorage.getItem(CHECKOUT_DRAFT_STATE_KEY),
+        buncheolId,
+      );
 
-    returnState = parseCheckoutAddressReturnState(rawState, buncheolId);
+      returnState = parseCheckoutAddressReturnState(rawState, buncheolId);
 
-    window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
+      window.sessionStorage.removeItem(CHECKOUT_ADDRESS_RETURN_STATE_KEY);
 
-    if (!returnState) {
-      const params = new URLSearchParams(window.location.search);
-      const shouldRestoreCheckout =
-        params.get("checkoutStep") === "confirm" ||
-        params.get("addressSheet") === "1";
-      const queryOptionIds = [
-        ...params.getAll("checkoutOption"),
-        ...(params.get("checkoutOptions")?.split(",") ?? []),
-      ].filter(Boolean);
+      if (!returnState) {
+        const params = new URLSearchParams(window.location.search);
+        const shouldRestoreCheckout =
+          params.get("checkoutStep") === "confirm" ||
+          params.get("addressSheet") === "1";
+        const queryOptionIds = [
+          ...params.getAll("checkoutOption"),
+          ...(params.get("checkoutOptions")?.split(",") ?? []),
+        ].filter(Boolean);
 
-      if (shouldRestoreCheckout) {
-        returnState = {
-          createdAt: Date.now(),
-          addressId: params.get("checkoutAddress"),
-          optionIds: [...new Set(queryOptionIds)],
-          options: [...new Set(queryOptionIds)].map((optionId) => ({
-            id: optionId,
-          })),
-          productId: buncheolId,
-          reopenAddressSheet: params.get("addressSheet") === "1",
-        };
+        if (shouldRestoreCheckout) {
+          returnState = {
+            createdAt: Date.now(),
+            addressId: params.get("checkoutAddress"),
+            optionIds: [...new Set(queryOptionIds)],
+            options: [...new Set(queryOptionIds)].map((optionId) => ({
+              id: optionId,
+            })),
+            productId: buncheolId,
+            reopenAddressSheet: params.get("addressSheet") === "1",
+          };
+        }
       }
-    }
 
-    if (returnState && draftState) {
-      const returnOptions = getCheckoutReturnOptionsFromState(returnState);
-      const draftOptions = getCheckoutReturnOptionsFromState(draftState);
+      if (returnState && draftState) {
+        const returnOptions = getCheckoutReturnOptionsFromState(returnState);
+        const draftOptions = getCheckoutReturnOptionsFromState(draftState);
 
-      if (returnOptions.length === 0 && draftOptions.length > 0) {
-        returnState = {
-          ...draftState,
-          addressId: returnState.addressId ?? draftState.addressId,
-          createdAt: Math.max(returnState.createdAt, draftState.createdAt),
-          reopenAddressSheet: returnState.reopenAddressSheet,
-        };
+        if (returnOptions.length === 0 && draftOptions.length > 0) {
+          returnState = {
+            ...draftState,
+            addressId: returnState.addressId ?? draftState.addressId,
+            createdAt: Math.max(returnState.createdAt, draftState.createdAt),
+            reopenAddressSheet: returnState.reopenAddressSheet,
+          };
+        }
       }
+
+      if (
+        !returnState ||
+        Date.now() - returnState.createdAt > checkoutDraftMaxAgeMs
+      ) {
+        return;
+      }
+
+      // 이미 참여한 분철이면(다른 탭에서 참여 후 복귀 등) 체크아웃을 복원하지 않는다 —
+      // 배송지·계좌까지 채운 뒤 제출 시점에야 거절당하는 헛걸음을 막는다.
+      if (hasMyActiveParticipation) {
+        return;
+      }
+
+      didRestoreCheckoutAddressReturnRef.current = true;
+      pendingCheckoutRestoreRef.current = returnState;
+      shouldApplyCheckoutRestoreRef.current = true;
     }
 
-    if (
-      !returnState ||
-      Date.now() - returnState.createdAt > checkoutDraftMaxAgeMs
-    ) {
+    const checkoutReturnState = pendingCheckoutRestoreRef.current;
+
+    if (!shouldApplyCheckoutRestoreRef.current || !checkoutReturnState) {
       return;
     }
 
-    // 이미 참여한 분철이면(다른 탭에서 참여 후 복귀 등) 체크아웃을 복원하지 않는다 —
-    // 배송지·계좌까지 채운 뒤 제출 시점에야 거절당하는 헛걸음을 막는다.
-    if (hasMyActiveParticipation) {
-      return;
-    }
-
-    const checkoutReturnState = returnState;
-
-    didRestoreCheckoutAddressReturnRef.current = true;
+    shouldApplyCheckoutRestoreRef.current = false;
 
     const restorableOptions =
       getCheckoutReturnOptionsFromState(checkoutReturnState);
@@ -1947,6 +2000,8 @@ export function ProductDetail({
       return;
     }
 
+    // 사용자가 직접 선택을 다시 진행하면 이전 복귀 복원 상태는 폐기한다.
+    pendingCheckoutRestoreRef.current = null;
     checkoutSelectedOptionsRef.current =
       getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
     setCheckoutError("");
@@ -2008,9 +2063,7 @@ export function ProductDetail({
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
         window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
-        rememberCheckoutAddressReturnState(false);
-        router.push("/profile");
+        navigateToProfileForRefundAccount();
         return;
       }
 
@@ -2118,9 +2171,7 @@ export function ProductDetail({
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
         window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
-        rememberCheckoutAddressReturnState(false);
-        router.push("/profile");
+        navigateToProfileForRefundAccount();
         return;
       }
 
@@ -2251,7 +2302,7 @@ export function ProductDetail({
 
         if (bankAccountKeys.size > 1) {
           throw new Error(
-            "선택한 옵션의 입금 계좌가 달라요. 구매 내역에서 각각 확인해 주세요.",
+            "선택한 옵션의 입금 계좌가 달라요. 참여 내역에서 각각 확인해 주세요.",
           );
         }
       } catch (error: unknown) {
@@ -2315,6 +2366,7 @@ export function ProductDetail({
           0,
         ),
       });
+      pendingCheckoutRestoreRef.current = null;
       setCheckoutStep("payment");
       setIsBidSubmitPending(false);
       return;
@@ -2658,6 +2710,7 @@ export function ProductDetail({
     }
 
     const distance = event.clientX - startX;
+    wasProductImageDraggedRef.current = Math.abs(distance) >= 10;
 
     if (Math.abs(distance) < 44) {
       return;
@@ -2674,6 +2727,16 @@ export function ProductDetail({
     productImagePointerStartXRef.current = null;
     setIsProductImageDragging(false);
     setProductImageDragOffset(0);
+  }
+
+  // 스와이프 후 발생하는 click 을 탭으로 오인하지 않도록 걸러낸다.
+  function consumeProductImageTap() {
+    if (wasProductImageDraggedRef.current) {
+      wasProductImageDraggedRef.current = false;
+      return false;
+    }
+
+    return true;
   }
 
   function openSheet() {
@@ -2737,6 +2800,9 @@ export function ProductDetail({
     if (isSheetClosing) {
       return;
     }
+
+    // 시트를 직접 닫으면 복귀 복원 상태는 소진된 것으로 본다.
+    pendingCheckoutRestoreRef.current = null;
 
     if (sheetEnterAnimationFrameRef.current !== null) {
       window.cancelAnimationFrame(sheetEnterAnimationFrameRef.current);
@@ -3053,7 +3119,12 @@ export function ProductDetail({
               {productImages.length > 0 ? (
                 <>
                   <div
-                    className="h-full touch-none select-none overflow-hidden"
+                    className="h-full cursor-zoom-in touch-none select-none overflow-hidden"
+                    onClick={() => {
+                      if (consumeProductImageTap()) {
+                        setIsImageViewerOpen(true);
+                      }
+                    }}
                     onPointerCancel={cancelProductImageSwipe}
                     onPointerDown={startProductImageSwipe}
                     onPointerMove={moveProductImageSwipe}
@@ -3087,6 +3158,9 @@ export function ProductDetail({
                       ))}
                     </div>
                   </div>
+                  {shouldDimProductMedia ? (
+                    <div className="pointer-events-none absolute inset-0 bg-black/35" />
+                  ) : null}
                   {productImages.length > 1 ? (
                     <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
                       {visibleProductImageIndex + 1}/{productImages.length}
@@ -3287,13 +3361,18 @@ export function ProductDetail({
                         <p className="mt-0.5 text-[16px] font-semibold">
                           {getBidBaseline(option)}
                         </p>
+                        {isShippingFeePaybackProduct ? (
+                          <p className="mt-0.5 text-[11px] font-semibold text-[#7A8A3A]">
+                            배송비만 결제
+                          </p>
+                        ) : null}
                       </div>
                       {blockChipLabel ? (
                         <div
                           aria-hidden="true"
                           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
                         >
-                          <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                          <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
                             {blockChipLabel}
                           </span>
                         </div>
@@ -3302,6 +3381,28 @@ export function ProductDetail({
                   );
                 })}
               </div>
+
+              {isShippingFeePaybackProduct ? (
+                <div className="mt-4 rounded-[0.95rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-4">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F]">
+                      무료 분철 이벤트
+                    </span>
+                    <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                      배송비는 환급되니 걱정 마세요!
+                    </p>
+                  </div>
+                  <ol className="mt-3 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
+                    <li>1. 지금은 배송비만 입금하고 참여해요.</li>
+                    <li>2. 택배를 수령해요.</li>
+                    <li>
+                      3. 참여 내역의 [후기 쓰고 배송비 돌려받기] 버튼을 눌러 X에
+                      후기를 작성해요.
+                    </li>
+                    <li>4. 작성한 후기 링크로 신청해 주시면 배송비를 환급해 드려요!</li>
+                  </ol>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
@@ -3479,7 +3580,7 @@ export function ProductDetail({
                           </div>
                           {overlayLabel ? (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
-                              <span className="whitespace-nowrap rounded-full bg-black px-3.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                              <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
                                 {displayedOverlayLabel}
                               </span>
                             </div>
@@ -3580,6 +3681,17 @@ export function ProductDetail({
                           {formatPrice(estimatedCheckoutTotal)}
                         </span>
                       </div>
+                      {isShippingFeePaybackProduct ? (
+                        <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
+                          이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
+                          <br />
+                          배송비 {formatPrice(estimatedShippingAmount)}은 보증금
+                          개념으로 받고 있어요.
+                          <br />
+                          택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
+                          계좌로 그대로 돌려드려요.
+                        </p>
+                      ) : null}
                     </div>
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
@@ -3693,7 +3805,7 @@ export function ProductDetail({
                             <p className="mt-1 text-[12px] font-medium text-black/40">
                               {checkoutPaymentSummary.hostBankAccount?.holder
                                 ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
-                                : "구매 내역에서 다시 확인해 주세요."}
+                                : "참여 내역에서 다시 확인해 주세요."}
                             </p>
                           </div>
                           <button
@@ -3714,7 +3826,7 @@ export function ProductDetail({
                         </div>
                         <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                           송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행
-                          상황은 구매 내역에서 확인할 수 있어요.
+                          상황은 참여 내역에서 확인할 수 있어요.
                         </p>
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
@@ -3740,6 +3852,18 @@ export function ProductDetail({
                             {formatPrice(checkoutPaymentSummary.totalAmount)}
                           </span>
                         </div>
+                        {isShippingFeePaybackProduct ? (
+                          <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
+                            이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
+                            <br />
+                            배송비{" "}
+                            {formatPrice(checkoutPaymentSummary.shippingAmount)}은
+                            보증금 개념으로 받고 있어요.
+                            <br />
+                            택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
+                            계좌로 그대로 돌려드려요.
+                          </p>
+                        ) : null}
                       </div>
 
                     </div>
@@ -3757,7 +3881,7 @@ export function ProductDetail({
                         onClick={openBidHistory}
                         type="button"
                       >
-                        구매 내역 보기
+                        참여 내역 보기
                       </button>
                     </div>
                   </>
@@ -3904,6 +4028,67 @@ export function ProductDetail({
                 여기서 받을게요!
               </button>
             </section>
+          </div>
+        ) : null}
+
+        {isImageViewerOpen && productImages.length > 0 ? (
+          <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+            <div className="flex items-center justify-between px-4 pb-2 pt-[calc(env(safe-area-inset-top)+12px)]">
+              {productImages.length > 1 ? (
+                <span className="rounded-full bg-white/15 px-2.5 py-1 text-[12px] font-semibold text-white">
+                  {visibleProductImageIndex + 1}/{productImages.length}
+                </span>
+              ) : (
+                <span />
+              )}
+              <button
+                aria-label="이미지 크게 보기 닫기"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
+                onClick={() => setIsImageViewerOpen(false)}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+            <div
+              className="min-h-0 flex-1 touch-none select-none overflow-hidden"
+              onClick={() => {
+                if (consumeProductImageTap()) {
+                  setIsImageViewerOpen(false);
+                }
+              }}
+              onPointerCancel={cancelProductImageSwipe}
+              onPointerDown={startProductImageSwipe}
+              onPointerMove={moveProductImageSwipe}
+              onPointerUp={finishProductImageSwipe}
+            >
+              <div
+                className={`flex h-full ${
+                  isProductImageDragging
+                    ? ""
+                    : "transition-transform duration-300 ease-out"
+                }`}
+                style={{
+                  transform: `translateX(${productImageTrackOffset})`,
+                }}
+              >
+                {productImages.map((imageUrl, imageIndex) => (
+                  <div
+                    className="flex h-full w-full shrink-0 items-center justify-center"
+                    key={imageUrl}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt={`${product.title} 이미지 ${imageIndex + 1}`}
+                      className="max-h-full w-full object-contain"
+                      draggable={false}
+                      src={imageUrl}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="pb-[calc(env(safe-area-inset-bottom)+16px)]" />
           </div>
         ) : null}
       </div>

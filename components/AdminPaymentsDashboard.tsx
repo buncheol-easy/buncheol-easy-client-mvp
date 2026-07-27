@@ -35,6 +35,8 @@ import {
   subscribeAdminAuthState,
   writeAdminAccessToken,
 } from "@/lib/admin-auth-store";
+import { FEATURES } from "@/lib/feature-flags";
+import { AdminShippingFeePaybackSection } from "@/components/AdminShippingFeePaybackSection";
 
 type AdminPaymentStatus =
   | "AWAITING_CONFIRMATION"
@@ -839,6 +841,9 @@ export function AdminPaymentsDashboard() {
   const [loginNotice, setLoginNotice] = useState("");
   const [records, setRecords] = useState<AdminPaymentRecord[]>([]);
   const [summary, setSummary] = useState<AdminPaymentSummary | null>(null);
+  const [dashboardMode, setDashboardMode] = useState<"payments" | "payback">(
+    "payments",
+  );
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [isNoticeOpen, setIsNoticeOpen] = useState(false);
@@ -1291,6 +1296,37 @@ export function AdminPaymentsDashboard() {
           </div>
         </header>
 
+        {FEATURES.shippingFeePayback ? (
+          <div className="flex gap-2">
+            {(
+              [
+                { key: "payments", label: "결제 확인" },
+                { key: "payback", label: "배송비 돌려받기" },
+              ] as const
+            ).map((tab) => (
+              <button
+                aria-pressed={dashboardMode === tab.key}
+                className={`h-11 rounded-full px-5 text-[14px] font-semibold transition-colors ${
+                  dashboardMode === tab.key
+                    ? "bg-black text-white"
+                    : "bg-white text-black/50 hover:bg-[#fafafa]"
+                }`}
+                key={tab.key}
+                onClick={() => setDashboardMode(tab.key)}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {dashboardMode === "payback" && FEATURES.shippingFeePayback ? (
+          <AdminShippingFeePaybackSection
+            onSessionExpired={handleSessionExpired}
+          />
+        ) : (
+        <>
         <section className="grid gap-3 sm:grid-cols-3 xl:grid-cols-7">
           <div className="rounded-[1.15rem] bg-black px-5 py-4 text-white sm:col-span-3 xl:col-span-2">
             <p className="text-[12px] font-semibold text-white/45">
@@ -1746,6 +1782,8 @@ export function AdminPaymentsDashboard() {
             )}
           </aside>
         </section>
+        </>
+        )}
 
         {adminAccessToken ? (
           <section className="rounded-[1.15rem] bg-white shadow-[0_18px_50px_rgba(0,0,0,0.06)]">

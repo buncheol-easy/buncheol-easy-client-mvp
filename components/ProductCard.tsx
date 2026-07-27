@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
 import {
   addBuncheolBookmark,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/auth-navigation";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
+import { homeListingsQueryKey } from "@/lib/query-keys";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
@@ -41,6 +43,8 @@ export type ProductCardItem = {
   isHostedByMe?: boolean;
   liked?: boolean;
   status?: string;
+  // 오픈 이벤트 배송비 돌려받기 대상 분철(전 슬롯 0원) 배지. 서버 판정 + 플래그가 모두 켜졌을 때만 true 로 내려온다.
+  isShippingFeePaybackEvent?: boolean;
 };
 
 type ProductCardProps = {
@@ -203,6 +207,25 @@ function isPurchasableCardStatus(status: string | undefined) {
   return normalizedStatus === "RECRUITING" || normalizedStatus === "PUBLIC_PREVIEW";
 }
 
+function isCancelledCardStatus(status: string | undefined) {
+  const normalizedStatus = status?.trim().toUpperCase();
+
+  return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
+}
+
+// 진행확정 이후 상태군. 조기 확정은 매진+전원 입금확인일 때만 일어나므로 "진행 확정 = 참여 불가"가 항상 성립한다.
+function isConfirmedCardStatus(status: string | undefined) {
+  const normalizedStatus = status?.trim().toUpperCase();
+
+  return [
+    "CONFIRMED",
+    "PAYMENT_CONFIRMED",
+    "PAID",
+    "SETTLING",
+    "FINISHED",
+  ].includes(normalizedStatus ?? "");
+}
+
 function isCardDeadlineOpen(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
@@ -217,7 +240,14 @@ function isProductCardPurchasable(item: ProductCardItem) {
 
 function getProductCardBadge(item: ProductCardItem) {
   if (!isProductCardPurchasable(item)) {
-    return { label: "모집 종료", value: null };
+    return {
+      label: isCancelledCardStatus(item.status)
+        ? "분철 취소"
+        : isConfirmedCardStatus(item.status)
+          ? "진행 확정"
+          : "모집 종료",
+      value: null,
+    };
   }
 
   return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
@@ -259,6 +289,7 @@ function isRecentlyUploaded(uploadedAt?: string) {
 
 export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -363,6 +394,19 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       } else {
         await removeBuncheolBookmark(accessToken, productId);
       }
+
+      // 홈 목록은 React Query 캐시를 그대로 다시 그리므로, 캐시의 liked 도
+      // 같이 고쳐야 상세를 갔다 돌아와도 하트 상태가 유지된다.
+      // 찜은 로그인 상태에서만 가능하므로 로그인 목록 캐시만 갱신하면 된다.
+      queryClient.setQueryData<ProductCardItem[]>(
+        homeListingsQueryKey(true),
+        (current) =>
+          current?.map((cachedItem) =>
+            (cachedItem.productId ?? cachedItem.id) === productId
+              ? { ...cachedItem, liked: nextLiked }
+              : cachedItem,
+          ),
+      );
     } catch {
       setIsLiked(!nextLiked);
     } finally {
@@ -431,16 +475,26 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : (
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
           )}
+          {isPurchasable ? null : (
+            <div className="absolute inset-0 bg-black/45" />
+          )}
           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
-            <span
-              className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
-                isPurchasable
-                  ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
-                  : "bg-black/55 text-white/80"
-              }`}
-            >
-              {deadlineBadge.label}
-            </span>
+            <div className="flex min-w-0 flex-col items-start gap-1.5">
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
+                  isPurchasable
+                    ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
+                    : "bg-black/55 text-white/80"
+                }`}
+              >
+                {deadlineBadge.label}
+              </span>
+              {item.isShippingFeePaybackEvent ? (
+                <span className="inline-flex rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
+                  배송비 돌려받는 무료 분철
+                </span>
+              ) : null}
+            </div>
             {shouldShowBookmarkButton ? (
               <button
                 type="button"
@@ -464,7 +518,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : null}
         </div>
 
-        <div className="px-3.5 py-3.5">
+        <div
+          className={`px-3.5 py-3.5 ${isPurchasable ? "" : "opacity-60"}`}
+        >
           {shouldShowAvailableMembers ? (
             <div>
               {availableMemberNames.length > 0 ? (
@@ -530,11 +586,18 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
         )}
-        {isNewProduct ? (
+        {item.isShippingFeePaybackEvent ? (
+          <div className="absolute left-3 top-3 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
+            배송비 돌려받는 무료 분철
+          </div>
+        ) : isNewProduct ? (
           <div className="absolute left-3 top-3 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
             신규
           </div>
         ) : null}
+        {isPurchasable ? null : (
+          <div className="absolute inset-0 bg-black/45" />
+        )}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
           <p
             className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
@@ -568,7 +631,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : null}
       </div>
 
-      <div>
+      <div className={isPurchasable ? "" : "opacity-60"}>
         {shouldShowAvailableMembers ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (

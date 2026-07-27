@@ -741,14 +741,36 @@ body.is-pwa-standalone {
     width 260ms var(--motion-snap);
 }
 
+/* 배너 위치 복원 커밋 동안 도트 transition 을 잠깐 끈다 — 복원이 스와이프처럼 보이는 것 방지. */
+.banner-dots--instant .motion-pill {
+  transition: none;
+}
+
 .motion-carousel {
   scroll-behavior: smooth;
   scroll-padding-inline: 1rem;
   touch-action: pan-x;
 }
 
+/* 스냅 캐러셀 슬라이드 등장용 — motion-blur-enter 에서 scale 만 뺀 변형.
+   snap-mandatory 컨테이너 안에서 슬라이드에 scale 이 걸리면 스냅 좌표가 변형된
+   박스 기준으로 계산돼 scrollLeft 가 몇 px 밀리는 재스냅이 발생한다. */
+@keyframes motion-blur-enter-snap {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
 .motion-carousel__slide {
-  animation: motion-blur-enter 360ms var(--motion-pop) both;
+  animation: motion-blur-enter-snap 360ms var(--motion-pop) both;
   transform-origin: center;
 }
 
@@ -758,6 +780,12 @@ body.is-pwa-standalone {
 
 .motion-carousel__slide:nth-child(3) {
   animation-delay: 70ms;
+}
+
+/* 복귀 진입(enter 애니메이션 스킵)에서는 슬라이드 등장 애니메이션도 건너뛴다 —
+   캐시된 배너가 opacity 0 부터 다시 떠오르며 깜빡이는 것을 방지. */
+.motion-carousel--skip-enter .motion-carousel__slide {
+  animation: none;
 }
 
 .motion-carousel__hint {

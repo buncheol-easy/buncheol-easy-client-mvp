@@ -84,6 +84,8 @@ type UploadProductFormProps = {
 
 const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
+const maxTitleLength = 200;
+const maxDescriptionLength = 700;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const memberPriceUnitWon = 100;
@@ -111,10 +113,19 @@ function isHundredWonAmount(value: number) {
   return Number.isInteger(value) && value > 0 && value % 100 === 0;
 }
 
+// 0원은 오픈 이벤트 무료 분철(운영진 발행) 슬롯으로 허용한다 (서버 BCH-027 과 동일 규칙).
 function isMemberMinimumPriceAmount(value: number) {
   return (
-    Number.isInteger(value) && value > 0 && value % memberPriceUnitWon === 0
+    Number.isInteger(value) && value >= 0 && value % memberPriceUnitWon === 0
   );
+}
+
+// parsePriceInput 이 빈 문자열도 0으로 만들기 때문에, 제출 검증에서는 빈 입력이 0원으로 통과하지
+// 않도록 raw 입력에 숫자가 있는지 함께 확인한다.
+function isMemberMinimumPriceInput(rawInput: string) {
+  const digits = rawInput.replace(/[^\d]/g, "");
+
+  return digits !== "" && isMemberMinimumPriceAmount(Number(digits));
 }
 
 function isValidMinHeadcount(value: string, maxHeadcount: number) {
@@ -733,12 +744,23 @@ export function UploadProductForm({
     if (
       targetMembers.some(
         (member) =>
-          !isMemberMinimumPriceAmount(
-            parsePriceInput(memberMinimumPrices[member.id] ?? ""),
-          ),
+          !isMemberMinimumPriceInput(memberMinimumPrices[member.id] ?? ""),
       )
     ) {
-      return "옵션 가격을 100원 단위로 입력해 주세요.";
+      return "옵션 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)";
+    }
+
+    // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라
+    // 하나라도 0원이면 전 슬롯이 0원이어야 한다. 혼합되면 이벤트 배지·환급 대상 판정이 어긋난다.
+    const memberPriceValues = targetMembers.map((member) =>
+      parsePriceInput(memberMinimumPrices[member.id] ?? ""),
+    );
+
+    if (
+      memberPriceValues.some((value) => value === 0) &&
+      memberPriceValues.some((value) => value > 0)
+    ) {
+      return "무료(0원) 멤버와 유료 멤버는 함께 구성할 수 없어요.";
     }
 
     if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
@@ -2152,12 +2174,16 @@ export function UploadProductForm({
                         </span>
                         <input
                           className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                          maxLength={maxTitleLength}
                           onChange={(event) =>
                             setTitle(event.currentTarget.value)
                           }
                           placeholder="분철 제목"
                           value={title}
                         />
+                        <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                          {title.length}/{maxTitleLength}자
+                        </span>
                       </label>
 
                       <div className="mt-7">
@@ -2265,12 +2291,16 @@ export function UploadProductForm({
                         </span>
                         <textarea
                           className="mt-2 min-h-[150px] w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-4 text-[15px] font-semibold leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                          maxLength={maxDescriptionLength}
                           onChange={(event) =>
                             setDescription(event.currentTarget.value)
                           }
                           placeholder="분철 설명"
                           value={description}
                         />
+                        <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                          {description.length}/{maxDescriptionLength}자
+                        </span>
                       </label>
 
                       {submitError ? (
@@ -2476,10 +2506,14 @@ export function UploadProductForm({
               </span>
               <input
                 className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                maxLength={maxTitleLength}
                 onChange={(event) => setTitle(event.currentTarget.value)}
                 placeholder="예: LOVE DIVE 원영 미공포 분철"
                 value={title}
               />
+              <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                {title.length}/{maxTitleLength}자
+              </span>
             </label>
 
             <label className="mt-5 block">
@@ -2992,10 +3026,14 @@ export function UploadProductForm({
                 </span>
                 <textarea
                   className="mt-2 min-h-28 w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-3 text-[15px] leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                  maxLength={maxDescriptionLength}
                   onChange={(event) => setDescription(event.currentTarget.value)}
                   placeholder="구성, 하자, 포장 방식 등을 적어주세요."
                   value={description}
                 />
+                <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                  {description.length}/{maxDescriptionLength}자
+                </span>
               </label>
             </div>
 

@@ -9,6 +9,8 @@ import {
   writeBrowserApiCache,
 } from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
+import { FEATURES } from "@/lib/feature-flags";
+import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
 const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
 const legacyApiBaseUrlPattern = /^https?:\/\/13\.124\.248\.60(?:\/v1)?$/;
@@ -246,6 +248,9 @@ export type BuncheolSummary = {
   memberNames: string[];
   memberSlotCount?: number;
   minHeadcount?: number | null;
+  // 오픈 이벤트 배송비 돌려받기 대상 분철(전 슬롯 0원 + 이벤트 활성) 여부.
+  // 서버가 판정해 내려주며, 필드가 없는 응답이면 undefined → 배지를 노출하지 않는다 (안전 폴백).
+  shippingFeePaybackTarget?: boolean;
   status: BuncheolStatus;
   thumbnailUrl?: string;
   title: string;
@@ -359,6 +364,19 @@ export type BuncheolManagementDetail = {
   title: string;
   totalParticipationCount: number;
 };
+// 오픈 이벤트 배송비 돌려받기 상태. status 는 서버가 이벤트 대상·배송 완료·신청 마감을 종합해 파생한 값이라
+// 프론트는 슬롯 0원 여부를 재판정하지 않고 이 값을 그대로 신뢰한다 (비대상이면 NONE).
+export type ShippingFeePaybackInfo = {
+  status: ShippingFeePaybackStatus;
+  tweetUrl?: string | null;
+  requestedAt?: string | null;
+  completedAt?: string | null;
+  rejectReason?: string | null;
+  amount?: number | null;
+  // 환급을 입금받을 계좌 (참여 시 등록한 환불계좌). 돌려받기 시트에 표시한다.
+  refundAccount?: BankAccountInfo | null;
+};
+
 export type MyParticipation = {
   bidAmount: number;
   buncheolDeadline: string;
@@ -375,6 +393,7 @@ export type MyParticipation = {
   memberName: string;
   participationId: string;
   participationStatus: string;
+  payback?: ShippingFeePaybackInfo | null;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   createdAt?: string | null;
@@ -1976,6 +1995,61 @@ function getBuncheolSummaryFromRecord(
       "memberCount",
     ]),
     minHeadcount: getOptionalNumberValue(record, ["minHeadcount"]),
+    shippingFeePaybackTarget:
+      getBooleanValue(record, [
+        "shippingFeePaybackTarget",
+        "isShippingFeePaybackTarget",
+      ]) ?? undefined,
+  };
+}
+
+const shippingFeePaybackStatuses: ShippingFeePaybackStatus[] = [
+  "NONE",
+  "ELIGIBLE",
+  "REQUESTED",
+  "APPROVED",
+  "COMPLETED",
+  "REJECTED",
+  "EXPIRED",
+];
+
+// 참여 응답의 payback 블록 파싱. 서버 미배포 등으로 필드가 없으면 null 을 돌려주고
+// 화면은 이벤트 UI를 그리지 않는다 (안전 폴백).
+function getShippingFeePaybackFromRecord(
+  value: unknown,
+): ShippingFeePaybackInfo | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const rawStatus = getOptionalStringValue(value, [
+    "status",
+    "paybackStatus",
+  ])?.toUpperCase();
+  const status = shippingFeePaybackStatuses.find(
+    (candidate) => candidate === rawStatus,
+  );
+
+  if (!status) {
+    return null;
+  }
+
+  return {
+    status,
+    tweetUrl:
+      getOptionalStringValue(value, ["tweetUrl", "paybackTweetUrl"]) ?? null,
+    requestedAt:
+      getOptionalStringValue(value, ["requestedAt", "paybackRequestedAt"]) ??
+      null,
+    completedAt:
+      getOptionalStringValue(value, ["completedAt", "paybackCompletedAt"]) ??
+      null,
+    rejectReason:
+      getOptionalStringValue(value, ["rejectReason", "paybackRejectReason"]) ??
+      null,
+    amount:
+      getOptionalNumberValue(value, ["amount", "paybackAmount"]) ?? null,
+    refundAccount: getNestedBankAccountInfo(value, ["refundAccount"]),
   };
 }
 
@@ -3372,7 +3446,7 @@ function getMemberLabel(memberNames: string[]) {
 
 function getStatusBadge(status: string) {
   const statusLabels: Record<string, string> = {
-    CANCELLED: "취소",
+    CANCELLED: "분철 취소",
     CONFIRMED: "진행확정",
     CLOSED: "모집종료",
     FINISHED: "진행확정",
@@ -3467,6 +3541,9 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     liked: summary.bookmarked,
     status: summary.status,
     tone: getToneFromId(summary.id),
+    isShippingFeePaybackEvent:
+      FEATURES.shippingFeePayback &&
+      summary.shippingFeePaybackTarget === true,
   };
 }
 
@@ -4049,6 +4126,7 @@ export async function requestMyParticipations(accessToken: string) {
             "participationStatus",
             "status",
           ]) ?? "AWAITING_PAYMENT",
+        payback: getShippingFeePaybackFromRecord(record.payback),
         paymentAmount:
           getOptionalNumberValue(record, ["paymentAmount", "totalAmount"]) ??
           null,
@@ -4350,6 +4428,28 @@ export async function requestPaymentConfirmation(
     throw new Error(await parseErrorMessage(response));
   }
 }
+// 배송비 돌려받기 신청 (재신청 포함). 검증 실패는 서버가 400(URL 형식)·409(대상 아님/이미 신청/트윗 중복)로
+// 구분해 내려주므로 status 를 보존한 ApiRequestError 로 던진다.
+export async function requestShippingFeePayback(
+  accessToken: string,
+  participationId: string,
+  tweetUrl: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/shipping-fee-payback`,
+    {
+      body: JSON.stringify({ tweetUrl }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+}
+
 export async function requestPaymentExpiration(
   accessToken: string,
   participationId: string,
@@ -4445,7 +4545,7 @@ export async function requestBanners(): Promise<ApiBanner[]> {
     throw new Error(await parseErrorMessage(response));
   }
 
-  return getBannerList(await readJsonBody(response))
+  const banners = getBannerList(await readJsonBody(response))
     .filter(isRecord)
     .map((record) => ({
       bannerImageUrl: getStringValue(record, ["bannerImageUrl", "imageUrl"]),
@@ -4456,21 +4556,9 @@ export async function requestBanners(): Promise<ApiBanner[]> {
       (banner) =>
         Boolean(banner.noticeId) && Boolean(banner.bannerImageUrl),
     );
-}
 
-export function readCachedBanners() {
-  return readBrowserApiCache<ApiBanner[]>(publicBannerCacheKey);
-}
-
-export async function requestCachedBanners() {
-  const cachedBanners = readCachedBanners();
-
-  if (cachedBanners) {
-    return cachedBanners;
-  }
-
-  const banners = await requestBanners();
-
+  // 새로고침 후에도 첫 페인트부터 실제 배너를 그릴 수 있도록 localStorage 에 남긴다
+  // (홈에서 readCachedBanners 로 읽어 폴백 배너 → API 배너 교체 깜빡임을 막는다).
   writeBrowserApiCache(
     publicBannerCacheKey,
     banners,
@@ -4478,6 +4566,14 @@ export async function requestCachedBanners() {
   );
 
   return banners;
+}
+
+export function readCachedBanners() {
+  return readBrowserApiCache<ApiBanner[]>(publicBannerCacheKey);
+}
+
+export async function requestCachedBanners() {
+  return readCachedBanners() ?? requestBanners();
 }
 
 function getPublicNoticeListCacheKey(params: InboxMessagesParams = {}) {
@@ -5338,6 +5434,176 @@ function getAdminBulkResult(value: {
     : [];
 
   return { failures, succeededIds };
+}
+
+export type AdminShippingFeePaybackItem = {
+  participationId: string;
+  participantNickname: string | null;
+  participantName: string | null;
+  buncheolId: string | null;
+  buncheolTitle: string;
+  memberName: string | null;
+  paybackAmount: number | null;
+  refundAccount: BankAccountInfo | null;
+  tweetUrl: string | null;
+  status: ShippingFeePaybackStatus;
+  requestedAt: string | null;
+  completedAt: string | null;
+  rejectReason: string | null;
+};
+
+export type AdminShippingFeePaybacksPage = {
+  items: AdminShippingFeePaybackItem[];
+  nextCursor: string | null;
+  hasNext: boolean;
+};
+
+function getAdminShippingFeePaybackItem(
+  value: unknown,
+): AdminShippingFeePaybackItem | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const participationId = getOptionalIdString(value.participationId);
+
+  if (!participationId) {
+    return null;
+  }
+
+  const rawStatus =
+    typeof value.status === "string" ? value.status.toUpperCase() : "";
+
+  return {
+    participationId,
+    participantNickname:
+      typeof value.participantNickname === "string"
+        ? value.participantNickname
+        : null,
+    participantName:
+      typeof value.participantName === "string" ? value.participantName : null,
+    buncheolId: getOptionalIdString(value.buncheolId) ?? null,
+    buncheolTitle:
+      typeof value.buncheolTitle === "string" ? value.buncheolTitle : "",
+    memberName: typeof value.memberName === "string" ? value.memberName : null,
+    paybackAmount:
+      typeof value.paybackAmount === "number" ? value.paybackAmount : null,
+    refundAccount: getAdminRefundAccountFromRecord(value.refundAccount),
+    tweetUrl: typeof value.tweetUrl === "string" ? value.tweetUrl : null,
+    status:
+      rawStatus === "COMPLETED" || rawStatus === "REJECTED"
+        ? rawStatus
+        : "REQUESTED",
+    requestedAt:
+      typeof value.requestedAt === "string" ? value.requestedAt : null,
+    completedAt:
+      typeof value.completedAt === "string" ? value.completedAt : null,
+    rejectReason:
+      typeof value.rejectReason === "string" ? value.rejectReason : null,
+  };
+}
+
+export async function requestAdminShippingFeePaybacks(
+  accessToken: string,
+  options: { status?: string; cursor?: string; size?: number } = {},
+): Promise<AdminShippingFeePaybacksPage> {
+  const searchParams = new URLSearchParams();
+
+  if (options.status) {
+    searchParams.set("status", options.status);
+  }
+
+  if (options.cursor) {
+    searchParams.set("cursor", options.cursor);
+  }
+
+  if (options.size) {
+    searchParams.set("size", String(options.size));
+  }
+
+  const query = searchParams.toString();
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/shipping-fee-paybacks${
+      query ? `?${query}` : ""
+    }`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+    "배송비 돌려받기 신청 목록을 불러오지 못했어요.",
+  );
+  const body = await parseAdminResponse<{
+    items?: unknown;
+    nextCursor?: unknown;
+    hasNext?: unknown;
+  }>(response);
+  const items = Array.isArray(body.items)
+    ? body.items
+        .map(getAdminShippingFeePaybackItem)
+        .filter((item): item is AdminShippingFeePaybackItem => item !== null)
+    : [];
+
+  return {
+    hasNext: body.hasNext === true,
+    items,
+    nextCursor: typeof body.nextCursor === "string" ? body.nextCursor : null,
+  };
+}
+
+// 커서 페이지를 끝까지(최대 20페이지) 모아 온다 — 결제 목록(requestAllAdminPayments)과 동일한
+// 클라이언트 필터 구조. 이벤트 한정 저볼륨이라 사실상 1페이지에 끝난다.
+export async function requestAllAdminShippingFeePaybacks(
+  accessToken: string,
+  options: { status?: string } = {},
+) {
+  const items: AdminShippingFeePaybackItem[] = [];
+  let cursor: string | undefined;
+  let pageCount = 0;
+
+  while (pageCount < 20) {
+    const page = await requestAdminShippingFeePaybacks(accessToken, {
+      cursor,
+      size: 100,
+      status: options.status,
+    });
+
+    items.push(...page.items);
+    pageCount += 1;
+
+    if (!page.hasNext || !page.nextCursor) {
+      return { items, truncated: false };
+    }
+
+    cursor = page.nextCursor;
+  }
+
+  return { items, truncated: true };
+}
+
+// 배송비 돌려받기 검수 처리. COMPLETE = 입금 완료(승인·입금 한 번에), REJECT = 반려(사유 필수).
+export async function requestAdminShippingFeePaybackAction(
+  accessToken: string,
+  participationId: string,
+  action: "COMPLETE" | "REJECT",
+  rejectReason?: string,
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/shipping-fee-paybacks/${participationId}`,
+    {
+      body: JSON.stringify(
+        action === "REJECT" ? { action, rejectReason } : { action },
+      ),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "PATCH",
+    },
+    "배송비 돌려받기 처리 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
 }
 
 export async function requestAdminPaymentConfirmation(
