@@ -515,7 +515,8 @@ function getBidRecordBuncheolChip(
 const buncheolChipToneClasses: Record<BuncheolChipTone, string> = {
   dday: "bg-[#f1f1f1] text-black/55",
   urgent: "bg-black text-[#D7FF5F]",
-  confirmed: "bg-[#D7FF5F] text-black",
+  // 확정은 결론이 난 차분한 긍정 상태 — 원색 라임은 urgent 전용으로 남기고 연한 틴트를 쓴다.
+  confirmed: "bg-[#E4F6A5] text-black/70",
   closed: "bg-[#f1f1f1] text-black/45",
   cancelled: "bg-[#f1f1f1] text-black/45",
 };
@@ -2675,7 +2676,7 @@ export function BidHistoryContent({
                           <span
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
                               product.status === "CONFIRMED"
-                                ? "bg-black text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                                ? "bg-[#E4F6A5] text-black/70"
                                 : isClosed
                                   ? "bg-[#f3f3f3] text-black/50"
                                   : "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
