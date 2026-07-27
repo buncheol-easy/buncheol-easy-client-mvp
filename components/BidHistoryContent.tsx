@@ -159,6 +159,18 @@ function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   return `${minutes}분 남았어요`;
 }
 
+// KST 달력 기준 날짜 차이 (마감일 - 오늘). 0 이면 오늘 마감.
+function getKstDayDifference(deadlineDate: Date, now: Date) {
+  const dayMs = 86_400_000;
+  const kstOffsetMs = kstOffsetHours * 3_600_000;
+  const deadlineDay = Math.floor(
+    (deadlineDate.getTime() + kstOffsetMs) / dayMs,
+  );
+  const nowDay = Math.floor((now.getTime() + kstOffsetMs) / dayMs);
+
+  return deadlineDay - nowDay;
+}
+
 function getPaymentDeadlineDate(
   deadline: string,
   paymentDueAt?: string | null,
@@ -457,6 +469,57 @@ function getBidRecordCancellationKind(bid: BidRecord) {
 function isHostCancelledBuncheolStatus(status: string | undefined) {
   return status === "HOST_CANCELLED";
 }
+
+type BuncheolChipTone =
+  | "dday"
+  | "urgent"
+  | "confirmed"
+  | "closed"
+  | "cancelled";
+
+// 사진 아래 칩 — 분철 축 상태. 분철을 상징하는 사진에 붙여, 진행 바(내 결제·배송 축)와
+// 위치로 구분한다. 모집중에는 라벨 대신 확정까지 남은 시간(D-day)을 보여준다.
+function getBidRecordBuncheolChip(
+  bid: BidRecord,
+  now: Date,
+): { label: string; tone: BuncheolChipTone } {
+  if (
+    isCancelledBuncheolStatus(bid.buncheolStatus) ||
+    isHostCancelledBuncheolStatus(bid.buncheolStatus) ||
+    getBidRecordCancellationKind(bid) === "BUNCHEOL_CANCELLED"
+  ) {
+    return { label: "취소", tone: "cancelled" };
+  }
+
+  if (bid.buncheolStatus === "CONFIRMED") {
+    return { label: "진행확정", tone: "confirmed" };
+  }
+
+  if (isBidRecordClosed(bid, now)) {
+    return { label: "마감", tone: "closed" };
+  }
+
+  const deadlineDate = parseDeadline(bid.deadline);
+
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return { label: "모집중", tone: "dday" };
+  }
+
+  const dayDifference = getKstDayDifference(deadlineDate, now);
+
+  return dayDifference <= 0
+    ? { label: "오늘 마감", tone: "urgent" }
+    : { label: `D-${dayDifference}`, tone: "dday" };
+}
+
+const buncheolChipToneClasses: Record<BuncheolChipTone, string> = {
+  dday: "bg-[#f1f1f1] text-black/55",
+  urgent: "bg-black text-[#D7FF5F]",
+  // 확정은 결론이 난 차분한 긍정 상태 — 원색 라임은 urgent 전용으로 남기고 연한 틴트를 쓴다.
+  confirmed: "bg-[#E4F6A5] text-black/70",
+  closed: "bg-[#f1f1f1] text-black/45",
+  cancelled: "bg-[#f1f1f1] text-black/45",
+};
 
 // 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
 // (CANCELLED = 최소 인원 미달 자동 취소, HOST_CANCELLED = 개최자 취소 — 워딩은 "개최자 사정"으로 완곡하게).
@@ -2191,6 +2254,7 @@ export function BidHistoryContent({
               const isClosed = isBidRecordClosed(bid, now);
               const isCancelled = isBidRecordCancelled(bid);
               const cancellationNotice = getBidRecordCancellationNotice(bid);
+              const buncheolChip = getBidRecordBuncheolChip(bid, now);
               const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
               const isPaymentConfirmed = isBidRecordPaymentConfirmed(bid);
@@ -2242,23 +2306,36 @@ export function BidHistoryContent({
                     </div>
                   ) : null}
                   <div className="flex items-start gap-3">
-                    <Link
-                      aria-label={`${bid.title} 상세 보기`}
-                      className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
-                      href={`/products/${bid.productId}?from=bids`}
-                      onClick={rememberBidHistoryProductEntry}
-                    >
-                      {bid.imageUrl ? (
-                        <Image
-                          alt=""
-                          className="h-full w-full object-cover"
-                          fill
-                          sizes="56px"
-                          src={bid.imageUrl}
-                          unoptimized
-                        />
-                      ) : null}
-                    </Link>
+                    <div className="flex w-14 shrink-0 flex-col items-center gap-1.5">
+                      <Link
+                        aria-label={`${bid.title} 상세 보기`}
+                        className={`relative h-14 w-14 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
+                        href={`/products/${bid.productId}?from=bids`}
+                        onClick={rememberBidHistoryProductEntry}
+                      >
+                        {bid.imageUrl ? (
+                          <Image
+                            alt=""
+                            // 취소 분철은 색은 유지한 채 라이트 블러로만 비활성 처리. 56px 썸네일이라
+                            // 식별 가능한 2px 만 흐리고, scale-110 으로 블러 가장자리 번짐을 프레임 밖으로 밀어낸다.
+                            className={`h-full w-full object-cover${
+                              buncheolChip.tone === "cancelled"
+                                ? " scale-110 blur-[2px]"
+                                : ""
+                            }`}
+                            fill
+                            sizes="56px"
+                            src={bid.imageUrl}
+                            unoptimized
+                          />
+                        ) : null}
+                      </Link>
+                      <span
+                        className={`w-full whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+                      >
+                        {buncheolChip.label}
+                      </span>
+                    </div>
                     <div className="min-w-0 flex-1">
                       <Link
                         className="block min-w-0"
@@ -2601,7 +2678,7 @@ export function BidHistoryContent({
                           <span
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
                               product.status === "CONFIRMED"
-                                ? "bg-black text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                                ? "bg-[#E4F6A5] text-black/70"
                                 : isClosed
                                   ? "bg-[#f3f3f3] text-black/50"
                                   : "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
@@ -2749,6 +2826,10 @@ export function BidHistoryContent({
                 ))}
               </div>
               <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
+                사진 아래 칩은 분철 자체의 상태예요. 모집 중에는 마감까지 남은
+                날(D-day)을, 마감 후에는 진행확정·취소 여부를 보여줘요.
+              </p>
+              <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
                 마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
                 취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.
               </p>
