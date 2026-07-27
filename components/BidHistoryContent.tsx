@@ -2316,9 +2316,11 @@ export function BidHistoryContent({
                         {bid.imageUrl ? (
                           <Image
                             alt=""
+                            // 취소 분철은 흑백 + 라이트 블러로 비활성 처리. 56px 썸네일이라 식별
+                            // 가능한 2px 만 흐리고, scale-110 으로 블러 가장자리 번짐을 프레임 밖으로 밀어낸다.
                             className={`h-full w-full object-cover${
                               buncheolChip.tone === "cancelled"
-                                ? " grayscale"
+                                ? " scale-110 blur-[2px] grayscale"
                                 : ""
                             }`}
                             fill
