@@ -8,9 +8,14 @@ export const EVENT_TWEET_URL =
   "https://x.com/BuncheolEasy/status/2072210832600264848";
 
 // 분철별 인용 대상 트윗. 무료 분철마다 홍보 트윗이 따로 올라가는 경우 여기에
-// "분철 ID": "트윗 퍼머링크" 한 줄을 추가하고 배포한다. 맵에 없는 분철은 EVENT_TWEET_URL 을 인용한다.
+// "분철 ID": "트윗 퍼머링크" 한 줄을 추가하고 배포한다. 맵에 없거나 빈값인 분철은 EVENT_TWEET_URL 을 인용한다.
 // 한시 이벤트용 빌드타임 관리 — 이벤트가 끝나면 이 맵을 비우거나 파일째 정리한다.
-const EVENT_TWEET_URL_BY_BUNCHEOL: Record<string, string> = {};
+const EVENT_TWEET_URL_BY_BUNCHEOL: Record<string, string> = {
+  // TODO: 오픈 이벤트 분철 1~3 홍보 트윗 게시 후 퍼머링크를 채운다.
+  "1": "",
+  "2": "",
+  "3": "",
+};
 
 export type ShippingFeePaybackStatus =
   | "NONE"
@@ -68,20 +73,16 @@ export function isValidTweetUrl(url: string) {
   return TWEET_URL_PATTERN.test(url.trim());
 }
 
-// X 트윗 작성창을 여는 intent URL. url 파라미터의 이벤트 트윗은 게시 시 인용 트윗으로 렌더링된다.
-// 프리필 문구는 유저가 수정할 수 있으므로 조건 충족의 최종 확인은 운영진 검수로 한다.
-export function buildReviewTweetIntentUrl(
-  productTitle: string,
-  buncheolId: string,
-) {
-  const text = [
-    `분철이지에서 "${productTitle}" 무료 분철 참여하고 앨범 받았어요! 🎁`,
-    "",
-    "#분철이지 #무료분철이벤트",
-  ].join("\n");
+// 프리필은 검수 필수 요소(해시태그)만 채운다. 본문 문구를 미리 넣지 않는 이유:
+// 지워야 하는 안내 문구는 안 지운 채 게시되는 사고가 나고, 완성형 문구는 후기가 전부
+// 복붙처럼 보인다. 자유 후기는 유저 몫으로 두고 최종 확인은 운영진 검수로 한다.
+const REVIEW_TWEET_HASHTAGS = "#분철이지 #오픈이벤트 #무료분철후기";
 
+// X 트윗 작성창을 여는 intent URL. url 파라미터의 이벤트 트윗은 게시 시 인용 트윗으로 렌더링된다.
+export function buildReviewTweetIntentUrl(buncheolId: string) {
   return `https://x.com/intent/tweet?${new URLSearchParams({
-    text,
-    url: EVENT_TWEET_URL_BY_BUNCHEOL[buncheolId] ?? EVENT_TWEET_URL,
+    text: REVIEW_TWEET_HASHTAGS,
+    // ?? 가 아니라 || — 아직 안 채운 빈값 자리도 공통 이벤트 트윗으로 폴백해야 한다.
+    url: EVENT_TWEET_URL_BY_BUNCHEOL[buncheolId] || EVENT_TWEET_URL,
   })}`;
 }
