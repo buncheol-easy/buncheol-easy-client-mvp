@@ -368,6 +368,8 @@ export type BuncheolManagementDetail = {
 // 프론트는 슬롯 0원 여부를 재판정하지 않고 이 값을 그대로 신뢰한다 (비대상이면 NONE).
 export type ShippingFeePaybackInfo = {
   status: ShippingFeePaybackStatus;
+  // 신청 마감 시각 (배송 완료 시각 + 신청 가능 일수, ISO). 이벤트 비대상이거나 마감 미적용이면 null.
+  submitDeadline?: string | null;
   tweetUrl?: string | null;
   requestedAt?: string | null;
   completedAt?: string | null;
@@ -2036,6 +2038,7 @@ function getShippingFeePaybackFromRecord(
 
   return {
     status,
+    submitDeadline: getOptionalStringValue(value, ["submitDeadline"]) ?? null,
     tweetUrl:
       getOptionalStringValue(value, ["tweetUrl", "paybackTweetUrl"]) ?? null,
     requestedAt:

@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth-api";
 import {
   buildReviewTweetIntentUrl,
+  formatPaybackDeadlineNotice,
   isValidTweetUrl,
 } from "@/lib/shipping-fee-payback";
 
@@ -59,6 +60,11 @@ export function ShippingFeePaybackSheet({
   const isRejected = target.payback?.status === "REJECTED";
   const isEditingSubmittedUrl = target.payback?.status === "REQUESTED";
   const refundAccount = target.payback?.refundAccount ?? null;
+  // 신청 마감 안내. 제출한 링크 수정 모드(REQUESTED)는 이미 신청된 상태라 그리지 않는다.
+  const submitDeadlineNotice =
+    !isEditingSubmittedUrl && target.payback?.submitDeadline
+      ? formatPaybackDeadlineNotice(target.payback.submitDeadline)
+      : null;
   const paybackAmountLabel =
     target.shippingFee !== null ? formatPrice(target.shippingFee) : "배송비 전액";
 
@@ -171,6 +177,11 @@ export function ShippingFeePaybackSheet({
                 ? "제출한 후기 링크를 확인하고 수정할 수 있어요."
                 : "X에 후기를 올리고 링크를 제출하면 배송비를 돌려드려요."}
             </p>
+            {submitDeadlineNotice ? (
+              <p className="mt-0.5 text-[12px] font-medium text-black/35">
+                {submitDeadlineNotice}
+              </p>
+            ) : null}
           </div>
           <button
             aria-label="닫기"

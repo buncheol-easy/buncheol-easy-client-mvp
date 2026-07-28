@@ -52,6 +52,7 @@ import {
 } from "@/lib/auth-api";
 import { FEATURES } from "@/lib/feature-flags";
 import {
+  formatPaybackDeadlineNotice,
   PAYBACK_CTA_LABEL,
   PAYBACK_EDIT_CTA_LABEL,
   PAYBACK_EVENT_BLOCK_LABEL,
@@ -2271,6 +2272,10 @@ export function BidHistoryContent({
               const isPaybackActionable = isPaybackRequestable(bid);
               const isPaybackRejected =
                 isPaybackActionable && getPaybackStatus(bid) === "REJECTED";
+              const paybackDeadlineNotice =
+                isPaybackActionable && bid.payback?.submitDeadline
+                  ? formatPaybackDeadlineNotice(bid.payback.submitDeadline)
+                  : null;
               return (
                 <article
                   className={`overflow-hidden rounded-[1rem] border bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7] ${
@@ -2537,6 +2542,11 @@ export function BidHistoryContent({
                               반려 사유: {bid.payback.rejectReason}
                             </p>
                           ) : null}
+                          {paybackDeadlineNotice ? (
+                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
+                              {paybackDeadlineNotice}
+                            </p>
+                          ) : null}
                           <div className="mt-2 flex justify-end">
                             <button
                               className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
@@ -2555,6 +2565,11 @@ export function BidHistoryContent({
                           <p className="mt-1 text-[13px] font-semibold leading-5 text-black/60">
                             X에 후기를 올리면 배송비를 돌려드려요
                           </p>
+                          {paybackDeadlineNotice ? (
+                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/45">
+                              {paybackDeadlineNotice}
+                            </p>
+                          ) : null}
                           <div className="mt-2 flex justify-end">
                             <button
                               className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
