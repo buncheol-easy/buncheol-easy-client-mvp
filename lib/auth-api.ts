@@ -289,15 +289,20 @@ export type BuncheolShippingOption = {
   method: string;
 };
 
+/** 분철 이미지 1장 — id·URL·대표 여부를 한 객체로 묶어 배열 인덱스 정렬 계약 없이 식별한다. */
+export type BuncheolImageInfo = {
+  id?: number;
+  thumbnail?: boolean;
+  url: string;
+};
+
 export type BuncheolDetail = BuncheolSummary & {
   cuShippingFee?: number;
   description?: string;
   gs25ShippingFee?: number;
   hostBankAccount?: BankAccountInfo | null;
-  imageUrls: string[];
-  imageIds: number[];
-  /** 대표사진 이미지 id. imageUrls/imageIds는 등록 순이라 대표사진이 첫 번째가 아닐 수 있다. */
-  thumbnailImageId?: number;
+  /** 등록 순(업로드 순) 이미지 목록. 이미지가 있으면 정확히 1장이 thumbnail=true */
+  images: BuncheolImageInfo[];
   minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
@@ -1934,6 +1939,47 @@ function getImageIds(data: Record<string, unknown>) {
     (imageId, index, imageIds) => imageIds.indexOf(imageId) === index,
   );
 }
+
+// 상세 응답의 images(객체 배열: id·url·thumbnail)를 파싱한다.
+// images 키가 없는 구형 응답/로컬 캐시는 imageUrls·imageIds 병렬 배열을 객체로 묶어 폴백한다.
+function getBuncheolImageInfos(
+  data: Record<string, unknown>,
+): BuncheolImageInfo[] {
+  const parsed = getRecordListValue(data, ["images"])
+    .map((record): BuncheolImageInfo | null => {
+      const url = getImageUrl(record);
+
+      if (!url) {
+        return null;
+      }
+
+      return {
+        id: getImageId(record) ?? undefined,
+        thumbnail:
+          getBooleanValue(record, ["thumbnail", "isThumbnail"]) ?? undefined,
+        url,
+      };
+    })
+    .filter((image): image is BuncheolImageInfo => image !== null);
+
+  if (parsed.length > 0) {
+    return parsed;
+  }
+
+  const imageUrls = getImageUrls(data);
+  const imageIds = getImageIds(data);
+  const thumbnailImageId = getOptionalNumberValue(data, ["thumbnailImageId"]);
+
+  return imageUrls.map((url, index) => ({
+    id: imageIds[index],
+    thumbnail:
+      typeof thumbnailImageId === "number"
+        ? imageIds[index] === thumbnailImageId
+        : index === 0,
+    url,
+  }));
+}
+
 function getBuncheolSummaryFromRecord(
   record: Record<string, unknown>,
 ): BuncheolSummary | null {
@@ -2577,22 +2623,16 @@ function getBuncheolDetailFromBody(body: unknown) {
   ]
     .map(getNestedData)
     .find(isRecord);
-  const imageUrls = getImageUrls(data);
-  const imageIds = getImageIds(data);
-  const thumbnailImageId = getOptionalNumberValue(data, ["thumbnailImageId"]);
-  // 상세 imageUrls는 등록 순이라 첫 장이 대표사진이 아닐 수 있다 — 대표사진 id로 썸네일 URL을 찾아 요약 필드를 보정한다.
-  const thumbnailIndex =
-    typeof thumbnailImageId === "number"
-      ? imageIds.indexOf(thumbnailImageId)
-      : -1;
+  const images = getBuncheolImageInfos(data);
+  // 상세 images는 등록 순이라 첫 장이 대표사진이 아닐 수 있다 — thumbnail 플래그로 썸네일 URL을 찾아 요약 필드를 보정한다.
   const thumbnailUrl =
-    (thumbnailIndex >= 0 ? imageUrls[thumbnailIndex] : undefined) ??
+    images.find((image) => image.thumbnail)?.url ??
+    images[0]?.url ??
     summary.thumbnailUrl;
 
   return {
     ...summary,
     thumbnailUrl,
-    thumbnailImageId,
     cuShippingFee:
       getOptionalNumberValue(data, [
         "cuShippingFee",
@@ -2650,8 +2690,7 @@ function getBuncheolDetailFromBody(body: unknown) {
       "hostAccount",
       "sellerAccount",
     ]),
-    imageUrls,
-    imageIds,
+    images,
     minHeadcount: getOptionalNumberValue(data, ["minHeadcount"]),
     isHostedByMe:
       getBooleanValue(data, ["isHostedByMe", "hostedByMe", "owner"]) ??
@@ -3639,11 +3678,10 @@ export function toProductDetailItem(
     description:
       detail.description?.trim() ||
       "판매자가 상품 설명을 작성하지 않았습니다.",
-    // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 imageUrls(등록 순)를 그대로 쓴다.
-    imageUrl: detail.thumbnailUrl ?? detail.imageUrls[0],
-    imageUrls: detail.imageUrls,
-    imageIds: detail.imageIds,
-    thumbnailImageId: detail.thumbnailImageId,
+    // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 images(등록 순)를 그대로 쓴다.
+    imageUrl: detail.thumbnailUrl ?? detail.images[0]?.url,
+    imageUrls: detail.images.map((image) => image.url),
+    images: detail.images,
     isApiProduct: true,
     isHostedByMe: detail.isHostedByMe,
     member: getMemberLabel(memberNames),

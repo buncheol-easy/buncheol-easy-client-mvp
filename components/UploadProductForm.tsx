@@ -1085,29 +1085,29 @@ export function UploadProductForm({
               );
               setDescription(getEditableDescription(apiProduct.description));
 
-              // 이미지는 등록 순 그대로 복원하고, 대표사진은 thumbnailImageId 로 찾는다(없으면 첫 장).
-              const thumbnailPhotoIndex =
-                typeof apiProduct.thumbnailImageId === "number"
-                  ? (apiProduct.imageIds ?? []).indexOf(
-                      apiProduct.thumbnailImageId,
-                    )
-                  : -1;
+              // 이미지는 등록 순 그대로 복원하고, 대표사진은 항목별 thumbnail 플래그로 찾는다(없으면 첫 장).
+              const restoredImages = apiProduct.images?.length
+                ? apiProduct.images
+                : (apiProduct.imageUrls?.length
+                    ? apiProduct.imageUrls
+                    : apiProduct.imageUrl
+                      ? [apiProduct.imageUrl]
+                      : []
+                  ).map((url) => ({ url }) as { id?: number; thumbnail?: boolean; url: string });
+              const thumbnailPhotoIndex = restoredImages.findIndex(
+                (image) => image.thumbnail,
+              );
               const coverIndex = thumbnailPhotoIndex >= 0 ? thumbnailPhotoIndex : 0;
-              const restoredPhotos = (apiProduct.imageUrls?.length
-                ? apiProduct.imageUrls
-                : apiProduct.imageUrl
-                  ? [apiProduct.imageUrl]
-                  : []
-              )
+              const restoredPhotos = restoredImages
                 .slice(0, maxPhotos)
-                .map((imageUrl, index) => ({
+                .map((image, index) => ({
                   id: `existing-photo-${index}`,
                   name:
                     index === coverIndex
                       ? "기존 대표 사진"
                       : `기존 사진 ${index + 1}`,
-                  url: imageUrl,
-                  existingImageId: apiProduct.imageIds?.[index],
+                  url: image.url,
+                  existingImageId: image.id,
                 }));
 
               setPhotos(restoredPhotos);
@@ -1224,7 +1224,7 @@ export function UploadProductForm({
             name:
               index === coverIndex ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
             url: imageUrl,
-            existingImageId: product.imageIds?.[index],
+            existingImageId: product.images?.[index]?.id,
           }));
 
         setPhotos(restoredPhotos);

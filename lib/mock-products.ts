@@ -36,9 +36,8 @@ export type ProductDetailItem = ProductCardItem & {
   deadline: string;
   imageUrl?: string;
   imageUrls?: string[];
-  imageIds?: number[];
-  /** 대표사진 이미지 id. imageUrls/imageIds는 등록 순이라 대표사진이 첫 번째가 아닐 수 있다. */
-  thumbnailImageId?: number;
+  /** 등록 순 이미지 목록(id·대표 여부 포함). 대표사진이 첫 번째가 아닐 수 있다. */
+  images?: { id?: number; thumbnail?: boolean; url: string }[];
   isApiProduct?: boolean;
   isPublicPreview?: boolean;
   isBidUnavailable?: boolean;
