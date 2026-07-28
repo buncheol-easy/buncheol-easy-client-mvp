@@ -321,7 +321,7 @@ export function BoardContent({
               <div className="content-reveal rounded-[1.15rem] border border-black/10 bg-white">
                 {displayedItems.map((item, index) => (
                   <Link
-                    className={`flex min-h-[4.75rem] items-center gap-3 px-4 py-3 ${
+                    className={`flex min-h-[4.75rem] items-center px-4 py-3 ${
                       index === 0 ? "" : "border-t border-black/10"
                     }`}
                     href={`/board/${item.id}?from=board`}
@@ -345,14 +345,14 @@ export function BoardContent({
                         {item.isNew ? (
                           <span className="h-2 w-2 rounded-full bg-black" />
                         ) : null}
+                        <time className="ml-auto shrink-0 text-[12px] font-semibold text-black/35">
+                          {item.date}
+                        </time>
                       </div>
                       <h2 className="truncate text-[16px] font-semibold leading-tight tracking-[-0.04em] text-black">
                         {item.title}
                       </h2>
                     </div>
-                    <time className="shrink-0 text-[12px] font-semibold text-black/35">
-                      {item.date}
-                    </time>
                   </Link>
                 ))}
               </div>

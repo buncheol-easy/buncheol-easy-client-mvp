@@ -143,7 +143,7 @@ export function BoardDetailContent({
               <div className="grid gap-4">
                 {post.body.map((paragraph, index) => (
                   <p
-                    className="text-[15px] font-medium leading-7 tracking-[-0.04em] text-black/72"
+                    className="whitespace-pre-wrap text-[15px] font-medium leading-[1.7] tracking-[-0.04em] text-black/72"
                     key={`${paragraph}-${index}`}
                   >
                     {renderBoldSegments(paragraph)}
