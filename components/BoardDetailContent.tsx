@@ -16,6 +16,18 @@ function getCategoryTone(category: BoardCategory) {
     : "bg-[#f2f2f2] text-black/55";
 }
 
+function renderBoldSegments(paragraph: string) {
+  return paragraph.split(/\*\*([^*]+)\*\*/g).map((segment, index) =>
+    index % 2 === 1 ? (
+      <strong className="font-bold text-black" key={`${segment}-${index}`}>
+        {segment}
+      </strong>
+    ) : (
+      segment
+    ),
+  );
+}
+
 function getHistoryIndex() {
   const historyState = window.history.state as { idx?: unknown } | null;
 
@@ -134,7 +146,7 @@ export function BoardDetailContent({
                     className="text-[15px] font-medium leading-7 tracking-[-0.04em] text-black/72"
                     key={`${paragraph}-${index}`}
                   >
-                    {paragraph}
+                    {renderBoldSegments(paragraph)}
                   </p>
                 ))}
               </div>
