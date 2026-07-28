@@ -37,6 +37,29 @@ export const PAYBACK_STATUS_LABELS: Partial<
   EXPIRED: "배송비 환급 신청 기간이 지났어요.",
 };
 
+// 신청 마감 안내 문구. 마감 판정(ELIGIBLE/EXPIRED)은 서버가 소유하므로 프론트는 남은 시간을
+// 재계산하지 않고, 서버가 내려준 payback.submitDeadline 이 있을 때만 시각(KST)을 안내한다.
+export function formatPaybackDeadlineNotice(submitDeadline: string) {
+  const date = new Date(submitDeadline);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    day: "numeric",
+    hour: "numeric",
+    hour12: false,
+    month: "numeric",
+    timeZone: "Asia/Seoul",
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+
+  return `${partMap.month}월 ${partMap.day}일 ${partMap.hour}시까지 신청할 수 있어요`;
+}
+
 // 트윗 퍼머링크 형식 (서버 검증과 동일). 쿼리스트링은 서버가 제거 후 저장하므로 허용한다.
 const TWEET_URL_PATTERN =
   /^https:\/\/(x|twitter)\.com\/[A-Za-z0-9_]+\/status\/\d+/;
