@@ -127,17 +127,18 @@ export type CreateBuncheolRequest = {
   groupId: number;
   gs25ShippingFee?: number;
   purchaseSite: string;
-  /** 대표사진으로 쓸 images 파트 내 인덱스(0-base). 생략 시 첫 이미지. 이미지 순서는 업로드 순서 그대로 저장된다. */
-  thumbnailIndex?: number;
+  /** 대표사진으로 쓸 images 파트 내 인덱스(0-base, 필수). 이미지 순서는 업로드 순서 그대로 저장된다. */
+  thumbnailIndex: number;
   title: string;
 };
 
+// 대표사진 지정은 필수 — thumbnailImageId(유지 이미지)와 thumbnailIndex(신규 이미지) 중 정확히 하나를 보내야 한다.
 export type UpdateBuncheolRequest = {
   description?: string;
   keepImageIds?: number[];
-  /** 유지하는 기존 이미지 중 대표사진으로 지정할 이미지 id (keepImageIds에 포함돼야 함). thumbnailIndex와 동시 지정 불가. */
+  /** 유지하는 기존 이미지 중 대표사진으로 지정할 이미지 id (keepImageIds에 포함돼야 함) */
   thumbnailImageId?: number;
-  /** 신규 업로드 images 파트 중 대표사진으로 쓸 인덱스(0-base). thumbnailImageId와 동시 지정 불가. */
+  /** 신규 업로드 images 파트 중 대표사진으로 쓸 인덱스(0-base) */
   thumbnailIndex?: number;
   title: string;
 };

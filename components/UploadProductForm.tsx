@@ -1815,7 +1815,8 @@ export function UploadProductForm({
         return;
       }
 
-      // 대표사진 지정: 기존 이미지면 thumbnailImageId, 신규 업로드 이미지면 thumbnailIndex 로 보낸다(동시 지정 불가).
+      // 대표사진 지정은 필수 — 기존 이미지면 thumbnailImageId, 신규 업로드 이미지면 thumbnailIndex 로
+      // 정확히 하나를 보낸다. 대표사진은 항상 유지 이미지(id 보유)거나 신규 업로드 목록에 포함되므로 둘 중 하나는 반드시 정해진다.
       const coverExistingImageId =
         typeof coverPhoto.existingImageId === "number"
           ? coverPhoto.existingImageId
@@ -1831,8 +1832,8 @@ export function UploadProductForm({
               keepImageIds,
               thumbnailImageId: coverExistingImageId,
               thumbnailIndex:
-                coverExistingImageId === undefined && newPhotoThumbnailIndex >= 0
-                  ? newPhotoThumbnailIndex
+                coverExistingImageId === undefined
+                  ? Math.max(0, newPhotoThumbnailIndex)
                   : undefined,
               title: product.title,
             },
