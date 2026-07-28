@@ -1085,6 +1085,14 @@ export function UploadProductForm({
               );
               setDescription(getEditableDescription(apiProduct.description));
 
+              // 이미지는 등록 순 그대로 복원하고, 대표사진은 thumbnailImageId 로 찾는다(없으면 첫 장).
+              const thumbnailPhotoIndex =
+                typeof apiProduct.thumbnailImageId === "number"
+                  ? (apiProduct.imageIds ?? []).indexOf(
+                      apiProduct.thumbnailImageId,
+                    )
+                  : -1;
+              const coverIndex = thumbnailPhotoIndex >= 0 ? thumbnailPhotoIndex : 0;
               const restoredPhotos = (apiProduct.imageUrls?.length
                 ? apiProduct.imageUrls
                 : apiProduct.imageUrl
@@ -1094,13 +1102,18 @@ export function UploadProductForm({
                 .slice(0, maxPhotos)
                 .map((imageUrl, index) => ({
                   id: `existing-photo-${index}`,
-                  name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
+                  name:
+                    index === coverIndex
+                      ? "기존 대표 사진"
+                      : `기존 사진 ${index + 1}`,
                   url: imageUrl,
                   existingImageId: apiProduct.imageIds?.[index],
                 }));
 
               setPhotos(restoredPhotos);
-              setCoverPhotoId(restoredPhotos[0]?.id ?? null);
+              setCoverPhotoId(
+                (restoredPhotos[coverIndex] ?? restoredPhotos[0])?.id ?? null,
+              );
             })
             .catch((error: unknown) => {
               setSubmitError(
@@ -1199,17 +1212,25 @@ export function UploadProductForm({
           : [];
 
       if (storedImageUrls.length > 0) {
+        // 로컬 캐시 데이터는 imageUrl(대표사진 URL)로 대표사진 위치를 복원한다(없으면 첫 장).
+        const thumbnailUrlIndex = product.imageUrl
+          ? storedImageUrls.indexOf(product.imageUrl)
+          : -1;
+        const coverIndex = thumbnailUrlIndex >= 0 ? thumbnailUrlIndex : 0;
         const restoredPhotos = storedImageUrls
           .slice(0, maxPhotos)
           .map((imageUrl, index) => ({
             id: `existing-photo-${index}`,
-            name: index === 0 ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
+            name:
+              index === coverIndex ? "기존 대표 사진" : `기존 사진 ${index + 1}`,
             url: imageUrl,
             existingImageId: product.imageIds?.[index],
           }));
 
         setPhotos(restoredPhotos);
-        setCoverPhotoId(restoredPhotos[0]?.id ?? null);
+        setCoverPhotoId(
+          (restoredPhotos[coverIndex] ?? restoredPhotos[0])?.id ?? null,
+        );
       }
     });
 
@@ -1610,10 +1631,12 @@ export function UploadProductForm({
       name,
       price: formatWon(parsePriceInput(shippingPrices[name])),
     }));
-    const orderedPhotos = [
-      coverPhoto,
-      ...photos.filter((photo) => photo.id !== coverPhoto.id),
-    ];
+    // 이미지는 업로드한 순서 그대로 보내고, 대표사진은 인덱스/ID로만 지정한다(순서 재배치 금지).
+    const coverPhotoIndex = Math.max(
+      0,
+      photos.findIndex((photo) => photo.id === coverPhoto.id),
+    );
+    const orderedPhotos = photos;
     const orderedPhotoUrls = orderedPhotos.map((photo) => photo.url);
     const accessToken = authState.accessToken;
     const apiGroupId = Number(selectedGroup.id);
@@ -1701,7 +1724,7 @@ export function UploadProductForm({
       tone: editingProduct?.tone ?? "from-zinc-950 via-zinc-700 to-zinc-300",
       courier: selectedShipping[0],
       deadline: formatDateTimeLabel(closingDate) || "일정 미정",
-      imageUrl: storedPhotoUrls[0] ?? coverPhoto.url,
+      imageUrl: storedPhotoUrls[coverPhotoIndex] ?? coverPhoto.url,
       imageUrls: storedPhotoUrls,
       purchaseSource: purchaseSource.trim(),
       shippingMethods: selectedShippingMethods,
@@ -1759,6 +1782,8 @@ export function UploadProductForm({
         : undefined;
 
       let imageFiles: File[];
+      // 대표사진이 신규 업로드 사진일 때 images 파트 내 위치 (아니면 -1)
+      let newPhotoThumbnailIndex = -1;
 
       try {
         const uploadablePhotos = orderedPhotos
@@ -1772,6 +1797,9 @@ export function UploadProductForm({
               (typeof photo.existingImageId !== "number" && Boolean(imageUrl)),
           );
 
+        newPhotoThumbnailIndex = uploadablePhotos.findIndex(
+          ({ photo }) => photo.id === coverPhoto.id,
+        );
         imageFiles = await Promise.all(
           uploadablePhotos.map(({ imageUrl }, index) =>
             imageUrlToUploadFile(imageUrl, `buncheol-${index + 1}.jpg`),
@@ -1787,6 +1815,12 @@ export function UploadProductForm({
         return;
       }
 
+      // 대표사진 지정: 기존 이미지면 thumbnailImageId, 신규 업로드 이미지면 thumbnailIndex 로 보낸다(동시 지정 불가).
+      const coverExistingImageId =
+        typeof coverPhoto.existingImageId === "number"
+          ? coverPhoto.existingImageId
+          : undefined;
+
       try {
         if (isApiEditMode) {
           await updateBuncheol(
@@ -1795,6 +1829,11 @@ export function UploadProductForm({
             {
               description: product.description,
               keepImageIds,
+              thumbnailImageId: coverExistingImageId,
+              thumbnailIndex:
+                coverExistingImageId === undefined && newPhotoThumbnailIndex >= 0
+                  ? newPhotoThumbnailIndex
+                  : undefined,
               title: product.title,
             },
             imageFiles,
@@ -1829,6 +1868,7 @@ export function UploadProductForm({
                 getStoreShippingFee(selectedShipping, shippingPrices, "GS") ||
                 undefined,
               purchaseSite: purchaseSource.trim(),
+              thumbnailIndex: coverPhotoIndex,
               title: title.trim(),
             },
             imageFiles,

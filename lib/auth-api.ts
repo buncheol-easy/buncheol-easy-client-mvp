@@ -127,12 +127,18 @@ export type CreateBuncheolRequest = {
   groupId: number;
   gs25ShippingFee?: number;
   purchaseSite: string;
+  /** 대표사진으로 쓸 images 파트 내 인덱스(0-base). 생략 시 첫 이미지. 이미지 순서는 업로드 순서 그대로 저장된다. */
+  thumbnailIndex?: number;
   title: string;
 };
 
 export type UpdateBuncheolRequest = {
   description?: string;
   keepImageIds?: number[];
+  /** 유지하는 기존 이미지 중 대표사진으로 지정할 이미지 id (keepImageIds에 포함돼야 함). thumbnailIndex와 동시 지정 불가. */
+  thumbnailImageId?: number;
+  /** 신규 업로드 images 파트 중 대표사진으로 쓸 인덱스(0-base). thumbnailImageId와 동시 지정 불가. */
+  thumbnailIndex?: number;
   title: string;
 };
 
@@ -289,6 +295,8 @@ export type BuncheolDetail = BuncheolSummary & {
   hostBankAccount?: BankAccountInfo | null;
   imageUrls: string[];
   imageIds: number[];
+  /** 대표사진 이미지 id. imageUrls/imageIds는 등록 순이라 대표사진이 첫 번째가 아닐 수 있다. */
+  thumbnailImageId?: number;
   minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
@@ -2568,9 +2576,22 @@ function getBuncheolDetailFromBody(body: unknown) {
   ]
     .map(getNestedData)
     .find(isRecord);
+  const imageUrls = getImageUrls(data);
+  const imageIds = getImageIds(data);
+  const thumbnailImageId = getOptionalNumberValue(data, ["thumbnailImageId"]);
+  // 상세 imageUrls는 등록 순이라 첫 장이 대표사진이 아닐 수 있다 — 대표사진 id로 썸네일 URL을 찾아 요약 필드를 보정한다.
+  const thumbnailIndex =
+    typeof thumbnailImageId === "number"
+      ? imageIds.indexOf(thumbnailImageId)
+      : -1;
+  const thumbnailUrl =
+    (thumbnailIndex >= 0 ? imageUrls[thumbnailIndex] : undefined) ??
+    summary.thumbnailUrl;
 
   return {
     ...summary,
+    thumbnailUrl,
+    thumbnailImageId,
     cuShippingFee:
       getOptionalNumberValue(data, [
         "cuShippingFee",
@@ -2628,8 +2649,8 @@ function getBuncheolDetailFromBody(body: unknown) {
       "hostAccount",
       "sellerAccount",
     ]),
-    imageUrls: getImageUrls(data),
-    imageIds: getImageIds(data),
+    imageUrls,
+    imageIds,
     minHeadcount: getOptionalNumberValue(data, ["minHeadcount"]),
     isHostedByMe:
       getBooleanValue(data, ["isHostedByMe", "hostedByMe", "owner"]) ??
@@ -3617,9 +3638,11 @@ export function toProductDetailItem(
     description:
       detail.description?.trim() ||
       "판매자가 상품 설명을 작성하지 않았습니다.",
-    imageUrl: detail.imageUrls[0],
+    // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 imageUrls(등록 순)를 그대로 쓴다.
+    imageUrl: detail.thumbnailUrl ?? detail.imageUrls[0],
     imageUrls: detail.imageUrls,
     imageIds: detail.imageIds,
+    thumbnailImageId: detail.thumbnailImageId,
     isApiProduct: true,
     isHostedByMe: detail.isHostedByMe,
     member: getMemberLabel(memberNames),
