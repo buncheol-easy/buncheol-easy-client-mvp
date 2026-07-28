@@ -576,7 +576,14 @@ function getTargetTags(product: ProductDetailItem) {
 }
 
 function getProductImageUrls(product: ProductDetailItem) {
-  return [product.imageUrl, ...(product.imageUrls ?? [])].filter(
+  // 캐러셀은 등록 순(imageUrls)을 그대로 보여준다 — 대표사진(imageUrl)을 앞으로 당기지 않는다.
+  // imageUrls 가 없는 로컬/레거시 데이터만 imageUrl 로 폴백한다.
+  const orderedImageUrls =
+    (product.imageUrls?.length ?? 0) > 0
+      ? (product.imageUrls as string[])
+      : [product.imageUrl];
+
+  return orderedImageUrls.filter(
     (imageUrl, index, imageUrls): imageUrl is string => {
       return Boolean(imageUrl) && imageUrls.indexOf(imageUrl) === index;
     },
