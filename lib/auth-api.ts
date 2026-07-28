@@ -492,7 +492,8 @@ function getAuthHeaders(accessToken?: string): Record<string, string> {
     : {};
 }
 
-function getJsonHeaders(accessToken: string) {
+// accessToken 은 선택 — 비로그인도 허용하는 API(의견 보내기)가 있어 미로그인 시 Authorization 헤더를 생략한다.
+function getJsonHeaders(accessToken?: string) {
   return {
     ...getAuthHeaders(accessToken),
     "Content-Type": "application/json",
@@ -4444,6 +4445,27 @@ export async function requestShippingFeePayback(
       method: "POST",
     },
   );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+}
+
+/**
+ * 의견 보내기. 비로그인도 허용되므로 accessToken 이 없으면 익명 제출로 나간다
+ * (로그인이 안 돼서 남기는 의견이 가장 받고 싶은 종류라 로그인을 요구하지 않는다).
+ */
+export async function submitFeedback(
+  accessToken: string | null,
+  content: string,
+  screenPath?: string,
+) {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/feedbacks`, {
+    body: JSON.stringify(screenPath ? { content, screenPath } : { content }),
+    credentials: "include",
+    headers: getJsonHeaders(accessToken ?? undefined),
+    method: "POST",
+  });
 
   if (!response.ok) {
     throw new ApiRequestError(await parseErrorMessage(response), response.status);

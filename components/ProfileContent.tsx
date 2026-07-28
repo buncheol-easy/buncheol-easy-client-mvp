@@ -13,6 +13,7 @@ import {
 } from "react";
 import type { MouseEvent } from "react";
 import { BusinessFooter } from "@/components/BusinessFooter";
+import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { ProfileIcon } from "@/components/icons";
 import {
   addressReturnStateKey,
@@ -249,6 +250,9 @@ export function ProfileContent({
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
   const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
+  // 의견 보내기 시트. 로그인 여부와 무관하게 열 수 있다(비로그인 의견도 받는다).
+  const [isFeedbackSheetOpen, setIsFeedbackSheetOpen] = useState(false);
+
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [userProfileMessage, setUserProfileMessage] = useState("");
@@ -1028,12 +1032,36 @@ export function ProfileContent({
             ) : null}
           </Link>
         ) : null}
+
+        <button
+          className="mt-4 block w-full rounded-[1.2rem] border border-black/10 bg-white p-4 text-left shadow-[0_14px_34px_rgba(0,0,0,0.04)]"
+          onClick={() => setIsFeedbackSheetOpen(true)}
+          type="button"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
+                의견 보내기
+              </h2>
+              <p className="mt-1 truncate text-[13px] font-medium text-black/40">
+                불편했던 점, 아쉬운 점을 남겨주세요
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[12px] font-semibold text-black/45">
+              남기기
+            </span>
+          </div>
+        </button>
+
         <div className="relative -mx-4 -mb-6 mt-auto bg-[#f7f7f7] pt-6">
           <BusinessFooter variant="compact" />
         </div>
         </div>
       </main>
 
+      {isFeedbackSheetOpen ? (
+        <FeedbackSheet onClose={() => setIsFeedbackSheetOpen(false)} />
+      ) : null}
     </div>
   );
 }
