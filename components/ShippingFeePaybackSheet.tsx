@@ -23,7 +23,6 @@ export type ShippingFeePaybackSheetTarget = {
   participationId: string;
   // 분철별 인용 트윗(EVENT_TWEET_URL_BY_BUNCHEOL) 조회 키.
   buncheolId: string;
-  title: string;
   optionLabel: string;
   shippingFee: number | null;
   payback: ShippingFeePaybackInfo | null;
@@ -94,7 +93,7 @@ export function ShippingFeePaybackSheet({
 
   function openTweetComposer() {
     window.open(
-      buildReviewTweetIntentUrl(target.title, target.buncheolId),
+      buildReviewTweetIntentUrl(target.buncheolId),
       "_blank",
       "noopener,noreferrer",
     );
@@ -222,9 +221,10 @@ export function ShippingFeePaybackSheet({
           <div className="mt-3 rounded-[0.9rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-3">
             <p className="text-[12px] font-semibold text-black/40">후기 조건</p>
             <ul className="mt-2 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
-              <li>1. 아래 버튼으로 열리는 작성창에서 그대로 게시해 주세요.</li>
-              <li>2. 이벤트 트윗 인용과 해시태그는 지우지 말아 주세요.</li>
-              <li>3. 계정이 공개 상태여야 후기를 확인할 수 있어요.</li>
+              <li>1. 아래 버튼으로 열리는 작성창에서 자유롭게 후기를 남겨 주세요.</li>
+              <li>2. 앨범 수령 사진을 꼭 첨부해 주세요.</li>
+              <li>3. 이벤트 트윗 인용과 해시태그는 지우지 말아 주세요.</li>
+              <li>4. 계정이 공개 상태여야 후기를 확인할 수 있어요.</li>
             </ul>
           </div>
 
