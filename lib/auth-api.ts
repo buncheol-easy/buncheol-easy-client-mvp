@@ -127,12 +127,19 @@ export type CreateBuncheolRequest = {
   groupId: number;
   gs25ShippingFee?: number;
   purchaseSite: string;
+  /** 대표사진으로 쓸 images 파트 내 인덱스(0-base, 필수). 이미지 순서는 업로드 순서 그대로 저장된다. */
+  thumbnailIndex: number;
   title: string;
 };
 
+// 대표사진 지정은 필수 — thumbnailImageId(유지 이미지)와 thumbnailIndex(신규 이미지) 중 정확히 하나를 보내야 한다.
 export type UpdateBuncheolRequest = {
   description?: string;
   keepImageIds?: number[];
+  /** 유지하는 기존 이미지 중 대표사진으로 지정할 이미지 id (keepImageIds에 포함돼야 함) */
+  thumbnailImageId?: number;
+  /** 신규 업로드 images 파트 중 대표사진으로 쓸 인덱스(0-base) */
+  thumbnailIndex?: number;
   title: string;
 };
 
@@ -282,13 +289,20 @@ export type BuncheolShippingOption = {
   method: string;
 };
 
+/** 분철 이미지 1장 — id·URL·대표 여부를 한 객체로 묶어 배열 인덱스 정렬 계약 없이 식별한다. */
+export type BuncheolImageInfo = {
+  id?: number;
+  thumbnail?: boolean;
+  url: string;
+};
+
 export type BuncheolDetail = BuncheolSummary & {
   cuShippingFee?: number;
   description?: string;
   gs25ShippingFee?: number;
   hostBankAccount?: BankAccountInfo | null;
-  imageUrls: string[];
-  imageIds: number[];
+  /** 등록 순(업로드 순) 이미지 목록. 이미지가 있으면 정확히 1장이 thumbnail=true */
+  images: BuncheolImageInfo[];
   minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
@@ -368,6 +382,8 @@ export type BuncheolManagementDetail = {
 // 프론트는 슬롯 0원 여부를 재판정하지 않고 이 값을 그대로 신뢰한다 (비대상이면 NONE).
 export type ShippingFeePaybackInfo = {
   status: ShippingFeePaybackStatus;
+  // 신청 마감 시각 (배송 완료 시각 + 신청 가능 일수, ISO). 이벤트 비대상이거나 마감 미적용이면 null.
+  submitDeadline?: string | null;
   tweetUrl?: string | null;
   requestedAt?: string | null;
   completedAt?: string | null;
@@ -492,7 +508,8 @@ function getAuthHeaders(accessToken?: string): Record<string, string> {
     : {};
 }
 
-function getJsonHeaders(accessToken: string) {
+// accessToken 은 선택 — 비로그인도 허용하는 API(의견 보내기)가 있어 미로그인 시 Authorization 헤더를 생략한다.
+function getJsonHeaders(accessToken?: string) {
   return {
     ...getAuthHeaders(accessToken),
     "Content-Type": "application/json",
@@ -1922,6 +1939,47 @@ function getImageIds(data: Record<string, unknown>) {
     (imageId, index, imageIds) => imageIds.indexOf(imageId) === index,
   );
 }
+
+// 상세 응답의 images(객체 배열: id·url·thumbnail)를 파싱한다.
+// images 키가 없는 구형 응답/로컬 캐시는 imageUrls·imageIds 병렬 배열을 객체로 묶어 폴백한다.
+function getBuncheolImageInfos(
+  data: Record<string, unknown>,
+): BuncheolImageInfo[] {
+  const parsed = getRecordListValue(data, ["images"])
+    .map((record): BuncheolImageInfo | null => {
+      const url = getImageUrl(record);
+
+      if (!url) {
+        return null;
+      }
+
+      return {
+        id: getImageId(record) ?? undefined,
+        thumbnail:
+          getBooleanValue(record, ["thumbnail", "isThumbnail"]) ?? undefined,
+        url,
+      };
+    })
+    .filter((image): image is BuncheolImageInfo => image !== null);
+
+  if (parsed.length > 0) {
+    return parsed;
+  }
+
+  const imageUrls = getImageUrls(data);
+  const imageIds = getImageIds(data);
+  const thumbnailImageId = getOptionalNumberValue(data, ["thumbnailImageId"]);
+
+  return imageUrls.map((url, index) => ({
+    id: imageIds[index],
+    thumbnail:
+      typeof thumbnailImageId === "number"
+        ? imageIds[index] === thumbnailImageId
+        : index === 0,
+    url,
+  }));
+}
+
 function getBuncheolSummaryFromRecord(
   record: Record<string, unknown>,
 ): BuncheolSummary | null {
@@ -2036,6 +2094,7 @@ function getShippingFeePaybackFromRecord(
 
   return {
     status,
+    submitDeadline: getOptionalStringValue(value, ["submitDeadline"]) ?? null,
     tweetUrl:
       getOptionalStringValue(value, ["tweetUrl", "paybackTweetUrl"]) ?? null,
     requestedAt:
@@ -2564,9 +2623,16 @@ function getBuncheolDetailFromBody(body: unknown) {
   ]
     .map(getNestedData)
     .find(isRecord);
+  const images = getBuncheolImageInfos(data);
+  // 상세 images는 등록 순이라 첫 장이 대표사진이 아닐 수 있다 — thumbnail 플래그로 썸네일 URL을 찾아 요약 필드를 보정한다.
+  const thumbnailUrl =
+    images.find((image) => image.thumbnail)?.url ??
+    images[0]?.url ??
+    summary.thumbnailUrl;
 
   return {
     ...summary,
+    thumbnailUrl,
     cuShippingFee:
       getOptionalNumberValue(data, [
         "cuShippingFee",
@@ -2624,8 +2690,7 @@ function getBuncheolDetailFromBody(body: unknown) {
       "hostAccount",
       "sellerAccount",
     ]),
-    imageUrls: getImageUrls(data),
-    imageIds: getImageIds(data),
+    images,
     minHeadcount: getOptionalNumberValue(data, ["minHeadcount"]),
     isHostedByMe:
       getBooleanValue(data, ["isHostedByMe", "hostedByMe", "owner"]) ??
@@ -3613,9 +3678,10 @@ export function toProductDetailItem(
     description:
       detail.description?.trim() ||
       "판매자가 상품 설명을 작성하지 않았습니다.",
-    imageUrl: detail.imageUrls[0],
-    imageUrls: detail.imageUrls,
-    imageIds: detail.imageIds,
+    // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 images(등록 순)를 그대로 쓴다.
+    imageUrl: detail.thumbnailUrl ?? detail.images[0]?.url,
+    imageUrls: detail.images.map((image) => image.url),
+    images: detail.images,
     isApiProduct: true,
     isHostedByMe: detail.isHostedByMe,
     member: getMemberLabel(memberNames),
@@ -4444,6 +4510,27 @@ export async function requestShippingFeePayback(
       method: "POST",
     },
   );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+}
+
+/**
+ * 의견 보내기. 비로그인도 허용되므로 accessToken 이 없으면 익명 제출로 나간다
+ * (로그인이 안 돼서 남기는 의견이 가장 받고 싶은 종류라 로그인을 요구하지 않는다).
+ */
+export async function submitFeedback(
+  accessToken: string | null,
+  content: string,
+  screenPath?: string,
+) {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/feedbacks`, {
+    body: JSON.stringify(screenPath ? { content, screenPath } : { content }),
+    credentials: "include",
+    headers: getJsonHeaders(accessToken ?? undefined),
+    method: "POST",
+  });
 
   if (!response.ok) {
     throw new ApiRequestError(await parseErrorMessage(response), response.status);

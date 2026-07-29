@@ -74,11 +74,13 @@ function isRecentlyCreated(value: string | undefined) {
   return Date.now() - date.getTime() < 1000 * 60 * 60 * 24 * 3;
 }
 
+// 문단 안의 줄바꿈·앞 공백은 유지한다 (본문은 whitespace-pre-wrap 으로 렌더링).
 function getBodyParagraphs(description: string | undefined, fallback: string) {
   const paragraphs = (description ?? "")
-    .split(/\n+/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
+    .replace(/\r\n?/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trimEnd())
+    .filter((paragraph) => paragraph.trim().length > 0);
 
   return paragraphs.length > 0 ? paragraphs : [fallback];
 }
