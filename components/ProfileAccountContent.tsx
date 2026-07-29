@@ -8,6 +8,7 @@ import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   isUserProfileComplete,
   deleteUserProfile,
+  requestMyParticipations,
   requestNicknameDuplicate,
   requestUserProfile,
   updateUserProfile,
@@ -22,6 +23,7 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { clearDeliveryAddressState } from "@/lib/delivery-address-store";
+import { FEATURES } from "@/lib/feature-flags";
 import { clearHostedProducts } from "@/lib/hosted-products-store";
 import { clearSettlementAccountState } from "@/lib/settlement-account-store";
 
@@ -161,6 +163,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [hasUnclaimedPayback, setHasUnclaimedPayback] = useState(false);
   const [isSaveFeedbackVisible, setIsSaveFeedbackVisible] = useState(false);
   const [message, setMessage] = useState("");
   // 이름은 기존 회원 호환을 위해 빈 값을 허용한다 (값이 있으면 형식 검증, 서버는 미전송 시 기존 값 유지).
@@ -346,6 +349,36 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
       );
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  // 탈퇴하면 아직 신청할 수 있는 배송비 돌려받기를 조용히 포기하게 되므로, 확인 모달에 경고를
+  // 띄우기 위해 참여 내역을 조회한다. 신청 가능 판정은 참여 내역 카드의 CTA 노출 조건과 동일하게
+  // ELIGIBLE(미신청) + REJECTED(반려 후 재신청 가능)를 본다. 신청 후 검수 중(REQUESTED)은 서버가
+  // 탈퇴 자체를 거부하고(USR-029), 완료/만료는 포기할 것이 없다.
+  async function checkUnclaimedPayback() {
+    if (!FEATURES.shippingFeePayback) {
+      return;
+    }
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        return;
+      }
+
+      const participations = await requestMyParticipations(accessToken);
+
+      setHasUnclaimedPayback(
+        participations.some(
+          (participation) =>
+            participation.payback?.status === "ELIGIBLE" ||
+            participation.payback?.status === "REJECTED",
+        ),
+      );
+    } catch {
+      // 경고 배너용 조회라 실패해도 탈퇴 진행을 막지 않는다 (경고만 생략).
     }
   }
 
@@ -545,7 +578,9 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                   disabled={isDeleting}
                   onClick={() => {
                     setMessage("");
+                    setHasUnclaimedPayback(false);
                     setIsDeleteConfirmOpen(true);
+                    void checkUnclaimedPayback();
                   }}
                   type="button"
                 >
@@ -571,6 +606,12 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                     탈퇴하면 계정 정보가 삭제되고 다시 되돌릴 수 없어요. 진행
                     중인 분철이나 결제 내역이 있다면 확인이 어려워질 수 있어요.
                   </p>
+                  {hasUnclaimedPayback ? (
+                    <div className="mt-4 rounded-[0.9rem] bg-[#FFF8E1] px-4 py-3 text-[13px] font-semibold leading-6 text-[#8D6708]">
+                      아직 신청할 수 있는 배송비 돌려받기가 남아 있어요.
+                      탈퇴하면 배송비를 돌려받을 수 없어요.
+                    </div>
+                  ) : null}
                   <div className="mt-4 rounded-[0.9rem] bg-[#FFF5F4] px-4 py-3 text-[13px] font-semibold leading-6 text-[#B3261E]">
                     이 작업은 취소할 수 없어요. 정말로 계정을 삭제할 때만
                     탈퇴를 눌러 주세요.

@@ -3067,7 +3067,6 @@ export function BidHistoryContent({
           target={{
             participationId: selectedPaybackBid.id,
             buncheolId: selectedPaybackBid.productId,
-            title: selectedPaybackBid.title,
             optionLabel: selectedPaybackBid.optionLabel,
             shippingFee:
               typeof selectedPaybackBid.shippingFee === "number"
