@@ -11,10 +11,9 @@ export const EVENT_TWEET_URL =
 // "분철 ID": "트윗 퍼머링크" 한 줄을 추가하고 배포한다. 맵에 없거나 빈값인 분철은 EVENT_TWEET_URL 을 인용한다.
 // 한시 이벤트용 빌드타임 관리 — 이벤트가 끝나면 이 맵을 비우거나 파일째 정리한다.
 const EVENT_TWEET_URL_BY_BUNCHEOL: Record<string, string> = {
-  // TODO: 오픈 이벤트 분철 1~3 홍보 트윗 게시 후 퍼머링크를 채운다.
-  "1": "",
-  "2": "",
-  "3": "",
+  "13": "https://x.com/BuncheolEasy/status/2082331830251094422",
+  "14": "https://x.com/BuncheolEasy/status/2082332418229559496",
+  "15": "https://x.com/BuncheolEasy/status/2082332607271022921",
 };
 
 export type ShippingFeePaybackStatus =
