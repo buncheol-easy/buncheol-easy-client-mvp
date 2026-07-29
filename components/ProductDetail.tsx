@@ -3824,6 +3824,20 @@ export function ProductDetail({
                             계좌 복사
                           </button>
                         </div>
+                        {checkoutRefundAccount?.holder ? (
+                          <>
+                            <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                              입금자명{" "}
+                              <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
+                                {checkoutRefundAccount.holder}
+                              </span>
+                            </p>
+                            <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/45">
+                              이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로
+                              보내면 확인이 늦어질 수 있어요.
+                            </p>
+                          </>
+                        ) : null}
                         <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                           송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행
                           상황은 참여 내역에서 확인할 수 있어요.
