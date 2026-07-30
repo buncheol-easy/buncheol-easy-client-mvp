@@ -16,6 +16,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, staging]
+    # 정상 배포는 2~4분(관측 최장 7분대). 박스 메모리 부족으로 빌드가 멈추면 실패하지 않고
+    # 기본 360분까지 매달리므로(2026-07-29 백엔드 배포 사고와 같은 구조) 상한을 둔다.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout source
@@ -35,7 +38,9 @@ jobs:
           set -e
           cd /home/ubuntu/buncheol-easy-client
 
-          docker build -t buncheoleasy-frontend:staging .
+          # 박스가 스왑 스래싱으로 굳으면 러너가 timeout-minutes 를 집행하지 못하므로
+          # OS 레벨 timeout 으로 빌드를 이중 방어한다(만료 시 exit 124 → 스텝 실패).
+          timeout -k 30s 13m docker build -t buncheoleasy-frontend:staging .
 
           docker rm -f buncheoleasy-frontend 2>/dev/null || true
           # 런타임 env(.env.production: NEXT_PUBLIC + 테스트 계정 스위처 토큰)를 컨테이너에 주입.
