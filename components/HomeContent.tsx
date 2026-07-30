@@ -922,7 +922,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             type="button"
           />
           <section
-            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+            className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100%-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
               isUsageHelpSheetEntered && !isUsageHelpSheetClosing
                 ? "bid-sheet-panel-active"
                 : ""
