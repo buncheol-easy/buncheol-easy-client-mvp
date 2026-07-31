@@ -3,8 +3,8 @@ name: Rollback Frontend
 # ECR 의 불변 태그(staging-sha-* / prod-sha-*)로 빌드 없이 즉시 되돌린다(1~2분).
 # 태그 조회·절차는 루트 docs/38. GitHub 불능 시 수동 롤백도 docs/38 참조.
 #
-# ⚠️ 실행 브랜치는 staging=dev, production=main 에서 — OIDC 신뢰정책이 두 ref 만 허용해
-#    다른 브랜치에서 실행하면 마지막 promote(별칭 재지정) 잡이 실패한다.
+# ⚠️ 실행 브랜치는 staging=dev, production=main — 첫 스텝의 가드가 이 짝을 강제한다
+#    (다른 브랜치에서 실행하면 박스를 건드리기 전에 즉시 실패한다).
 on:
   workflow_dispatch:
     inputs:
@@ -43,19 +43,30 @@ jobs:
       IMAGE_TAG: ${{ inputs.image_tag }}
       TARGET_ENV: ${{ inputs.environment }}
     steps:
+      - name: Guard — 환경·브랜치·태그 검증 (박스를 건드리기 전에 fail-fast)
+        # OIDC 실패는 promote(별칭 재지정)에서 — 즉 박스를 이미 되돌린 뒤에 — 터진다.
+        # 그 반쪽 롤백을 만들지 않도록 허용 짝(staging=dev / production=main)을
+        # 첫 스텝에서 강제한다 (서버 리뷰 재검토 반영).
+        run: |
+          case "${TARGET_ENV}:${GITHUB_REF_NAME}" in
+            staging:dev|production:main) ;;
+            *) echo "::error::환경·브랜치 불일치 — staging 은 dev, production 은 main 브랜치에서 실행해야 한다 (현재: env=$TARGET_ENV, ref=$GITHUB_REF_NAME)"; exit 1 ;;
+          esac
+          # 불변 태그 정확 일치 + 환경 접두사 검증 — prod 박스에 staging 이미지를 올리는
+          # 실수, 이동 별칭 입력(=최신 재배포), 경로 오염 문자를 모두 차단 (리뷰 반영)
+          if ! echo "$IMAGE_TAG" | grep -qE '^(staging|prod)-sha-[0-9a-f]{12}$'; then
+            echo "::error::불변 태그((staging|prod)-sha-<12자리 hex>)만 허용: $IMAGE_TAG"; exit 1
+          fi
+          case "${IMAGE_TAG}:${TARGET_ENV}" in
+            staging-sha-*:staging|prod-sha-*:production) ;;
+            *) echo "::error::태그 접두사와 대상 환경($TARGET_ENV) 불일치: $IMAGE_TAG"; exit 1 ;;
+          esac
+
       - name: Pull target image and swap container
         run: |
           set -e
           IMAGE="${ECR_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
           echo "Rolling back to ${IMAGE}"
-
-          # 불변 태그 + 환경 접두사 검증 — prod 박스에 staging 이미지를 올리는 실수와
-          # 이동 별칭(staging/prod) 입력(=롤백이 아니라 최신 재배포)을 모두 차단
-          case "$IMAGE_TAG" in
-            staging-sha-*) [ "$TARGET_ENV" = "staging" ] || { echo "::error::태그 접두사(staging-)와 대상 환경($TARGET_ENV) 불일치"; exit 1; } ;;
-            prod-sha-*)    [ "$TARGET_ENV" = "production" ] || { echo "::error::태그 접두사(prod-)와 대상 환경($TARGET_ENV) 불일치"; exit 1; } ;;
-            *) echo "::error::불변 태그(staging-sha-* / prod-sha-*)만 허용: $IMAGE_TAG"; exit 1 ;;
-          esac
 
           timeout -k 30s 5m docker pull "$IMAGE"
 
@@ -106,10 +117,15 @@ jobs:
         run: |
           set -e
           alias=$([ "$TARGET_ENV" = "production" ] && echo prod || echo staging)
-          manifest=$(aws ecr batch-get-image --repository-name "$IMAGE_REPO" \
-            --image-ids imageTag="$IMAGE_TAG" \
-            --query 'images[0].imageManifest' --output text)
-          out=$(aws ecr put-image --repository-name "$IMAGE_REPO" \
-            --image-tag "$alias" --image-manifest "$manifest" 2>&1) \
+          resp=$(aws ecr batch-get-image --repository-name "$IMAGE_REPO" \
+            --image-ids imageTag="$IMAGE_TAG" --output json)
+          manifest=$(echo "$resp" | jq -r '.images[0].imageManifest // empty')
+          mt=$(echo "$resp" | jq -r '.images[0].imageManifestMediaType // empty')
+          # 태그 미존재 시 batch-get-image 는 exit 0 + failures 에만 담긴다 — 명시적 가드 (리뷰 반영)
+          [ -n "$manifest" ] || { echo "::error::ECR 에 태그 없음: $IMAGE_TAG"; exit 1; }
+          # mediaType 미전달 시 OCI 매니페스트에서 UnsupportedImageTypeException 가능 (리뷰 반영)
+          args=(--repository-name "$IMAGE_REPO" --image-tag "$alias" --image-manifest "$manifest")
+          [ -n "$mt" ] && args+=(--image-manifest-media-type "$mt")
+          out=$(aws ecr put-image "${args[@]}" 2>&1) \
             || { echo "$out" | grep -q ImageAlreadyExistsException || { echo "$out"; exit 1; }; }
           echo "alias '$alias' -> ${IMAGE_TAG}"

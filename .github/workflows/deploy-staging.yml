@@ -113,7 +113,9 @@ jobs:
         # (GitHub 불능 시 오프라인 롤백용). 레지스트리 보존은 ECR lifecycle policy 담당.
         # ⚠️ 정렬은 이미지 Created(빌드 시각) 기준 — 롤백으로 되돌린 옛 이미지는 이후 배포
         # 몇 번이면 밀려날 수 있다(실행 중 이미지는 rmi 실패로 살아남음).
-        if: always()
+        # 취소 시에는 돌지 않는다 — 롤백이 이 배포를 선점(취소)한 순간 오프라인 롤백 캐시를
+        # 지우면 안 되기 때문 (리뷰 반영).
+        if: success() || failure()
         run: |
           docker images --format '{{.Repository}}:{{.Tag}}' "${ECR_REGISTRY}/${IMAGE_REPO}" \
             | grep ':staging-sha-' | tail -n +4 | xargs -r docker rmi || true
@@ -139,10 +141,15 @@ jobs:
       - name: Move 'staging' alias to deployed image
         run: |
           set -e
-          manifest=$(aws ecr batch-get-image --repository-name "$IMAGE_REPO" \
-            --image-ids imageTag="$IMAGE_TAG" \
-            --query 'images[0].imageManifest' --output text)
-          out=$(aws ecr put-image --repository-name "$IMAGE_REPO" \
-            --image-tag staging --image-manifest "$manifest" 2>&1) \
+          resp=$(aws ecr batch-get-image --repository-name "$IMAGE_REPO" \
+            --image-ids imageTag="$IMAGE_TAG" --output json)
+          manifest=$(echo "$resp" | jq -r '.images[0].imageManifest // empty')
+          mt=$(echo "$resp" | jq -r '.images[0].imageManifestMediaType // empty')
+          # 태그 미존재 시 batch-get-image 는 exit 0 + failures 에만 담긴다 — 명시적 가드 (리뷰 반영)
+          [ -n "$manifest" ] || { echo "::error::ECR 에 태그 없음: $IMAGE_TAG"; exit 1; }
+          # mediaType 미전달 시 OCI 매니페스트에서 UnsupportedImageTypeException 가능 (리뷰 반영)
+          args=(--repository-name "$IMAGE_REPO" --image-tag staging --image-manifest "$manifest")
+          [ -n "$mt" ] && args+=(--image-manifest-media-type "$mt")
+          out=$(aws ecr put-image "${args[@]}" 2>&1) \
             || { echo "$out" | grep -q ImageAlreadyExistsException || { echo "$out"; exit 1; }; }
           echo "alias 'staging' -> ${IMAGE_TAG}"
