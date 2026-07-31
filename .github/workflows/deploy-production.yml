@@ -15,6 +15,10 @@ concurrency:
   group: frontend-production-deploy
   cancel-in-progress: false
 
+# 기본 최소권한 — build/promote 잡만 OIDC 용 id-token 을 자체 선언으로 추가한다
+permissions:
+  contents: read
+
 env:
   ECR_REGISTRY: 823164610944.dkr.ecr.ap-northeast-2.amazonaws.com
   IMAGE_REPO: bce-frontend
@@ -60,9 +64,10 @@ jobs:
             NEXT_PUBLIC_GA_ID=${{ vars.PROD_NEXT_PUBLIC_GA_ID }}
             NEXT_PUBLIC_POSTHOG_KEY=${{ vars.PROD_NEXT_PUBLIC_POSTHOG_KEY }}
             NEXT_PUBLIC_POSTHOG_HOST=${{ vars.PROD_NEXT_PUBLIC_POSTHOG_HOST }}
-          tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ steps.meta.outputs.tag }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:prod
+          # sha 불변 태그만 push — prod 별칭은 배포 성공 후 promote 잡이 옮긴다 (서버 리뷰 #89).
+          # ⚠️ main 머지 커밋은 dev 와 SHA 가 달라 prod 는 재빌드된다(같은 소스의 재현 빌드).
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ steps.meta.outputs.tag }}
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -79,8 +84,9 @@ jobs:
           set -e
           IMAGE="${ECR_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
 
-          # timeout: 박스·네트워크 이상 시 잡이 매달리지 않게 하는 안전망(#44 교훈 유지)
-          timeout -k 30s 8m docker pull "$IMAGE"
+          # timeout: 박스·네트워크 이상 시 잡이 매달리지 않게 하는 안전망(#44 교훈 유지).
+          # 잡 상한(10m)보다 내부 예산(pull 5m + run/curl ~1m)이 작아야 OS timeout 이 먼저 발화
+          timeout -k 30s 5m docker pull "$IMAGE"
 
           docker rm -f buncheoleasy-frontend 2>/dev/null || true
           docker run -d \
@@ -96,8 +102,38 @@ jobs:
       - name: Retain last 3 images (rollback cache)
         # pull 된 태그 이미지는 image prune 으로 안 지워지므로 최근 3개만 남기고 정리
         # (GitHub 불능 시 오프라인 롤백용). 레지스트리 보존은 ECR lifecycle policy 담당.
+        # ⚠️ 정렬은 이미지 Created(빌드 시각) 기준 — 롤백으로 되돌린 옛 이미지는 이후 배포
+        # 몇 번이면 밀려날 수 있다(실행 중 이미지는 rmi 실패로 살아남음).
         if: always()
         run: |
           docker images --format '{{.Repository}}:{{.Tag}}' "${ECR_REGISTRY}/${IMAGE_REPO}" \
             | grep ':prod-sha-' | tail -n +4 | xargs -r docker rmi || true
           docker image prune -f || true
+
+  promote:
+    # 별칭은 배포(컨테이너 기동 확인)가 성공한 뒤에만 이동한다 — 실패한 이미지를 별칭이
+    # 가리키는 창을 없앤다(서버 리뷰 #89 반영). 재빌드 없이 ECR 매니페스트 재태깅만 한다.
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    env:
+      IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::823164610944:role/bce-gha-ecr-push
+          aws-region: ap-northeast-2
+
+      - name: Move 'prod' alias to deployed image
+        run: |
+          set -e
+          manifest=$(aws ecr batch-get-image --repository-name "$IMAGE_REPO" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'images[0].imageManifest' --output text)
+          out=$(aws ecr put-image --repository-name "$IMAGE_REPO" \
+            --image-tag prod --image-manifest "$manifest" 2>&1) \
+            || { echo "$out" | grep -q ImageAlreadyExistsException || { echo "$out"; exit 1; }; }
+          echo "alias 'prod' -> ${IMAGE_TAG}"

@@ -2,6 +2,9 @@ name: Rollback Frontend
 
 # ECR 의 불변 태그(staging-sha-* / prod-sha-*)로 빌드 없이 즉시 되돌린다(1~2분).
 # 태그 조회·절차는 루트 docs/38. GitHub 불능 시 수동 롤백도 docs/38 참조.
+#
+# ⚠️ 실행 브랜치는 staging=dev, production=main 에서 — OIDC 신뢰정책이 두 ref 만 허용해
+#    다른 브랜치에서 실행하면 마지막 promote(별칭 재지정) 잡이 실패한다.
 on:
   workflow_dispatch:
     inputs:
@@ -16,10 +19,15 @@ on:
         description: '되돌릴 불변 태그 (예: staging-sha-a1b2c3d4e5f6) — 환경 접두사가 대상 환경과 일치해야 한다'
         required: true
 
-# 배포 워크플로와 같은 그룹을 써서 진행 중 배포와 경합하지 않는다.
+# 배포와 같은 그룹 + cancel-in-progress: true = 롤백이 진행 중 배포를 "선점"한다.
+# (false 면 장애 대응 도구가 문제를 일으킨 배포 뒤에 줄을 선다 — 서버 리뷰 #89 반영.
+#  롤백은 멱등한 pull+run 이라 끊긴 배포 위에 덮어써도 안전하다.)
 concurrency:
   group: frontend-${{ inputs.environment }}-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
+
+# 기본 무권한 — promote 잡만 OIDC 용 id-token 을 자체 선언한다
+permissions: {}
 
 env:
   ECR_REGISTRY: 823164610944.dkr.ecr.ap-northeast-2.amazonaws.com
@@ -41,14 +49,15 @@ jobs:
           IMAGE="${ECR_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
           echo "Rolling back to ${IMAGE}"
 
-          # 환경 접두사 검증 — prod 박스에 staging 이미지를 올리는 실수 차단
+          # 불변 태그 + 환경 접두사 검증 — prod 박스에 staging 이미지를 올리는 실수와
+          # 이동 별칭(staging/prod) 입력(=롤백이 아니라 최신 재배포)을 모두 차단
           case "$IMAGE_TAG" in
-            staging-*) [ "$TARGET_ENV" = "staging" ] || { echo "::error::태그 접두사(staging-)와 대상 환경($TARGET_ENV) 불일치"; exit 1; } ;;
-            prod-*)    [ "$TARGET_ENV" = "production" ] || { echo "::error::태그 접두사(prod-)와 대상 환경($TARGET_ENV) 불일치"; exit 1; } ;;
-            *) echo "::error::알 수 없는 태그 형식: $IMAGE_TAG (staging-sha-* / prod-sha-* 만 허용)"; exit 1 ;;
+            staging-sha-*) [ "$TARGET_ENV" = "staging" ] || { echo "::error::태그 접두사(staging-)와 대상 환경($TARGET_ENV) 불일치"; exit 1; } ;;
+            prod-sha-*)    [ "$TARGET_ENV" = "production" ] || { echo "::error::태그 접두사(prod-)와 대상 환경($TARGET_ENV) 불일치"; exit 1; } ;;
+            *) echo "::error::불변 태그(staging-sha-* / prod-sha-*)만 허용: $IMAGE_TAG"; exit 1 ;;
           esac
 
-          timeout -k 30s 8m docker pull "$IMAGE"
+          timeout -k 30s 5m docker pull "$IMAGE"
 
           docker rm -f buncheoleasy-frontend 2>/dev/null || true
           # staging 만 런타임 변수(.env.production)를 쓴다 — 배포 워크플로와 동일 조건
@@ -66,3 +75,41 @@ jobs:
           echo "Waiting for frontend..."
           sleep 3
           curl -fsS -I http://127.0.0.1:3000 > /dev/null && echo "Frontend is up — rollback complete"
+
+      - name: Post-mortem snapshot
+        # 롤백은 이미 장애 상황 — 실패·취소 시 진단 스냅샷이 더 절실하다 (서버 리뷰 #89 반영)
+        if: failure() || cancelled()
+        run: |
+          free -h || true
+          docker ps -a --filter name=buncheoleasy-frontend || true
+          docker logs buncheoleasy-frontend --tail=100 || true
+
+  promote:
+    # 롤백 성공 시 별칭도 롤백 대상으로 재지정 — "별칭 = 지금 떠 있는 것" 불변식 유지
+    # (서버 리뷰 #89 반영). 재빌드 없이 ECR 매니페스트 재태깅만 한다.
+    needs: rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      TARGET_ENV: ${{ inputs.environment }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::823164610944:role/bce-gha-ecr-push
+          aws-region: ap-northeast-2
+
+      - name: Move alias to rollback target
+        run: |
+          set -e
+          alias=$([ "$TARGET_ENV" = "production" ] && echo prod || echo staging)
+          manifest=$(aws ecr batch-get-image --repository-name "$IMAGE_REPO" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'images[0].imageManifest' --output text)
+          out=$(aws ecr put-image --repository-name "$IMAGE_REPO" \
+            --image-tag "$alias" --image-manifest "$manifest" 2>&1) \
+            || { echo "$out" | grep -q ImageAlreadyExistsException || { echo "$out"; exit 1; }; }
+          echo "alias '$alias' -> ${IMAGE_TAG}"
