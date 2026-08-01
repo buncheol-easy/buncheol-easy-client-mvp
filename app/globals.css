@@ -1200,6 +1200,22 @@ body.is-pwa-standalone {
   }
 }
 
+/* 인앱 브라우저(X·인스타 등 웹뷰)는 viewport-fit=cover 로 상태바 밑까지 확장되지만
+   standalone 매치가 아니라 상단 safe-area 패딩을 못 받아 앱 헤더가 상태바에 가려진다.
+   일반 브라우저는 env() 값이 0이라 영향 없다. */
+body > main {
+  padding-top: env(safe-area-inset-top);
+}
+
+body > main.product-detail-shell {
+  padding-top: 0;
+}
+
+body > main.product-detail-shell .product-page-panel,
+body > main.product-detail-shell .product-detail-underlay {
+  padding-top: env(safe-area-inset-top);
+}
+
 body.is-pwa-standalone > main {
   height: var(--app-viewport-height);
   min-height: var(--app-viewport-height);
