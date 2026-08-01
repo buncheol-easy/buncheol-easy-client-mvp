@@ -3420,7 +3420,7 @@ export function ProductDetail({
           !isDeadlinePassed &&
           isPurchasableStatus ? (
             <p className="mb-2 text-center text-[11px] font-medium text-black/40">
-              오픈 이벤트 기간에는 분철당 1명의 멤버에게 1번만 참여할 수 있어요.
+              분철당 1명의 멤버에게 1번만 참여할 수 있어요.
             </p>
           ) : null}
           <button
@@ -3500,7 +3500,7 @@ export function ProductDetail({
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "confirm"
                         ? "주문하면 입금 계좌와 마감 시각이 안내돼요."
-                        : "구매할 멤버를 선택해 주세요. 오픈 이벤트 기간에는 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
+                        : "구매할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                   </p>
                 </div>
                 <button
