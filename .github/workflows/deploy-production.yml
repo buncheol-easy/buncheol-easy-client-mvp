@@ -43,8 +43,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Resolve immutable image tag
+        # GITHUB_SHA 고정 12자리 — git rev-parse --short=12 는 "최소" 길이라 prefix 충돌 시
+        # rollback 의 정확 일치 검증(12자리)을 통과하지 못한다 (서버 4차 리뷰 반영)
         id: meta
-        run: echo "tag=prod-sha-$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=prod-sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -93,6 +95,10 @@ jobs:
           # timeout: 박스·네트워크 이상 시 잡이 매달리지 않게 하는 안전망(#44 교훈 유지).
           # 잡 상한(10m)보다 내부 예산(pull 5m + run/curl ~1m)이 작아야 OS timeout 이 먼저 발화
           timeout -k 30s 5m docker pull "$IMAGE"
+
+          # 교체 전 현재 이미지를 남긴다 — 배포 실패 시 이 값이 곧 롤백 좌표다 (서버 4차 리뷰 반영)
+          prev=$(docker inspect -f '{{.Config.Image}}' buncheoleasy-frontend 2>/dev/null || echo "none")
+          echo "::notice::롤백 좌표(직전 이미지): ${prev}"
 
           docker rm -f buncheoleasy-frontend 2>/dev/null || true
           docker run -d \
@@ -154,3 +160,8 @@ jobs:
           out=$(aws ecr put-image "${args[@]}" 2>&1) \
             || { echo "$out" | grep -q ImageAlreadyExistsException || { echo "$out"; exit 1; }; }
           echo "alias 'prod' -> ${IMAGE_TAG}"
+
+      - name: Warn on stale alias
+        # deploy 성공 + promote 실패 = 박스는 신버전인데 별칭은 구버전 (서버 4차 리뷰 반영)
+        if: failure()
+        run: echo "::error::별칭 이동 실패 — 박스는 ${IMAGE_TAG} 로 떠 있으나 'prod' 별칭은 이전 이미지를 가리킨다. 이 잡을 재실행해 별칭을 맞출 것 (docs/38 §5)."

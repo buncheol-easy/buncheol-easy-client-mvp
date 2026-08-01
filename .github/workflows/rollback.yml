@@ -70,7 +70,14 @@ jobs:
           IMAGE="${ECR_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
           echo "Rolling back to ${IMAGE}"
 
-          timeout -k 30s 5m docker pull "$IMAGE"
+          # ECR/네트워크 장애 시에도 롤백이 돌아야 한다 — 로컬에 이미지가 있으면 pull 실패를
+          # 허용한다(불변 태그라 로컬 == 원격 보장, 서버 4차 리뷰 반영)
+          if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            timeout -k 30s 5m docker pull "$IMAGE" \
+              || echo "::warning::pull 실패 — 로컬 캐시 이미지로 진행 (불변 태그라 동일 이미지)"
+          else
+            timeout -k 30s 5m docker pull "$IMAGE"
+          fi
 
           docker rm -f buncheoleasy-frontend 2>/dev/null || true
           # staging 만 런타임 변수(.env.production)를 쓴다 — 배포 워크플로와 동일 조건
@@ -135,3 +142,8 @@ jobs:
           out=$(aws ecr put-image "${args[@]}" 2>&1) \
             || { echo "$out" | grep -q ImageAlreadyExistsException || { echo "$out"; exit 1; }; }
           echo "alias '$alias' -> ${IMAGE_TAG}"
+
+      - name: Warn on stale alias
+        # rollback 성공 + promote 실패 = 박스는 롤백됐는데 별칭은 깨진 이미지 (서버 4차 리뷰 반영)
+        if: failure()
+        run: echo "::error::별칭 재지정 실패 — 박스는 ${IMAGE_TAG} 로 롤백됐으나 별칭은 이전 이미지를 가리킨다. 이 잡을 재실행해 별칭을 맞출 것 (docs/38 §5)."
