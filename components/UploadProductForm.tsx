@@ -109,8 +109,12 @@ function parsePriceInput(value: string) {
   return Number(value.replace(/[^\d]/g, "")) || 0;
 }
 
-function isHundredWonAmount(value: number) {
-  return Number.isInteger(value) && value > 0 && value % 100 === 0;
+// 배송비 0원은 개최자가 배송비를 받지 않는 무료 배송으로 허용한다 (서버 ShippingFeePolicy 와 동일 규칙).
+// parsePriceInput 이 빈 문자열도 0으로 만들기 때문에 raw 입력에 숫자가 있는지 함께 확인한다.
+function isShippingFeeInput(rawInput: string) {
+  const digits = rawInput.replace(/[^\d]/g, "");
+
+  return digits !== "" && Number(digits) % 100 === 0;
 }
 
 // 0원은 오픈 이벤트 무료 분철(운영진 발행) 슬롯으로 허용한다 (서버 BCH-027 과 동일 규칙).
@@ -191,7 +195,10 @@ function getStoreShippingFee(
     name.toUpperCase().includes(store),
   );
 
-  return shippingName ? parsePriceInput(shippingPrices[shippingName] ?? "") : 0;
+  // 미선택(undefined)과 0원(무료 배송)을 구분해야 0원이 페이로드에서 탈락하지 않는다.
+  return shippingName
+    ? parsePriceInput(shippingPrices[shippingName] ?? "")
+    : undefined;
 }
 
 function getUploadShippingOptionName(name: string) {
@@ -773,8 +780,7 @@ export function UploadProductForm({
 
     if (
       selectedShipping.some(
-        (option) =>
-          !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
+        (option) => !isShippingFeeInput(shippingPrices[option] ?? ""),
       )
     ) {
       return "배송비를 100원 단위로 입력해 주세요.";
@@ -1650,8 +1656,7 @@ export function UploadProductForm({
       (member) => !isMemberMinimumPriceAmount(member.price),
     );
     const hasInvalidShippingAmount = selectedShipping.some(
-      (option) =>
-        !isHundredWonAmount(parsePriceInput(shippingPrices[option] ?? "")),
+      (option) => !isShippingFeeInput(shippingPrices[option] ?? ""),
     );
     let storedPhotoUrls: string[];
 
@@ -1858,16 +1863,20 @@ export function UploadProductForm({
             accessToken,
             {
               buncheolMembers: apiMembers,
-              cuShippingFee:
-                getStoreShippingFee(selectedShipping, shippingPrices, "CU") ||
-                undefined,
+              cuShippingFee: getStoreShippingFee(
+                selectedShipping,
+                shippingPrices,
+                "CU",
+              ),
               deadline: deadlineDate.toISOString(),
               description: product.description || undefined,
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
-              gs25ShippingFee:
-                getStoreShippingFee(selectedShipping, shippingPrices, "GS") ||
-                undefined,
+              gs25ShippingFee: getStoreShippingFee(
+                selectedShipping,
+                shippingPrices,
+                "GS",
+              ),
               purchaseSite: purchaseSource.trim(),
               thumbnailIndex: coverPhotoIndex,
               title: title.trim(),

@@ -3497,6 +3497,12 @@ function formatWonAmount(amount: number) {
   return amount > 0 ? `${amount.toLocaleString("ko-KR")}원` : "-";
 }
 
+// 배송비는 0원(무료 배송)도 유효한 값이라 "-" 로 표기하지 않는다. 수정 화면이 이 문자열을
+// 역파싱해 입력값을 복원하므로 "무료" 같은 워딩 대신 숫자 표기를 유지해야 한다.
+function formatShippingFeeAmount(amount: number) {
+  return `${amount.toLocaleString("ko-KR")}원`;
+}
+
 function getMemberLabel(memberNames: string[]) {
   const [firstMember] = memberNames;
 
@@ -3564,7 +3570,7 @@ export function getShippingMethodsFromOptions(
 ) {
   return shippingOptions.map((option) => ({
     name: getShippingMethodLabel(option.method),
-    price: formatWonAmount(option.fee),
+    price: formatShippingFeeAmount(option.fee),
   }));
 }
 
@@ -3574,11 +3580,17 @@ function getShippingMethodsFromDetail(detail: BuncheolDetail) {
   }
 
   return [
-    detail.gs25ShippingFee
-      ? { name: "GS25 반값택배", price: formatWonAmount(detail.gs25ShippingFee) }
+    detail.gs25ShippingFee != null
+      ? {
+          name: "GS25 반값택배",
+          price: formatShippingFeeAmount(detail.gs25ShippingFee),
+        }
       : null,
-    detail.cuShippingFee
-      ? { name: "CU 알뜰택배", price: formatWonAmount(detail.cuShippingFee) }
+    detail.cuShippingFee != null
+      ? {
+          name: "CU 알뜰택배",
+          price: formatShippingFeeAmount(detail.cuShippingFee),
+        }
       : null,
   ].filter(
     (method): method is { name: string; price: string } => method !== null,
