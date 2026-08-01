@@ -1,0 +1,149 @@
+name: Rollback Frontend
+
+# ECR 의 불변 태그(staging-sha-* / prod-sha-*)로 빌드 없이 즉시 되돌린다(1~2분).
+# 태그 조회·절차는 루트 docs/38. GitHub 불능 시 수동 롤백도 docs/38 참조.
+#
+# ⚠️ 실행 브랜치는 staging=dev, production=main — 첫 스텝의 가드가 이 짝을 강제한다
+#    (다른 브랜치에서 실행하면 박스를 건드리기 전에 즉시 실패한다).
+# ⚠️ 롤백은 "브랜치를 되돌리기 전까지의 임시 조치"다 — 롤백 후 그 브랜치에 push 가 들어오면
+#    새 배포가 롤백을 덮는다. revert 머지(또는 원인 수정)까지가 진짜 복구다.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '대상 환경'
+        type: choice
+        options:
+          - staging
+          - production
+        required: true
+      image_tag:
+        description: '되돌릴 불변 태그 (예: staging-sha-a1b2c3d4e5f6) — 환경 접두사가 대상 환경과 일치해야 한다'
+        required: true
+
+# 배포와 같은 그룹 + cancel-in-progress: true = 롤백이 진행 중 배포를 "선점"한다.
+# (false 면 장애 대응 도구가 문제를 일으킨 배포 뒤에 줄을 선다 — 서버 리뷰 #89 반영.
+#  롤백은 멱등한 pull+run 이라 끊긴 배포 위에 덮어써도 안전하다.)
+concurrency:
+  group: frontend-${{ inputs.environment }}-deploy
+  cancel-in-progress: true
+
+# 기본 무권한 — promote 잡만 OIDC 용 id-token 을 자체 선언한다
+permissions: {}
+
+env:
+  ECR_REGISTRY: 823164610944.dkr.ecr.ap-northeast-2.amazonaws.com
+  IMAGE_REPO: bce-frontend
+
+jobs:
+  rollback:
+    runs-on:
+      - self-hosted
+      - ${{ inputs.environment }}
+    timeout-minutes: 10
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      TARGET_ENV: ${{ inputs.environment }}
+    steps:
+      - name: Guard — 환경·브랜치·태그 검증 (박스를 건드리기 전에 fail-fast)
+        # OIDC 실패는 promote(별칭 재지정)에서 — 즉 박스를 이미 되돌린 뒤에 — 터진다.
+        # 그 반쪽 롤백을 만들지 않도록 허용 짝(staging=dev / production=main)을
+        # 첫 스텝에서 강제한다 (서버 리뷰 재검토 반영).
+        run: |
+          case "${TARGET_ENV}:${GITHUB_REF_NAME}" in
+            staging:dev|production:main) ;;
+            *) echo "::error::환경·브랜치 불일치 — staging 은 dev, production 은 main 브랜치에서 실행해야 한다 (현재: env=$TARGET_ENV, ref=$GITHUB_REF_NAME)"; exit 1 ;;
+          esac
+          # 불변 태그 정확 일치 + 환경 접두사 검증 — prod 박스에 staging 이미지를 올리는
+          # 실수, 이동 별칭 입력(=최신 재배포), 경로 오염 문자를 모두 차단 (리뷰 반영)
+          if ! echo "$IMAGE_TAG" | grep -qE '^(staging|prod)-sha-[0-9a-f]{12}$'; then
+            echo "::error::불변 태그((staging|prod)-sha-<12자리 hex>)만 허용: $IMAGE_TAG"; exit 1
+          fi
+          case "${IMAGE_TAG}:${TARGET_ENV}" in
+            staging-sha-*:staging|prod-sha-*:production) ;;
+            *) echo "::error::태그 접두사와 대상 환경($TARGET_ENV) 불일치: $IMAGE_TAG"; exit 1 ;;
+          esac
+
+      - name: Pull target image and swap container
+        run: |
+          set -e
+          IMAGE="${ECR_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
+          echo "Rolling back to ${IMAGE}"
+
+          # ECR/네트워크 장애 시에도 롤백이 돌아야 한다 — 로컬에 이미지가 있으면 pull 실패를
+          # 허용한다(불변 태그라 로컬 == 원격 보장, 서버 4차 리뷰 반영)
+          if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            timeout -k 30s 5m docker pull "$IMAGE" \
+              || echo "::warning::pull 실패 — 로컬 캐시 이미지로 진행 (불변 태그라 동일 이미지)"
+          else
+            timeout -k 30s 5m docker pull "$IMAGE"
+          fi
+
+          docker rm -f buncheoleasy-frontend 2>/dev/null || true
+          # staging 만 런타임 변수(.env.production)를 쓴다 — 배포 워크플로와 동일 조건
+          ENV_FILE_ARGS=""
+          if [ "$TARGET_ENV" = "staging" ]; then
+            ENV_FILE_ARGS="--env-file /home/ubuntu/buncheol-easy-client/.env.production"
+          fi
+          docker run -d \
+            --name buncheoleasy-frontend \
+            --restart unless-stopped \
+            -p 127.0.0.1:3000:3000 \
+            $ENV_FILE_ARGS \
+            "$IMAGE"
+
+          echo "Waiting for frontend..."
+          sleep 3
+          curl -fsS -I http://127.0.0.1:3000 > /dev/null && echo "Frontend is up — rollback complete"
+
+      - name: Post-mortem snapshot
+        # 롤백은 이미 장애 상황 — 실패·취소 시 진단 스냅샷이 더 절실하다 (서버 리뷰 #89 반영)
+        if: failure() || cancelled()
+        run: |
+          free -h || true
+          docker ps -a --filter name=buncheoleasy-frontend || true
+          docker logs buncheoleasy-frontend --tail=100 || true
+
+  promote:
+    # 롤백 성공 시 별칭도 롤백 대상으로 재지정 — "별칭 = 지금 떠 있는 것" 불변식 유지
+    # (서버 리뷰 #89 반영). 재빌드 없이 ECR 매니페스트 재태깅만 한다.
+    needs: rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      TARGET_ENV: ${{ inputs.environment }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::823164610944:role/bce-gha-ecr-push
+          aws-region: ap-northeast-2
+
+      - name: Move alias to rollback target
+        run: |
+          set -e
+          alias=$([ "$TARGET_ENV" = "production" ] && echo prod || echo staging)
+          # accepted-media-types 명시 — buildx 는 OCI 매니페스트로 push 하므로 요청·회신 포맷을
+          # 고정해 put-image 왕복을 결정론적으로 만든다 (서버 3차 리뷰 반영)
+          resp=$(aws ecr batch-get-image --repository-name "$IMAGE_REPO" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --accepted-media-types "application/vnd.oci.image.manifest.v1+json" "application/vnd.docker.distribution.manifest.v2+json" \
+            --output json)
+          manifest=$(echo "$resp" | jq -r '.images[0].imageManifest // empty')
+          mt=$(echo "$resp" | jq -r '.images[0].imageManifestMediaType // empty')
+          # 태그 미존재 시 batch-get-image 는 exit 0 + failures 에만 담긴다 — 명시적 가드 (리뷰 반영)
+          [ -n "$manifest" ] || { echo "::error::ECR 에 태그 없음: $IMAGE_TAG"; exit 1; }
+          # mediaType 미전달 시 OCI 매니페스트에서 UnsupportedImageTypeException 가능 (리뷰 반영)
+          args=(--repository-name "$IMAGE_REPO" --image-tag "$alias" --image-manifest "$manifest")
+          [ -n "$mt" ] && args+=(--image-manifest-media-type "$mt")
+          out=$(aws ecr put-image "${args[@]}" 2>&1) \
+            || { echo "$out" | grep -q ImageAlreadyExistsException || { echo "$out"; exit 1; }; }
+          echo "alias '$alias' -> ${IMAGE_TAG}"
+
+      - name: Warn on stale alias
+        # rollback 성공 + promote 실패 = 박스는 롤백됐는데 별칭은 깨진 이미지 (서버 4차 리뷰 반영)
+        if: failure()
+        run: echo "::error::별칭 재지정 실패 — 박스는 ${IMAGE_TAG} 로 롤백됐으나 별칭은 이전 이미지를 가리킨다. 이 잡을 재실행해 별칭을 맞출 것 (docs/38 §5)."
