@@ -45,6 +45,7 @@ import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
   getAvailableConvenienceStoreTypes,
   getConvenienceStoreLabel,
+  getConvenienceStoreTypeFromShippingName,
   getDefaultDeliveryAddressesByType,
   getDeliveryAddressDisplayAlias,
   getDeliveryAddressDisplayBranchName,
@@ -1065,7 +1066,19 @@ export function ProductDetail({
     (product.isApiProduct
       ? []
       : [{ name: product.courier, price: "판매자 안내" }]);
-  const estimatedShippingFee = priceToNumber(shippingMethods[0]?.price ?? "");
+  // 배송비 0원 옵션이 허용되면서 옵션별 요금 차이(예: GS25 0원 / CU 3,000원)가 실제로 생길 수 있다.
+  // 첫 옵션 고정 참조는 선택한 편의점과 요금이 어긋나므로, 선택한 수령 편의점(storeType)의 옵션
+  // 요금을 쓰고 주소 미선택 시에만 첫 옵션으로 폴백한다.
+  const checkoutStoreShippingMethod = checkoutDeliveryAddress
+    ? shippingMethods.find(
+        (method) =>
+          getConvenienceStoreTypeFromShippingName(method.name) ===
+          checkoutDeliveryAddress.storeType,
+      )
+    : undefined;
+  const estimatedShippingFee = priceToNumber(
+    (checkoutStoreShippingMethod ?? shippingMethods[0])?.price ?? "",
+  );
   const estimatedShippingAmount = activeBidCount > 0 ? estimatedShippingFee : 0;
   const estimatedCheckoutTotal = totalBidAmount + estimatedShippingAmount;
   const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
@@ -1231,7 +1244,7 @@ export function ProductDetail({
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
   const canDeleteProduct = product.isApiProduct && isHostedProduct;
-  // 오픈 이벤트 운영 정책: 분철당 참여 1건(멤버 1명). 상세 응답의 participatedByMe/내 참여 목록은
+  // 단일 선택 정책: 분철당 참여 1건(멤버 1명). 상세 응답의 participatedByMe/내 참여 목록은
   // 활성(입금확인중·확정) 참여만 표시하므로, 취소·만료된 참여는 재참여를 막지 않는다. 서버도 동일하게 거부한다.
   const hasMyActiveParticipation = auctionOptions.some((option) =>
     isOptionParticipatedByMe(option, myBids[option.id]),

@@ -195,10 +195,12 @@ function getStoreShippingFee(
     name.toUpperCase().includes(store),
   );
 
+  const rawPrice = shippingName ? (shippingPrices[shippingName] ?? "") : "";
+
   // 미선택(undefined)과 0원(무료 배송)을 구분해야 0원이 페이로드에서 탈락하지 않는다.
-  return shippingName
-    ? parsePriceInput(shippingPrices[shippingName] ?? "")
-    : undefined;
+  // "빈 입력 = 무효" 규칙은 제출 가드와 별개로 여기서도 보장해, 가드가 느슨해져도
+  // 빈 입력이 조용히 무료 배송으로 전송되지 않게 한다.
+  return isShippingFeeInput(rawPrice) ? parsePriceInput(rawPrice) : undefined;
 }
 
 function getUploadShippingOptionName(name: string) {
