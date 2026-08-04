@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { LoginExperience } from "@/components/LoginExperience";
 import {
   getOptionalSafeInternalHref,
@@ -6,6 +7,11 @@ import {
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+export const metadata: Metadata = {
+  title: "로그인",
+  robots: { index: false, follow: false },
+};
 
 type LoginPageProps = {
   searchParams: Promise<{

@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { AddressManagementExperience } from "@/components/AddressManagementExperience";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+export const metadata: Metadata = {
+  title: "배송지 관리",
+  robots: { index: false, follow: false },
+};
 
 type AddressManagementPageProps = {
   searchParams: Promise<{

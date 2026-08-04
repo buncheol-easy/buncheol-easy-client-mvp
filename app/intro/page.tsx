@@ -3,9 +3,10 @@ import { IntroContent } from "@/components/IntroContent";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const metadata: Metadata = {
-  title: "분철이지 | 서비스 소개",
+  title: "서비스 소개 — 포카 분철 참여부터 입금 확인까지",
   description:
-    "최애 굿즈 분철을 찾고, 참여하고, 입금 확인까지 이어가는 모바일 서비스 소개 페이지입니다.",
+    "그룹·멤버별로 나눠 사는 포토카드 분철, 어떻게 찾고 참여하고 안전하게 받는지 분철이지의 서비스 흐름을 한눈에 소개합니다.",
+  alternates: { canonical: "/intro" },
 };
 
 export const viewport = whiteChromeViewport;

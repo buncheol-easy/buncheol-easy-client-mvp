@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { UploadProductForm } from "@/components/UploadProductForm";
 import { blackChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = blackChromeViewport;
+
+export const metadata: Metadata = {
+  title: "분철 개최",
+  robots: { index: false, follow: false },
+};
 
 type UploadPageProps = {
   searchParams: Promise<{

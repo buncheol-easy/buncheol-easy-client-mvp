@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import { PolicyPageContent } from "@/components/PolicyPageContent";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+export const metadata: Metadata = {
+  title: "취소·환불 정책",
+  description: "분철 참여 자동 취소와 청약철회·환불 처리 기준을 안내합니다.",
+  alternates: { canonical: "/refund-policy" },
+};
 
 export default function RefundPolicyPage() {
   return (

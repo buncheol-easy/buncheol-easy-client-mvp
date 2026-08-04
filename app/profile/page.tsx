@@ -1,8 +1,14 @@
+import type { Metadata } from "next";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { ProfileContent } from "@/components/ProfileContent";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+export const metadata: Metadata = {
+  title: "마이페이지",
+  robots: { index: false, follow: false },
+};
 
 type ProfilePageProps = {
   searchParams: Promise<{

@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { ApiProductDetail } from "@/components/ApiProductDetail";
+import { JsonLd } from "@/components/JsonLd";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
 import { requestBuncheolDetail } from "@/lib/auth-api";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+// generateMetadata 와 페이지 본문(JSON-LD)이 같은 요청 안에서 상세 조회를 공유한다.
+const getBuncheolDetailCached = cache((id: string) =>
+  requestBuncheolDetail(undefined, id),
+);
 
 export async function generateMetadata({
   params,
@@ -12,11 +19,12 @@ export async function generateMetadata({
   const { id } = await params;
 
   if (id.startsWith("uploaded-")) {
-    return {};
+    // 클라이언트 임시 저장 분철 — 백엔드 레코드가 없어 색인 대상이 아니다.
+    return { robots: { index: false, follow: false } };
   }
 
   try {
-    const detail = await requestBuncheolDetail(undefined, id);
+    const detail = await getBuncheolDetailCached(id);
     const title = `${[detail.groupName, detail.title]
       .map((value) => value.trim())
       .filter(Boolean)
@@ -31,11 +39,13 @@ export async function generateMetadata({
     const imageUrl = detail.thumbnailUrl;
 
     return {
-      title: `${title} | 분철.`,
+      title,
       description,
+      alternates: { canonical: `/products/${id}` },
       openGraph: {
         title,
         description,
+        url: `/products/${id}`,
         ...(imageUrl ? { images: [imageUrl] } : {}),
       },
     };
@@ -86,19 +96,54 @@ export default async function ProductDetailPage({
     );
   }
 
+  // 빵부스러기 구조화 데이터 — 상세 조회 실패(삭제·비공개 등) 시 생략한다.
+  let breadcrumbJsonLd: Record<string, unknown> | null = null;
+
+  try {
+    const detail = await getBuncheolDetailCached(id);
+    const detailName = `${[detail.groupName, detail.title]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join(" ")} 분철`;
+
+    breadcrumbJsonLd = {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          position: 1,
+          name: "홈",
+          item: "https://buncheoleasy.com/",
+        },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: detailName,
+          item: `https://buncheoleasy.com/products/${id}`,
+        },
+      ],
+    };
+  } catch {
+    breadcrumbJsonLd = null;
+  }
+
   return (
-    <ApiProductDetail
-      id={id}
-      isHostedView={isHostedView}
-      returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
-      returnSource={
-        returnSource === "home" ||
-        returnSource === "bids" ||
-        returnSource === "favorites" ||
-        returnSource === "upload"
-          ? returnSource
-          : undefined
-      }
-    />
+    <>
+      {breadcrumbJsonLd && <JsonLd data={breadcrumbJsonLd} />}
+      <ApiProductDetail
+        id={id}
+        isHostedView={isHostedView}
+        returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
+        returnSource={
+          returnSource === "home" ||
+          returnSource === "bids" ||
+          returnSource === "favorites" ||
+          returnSource === "upload"
+            ? returnSource
+            : undefined
+        }
+      />
+    </>
   );
 }

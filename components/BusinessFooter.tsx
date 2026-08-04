@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 const policyLinks = [
+  { href: "/intro", label: "서비스 소개" },
   { href: "/terms", label: "이용약관" },
   { href: "/privacy", label: "개인정보처리방침", strong: true },
   { href: "http://pf.kakao.com/_LqxnGX", label: "고객센터", external: true },
