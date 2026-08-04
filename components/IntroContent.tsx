@@ -1715,6 +1715,12 @@ export function IntroContent() {
                   찾고, 참여하고, 결제 확인까지. 분철에 필요한 흐름을 한
                   화면 안에서 이어가요.
                 </p>
+                <p className="mt-4 max-w-[21rem] rounded-[1.1rem] bg-black/[0.04] px-4 py-3 text-[13px] font-medium leading-5 tracking-[-0.03em] text-black/62">
+                  분철이란? 앨범·굿즈에 들어 있는 포토카드 등 구성품을 여러
+                  팬이 멤버별로 나눠 구매하는 거래 방식이에요. 분철이지에서는
+                  진행 중인 분철을 찾아 원하는 멤버로 참여하고, 입금 확인부터
+                  편의점 택배 수령까지 한 화면에서 관리할 수 있어요.
+                </p>
               </Reveal>
 
               <Reveal className="relative mt-10" delay={120} direction="scale">
