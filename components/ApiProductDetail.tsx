@@ -29,6 +29,9 @@ import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 type ApiProductDetailProps = {
   id: string;
+  // 서버에서 익명 조회한 상세 — 초기 HTML 에 상품 내용을 싣기 위한 값.
+  // 마운트 후 기존 useEffect 가 토큰 포함 조회로 항상 덮어쓴다.
+  initialProduct?: ProductDetailItem | null;
   isHostedView?: boolean;
   returnQuery?: string;
   returnSource?: "home" | "bids" | "favorites" | "upload";
@@ -151,6 +154,7 @@ function toPublicPreviewProduct(
 
 export function ApiProductDetail({
   id,
+  initialProduct = null,
   isHostedView = false,
   returnQuery,
   returnSource,
@@ -162,8 +166,12 @@ export function ApiProductDetail({
     readAuthState,
     getInitialAuthState,
   );
-  const [product, setProduct] = useState<ProductDetailItem | null>(null);
-  const [message, setMessage] = useState("분철 정보를 불러오고 있습니다.");
+  const [product, setProduct] = useState<ProductDetailItem | null>(
+    initialProduct,
+  );
+  const [message, setMessage] = useState(
+    initialProduct ? "" : "분철 정보를 불러오고 있습니다.",
+  );
   const [isShellEntered, setIsShellEntered] = useState(false);
   // 로딩 패널의 슬라이드 인이 끝난 뒤에만 ProductDetail로 교체해,
   // 전환 도중 패널이 최종 위치로 스냅하는 점프를 막는다.

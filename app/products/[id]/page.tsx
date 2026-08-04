@@ -3,7 +3,8 @@ import { cache } from "react";
 import { ApiProductDetail } from "@/components/ApiProductDetail";
 import { JsonLd } from "@/components/JsonLd";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
-import { requestBuncheolDetail } from "@/lib/auth-api";
+import { requestBuncheolDetail, toProductDetailItem } from "@/lib/auth-api";
+import type { ProductDetailItem } from "@/lib/mock-products";
 import { SITE_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
@@ -104,9 +105,12 @@ export default async function ProductDetailPage({
 
   // 빵부스러기 구조화 데이터 — 상세 조회 실패(삭제·비공개 등) 시 생략한다.
   let breadcrumbJsonLd: Record<string, unknown> | null = null;
+  // 익명 조회 상세를 초기 HTML 에 실어 크롤러·첫 페인트가 실제 내용을 보게 한다.
+  let initialProduct: ProductDetailItem | null = null;
 
   try {
     const detail = await getBuncheolDetailCached(id);
+    initialProduct = toProductDetailItem(detail);
     const detailName = `${[detail.groupName, detail.title]
       .map((value) => value.trim())
       .filter(Boolean)
@@ -140,6 +144,7 @@ export default async function ProductDetailPage({
       {breadcrumbJsonLd && <JsonLd data={breadcrumbJsonLd} />}
       <ApiProductDetail
         id={id}
+        initialProduct={initialProduct}
         isHostedView={isHostedView}
         returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
         returnSource={
