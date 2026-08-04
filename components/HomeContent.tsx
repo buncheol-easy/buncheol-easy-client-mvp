@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type UIEvent,
 } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -75,23 +76,50 @@ type HomeBanner = {
   label: string;
 };
 
+// 폰 프레임(≈398px)은 1120px 이상에서만 걸린다(globals.css .desktop-web-shell).
+// 그 아래(특히 hover 미디어 조건이 안 걸리는 태블릿)는 실제 뷰포트 폭으로 요청해야
+// 업스케일 흐림이 없다. px-4 패딩만큼 빼서 정확한 폭을 준다.
+const HOME_BANNER_IMAGE_SIZES =
+  "(min-width: 1120px) 398px, calc(100vw - 2rem)";
+
+// next.config.ts images.remotePatterns 와 같은 목록. API 가 이 밖의 호스트를
+// 내려주면 next/image 로더가 throw(개발)하거나 400(프로덕션)이 나므로,
+// 미등록 호스트는 최적화를 끄고 원본을 그대로 그린다.
+const OPTIMIZED_BANNER_HOSTS = new Set([
+  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
+]);
+
+function isOptimizableBannerSrc(src: string) {
+  if (src.startsWith("/")) {
+    return true;
+  }
+
+  try {
+    return OPTIMIZED_BANNER_HOSTS.has(new URL(src).hostname);
+  } catch {
+    return false;
+  }
+}
+
 const HOME_BANNERS: HomeBanner[] = [
   {
     href: "/board?from=home",
     imageAlt: "분철이지 사용법 한눈에 보기",
-    imageSrc: "/banners/buncheol-guide.png?v=2",
+    imageSrc: "/banners/buncheol-guide.png",
     label: "분철이지 사용법",
   },
   {
     href: "/board/transfer-payment?from=home",
     imageAlt: "분철이지 오픈 안내",
-    imageSrc: "/banners/buncheol-open.png?v=2",
+    imageSrc: "/banners/buncheol-open.png",
     label: "분철이지 오픈",
   },
   {
     href: "/board/closed-bid-status?from=home",
     imageAlt: "안전한 분철을 위한 안내",
-    imageSrc: "/banners/buncheol-safe.png?v=2",
+    imageSrc: "/banners/buncheol-safe.png",
     label: "안전한 분철 안내",
   },
 ];
@@ -795,22 +823,26 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 href={banner.href}
                 key={banner.href}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   alt=""
                   aria-hidden="true"
-                  className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl"
+                  className="scale-110 object-cover blur-xl"
                   draggable={false}
+                  fill
                   loading={index === 0 ? "eager" : "lazy"}
+                  sizes={HOME_BANNER_IMAGE_SIZES}
                   src={banner.imageSrc}
+                  unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
                 />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   alt={banner.imageAlt}
-                  className="relative h-full w-full object-contain"
+                  className="object-contain"
                   draggable={false}
-                  loading={index === 0 ? "eager" : "lazy"}
+                  fill
+                  priority={index === 0}
+                  sizes={HOME_BANNER_IMAGE_SIZES}
                   src={banner.imageSrc}
+                  unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
                 />
               </Link>
             ))}

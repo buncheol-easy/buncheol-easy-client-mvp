@@ -67,7 +67,12 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
           <img
             alt=""
             className="h-4 w-4 object-contain opacity-60"
+            decoding="async"
+            height={16}
+            loading="lazy"
+            referrerPolicy="no-referrer"
             src="https://img1.kbstar.com/img/escrow/escrowcmark.gif"
+            width={16}
           />
         </button>
       </div>
