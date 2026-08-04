@@ -17,14 +17,18 @@ export async function generateMetadata({
 
   try {
     const detail = await requestBuncheolDetail(undefined, id);
-    const title = `${detail.groupName} ${detail.title} 분철`;
+    const title = `${[detail.groupName, detail.title]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join(" ")} 분철`;
+    const trimmedDescription = detail.description?.trim() ?? "";
     const description =
-      detail.description?.trim().slice(0, 90) ||
-      `${detail.groupName} ${detail.title} 분철 — 멤버별 포토카드를 나눠 사고 모아 보세요.`;
-    const imageUrl =
-      detail.thumbnailUrl ??
-      detail.images.find((image) => image.thumbnail)?.url ??
-      detail.images[0]?.url;
+      (trimmedDescription.length > 90
+        ? `${trimmedDescription.slice(0, 90)}…`
+        : trimmedDescription) ||
+      `${title} — 멤버별 포토카드를 나눠 사고 모아 보세요.`;
+    // thumbnailUrl 은 파서가 thumbnail 플래그 → 첫 이미지 순으로 이미 보정해 내려준다.
+    const imageUrl = detail.thumbnailUrl;
 
     return {
       title: `${title} | 분철.`,

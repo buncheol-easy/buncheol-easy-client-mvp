@@ -1966,7 +1966,9 @@ export function BidHistoryContent({
       return;
     }
 
-    if (scrollContainerRef.current) {
+    // 직전 전환의 복원이 아직 안 끝났다면 컨테이너에는 이전 탭의 잔여 위치가
+    // 남아 있으므로 저장하지 않는다 — 저장값 오염 방지.
+    if (scrollContainerRef.current && pendingTabScrollModeRef.current === null) {
       tabScrollTopRef.current[mode] = scrollContainerRef.current.scrollTop;
     }
 
@@ -2119,6 +2121,12 @@ export function BidHistoryContent({
   }
 
   useLayoutEffect(() => {
+    // 탭 전환 복원이 예약돼 있으면 양보한다 — 아래 탭별 복원 effect와 같은
+    // 조건에 반응하므로, 이 가드가 없으면 두 rAF가 등록 순서로만 승부가 갈린다.
+    if (pendingTabScrollModeRef.current !== null) {
+      return;
+    }
+
     const storedScrollTop = window.sessionStorage.getItem(
       BID_HISTORY_SCROLL_TOP_KEY,
     );

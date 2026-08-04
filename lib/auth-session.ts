@@ -94,5 +94,15 @@ export async function getFreshAccessToken(options?: {
       });
   }
 
-  return tokenReissuePromise;
+  const reissuedToken = await tokenReissuePromise;
+
+  if (!reissuedToken) {
+    return null;
+  }
+
+  // 재발급 프로미스는 호출자 간 공유되므로, 보류 토큰 반환 정책은
+  // 프로미스를 만든 쪽이 아니라 각 호출자의 옵션으로 다시 판정한다.
+  return readAuthState().isLoggedIn || options?.allowPendingProfile
+    ? reissuedToken
+    : null;
 }
