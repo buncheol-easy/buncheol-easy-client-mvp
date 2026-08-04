@@ -76,6 +76,9 @@ function sanitizeAccountNumber(value: string) {
   return value.replace(/[^\d-]/g, "");
 }
 
+// 하이픈은 숫자 사이에만 허용 — 선두/말미 하이픈과 연속 하이픈(--)을 막는다.
+const accountNumberPattern = /^\d+(-\d+)*$/;
+
 function getSettlementAccountState(profile: UserProfile | null) {
   const bankAccount = profile?.bankAccount;
 
@@ -301,14 +304,16 @@ export function ProfileContent({
     settlementAccount.bankName.trim().length > 0 &&
     settlementAccount.accountNumber.trim().length > 0 &&
     settlementAccount.accountHolder.trim().length > 0;
+  const isSettlementAccountNumberValid = accountNumberPattern.test(
+    settlementAccountForm.accountNumber.trim(),
+  );
   const canSaveSettlementAccount =
     settlementAccountForm.bankName.trim().length > 0 &&
     settlementAccountForm.bankName.trim().length <= 50 &&
-    settlementAccountForm.accountNumber.trim().length > 0 &&
+    isSettlementAccountNumberValid &&
     settlementAccountForm.accountNumber.replace(/\D/g, "").length <= 50 &&
     settlementAccountForm.accountHolder.trim().length > 0 &&
-    settlementAccountForm.accountHolder.trim().length <= 50 &&
-    settlementAccountForm.accountNumber.replace(/\D/g, "").length > 0;
+    settlementAccountForm.accountHolder.trim().length <= 50;
 
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,
@@ -859,6 +864,13 @@ export function ProfileContent({
                   />
                 </label>
               </div>
+
+              {settlementAccountForm.accountNumber.trim().length > 0 &&
+              !isSettlementAccountNumberValid ? (
+                <p className="mt-2 px-1 text-[12px] font-medium text-[#D32F2F]">
+                  하이픈(-)은 숫자 사이에만 넣을 수 있어요.
+                </p>
+              ) : null}
 
               {settlementAccountReturnHref ? (
                 <p className="mt-2 px-1 text-[12px] font-medium text-black/40">
