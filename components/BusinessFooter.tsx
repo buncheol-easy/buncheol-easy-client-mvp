@@ -70,6 +70,7 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
             decoding="async"
             height={16}
             loading="lazy"
+            referrerPolicy="no-referrer"
             src="https://img1.kbstar.com/img/escrow/escrowcmark.gif"
             width={16}
           />
