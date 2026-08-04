@@ -146,6 +146,8 @@ export function SlidingTabs<Value extends string>({
   );
 }
 
+// 필터 칩은 서로 떨어진 버튼이라 pill이 칩 사이를 날아다니는 모션이 어색하다.
+// 슬라이딩 없이 즉시 전환한다 — pill 은 value 변경 시 레이아웃 이펙트가 스냅 이동.
 export function SlidingFilterChips<Value extends string>({
   onChange,
   tabs,
@@ -155,7 +157,7 @@ export function SlidingFilterChips<Value extends string>({
   tabs: readonly SlidingTab<Value>[];
   value: Value;
 }) {
-  const { containerRef, pillRef, selectTab, setTabRef } = useSlidingPill(value);
+  const { containerRef, pillRef, setTabRef } = useSlidingPill(value);
 
   return (
     <div
@@ -164,7 +166,7 @@ export function SlidingFilterChips<Value extends string>({
     >
       <span
         aria-hidden="true"
-        className={`left-0 top-0 h-8 rounded-full border border-[#CFE86B] bg-[#E4F6A5] shadow-[0_8px_18px_rgba(215,255,95,0.22)] ${pillTransitionClassName}`}
+        className="pointer-events-none absolute left-0 top-0 h-8 w-0 rounded-full border border-[#CFE86B] bg-[#E4F6A5] shadow-[0_8px_18px_rgba(215,255,95,0.22)]"
         ref={pillRef}
       />
       {tabs.map((tab) => {
@@ -173,14 +175,13 @@ export function SlidingFilterChips<Value extends string>({
         return (
           <button
             aria-pressed={isActive}
-            className={`h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${tabTransitionClassName} ${
+            className={`relative z-[1] h-8 w-[76px] shrink-0 rounded-full border text-[13px] font-semibold tracking-[-0.04em] ${
               isActive
                 ? "border-transparent text-black"
                 : "border-black/10 bg-[#f7f7f7] text-black/45"
             }`}
             key={tab.value}
             onClick={() => {
-              selectTab(tab.value);
               onChange(tab.value);
             }}
             ref={(element) => {

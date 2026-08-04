@@ -1164,6 +1164,12 @@ export function BidHistoryContent({
 
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
   const [mode, setMode] = useState<BidHistoryMode>("joined");
+  // 참여↔개최 탭이 스크롤 컨테이너를 공유하므로 탭별 위치를 따로 기억한다.
+  const tabScrollTopRef = useRef<Record<BidHistoryMode, number>>({
+    hosted: 0,
+    joined: 0,
+  });
+  const pendingTabScrollModeRef = useRef<BidHistoryMode | null>(null);
   const [filter, setFilter] = useState<BidHistoryFilter>("all");
   const [hostedFilter, setHostedFilter] =
     useState<HostedHistoryFilter>("all");
@@ -1955,6 +1961,19 @@ export function BidHistoryContent({
     }, 280);
   }
 
+  function changeMode(nextMode: BidHistoryMode) {
+    if (nextMode === mode) {
+      return;
+    }
+
+    if (scrollContainerRef.current) {
+      tabScrollTopRef.current[mode] = scrollContainerRef.current.scrollTop;
+    }
+
+    pendingTabScrollModeRef.current = nextMode;
+    setMode(nextMode);
+  }
+
   function rememberScrollPosition() {
     if (!scrollContainerRef.current) {
       return;
@@ -2140,6 +2159,39 @@ export function BidHistoryContent({
     skipEnterAnimation,
   ]);
 
+  // 탭 전환 직후, 목록이 그려진 다음 프레임에 기억해 둔 탭별 스크롤을 복원한다.
+  useLayoutEffect(() => {
+    if (pendingTabScrollModeRef.current !== mode) {
+      return;
+    }
+
+    if (mode === "joined" && isBidRecordsLoading) {
+      return;
+    }
+
+    if (mode === "hosted" && isHostedProductsLoading) {
+      return;
+    }
+
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = tabScrollTopRef.current[mode];
+      }
+
+      pendingTabScrollModeRef.current = null;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(restoreFrame);
+    };
+  }, [
+    isBidRecordsLoading,
+    isHostedProductsLoading,
+    mode,
+    records.length,
+    hostedRecords.length,
+  ]);
+
   return (
     <div
       className={`relative flex min-h-0 flex-1 flex-col overflow-hidden ${
@@ -2160,7 +2212,7 @@ export function BidHistoryContent({
       <div className="shrink-0 px-4 pb-4">
         <div className="mb-3">
           <SlidingTabs
-            onChange={setMode}
+            onChange={changeMode}
             tabs={[
               { label: "참여한 분철", value: "joined" },
               { label: "개최한 분철", value: "hosted" },
@@ -2197,9 +2249,10 @@ export function BidHistoryContent({
         className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
         ref={scrollContainerRef}
       >
+        {/* 필터 칩 전환은 모션 없이 즉시 반영 — key 는 참여↔개최 전환에만 걸어 재생한다. */}
         <div
           className={shouldSkipEnterAnimation ? "" : "tab-content-enter"}
-          key={`${mode}-${filter}-${hostedFilter}`}
+          key={mode}
         >
           {mode === "joined" ? (
             <div className="space-y-3">
