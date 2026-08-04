@@ -9,7 +9,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { BackIcon, CloseIcon } from "@/components/icons";
+import { BackIcon, CloseIcon, SearchIcon } from "@/components/icons";
+import { CvsStoreSearchSheet } from "@/components/CvsStoreSearchSheet";
 import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
   ApiRequestError,
@@ -17,6 +18,7 @@ import {
   deleteShippingAddress,
   requestShippingAddresses,
   updateShippingAddress,
+  type CvsStore,
 } from "@/lib/auth-api";
 import {
   getInitialAuthState,
@@ -34,8 +36,6 @@ import {
   writeDeliveryAddressState,
 } from "@/lib/delivery-address-store";
 import {
-  convenienceStoreTypes,
-  convenienceStoreTypeLabels,
   getDeliveryAddressDisplayAlias,
   getDeliveryAddressDisplayBranchName,
   getConvenienceStoreLabel,
@@ -108,6 +108,8 @@ export function AddressManagementContent({
     useState<ConvenienceStoreType>("gs25");
   const [newAddressAlias, setNewAddressAlias] = useState("");
   const [newAddressBranchName, setNewAddressBranchName] = useState("");
+  const [newAddressStoreAddress, setNewAddressStoreAddress] = useState("");
+  const [isStoreSearchOpen, setIsStoreSearchOpen] = useState(false);
   const { addresses: deliveryAddresses, defaultAddressIds } = addressState;
   const canManageAddresses =
     authState.isLoggedIn && Boolean(authState.accessToken);
@@ -163,10 +165,21 @@ export function AddressManagementContent({
     setNewAddressStoreType("gs25");
     setNewAddressAlias("");
     setNewAddressBranchName("");
+    setNewAddressStoreAddress("");
+  }, []);
+
+  // 접수처 검색 시트에서 지점을 고르면 브랜드·지점명이 함께 확정된다.
+  const handleStoreSelected = useCallback((store: CvsStore) => {
+    setNewAddressStoreType(store.brand === "CU" ? "cu" : "gs25");
+    setNewAddressBranchName(store.name);
+    setNewAddressStoreAddress(store.address);
+    setHasTouchedAddressForm(true);
+    setFormErrorMessage("");
   }, []);
 
   const closeForm = useCallback(() => {
     setIsFormOpen(false);
+    setIsStoreSearchOpen(false);
     setFormErrorMessage("");
     setHasTouchedAddressForm(false);
     resetDraft();
@@ -313,15 +326,14 @@ export function AddressManagementContent({
     setAddressMessage("");
     setFormErrorMessage("");
 
-    if (!strippedBranchName) {
-      setFormErrorMessage("지점명을 입력해 주세요. (예: 강남점)");
-      return;
-    }
+    // "CU"처럼 지점명이 브랜드 라벨과 같으면 strip 결과가 비므로 원문으로 되돌린다.
+    const normalizedBranchName = strippedBranchName || trimmedBranchName;
 
     const addressDraft = {
       storeType: newAddressStoreType,
       alias: newAddressAlias.trim() || undefined,
-      branchName: `${getConvenienceStoreLabel(newAddressStoreType)} ${strippedBranchName}`,
+      branchName: `${getConvenienceStoreLabel(newAddressStoreType)} ${normalizedBranchName}`,
+      // 서버 배송지에는 주소 컬럼이 없어 저장되지 않는다 — 폼 표시용으로만 쓴다.
       address: "",
     };
     const accessToken = authState.accessToken;
@@ -658,30 +670,51 @@ export function AddressManagementContent({
                       닫기
                     </button>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 rounded-[0.85rem] bg-white p-1 ring-1 ring-black/10">
-                    {convenienceStoreTypes.map((storeType) => (
-                      <button
-                        className={`h-10 rounded-[0.7rem] text-[13px] font-semibold transition-colors duration-300 ease-out ${
-                          newAddressStoreType === storeType
-                            ? "bg-[#DDE7B8] text-black"
-                            : "text-black/45"
-                        }`}
-                        key={storeType}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                        }}
-                        disabled={!isFormOpen}
-                        onClick={() => {
-                          setNewAddressStoreType(storeType);
-                          setHasTouchedAddressForm(true);
-                          setFormErrorMessage("");
-                        }}
-                        type="button"
-                      >
-                        {convenienceStoreTypeLabels[storeType]}
-                      </button>
-                    ))}
-                  </div>
+                  {newAddressBranchName ? (
+                    <div className="mt-3 rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
+                              {getConvenienceStoreLabel(newAddressStoreType)}
+                            </span>
+                            <p className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                              {newAddressBranchName}
+                            </p>
+                          </div>
+                          {newAddressStoreAddress ? (
+                            <p className="mt-1.5 truncate text-[12px] font-medium text-black/40">
+                              {newAddressStoreAddress}
+                            </p>
+                          ) : null}
+                        </div>
+                        <button
+                          className="shrink-0 rounded-full bg-[#f4f4f4] px-3 py-2 text-[12px] font-semibold text-black/55"
+                          disabled={!isFormOpen}
+                          onClick={() => {
+                            setHasTouchedAddressForm(true);
+                            setIsStoreSearchOpen(true);
+                          }}
+                          type="button"
+                        >
+                          다시 검색
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[0.85rem] bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
+                      disabled={!isFormOpen}
+                      onClick={() => {
+                        setHasTouchedAddressForm(true);
+                        setIsStoreSearchOpen(true);
+                      }}
+                      type="button"
+                    >
+                      <SearchIcon className="h-[18px] w-[18px] text-black/35" />
+                      지점 검색으로 선택
+                    </button>
+                  )}
                   <label className="mt-2.5 block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
                     <span className="text-[12px] font-semibold text-black/45">
                       별칭
@@ -696,22 +729,6 @@ export function AddressManagementContent({
                       }}
                       placeholder="집, 회사"
                       value={newAddressAlias}
-                    />
-                  </label>
-                  <label className="mt-2 block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
-                    <span className="text-[12px] font-semibold text-black/45">
-                      지점명
-                    </span>
-                    <input
-                      className="mt-1 h-8 w-full bg-transparent text-[14px] font-semibold outline-none placeholder:text-black/25"
-                      disabled={!isFormOpen}
-                      onChange={(event) => {
-                        setNewAddressBranchName(event.target.value);
-                        setHasTouchedAddressForm(true);
-                        setFormErrorMessage("");
-                      }}
-                      placeholder="강남점"
-                      value={newAddressBranchName}
                     />
                   </label>
                   <button
@@ -766,6 +783,13 @@ export function AddressManagementContent({
           </div>
         </section>
       </div>
+
+      {isStoreSearchOpen ? (
+        <CvsStoreSearchSheet
+          onClose={() => setIsStoreSearchOpen(false)}
+          onSelect={handleStoreSelected}
+        />
+      ) : null}
     </div>
   );
 }
