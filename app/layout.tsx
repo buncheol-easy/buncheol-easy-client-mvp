@@ -6,6 +6,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
+import { SITE_URL } from "@/lib/site";
 import { blackChromeViewport } from "@/lib/system-chrome";
 import { Suspense } from "react";
 import "./globals.css";
@@ -14,7 +15,7 @@ const siteDescription =
   "최애 포토카드, 멤버별로 나눠 사는 분철을 쉽고 안전하게. 분철이지에서 진행 중인 분철에 참여하고 입금 확인부터 편의점 택배 수령까지 한 화면에서 확인하세요.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://buncheoleasy.com"),
+  metadataBase: new URL(SITE_URL),
   applicationName: "분철이지",
   appleWebApp: {
     capable: true,
@@ -46,11 +47,11 @@ const organizationJsonLd = {
   "@graph": [
     {
       "@type": "Organization",
-      "@id": "https://buncheoleasy.com/#organization",
+      "@id": `${SITE_URL}/#organization`,
       name: "분철이지",
       alternateName: "Buncheol Easy",
-      url: "https://buncheoleasy.com/",
-      logo: "https://buncheoleasy.com/brand/logo-black.png",
+      url: `${SITE_URL}/`,
+      logo: `${SITE_URL}/brand/logo-black.png`,
       description:
         "K-POP 앨범·굿즈 분철(멤버별 나눔구매) 신청과 관리를 돕는 서비스. 분철이지는 통신판매 당사자로서 판매되는 분철 상품의 거래·청약철회·환불 책임을 직접 부담합니다.",
       taxID: "731-62-00820",
@@ -73,15 +74,15 @@ const organizationJsonLd = {
         areaServed: "KR",
         availableLanguage: ["Korean"],
       },
-      sameAs: ["http://pf.kakao.com/_LqxnGX"],
+      sameAs: ["https://pf.kakao.com/_LqxnGX"],
     },
     {
       "@type": "WebSite",
-      "@id": "https://buncheoleasy.com/#website",
-      url: "https://buncheoleasy.com/",
+      "@id": `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
       name: "분철이지",
       inLanguage: "ko",
-      publisher: { "@id": "https://buncheoleasy.com/#organization" },
+      publisher: { "@id": `${SITE_URL}/#organization` },
     },
   ],
 };

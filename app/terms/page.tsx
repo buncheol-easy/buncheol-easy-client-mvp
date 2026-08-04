@@ -1,15 +1,15 @@
-import type { Metadata } from "next";
 import { PolicyPageContent } from "@/components/PolicyPageContent";
+import { buildPageMetadata } from "@/lib/seo";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
 
-export const metadata: Metadata = {
+export const metadata = buildPageMetadata({
   title: "이용약관",
   description:
     "분철이지 서비스의 통신판매(직접판매), 무통장입금 결제, 거래 책임 기준을 안내합니다.",
-  alternates: { canonical: "/terms" },
-};
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (

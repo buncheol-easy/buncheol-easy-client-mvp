@@ -4,6 +4,7 @@ import { ApiProductDetail } from "@/components/ApiProductDetail";
 import { JsonLd } from "@/components/JsonLd";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
 import { requestBuncheolDetail } from "@/lib/auth-api";
+import { SITE_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -38,19 +39,24 @@ export async function generateMetadata({
     // thumbnailUrl 은 파서가 thumbnail 플래그 → 첫 이미지 순으로 이미 보정해 내려준다.
     const imageUrl = detail.thumbnailUrl;
 
+    // openGraph 는 세그먼트 단위로 통째 교체되므로 루트의 type/siteName/locale 을 다시 채운다.
     return {
       title,
       description,
       alternates: { canonical: `/products/${id}` },
       openGraph: {
+        type: "website",
+        siteName: "분철이지",
+        locale: "ko_KR",
         title,
         description,
         url: `/products/${id}`,
-        ...(imageUrl ? { images: [imageUrl] } : {}),
+        images: [imageUrl ?? "/brand/logo-black.png"],
       },
     };
-  } catch {
+  } catch (error) {
     // 상세 조회 실패(삭제·비공개 등) 시 루트 레이아웃 기본 메타데이터를 쓴다.
+    console.warn(`[metadata] 분철 상세 조회 실패 (id=${id})`, error);
     return {};
   }
 }
@@ -114,17 +120,18 @@ export default async function ProductDetailPage({
           "@type": "ListItem",
           position: 1,
           name: "홈",
-          item: "https://buncheoleasy.com/",
+          item: `${SITE_URL}/`,
         },
         {
           "@type": "ListItem",
           position: 2,
           name: detailName,
-          item: `https://buncheoleasy.com/products/${id}`,
+          item: `${SITE_URL}/products/${id}`,
         },
       ],
     };
   } catch {
+    // generateMetadata 쪽에서 이미 같은 실패를 로그로 남긴다.
     breadcrumbJsonLd = null;
   }
 

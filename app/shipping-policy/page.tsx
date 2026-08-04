@@ -1,14 +1,14 @@
-import type { Metadata } from "next";
 import { PolicyPageContent } from "@/components/PolicyPageContent";
+import { buildPageMetadata } from "@/lib/seo";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
 
-export const metadata: Metadata = {
+export const metadata = buildPageMetadata({
   title: "배송 정책",
   description: "분철 상품의 편의점 택배 수령 방식과 배송비 기준을 안내합니다.",
-  alternates: { canonical: "/shipping-policy" },
-};
+  path: "/shipping-policy",
+});
 
 export default function ShippingPolicyPage() {
   return (
