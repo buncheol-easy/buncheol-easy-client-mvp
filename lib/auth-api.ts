@@ -94,6 +94,7 @@ export type ShippingAddressRequest = {
   alias?: string;
   branchName: string;
   isDefault?: boolean;
+  storeCode?: string;
   storeType: ConvenienceStoreType;
 };
 
@@ -1344,6 +1345,8 @@ function getUserShippingAddress(body: unknown): UserShippingAddress | null {
       "roadAddress",
       "jibunAddress",
     ]),
+    storeCode:
+      getOptionalStringValue(data, ["storeCode", "code"]) ?? undefined,
     isDefault: getBooleanValue(data, ["isDefault", "default"]) ?? undefined,
   };
 }
@@ -1353,6 +1356,7 @@ function getShippingAddressBody(body: ShippingAddressRequest) {
     alias: body.alias,
     isDefault: body.isDefault,
     shippingMethod: getShippingMethod(body.storeType),
+    storeCode: body.storeCode,
     storeName: body.branchName,
   };
 }
@@ -1657,6 +1661,7 @@ export type CvsStoreBrand = "GS25" | "CU";
 export type CvsStore = {
   id: string;
   brand: CvsStoreBrand;
+  storeCode: string;
   name: string;
   tel: string;
   address: string;
@@ -1698,6 +1703,7 @@ function getCvsStore(body: unknown): CvsStore | null {
   return {
     id,
     brand: getCvsStoreBrand(getStringValue(body, ["brand", "storeBrand"])),
+    storeCode: getStringValue(body, ["storeCode", "code"]),
     name,
     tel: getStringValue(body, ["tel", "storeTel", "phoneNumber"]).trim(),
     address: getStringValue(body, ["address", "roadAddress", "storeAddress"]).trim(),

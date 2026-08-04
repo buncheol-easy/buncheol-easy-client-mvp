@@ -10,6 +10,8 @@ export type DeliveryAddress = {
   alias?: string;
   branchName: string;
   address: string;
+  // 접수처 검색으로 등록된 배송지의 원천 점포 코드 (자유입력 시절 등록분은 없음)
+  storeCode?: string;
 };
 
 export const convenienceStoreTypeLabels: Record<ConvenienceStoreType, string> = {

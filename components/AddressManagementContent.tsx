@@ -109,6 +109,7 @@ export function AddressManagementContent({
   const [newAddressAlias, setNewAddressAlias] = useState("");
   const [newAddressBranchName, setNewAddressBranchName] = useState("");
   const [newAddressStoreAddress, setNewAddressStoreAddress] = useState("");
+  const [newAddressStoreCode, setNewAddressStoreCode] = useState("");
   const [isStoreSearchOpen, setIsStoreSearchOpen] = useState(false);
   const { addresses: deliveryAddresses, defaultAddressIds } = addressState;
   const canManageAddresses =
@@ -166,13 +167,14 @@ export function AddressManagementContent({
     setNewAddressAlias("");
     setNewAddressBranchName("");
     setNewAddressStoreAddress("");
+    setNewAddressStoreCode("");
   }, []);
 
-  // 접수처 검색 시트에서 지점을 고르면 브랜드·지점명이 함께 확정된다.
   const handleStoreSelected = useCallback((store: CvsStore) => {
     setNewAddressStoreType(store.brand === "CU" ? "cu" : "gs25");
     setNewAddressBranchName(store.name);
     setNewAddressStoreAddress(store.address);
+    setNewAddressStoreCode(store.storeCode);
     setHasTouchedAddressForm(true);
     setFormErrorMessage("");
   }, []);
@@ -335,6 +337,7 @@ export function AddressManagementContent({
       branchName: `${getConvenienceStoreLabel(newAddressStoreType)} ${normalizedBranchName}`,
       // 서버 배송지에는 주소 컬럼이 없어 저장되지 않는다 — 폼 표시용으로만 쓴다.
       address: "",
+      storeCode: newAddressStoreCode || undefined,
     };
     const accessToken = authState.accessToken;
 
@@ -412,6 +415,8 @@ export function AddressManagementContent({
           alias: selectedAddress.alias,
           branchName: selectedAddress.branchName,
           isDefault: true,
+          // 기본 배송지 토글이 저장된 점포 코드 연결을 지우지 않게 그대로 되돌려 보낸다.
+          storeCode: selectedAddress.storeCode,
           storeType: selectedAddress.storeType,
         });
         const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
@@ -683,7 +688,7 @@ export function AddressManagementContent({
                             </p>
                           </div>
                           {newAddressStoreAddress ? (
-                            <p className="mt-1.5 truncate text-[12px] font-medium text-black/40">
+                            <p className="mt-1.5 line-clamp-2 text-[12px] font-medium leading-[1.35] text-black/40">
                               {newAddressStoreAddress}
                             </p>
                           ) : null}

@@ -109,7 +109,6 @@ export function CvsStoreSearchSheet({
     closeTimerRef.current = window.setTimeout(onClose, SHEET_CLOSE_MS);
   }
 
-  // 입력 후 잠깐 멈추면 검색 — 타이핑마다 요청하지 않는다.
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       setDebouncedKeyword(keyword);
@@ -184,7 +183,6 @@ export function CvsStoreSearchSheet({
     [brandFilter, debouncedKeyword],
   );
 
-  // 키워드·브랜드 필터가 바뀌면 첫 페이지부터 다시 검색한다.
   // 빈 키워드는 검색하지 않는다 — 전국 목록을 id 순으로 쏟는 초기 화면은 정보가 없다.
   useEffect(() => {
     setSelectedStoreId(null);
@@ -252,7 +250,6 @@ export function CvsStoreSearchSheet({
     };
   }, []);
 
-  // 검색 결과가 바뀌면 마커를 다시 그리고 화면 범위를 결과에 맞춘다.
   useEffect(() => {
     const sdk = window.kakao?.maps;
     const map = mapRef.current;
@@ -309,7 +306,6 @@ export function CvsStoreSearchSheet({
     };
   }, [isMapReady, stores]);
 
-  // 목록/마커에서 지점을 고르면 지도를 그 위치로 이동한다.
   useEffect(() => {
     const sdk = window.kakao?.maps;
     const map = mapRef.current;
@@ -495,7 +491,8 @@ export function CvsStoreSearchSheet({
                         {store.name}
                       </p>
                     </div>
-                    <p className="mt-1.5 truncate text-[12.5px] font-medium text-black/45">
+                    {/* 도로명 주소는 끝 괄호(동·건물명)가 식별 정보라 말줄임 대신 2줄로 보여준다. */}
+                    <p className="mt-1.5 line-clamp-2 text-[12.5px] font-medium leading-[1.35] text-black/45">
                       {store.address}
                     </p>
                   </button>
