@@ -57,7 +57,12 @@ export function readAuthState() {
 
     cachedAuthState = {
       accessToken,
-      isLoggedIn: parsed.isLoggedIn === true || Boolean(accessToken),
+      // isLoggedIn === false 는 소셜 인증만 마치고 가입(프로필)을 끝내지 않은
+      // 보류 상태 — 토큰이 있어도 로그인으로 승격하지 않는다.
+      // 필드가 없는 구버전 저장값만 토큰 유무로 판정한다.
+      isLoggedIn:
+        parsed.isLoggedIn === true ||
+        (typeof parsed.isLoggedIn !== "boolean" && Boolean(accessToken)),
     };
   } catch {
     cachedAuthState = initialAuthState;
@@ -100,11 +105,12 @@ export function clearAuthCookies() {
 
 export function writeAuthTokens(tokens: {
   accessToken: string;
+  isLoggedIn?: boolean;
 }) {
   identifyAnalyticsUser(tokens.accessToken);
   writeAuthState({
     accessToken: tokens.accessToken,
-    isLoggedIn: true,
+    isLoggedIn: tokens.isLoggedIn !== false,
   });
 }
 

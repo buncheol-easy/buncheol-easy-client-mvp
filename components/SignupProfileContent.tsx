@@ -5,9 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProfileIcon } from "@/components/icons";
 import {
-  isUserProfileComplete,
   requestNicknameDuplicate,
-  requestUserProfile,
   requestUserProfileStatus,
   updateUserProfile,
 } from "@/lib/auth-api";
@@ -22,6 +20,7 @@ import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
+  writeAuthTokens,
 } from "@/lib/auth-store";
 
 type SignupProfileDraft = {
@@ -145,7 +144,9 @@ export function SignupProfileContent() {
     isPrivacyAgreed;
 
   useEffect(() => {
-    if (!authState.isLoggedIn || !authState.accessToken) {
+    // 가입 완료 전 보류 상태는 isLoggedIn: false 로 유지되므로 토큰 유무로만
+    // 판단한다 — 토큰조차 없으면 로그인으로 되돌린다.
+    if (!authState.accessToken) {
       const returnHref = getSafeReturnHref(
         window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),
       );
@@ -158,30 +159,24 @@ export function SignupProfileContent() {
         createLoginHref({ cancelTo: "/profile", returnTo: returnHref }),
       );
     }
-  }, [authState.accessToken, authState.isLoggedIn, router]);
+  }, [authState.accessToken, router]);
 
   useEffect(() => {
-    if (!authState.isLoggedIn || !authState.accessToken) {
+    if (!authState.accessToken) {
       return;
     }
 
     let isActive = true;
 
-    getFreshAccessToken()
+    getFreshAccessToken({ allowPendingProfile: true })
       .then((accessToken) => {
         if (!isActive || !accessToken) {
           return;
         }
 
         return requestUserProfileStatus(accessToken).then(
-          async ({ isProfileComplete }) => {
+          ({ isProfileComplete }) => {
             if (!isActive || !isProfileComplete) {
-              return;
-            }
-
-            const profile = await requestUserProfile(accessToken);
-
-            if (!isActive || !isUserProfileComplete(profile)) {
               return;
             }
 
@@ -191,6 +186,8 @@ export function SignupProfileContent() {
               ),
             );
 
+            // 이미 가입을 마친 유저 — 보류 상태를 로그인으로 승격하고 되돌려보낸다.
+            writeAuthTokens({ accessToken });
             window.sessionStorage.removeItem(
               authProfileSetupReturnHrefStorageKey,
             );
@@ -206,10 +203,10 @@ export function SignupProfileContent() {
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn, router]);
+  }, [authState.accessToken, router]);
 
   useEffect(() => {
-    if (!authState.isLoggedIn || !authState.accessToken) {
+    if (!authState.accessToken) {
       return;
     }
 
@@ -224,7 +221,6 @@ export function SignupProfileContent() {
     });
   }, [
     authState.accessToken,
-    authState.isLoggedIn,
     isAgeConfirmed,
     isMarketingAgreed,
     isPrivacyAgreed,
@@ -243,7 +239,9 @@ export function SignupProfileContent() {
     setMessage("");
 
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getFreshAccessToken({
+        allowPendingProfile: true,
+      });
 
       if (!accessToken) {
         const returnHref = getSafeReturnHref(
@@ -272,6 +270,9 @@ export function SignupProfileContent() {
         phoneNumber: phoneNumber.trim(),
         marketingAgreed: isMarketingAgreed,
       });
+
+      // 가입이 끝난 시점에만 보류 상태를 로그인으로 승격한다.
+      writeAuthTokens({ accessToken });
 
       const returnHref = getSafeReturnHref(
         window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),

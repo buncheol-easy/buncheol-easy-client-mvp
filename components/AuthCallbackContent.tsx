@@ -7,11 +7,7 @@ import {
   authReturnHrefStorageKey,
   writeAuthTokens,
 } from "@/lib/auth-store";
-import {
-  isUserProfileComplete,
-  requestUserProfile,
-  requestUserProfileStatus,
-} from "@/lib/auth-api";
+import { requestUserProfileStatus } from "@/lib/auth-api";
 import { getSafeInternalHref } from "@/lib/auth-navigation";
 
 type AuthCallbackContentProps = {
@@ -56,22 +52,14 @@ export function AuthCallbackContent({
 
     let isActive = true;
 
-    writeAuthTokens({ accessToken });
+    // 가입(프로필) 완료를 확인하기 전에는 로그인으로 커밋하지 않는다 — 추가정보
+    // 입력을 마치지 않고 뒤로가기해도 다른 화면에서 로그인된 것처럼 보이지 않게.
+    writeAuthTokens({ accessToken, isLoggedIn: false });
 
     requestUserProfileStatus(accessToken)
-      .then(async ({ isProfileComplete }) => {
+      .then(({ isProfileComplete }) => {
         if (!isActive) {
           return;
-        }
-
-        if (isProfileComplete) {
-          const profile = await requestUserProfile(accessToken);
-
-          if (!isActive) {
-            return;
-          }
-
-          isProfileComplete = isUserProfileComplete(profile);
         }
 
         if (!isProfileComplete) {
@@ -84,6 +72,7 @@ export function AuthCallbackContent({
           return;
         }
 
+        writeAuthTokens({ accessToken });
         window.sessionStorage.removeItem(authReturnHrefStorageKey);
         window.sessionStorage.removeItem(authProfileSetupReturnHrefStorageKey);
         router.replace(nextReturnHref);
