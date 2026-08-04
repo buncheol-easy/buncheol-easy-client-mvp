@@ -106,10 +106,10 @@ export default function RootLayout({
         </Suspense>
         <aside className="desktop-web-brand" aria-label="분철이지 웹 소개">
           <div className="desktop-web-brand__logo">
+            {/* 데스크톱 전용 장식 로고 — priority 를 주면 모바일에서도 preload 되어 LCP 대역폭을 뺏는다. */}
             <Image
               alt="분철이지"
               height={72}
-              priority
               src="/brand/logo-black.png"
               width={224}
             />

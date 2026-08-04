@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type UIEvent,
 } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -79,19 +80,19 @@ const HOME_BANNERS: HomeBanner[] = [
   {
     href: "/board?from=home",
     imageAlt: "분철이지 사용법 한눈에 보기",
-    imageSrc: "/banners/buncheol-guide.png?v=2",
+    imageSrc: "/banners/buncheol-guide.png",
     label: "분철이지 사용법",
   },
   {
     href: "/board/transfer-payment?from=home",
     imageAlt: "분철이지 오픈 안내",
-    imageSrc: "/banners/buncheol-open.png?v=2",
+    imageSrc: "/banners/buncheol-open.png",
     label: "분철이지 오픈",
   },
   {
     href: "/board/closed-bid-status?from=home",
     imageAlt: "안전한 분철을 위한 안내",
-    imageSrc: "/banners/buncheol-safe.png?v=2",
+    imageSrc: "/banners/buncheol-safe.png",
     label: "안전한 분철 안내",
   },
 ];
@@ -795,21 +796,23 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 href={banner.href}
                 key={banner.href}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   alt=""
                   aria-hidden="true"
-                  className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl"
+                  className="scale-110 object-cover blur-xl"
                   draggable={false}
+                  fill
                   loading={index === 0 ? "eager" : "lazy"}
+                  sizes="(max-width: 480px) 100vw, 398px"
                   src={banner.imageSrc}
                 />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   alt={banner.imageAlt}
-                  className="relative h-full w-full object-contain"
+                  className="object-contain"
                   draggable={false}
-                  loading={index === 0 ? "eager" : "lazy"}
+                  fill
+                  priority={index === 0}
+                  sizes="(max-width: 480px) 100vw, 398px"
                   src={banner.imageSrc}
                 />
               </Link>
