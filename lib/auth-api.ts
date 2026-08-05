@@ -94,6 +94,7 @@ export type ShippingAddressRequest = {
   alias?: string;
   branchName: string;
   isDefault?: boolean;
+  storeCode?: string;
   storeType: ConvenienceStoreType;
 };
 
@@ -1344,6 +1345,8 @@ function getUserShippingAddress(body: unknown): UserShippingAddress | null {
       "roadAddress",
       "jibunAddress",
     ]),
+    storeCode:
+      getOptionalStringValue(data, ["storeCode", "code"]) ?? undefined,
     isDefault: getBooleanValue(data, ["isDefault", "default"]) ?? undefined,
   };
 }
@@ -1353,6 +1356,7 @@ function getShippingAddressBody(body: ShippingAddressRequest) {
     alias: body.alias,
     isDefault: body.isDefault,
     shippingMethod: getShippingMethod(body.storeType),
+    storeCode: body.storeCode,
     storeName: body.branchName,
   };
 }
@@ -1650,6 +1654,126 @@ export async function deleteShippingAddress(
   if (!response.ok) {
     throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
+}
+
+export type CvsStoreBrand = "GS25" | "CU";
+
+export type CvsStore = {
+  id: string;
+  brand: CvsStoreBrand;
+  storeCode: string;
+  name: string;
+  tel: string;
+  address: string;
+  postNo: string;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+export type CvsStoreSearchParams = {
+  brand?: CvsStoreBrand | null;
+  cursor?: string | null;
+  keyword?: string;
+  size?: number;
+};
+
+export type CvsStoreSearchPage = {
+  hasNext: boolean;
+  items: CvsStore[];
+  nextCursor: string | null;
+};
+
+function getCvsStoreBrand(value: string): CvsStoreBrand | null {
+  const normalized = value.trim().toUpperCase();
+
+  if (normalized.includes("CU")) {
+    return "CU";
+  }
+
+  if (normalized.includes("GS")) {
+    return "GS25";
+  }
+
+  return null;
+}
+
+function getCvsStore(body: unknown): CvsStore | null {
+  if (!isRecord(body)) {
+    return null;
+  }
+
+  const name = getStringValue(body, ["name", "storeName"]).trim();
+  // storeCode 는 브랜드 간 충돌 가능성이 있어 id fallback 으로 쓰지 않는다.
+  const id = getStringValue(body, ["id", "storeId"]);
+  const brand = getCvsStoreBrand(getStringValue(body, ["brand", "storeBrand"]));
+
+  // id 는 목록 key·중복 제거·선택 매칭의 기준, brand 는 배송 방식(storeType)의 근거라 없으면 항목을 버린다.
+  if (!name || !id || !brand) {
+    return null;
+  }
+
+  return {
+    id,
+    brand,
+    storeCode: getStringValue(body, ["storeCode", "code"]),
+    name,
+    tel: getStringValue(body, ["tel", "storeTel", "phoneNumber"]).trim(),
+    address: getStringValue(body, ["address", "roadAddress", "storeAddress"]).trim(),
+    postNo: getStringValue(body, ["postNo", "postCode", "zipCode"]).trim(),
+    latitude: getNumberValue(body, ["latitude", "lat", "mapY"]),
+    longitude: getNumberValue(body, ["longitude", "lng", "mapX"]),
+  };
+}
+
+// 배송지 등록용 편의점 접수처 검색. 공개 API 라 토큰 없이 호출한다.
+export async function requestCvsStores(
+  params: CvsStoreSearchParams = {},
+): Promise<CvsStoreSearchPage> {
+  const searchParams = new URLSearchParams();
+
+  if (params.brand) {
+    searchParams.set("brand", params.brand);
+  }
+
+  if (params.keyword?.trim()) {
+    searchParams.set("keyword", params.keyword.trim());
+  }
+
+  if (params.cursor) {
+    searchParams.set("cursor", params.cursor);
+  }
+
+  if (typeof params.size === "number") {
+    searchParams.set("size", String(params.size));
+  }
+
+  const query = searchParams.toString();
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/cvs-stores${query ? `?${query}` : ""}`,
+    {
+      headers: {
+        Accept: "application/json",
+      },
+      method: "GET",
+    },
+    "지점 검색이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const body: unknown = await response.json();
+  const items = getBuncheolList(body)
+    .map((item) => getCvsStore(item))
+    .filter((item): item is CvsStore => item !== null);
+  const { hasNext, nextCursor } = getBuncheolListPageInfo(body);
+
+  return {
+    hasNext,
+    items,
+    nextCursor,
+  };
 }
 
 async function readJsonBody(response: Response) {
