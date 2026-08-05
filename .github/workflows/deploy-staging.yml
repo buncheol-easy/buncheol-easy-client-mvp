@@ -75,6 +75,7 @@ jobs:
             NEXT_PUBLIC_GA_ID=${{ vars.STAGING_NEXT_PUBLIC_GA_ID }}
             NEXT_PUBLIC_POSTHOG_KEY=${{ vars.STAGING_NEXT_PUBLIC_POSTHOG_KEY }}
             NEXT_PUBLIC_POSTHOG_HOST=${{ vars.STAGING_NEXT_PUBLIC_POSTHOG_HOST }}
+            NEXT_PUBLIC_KAKAO_MAP_APP_KEY=${{ vars.STAGING_NEXT_PUBLIC_KAKAO_MAP_APP_KEY }}
           # sha 불변 태그만 push — staging 별칭은 헬스체크 통과 후 promote 잡이 옮긴다
           # ("별칭 = 지금 떠 있는 것" 불변식, 서버 리뷰 #89 반영)
           tags: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ steps.meta.outputs.tag }}
