@@ -7,8 +7,15 @@ export type KakaoLatLng = {
   getLng: () => number;
 };
 
+// Size/Point/MarkerImage 는 생성해서 SDK 에 되넘기기만 하므로 형태 없는 불투명 타입으로 둔다.
+export type KakaoSize = { __kakaoSize?: never };
+export type KakaoPoint = { __kakaoPoint?: never };
+export type KakaoMarkerImage = { __kakaoMarkerImage?: never };
+
 export type KakaoMarker = {
   setMap: (map: KakaoMap | null) => void;
+  setImage: (image: KakaoMarkerImage) => void;
+  setZIndex: (zIndex: number) => void;
 };
 
 export type KakaoMap = {
@@ -17,9 +24,10 @@ export type KakaoMap = {
   setCenter: (latlng: KakaoLatLng) => void;
   panTo: (latlng: KakaoLatLng) => void;
   setLevel: (level: number) => void;
+  getLevel: () => number;
 };
 
-type KakaoMapsSdk = {
+export type KakaoMapsSdk = {
   load: (callback: () => void) => void;
   LatLng: new (lat: number, lng: number) => KakaoLatLng;
   LatLngBounds: new () => { extend: (latlng: KakaoLatLng) => void };
@@ -27,9 +35,26 @@ type KakaoMapsSdk = {
     container: HTMLElement,
     options: { center: KakaoLatLng; level: number },
   ) => KakaoMap;
-  Marker: new (options: { position: KakaoLatLng; title?: string }) => KakaoMarker;
+  Size: new (width: number, height: number) => KakaoSize;
+  Point: new (x: number, y: number) => KakaoPoint;
+  MarkerImage: new (
+    src: string,
+    size: KakaoSize,
+    options?: { offset?: KakaoPoint },
+  ) => KakaoMarkerImage;
+  Marker: new (options: {
+    position: KakaoLatLng;
+    title?: string;
+    image?: KakaoMarkerImage;
+    zIndex?: number;
+  }) => KakaoMarker;
   event: {
     addListener: (
+      target: unknown,
+      type: string,
+      handler: (...args: unknown[]) => void,
+    ) => void;
+    removeListener: (
       target: unknown,
       type: string,
       handler: (...args: unknown[]) => void,

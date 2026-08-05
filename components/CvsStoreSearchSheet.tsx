@@ -12,15 +12,87 @@ import {
   getKakaoMapAppKey,
   loadKakaoMapSdk,
   type KakaoMap,
+  type KakaoMapsSdk,
   type KakaoMarker,
+  type KakaoMarkerImage,
 } from "@/lib/kakao-map";
 
 const SHEET_CLOSE_MS = 280;
 const SEARCH_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 20;
 
-// 검색 결과가 없을 때 지도의 기본 중심 (서울시청).
+// 검색 결과가 없을 때 지도의 기본 중심 (서울시청)과 축척.
 const DEFAULT_MAP_CENTER = { lat: 37.5665, lng: 126.978 };
+const DEFAULT_MAP_LEVEL = 8;
+
+// 브랜드별 커스텀 마커 스펙 (@2x PNG 를 절반 크기로 렌더). 줌 아웃할수록
+// pin → mid → dot 로 단순해지고, 선택된 지점은 확대된 pin-selected 로 강조한다.
+// offset 은 지도 좌표에 닿는 앵커 — pin 계열은 아래쪽 꼭짓점, 원형은 중심.
+const CVS_MARKER_SPECS = {
+  dot: { size: { width: 12, height: 12 }, offset: { x: 6, y: 6 } },
+  mid: { size: { width: 28, height: 28 }, offset: { x: 14, y: 14 } },
+  pin: { size: { width: 40, height: 52 }, offset: { x: 20, y: 51 } },
+  "pin-selected": { size: { width: 48, height: 62 }, offset: { x: 24, y: 61 } },
+} as const;
+
+type CvsMarkerVariant = keyof typeof CVS_MARKER_SPECS;
+
+// 지도에 올라간 마커와 외형 상태. appliedVariant 는 마지막으로 적용한 이미지로,
+// 줌·선택이 바뀌어도 외형이 그대로면 setImage 를 건너뛰기 위한 캐시다.
+type CvsMarkerEntry = {
+  marker: KakaoMarker;
+  brand: CvsStoreBrand;
+  appliedVariant: CvsMarkerVariant;
+};
+
+// 기본 축척(DEFAULT_MAP_LEVEL=8)은 mid, 지점 선택 시 확대(setLevel(4))는 pin 구간에 해당한다.
+function markerVariantForLevel(level: number): CvsMarkerVariant {
+  if (level <= 5) {
+    return "pin";
+  }
+
+  if (level <= 8) {
+    return "mid";
+  }
+
+  return "dot";
+}
+
+function cvsMarkerImageSrc(brand: CvsStoreBrand, variant: CvsMarkerVariant) {
+  return `/markers/${brand.toLowerCase()}-${variant}@2x.png`;
+}
+
+function createCvsMarkerImage(
+  sdk: KakaoMapsSdk,
+  brand: CvsStoreBrand,
+  variant: CvsMarkerVariant,
+) {
+  const { size, offset } = CVS_MARKER_SPECS[variant];
+
+  return new sdk.MarkerImage(
+    cvsMarkerImageSrc(brand, variant),
+    new sdk.Size(size.width, size.height),
+    { offset: new sdk.Point(offset.x, offset.y) },
+  );
+}
+
+// 줌 단계가 바뀔 때 아직 안 받은 PNG 로 setImage 하면 로드가 끝날 때까지 마커가
+// 비어 보이므로, 지도를 처음 띄울 때 전 이미지(8종, 합계 ~33KB)를 미리 받아둔다.
+let hasPreloadedCvsMarkerImages = false;
+
+function preloadCvsMarkerImages() {
+  if (hasPreloadedCvsMarkerImages) {
+    return;
+  }
+
+  hasPreloadedCvsMarkerImages = true;
+
+  (["GS25", "CU"] as const).forEach((brand) => {
+    (Object.keys(CVS_MARKER_SPECS) as CvsMarkerVariant[]).forEach((variant) => {
+      new Image().src = cvsMarkerImageSrc(brand, variant);
+    });
+  });
+}
 
 // 결과 좌표가 이보다 넓게 퍼져 있으면(전국 산개) setBounds 를 생략한다 — 전국 축소 뷰는
 // 정보가 없고 "검색이 잘못된" 인상만 준다.
@@ -72,13 +144,60 @@ export function CvsStoreSearchSheet({
   const needsFitBoundsRef = useRef(false);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<KakaoMap | null>(null);
-  const markersRef = useRef<KakaoMarker[]>([]);
+  const markersRef = useRef<Map<string, CvsMarkerEntry>>(new Map());
+  // MarkerImage 는 불변·공유 가능하므로 브랜드×단계별로 한 번만 만들어 재사용한다 (최대 8개).
+  const markerImagesRef = useRef<Map<string, KakaoMarkerImage>>(new Map());
+  // 줌 리스너(React 밖 클로저)에서도 최신 선택값을 읽도록 상태를 미러링한다.
+  const selectedStoreIdRef = useRef<string | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
 
   const selectedStore = useMemo(
     () => stores.find((store) => store.id === selectedStoreId) ?? null,
     [selectedStoreId, stores],
   );
+
+  const getCvsMarkerImage = useCallback(
+    (sdk: KakaoMapsSdk, brand: CvsStoreBrand, variant: CvsMarkerVariant) => {
+      const cacheKey = `${brand}-${variant}`;
+      let image = markerImagesRef.current.get(cacheKey);
+
+      if (!image) {
+        image = createCvsMarkerImage(sdk, brand, variant);
+        markerImagesRef.current.set(cacheKey, image);
+      }
+
+      return image;
+    },
+    [],
+  );
+
+  // 마커 외형(이미지·zIndex)의 단일 소유자 — 마커 생성 직후·줌 변경·선택 변경 모두
+  // 여기로 모은다. 축척은 상태 미러링 대신 호출 시점에 직접 읽어, 같은 flush 안에서
+  // setBounds 로 바뀐 레벨도 즉시 반영한다 (잘못된 단계로 한 프레임 그려지는 것 방지).
+  const applyMarkerStyles = useCallback(() => {
+    const sdk = window.kakao?.maps;
+    const map = mapRef.current;
+
+    if (!sdk || !map) {
+      return;
+    }
+
+    const zoomVariant = markerVariantForLevel(map.getLevel());
+
+    markersRef.current.forEach((entry, storeId) => {
+      const variant =
+        storeId === selectedStoreIdRef.current ? "pin-selected" : zoomVariant;
+
+      if (entry.appliedVariant === variant) {
+        return;
+      }
+
+      entry.marker.setImage(getCvsMarkerImage(sdk, entry.brand, variant));
+      // 선택 마커가 이웃 마커에 가려지지 않게 앞으로 올린다.
+      entry.marker.setZIndex(variant === "pin-selected" ? 2 : 1);
+      entry.appliedVariant = variant;
+    });
+  }, [getCvsMarkerImage]);
 
   useEffect(() => {
     const enterFrame = window.requestAnimationFrame(() => {
@@ -153,16 +272,23 @@ export function CvsStoreSearchSheet({
           needsFitBoundsRef.current = true;
         }
         setStores((current) => {
-          if (!options.append) {
-            return page.items;
-          }
+          // 리스트 key 와 마커 Map 이 모두 id 기준이므로, 응답 안의 중복 id 는
+          // 여기서 걸러 두 레이어가 항상 같은 목록을 보게 한다.
+          const seenIds = new Set(
+            options.append ? current.map((store) => store.id) : [],
+          );
+          const merged = options.append ? [...current] : [];
 
-          const seenIds = new Set(current.map((store) => store.id));
+          page.items.forEach((store) => {
+            if (seenIds.has(store.id)) {
+              return;
+            }
 
-          return [
-            ...current,
-            ...page.items.filter((store) => !seenIds.has(store.id)),
-          ];
+            seenIds.add(store.id);
+            merged.push(store);
+          });
+
+          return merged;
         });
         setHasNext(page.hasNext);
         setNextCursor(page.nextCursor);
@@ -232,10 +358,16 @@ export function CvsStoreSearchSheet({
           return;
         }
 
-        mapRef.current = new sdk.Map(mapContainerRef.current, {
+        const map = new sdk.Map(mapContainerRef.current, {
           center: new sdk.LatLng(DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lng),
-          level: 8,
+          level: DEFAULT_MAP_LEVEL,
         });
+
+        mapRef.current = map;
+        preloadCvsMarkerImages();
+        // 줌 배율이 바뀌면 마커 단계(pin/mid/dot)를 갈아끼운다. 상태를 거치지 않고
+        // 직접 호출해 시트 전체 리렌더 없이 바뀐 마커만 갱신한다.
+        sdk.event.addListener(map, "zoom_changed", applyMarkerStyles);
         setIsMapReady(true);
 
         // 시트 진입 트랜지션 종료 후 컨테이너 크기가 확정되므로 한 번 더 relayout.
@@ -255,8 +387,20 @@ export function CvsStoreSearchSheet({
 
     return () => {
       isActive = false;
+
+      const sdk = window.kakao?.maps;
+
+      // 시트를 여닫을 때마다 map 이 새로 만들어지므로, 버려진 map 이 리스너
+      // 클로저를 물고 남지 않게 해제한다.
+      if (sdk && mapRef.current) {
+        sdk.event.removeListener(
+          mapRef.current,
+          "zoom_changed",
+          applyMarkerStyles,
+        );
+      }
     };
-  }, []);
+  }, [applyMarkerStyles]);
 
   useEffect(() => {
     const sdk = window.kakao?.maps;
@@ -266,8 +410,8 @@ export function CvsStoreSearchSheet({
       return;
     }
 
-    markersRef.current.forEach((marker) => marker.setMap(null));
-    markersRef.current = [];
+    markersRef.current.forEach((entry) => entry.marker.setMap(null));
+    markersRef.current = new Map();
 
     const locatedStores = stores.filter(
       (store) => store.latitude !== null && store.longitude !== null,
@@ -278,17 +422,29 @@ export function CvsStoreSearchSheet({
     }
 
     const bounds = new sdk.LatLngBounds();
+    const zoomVariant = markerVariantForLevel(map.getLevel());
 
     locatedStores.forEach((store) => {
+      const variant =
+        store.id === selectedStoreIdRef.current ? "pin-selected" : zoomVariant;
       const position = new sdk.LatLng(store.latitude!, store.longitude!);
-      const marker = new sdk.Marker({ position, title: store.name });
+      const marker = new sdk.Marker({
+        image: getCvsMarkerImage(sdk, store.brand, variant),
+        position,
+        title: store.name,
+        zIndex: variant === "pin-selected" ? 2 : 1,
+      });
 
       marker.setMap(map);
       sdk.event.addListener(marker, "click", () => {
         setSelectedStoreId(store.id);
       });
       bounds.extend(position);
-      markersRef.current.push(marker);
+      markersRef.current.set(store.id, {
+        appliedVariant: variant,
+        brand: store.brand,
+        marker,
+      });
     });
 
     map.relayout();
@@ -313,11 +469,20 @@ export function CvsStoreSearchSheet({
       }
     }
 
+    // fit 으로 축척이 바뀌었을 수 있으므로 이동이 끝난 레벨 기준으로 한 번 보정한다.
+    applyMarkerStyles();
+
     return () => {
-      markersRef.current.forEach((marker) => marker.setMap(null));
-      markersRef.current = [];
+      markersRef.current.forEach((entry) => entry.marker.setMap(null));
+      markersRef.current = new Map();
     };
-  }, [isMapReady, stores]);
+  }, [applyMarkerStyles, getCvsMarkerImage, isMapReady, stores]);
+
+  // 선택이 바뀌면 이전 선택 해제·새 선택 강조만 갱신된다 (나머지는 appliedVariant 스킵).
+  useEffect(() => {
+    selectedStoreIdRef.current = selectedStoreId;
+    applyMarkerStyles();
+  }, [applyMarkerStyles, selectedStoreId]);
 
   useEffect(() => {
     const sdk = window.kakao?.maps;
