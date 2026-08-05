@@ -1683,8 +1683,18 @@ export type CvsStoreSearchPage = {
   nextCursor: string | null;
 };
 
-function getCvsStoreBrand(value: string): CvsStoreBrand {
-  return value.trim().toUpperCase().includes("CU") ? "CU" : "GS25";
+function getCvsStoreBrand(value: string): CvsStoreBrand | null {
+  const normalized = value.trim().toUpperCase();
+
+  if (normalized.includes("CU")) {
+    return "CU";
+  }
+
+  if (normalized.includes("GS")) {
+    return "GS25";
+  }
+
+  return null;
 }
 
 function getCvsStore(body: unknown): CvsStore | null {
@@ -1693,16 +1703,18 @@ function getCvsStore(body: unknown): CvsStore | null {
   }
 
   const name = getStringValue(body, ["name", "storeName"]).trim();
-  const id = getStringValue(body, ["id", "storeId", "storeCode"]);
+  // storeCode 는 브랜드 간 충돌 가능성이 있어 id fallback 으로 쓰지 않는다.
+  const id = getStringValue(body, ["id", "storeId"]);
+  const brand = getCvsStoreBrand(getStringValue(body, ["brand", "storeBrand"]));
 
-  // id 는 목록 key·중복 제거·선택 매칭의 기준이라 없으면 항목을 버린다.
-  if (!name || !id) {
+  // id 는 목록 key·중복 제거·선택 매칭의 기준, brand 는 배송 방식(storeType)의 근거라 없으면 항목을 버린다.
+  if (!name || !id || !brand) {
     return null;
   }
 
   return {
     id,
-    brand: getCvsStoreBrand(getStringValue(body, ["brand", "storeBrand"])),
+    brand,
     storeCode: getStringValue(body, ["storeCode", "code"]),
     name,
     tel: getStringValue(body, ["tel", "storeTel", "phoneNumber"]).trim(),

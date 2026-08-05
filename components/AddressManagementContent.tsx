@@ -9,8 +9,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import dynamic from "next/dynamic";
 import { BackIcon, CloseIcon, SearchIcon } from "@/components/icons";
-import { CvsStoreSearchSheet } from "@/components/CvsStoreSearchSheet";
 import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
   ApiRequestError,
@@ -50,6 +50,15 @@ type AddressManagementContentProps = {
   openFormOnEntry?: boolean;
   returnHref?: string | null;
 };
+
+// 시트를 여는 사용자만 지도 관련 코드를 받도록 청크를 분리한다.
+const CvsStoreSearchSheet = dynamic(
+  () =>
+    import("@/components/CvsStoreSearchSheet").then(
+      (module) => module.CvsStoreSearchSheet,
+    ),
+  { ssr: false },
+);
 
 function getDeliveryAddressDeleteErrorMessage(error: unknown) {
   if (error instanceof ApiRequestError && error.status === 409) {

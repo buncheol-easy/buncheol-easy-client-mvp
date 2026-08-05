@@ -57,6 +57,7 @@ export function CvsStoreSearchSheet({
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [loadMoreError, setLoadMoreError] = useState("");
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const [mapNotice, setMapNotice] = useState(
@@ -66,8 +67,6 @@ export function CvsStoreSearchSheet({
   const closeTimerRef = useRef<number | null>(null);
   const relayoutTimerRef = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
-  // "더 보기" 추가 로드에서는 사용자가 만진 지도 시점을 유지한다 (setBounds 재적용 스킵).
-  const isAppendResultRef = useRef(false);
   // 새 검색 결과에 대해 아직 화면 범위를 맞추지 않았는지. SDK 로드가 "더 보기" 이후에
   // 끝나는 경우에도 첫 fit 이 누락되지 않게 append 플래그와 별도로 관리한다.
   const needsFitBoundsRef = useRef(false);
@@ -131,7 +130,12 @@ export function CvsStoreSearchSheet({
         setIsLoading(true);
       }
 
-      setSearchError("");
+      if (options.append) {
+        setLoadMoreError("");
+      } else {
+        setSearchError("");
+        setLoadMoreError("");
+      }
 
       try {
         const page = await requestCvsStores({
@@ -145,7 +149,6 @@ export function CvsStoreSearchSheet({
           return;
         }
 
-        isAppendResultRef.current = Boolean(options.append);
         if (!options.append) {
           needsFitBoundsRef.current = true;
         }
@@ -168,11 +171,17 @@ export function CvsStoreSearchSheet({
           return;
         }
 
-        setSearchError(
+        const message =
           error instanceof Error
             ? error.message
-            : "지점을 검색하지 못했어요. 잠시 후 다시 시도해 주세요.",
-        );
+            : "지점을 검색하지 못했어요. 잠시 후 다시 시도해 주세요.";
+
+        // 추가 로드 실패로 이미 불러온 목록을 지우지 않는다 — 버튼 자리에서 재시도.
+        if (options.append) {
+          setLoadMoreError(message);
+        } else {
+          setSearchError(message);
+        }
       } finally {
         if (requestId === searchRequestIdRef.current) {
           setIsLoading(false);
@@ -183,14 +192,13 @@ export function CvsStoreSearchSheet({
     [brandFilter, debouncedKeyword],
   );
 
-  // 빈 키워드는 검색하지 않는다 — 전국 목록을 id 순으로 쏟는 초기 화면은 정보가 없다.
+  // 2자 미만은 검색하지 않는다 — 빈/한 글자 키워드는 전국 목록을 쏟아 정보가 없고 부하만 만든다.
   useEffect(() => {
     setSelectedStoreId(null);
     listContainerRef.current?.scrollTo({ top: 0 });
 
-    if (!debouncedKeyword.trim()) {
+    if (debouncedKeyword.trim().length < 2) {
       searchRequestIdRef.current += 1; // 진행 중이던 검색 무효화
-      isAppendResultRef.current = false;
       setStores([]);
       setHasNext(false);
       setNextCursor(null);
@@ -297,6 +305,11 @@ export function CvsStoreSearchSheet({
 
       if (latSpan <= MAX_FIT_SPAN_DEG && lngSpan <= MAX_FIT_SPAN_DEG) {
         map.setBounds(bounds);
+      } else {
+        // 전국 축소 뷰 대신 첫 결과 주변을 보여준다 — 마커 없는 빈 지도 방지.
+        const first = locatedStores[0];
+
+        map.setCenter(new sdk.LatLng(first.latitude!, first.longitude!));
       }
     }
 
@@ -415,11 +428,11 @@ export function CvsStoreSearchSheet({
             {mapNotice}
           </p>
         ) : (
+          // 지도는 포인터 전용 보조 수단이라 스크린리더에서는 목록을 정본으로 삼는다.
           <div
-            aria-label="지점 지도"
-            className="mt-2 h-[190px] w-full shrink-0 overflow-hidden rounded-[0.95rem] ring-1 ring-black/10"
+            aria-hidden="true"
+            className="mt-2 h-[min(190px,26dvh)] w-full shrink-0 overflow-hidden rounded-[0.95rem] ring-1 ring-black/10 [@media(max-height:560px)]:hidden"
             ref={mapContainerRef}
-            role="application"
           />
         )}
 
@@ -431,13 +444,13 @@ export function CvsStoreSearchSheet({
             <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[13px] font-semibold leading-5 text-[#c03131]">
               {searchError}
             </p>
-          ) : !debouncedKeyword.trim() ? (
+          ) : debouncedKeyword.trim().length < 2 ? (
             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-8 text-center">
               <p className="text-[14px] font-semibold text-black/55">
                 자주 가는 편의점을 찾아보세요
               </p>
               <p className="mt-1 text-[12.5px] font-medium leading-5 text-black/40">
-                지점명이나 도로명 주소로 검색하면
+                지점명이나 도로명 주소를 두 글자 이상 입력하면
                 <br />
                 지점 위치를 지도에서 보여드려요.
               </p>
@@ -498,6 +511,11 @@ export function CvsStoreSearchSheet({
                   </button>
                 );
               })}
+              {loadMoreError ? (
+                <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-2.5 text-center text-[12.5px] font-semibold text-[#c03131]">
+                  {loadMoreError}
+                </p>
+              ) : null}
               {hasNext && nextCursor ? (
                 <button
                   className="h-11 w-full rounded-[0.9rem] border border-black/10 bg-white text-[13px] font-semibold text-black/50 disabled:text-black/25"
@@ -505,7 +523,7 @@ export function CvsStoreSearchSheet({
                   onClick={loadMoreStores}
                   type="button"
                 >
-                  {isLoadingMore ? "불러오는 중…" : "더 보기"}
+                  {isLoadingMore ? "불러오는 중…" : loadMoreError ? "다시 시도" : "더 보기"}
                 </button>
               ) : null}
             </div>

@@ -44,6 +44,7 @@ declare global {
 }
 
 const KAKAO_MAP_SCRIPT_ID = "kakao-map-sdk";
+const LOAD_TIMEOUT_MS = 10000;
 
 let kakaoMapSdkPromise: Promise<KakaoMapsSdk> | null = null;
 
@@ -69,10 +70,17 @@ export function loadKakaoMapSdk(): Promise<KakaoMapsSdk> {
   }
 
   kakaoMapSdkPromise = new Promise<KakaoMapsSdk>((resolve, reject) => {
-    // 실패는 캐시하지 않는다 — 다음 시도에서 스크립트를 다시 주입할 수 있게 초기화 후 reject.
-    const fail = (script?: HTMLScriptElement) => {
+    // 성공하면 스크립트와 promise 가 캐시로 남고, 실패하면 둘 다 치워 다음 시도에서 재주입한다.
+    // (성공 캐시 덕분에 기존 스크립트 태그를 재활용하는 분기는 필요 없다)
+    const script = document.createElement("script");
+    // load/error 이벤트가 모두 유실되는 환경(응답을 물고 있는 프록시 등)에서
+    // 지도 영역이 영영 빈 채로 남지 않게 검색 API 와 동일하게 타임아웃을 건다.
+    const timeoutId = window.setTimeout(() => fail(), LOAD_TIMEOUT_MS);
+
+    const fail = () => {
+      window.clearTimeout(timeoutId);
       kakaoMapSdkPromise = null;
-      script?.remove();
+      script.remove();
       reject(new Error("카카오 지도를 불러오지 못했어요."));
     };
 
@@ -84,31 +92,15 @@ export function loadKakaoMapSdk(): Promise<KakaoMapsSdk> {
         return;
       }
 
+      window.clearTimeout(timeoutId);
       sdk.load(() => resolve(sdk));
     };
-
-    const existingScript = document.getElementById(
-      KAKAO_MAP_SCRIPT_ID,
-    ) as HTMLScriptElement | null;
-
-    if (existingScript) {
-      if (window.kakao?.maps) {
-        handleLoaded();
-        return;
-      }
-
-      existingScript.addEventListener("load", handleLoaded);
-      existingScript.addEventListener("error", () => fail(existingScript));
-      return;
-    }
-
-    const script = document.createElement("script");
 
     script.id = KAKAO_MAP_SCRIPT_ID;
     script.async = true;
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false`;
     script.addEventListener("load", handleLoaded);
-    script.addEventListener("error", () => fail(script));
+    script.addEventListener("error", () => fail());
 
     document.head.appendChild(script);
   });
