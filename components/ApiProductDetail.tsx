@@ -29,6 +29,9 @@ import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 type ApiProductDetailProps = {
   id: string;
+  // 서버에서 익명 조회한 상세 — 초기 HTML 에 상품 내용을 싣기 위한 값.
+  // 마운트 후 기존 useEffect 가 토큰 포함 조회로 항상 덮어쓴다.
+  initialProduct?: ProductDetailItem | null;
   isHostedView?: boolean;
   returnQuery?: string;
   returnSource?: "home" | "bids" | "favorites" | "upload";
@@ -151,6 +154,7 @@ function toPublicPreviewProduct(
 
 export function ApiProductDetail({
   id,
+  initialProduct = null,
   isHostedView = false,
   returnQuery,
   returnSource,
@@ -162,8 +166,15 @@ export function ApiProductDetail({
     readAuthState,
     getInitialAuthState,
   );
-  const [product, setProduct] = useState<ProductDetailItem | null>(null);
+  const [product, setProduct] = useState<ProductDetailItem | null>(
+    initialProduct,
+  );
   const [message, setMessage] = useState("분철 정보를 불러오고 있습니다.");
+  // 직접 진입(크롤러·URL 입력·외부 공유 링크)은 슬라이드 인 출발점이 없으므로
+  // 셸 정착을 기다리지 않고 곧바로 상세를 그린다 — 이 경로가 있어야 서버 HTML 에
+  // initialProduct 내용이 실제 렌더 텍스트로 실린다. (returnSource/returnQuery 는
+  // 서버·클라 동일 prop 이라 hydration mismatch 없음)
+  const isDirectEntry = !returnSource && returnQuery === undefined;
   const [isShellEntered, setIsShellEntered] = useState(false);
   // 로딩 패널의 슬라이드 인이 끝난 뒤에만 ProductDetail로 교체해,
   // 전환 도중 패널이 최종 위치로 스냅하는 점프를 막는다.
@@ -340,7 +351,7 @@ export function ApiProductDetail({
         returnQuery={returnQuery}
         returnSource={returnSource}
       />
-      {product && isShellSettled ? (
+      {product && (isShellSettled || isDirectEntry) ? (
         <ProductDetail
           backHref={
             returnSource || returnQuery !== undefined ? undefined : "/"
