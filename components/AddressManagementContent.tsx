@@ -726,7 +726,7 @@ export function AddressManagementContent({
                       type="button"
                     >
                       <SearchIcon className="h-[18px] w-[18px] text-black/35" />
-                      지점 검색으로 선택
+                      편의점 찾기
                     </button>
                   )}
                   <label className="mt-2.5 block rounded-[0.85rem] bg-white px-3 py-2.5 ring-1 ring-black/10 transition focus-within:ring-black/35">
