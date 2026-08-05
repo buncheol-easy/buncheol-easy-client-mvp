@@ -1,8 +1,13 @@
+import type { Metadata } from "next";
 import { AuthCallbackContent } from "@/components/AuthCallbackContent";
 import { getOptionalSafeInternalHref } from "@/lib/auth-navigation";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 type LoginCallbackPageProps = {
   searchParams: Promise<{

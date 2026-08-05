@@ -36,10 +36,18 @@ export function isJwtExpired(token: string) {
   }
 }
 
-export async function getFreshAccessToken() {
+// allowPendingProfile: 가입(프로필) 미완료 보류 상태(isLoggedIn: false + 토큰)의
+// 토큰도 반환한다 — 회원가입 화면 전용. 일반 화면은 보류 토큰을 쓰면 안 된다.
+export async function getFreshAccessToken(options?: {
+  allowPendingProfile?: boolean;
+}) {
   const authState = readAuthState();
 
-  if (!authState.isLoggedIn || !authState.accessToken) {
+  if (!authState.accessToken) {
+    return null;
+  }
+
+  if (!authState.isLoggedIn && !options?.allowPendingProfile) {
     return null;
   }
 
@@ -55,10 +63,13 @@ export async function getFreshAccessToken() {
         const latestAuthState = readAuthState();
 
         if (latestAuthState.accessToken !== reissueSourceToken) {
-          return latestAuthState.isLoggedIn ? latestAuthState.accessToken : null;
+          return latestAuthState.accessToken;
         }
 
-        writeAuthTokens({ accessToken });
+        writeAuthTokens({
+          accessToken,
+          isLoggedIn: latestAuthState.isLoggedIn,
+        });
         return accessToken;
       })
       .catch((error: unknown) => {
@@ -83,5 +94,15 @@ export async function getFreshAccessToken() {
       });
   }
 
-  return tokenReissuePromise;
+  const reissuedToken = await tokenReissuePromise;
+
+  if (!reissuedToken) {
+    return null;
+  }
+
+  // 재발급 프로미스는 호출자 간 공유되므로, 보류 토큰 반환 정책은
+  // 프로미스를 만든 쪽이 아니라 각 호출자의 옵션으로 다시 판정한다.
+  return readAuthState().isLoggedIn || options?.allowPendingProfile
+    ? reissuedToken
+    : null;
 }

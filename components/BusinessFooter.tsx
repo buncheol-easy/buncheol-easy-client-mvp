@@ -3,9 +3,10 @@
 import Link from "next/link";
 
 const policyLinks = [
+  { href: "/intro", label: "서비스 소개" },
   { href: "/terms", label: "이용약관" },
   { href: "/privacy", label: "개인정보처리방침", strong: true },
-  { href: "http://pf.kakao.com/_LqxnGX", label: "고객센터", external: true },
+  { href: "https://pf.kakao.com/_LqxnGX", label: "고객센터", external: true },
 ];
 
 const businessInfoRows = [
@@ -66,7 +67,12 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
           <img
             alt=""
             className="h-4 w-4 object-contain opacity-60"
+            decoding="async"
+            height={16}
+            loading="lazy"
+            referrerPolicy="no-referrer"
             src="https://img1.kbstar.com/img/escrow/escrowcmark.gif"
+            width={16}
           />
         </button>
       </div>

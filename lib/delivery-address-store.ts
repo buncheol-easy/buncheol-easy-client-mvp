@@ -107,6 +107,7 @@ export function getDeliveryAddressStateFromSyncedAddresses(
     alias: address.alias,
     branchName: address.branchName,
     address: address.address,
+    storeCode: address.storeCode,
   }));
   const defaultAddressIds: StoredDeliveryAddressState["defaultAddressIds"] = {
     gs25: null,

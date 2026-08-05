@@ -1,7 +1,15 @@
 import { PolicyPageContent } from "@/components/PolicyPageContent";
+import { buildPageMetadata } from "@/lib/seo";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+export const metadata = buildPageMetadata({
+  title: "개인정보처리방침",
+  description:
+    "분철이지가 수집하는 개인정보 항목과 이용 목적, 보관·파기 기준을 안내합니다.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (
