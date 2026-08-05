@@ -46,9 +46,15 @@ export type KakaoMapsSdk = {
     position: KakaoLatLng;
     title?: string;
     image?: KakaoMarkerImage;
+    zIndex?: number;
   }) => KakaoMarker;
   event: {
     addListener: (
+      target: unknown,
+      type: string,
+      handler: (...args: unknown[]) => void,
+    ) => void;
+    removeListener: (
       target: unknown,
       type: string,
       handler: (...args: unknown[]) => void,

@@ -29,24 +29,24 @@ const DEFAULT_MAP_LEVEL = 8;
 // pin → mid → dot 로 단순해지고, 선택된 지점은 확대된 pin-selected 로 강조한다.
 // offset 은 지도 좌표에 닿는 앵커 — pin 계열은 아래쪽 꼭짓점, 원형은 중심.
 const CVS_MARKER_SPECS = {
-  dot: { size: [12, 12], offset: [6, 6] },
-  mid: { size: [28, 28], offset: [14, 14] },
-  pin: { size: [40, 52], offset: [20, 51] },
-  "pin-selected": { size: [48, 62], offset: [24, 61] },
+  dot: { size: { width: 12, height: 12 }, offset: { x: 6, y: 6 } },
+  mid: { size: { width: 28, height: 28 }, offset: { x: 14, y: 14 } },
+  pin: { size: { width: 40, height: 52 }, offset: { x: 20, y: 51 } },
+  "pin-selected": { size: { width: 48, height: 62 }, offset: { x: 24, y: 61 } },
 } as const;
 
-type CvsMarkerTier = keyof typeof CVS_MARKER_SPECS;
+type CvsMarkerVariant = keyof typeof CVS_MARKER_SPECS;
 
-// 지도에 올라간 마커와 외형 상태. appliedVariant 는 마지막으로 적용한 이미지 단계로,
+// 지도에 올라간 마커와 외형 상태. appliedVariant 는 마지막으로 적용한 이미지로,
 // 줌·선택이 바뀌어도 외형이 그대로면 setImage 를 건너뛰기 위한 캐시다.
 type CvsMarkerEntry = {
   marker: KakaoMarker;
   brand: CvsStoreBrand;
-  appliedVariant: CvsMarkerTier | null;
+  appliedVariant: CvsMarkerVariant;
 };
 
 // 기본 축척(DEFAULT_MAP_LEVEL=8)은 mid, 지점 선택 시 확대(setLevel(4))는 pin 구간에 해당한다.
-function markerTierForLevel(level: number): CvsMarkerTier {
+function markerVariantForLevel(level: number): CvsMarkerVariant {
   if (level <= 5) {
     return "pin";
   }
@@ -58,18 +58,40 @@ function markerTierForLevel(level: number): CvsMarkerTier {
   return "dot";
 }
 
+function cvsMarkerImageSrc(brand: CvsStoreBrand, variant: CvsMarkerVariant) {
+  return `/markers/${brand.toLowerCase()}-${variant}@2x.png`;
+}
+
 function createCvsMarkerImage(
   sdk: KakaoMapsSdk,
   brand: CvsStoreBrand,
-  tier: CvsMarkerTier,
+  variant: CvsMarkerVariant,
 ) {
-  const { size, offset } = CVS_MARKER_SPECS[tier];
+  const { size, offset } = CVS_MARKER_SPECS[variant];
 
   return new sdk.MarkerImage(
-    `/markers/${brand.toLowerCase()}-${tier}@2x.png`,
-    new sdk.Size(size[0], size[1]),
-    { offset: new sdk.Point(offset[0], offset[1]) },
+    cvsMarkerImageSrc(brand, variant),
+    new sdk.Size(size.width, size.height),
+    { offset: new sdk.Point(offset.x, offset.y) },
   );
+}
+
+// 줌 단계가 바뀔 때 아직 안 받은 PNG 로 setImage 하면 로드가 끝날 때까지 마커가
+// 비어 보이므로, 지도를 처음 띄울 때 전 이미지(8종, 합계 ~33KB)를 미리 받아둔다.
+let hasPreloadedCvsMarkerImages = false;
+
+function preloadCvsMarkerImages() {
+  if (hasPreloadedCvsMarkerImages) {
+    return;
+  }
+
+  hasPreloadedCvsMarkerImages = true;
+
+  (["GS25", "CU"] as const).forEach((brand) => {
+    (Object.keys(CVS_MARKER_SPECS) as CvsMarkerVariant[]).forEach((variant) => {
+      new Image().src = cvsMarkerImageSrc(brand, variant);
+    });
+  });
 }
 
 // 결과 좌표가 이보다 넓게 퍼져 있으면(전국 산개) setBounds 를 생략한다 — 전국 축소 뷰는
@@ -134,6 +156,21 @@ export function CvsStoreSearchSheet({
     [selectedStoreId, stores],
   );
 
+  const getCvsMarkerImage = useCallback(
+    (sdk: KakaoMapsSdk, brand: CvsStoreBrand, variant: CvsMarkerVariant) => {
+      const cacheKey = `${brand}-${variant}`;
+      let image = markerImagesRef.current.get(cacheKey);
+
+      if (!image) {
+        image = createCvsMarkerImage(sdk, brand, variant);
+        markerImagesRef.current.set(cacheKey, image);
+      }
+
+      return image;
+    },
+    [],
+  );
+
   // 마커 외형(이미지·zIndex)의 단일 소유자 — 마커 생성 직후·줌 변경·선택 변경 모두
   // 여기로 모은다. 축척은 상태 미러링 대신 호출 시점에 직접 읽어, 같은 flush 안에서
   // setBounds 로 바뀐 레벨도 즉시 반영한다 (잘못된 단계로 한 프레임 그려지는 것 방지).
@@ -145,30 +182,22 @@ export function CvsStoreSearchSheet({
       return;
     }
 
-    const tier = markerTierForLevel(map.getLevel());
+    const zoomVariant = markerVariantForLevel(map.getLevel());
 
     markersRef.current.forEach((entry, storeId) => {
       const variant =
-        storeId === selectedStoreIdRef.current ? "pin-selected" : tier;
+        storeId === selectedStoreIdRef.current ? "pin-selected" : zoomVariant;
 
       if (entry.appliedVariant === variant) {
         return;
       }
 
-      const cacheKey = `${entry.brand}-${variant}`;
-      let image = markerImagesRef.current.get(cacheKey);
-
-      if (!image) {
-        image = createCvsMarkerImage(sdk, entry.brand, variant);
-        markerImagesRef.current.set(cacheKey, image);
-      }
-
-      entry.marker.setImage(image);
+      entry.marker.setImage(getCvsMarkerImage(sdk, entry.brand, variant));
       // 선택 마커가 이웃 마커에 가려지지 않게 앞으로 올린다.
       entry.marker.setZIndex(variant === "pin-selected" ? 2 : 1);
       entry.appliedVariant = variant;
     });
-  }, []);
+  }, [getCvsMarkerImage]);
 
   useEffect(() => {
     const enterFrame = window.requestAnimationFrame(() => {
@@ -243,16 +272,23 @@ export function CvsStoreSearchSheet({
           needsFitBoundsRef.current = true;
         }
         setStores((current) => {
-          if (!options.append) {
-            return page.items;
-          }
+          // 리스트 key 와 마커 Map 이 모두 id 기준이므로, 응답 안의 중복 id 는
+          // 여기서 걸러 두 레이어가 항상 같은 목록을 보게 한다.
+          const seenIds = new Set(
+            options.append ? current.map((store) => store.id) : [],
+          );
+          const merged = options.append ? [...current] : [];
 
-          const seenIds = new Set(current.map((store) => store.id));
+          page.items.forEach((store) => {
+            if (seenIds.has(store.id)) {
+              return;
+            }
 
-          return [
-            ...current,
-            ...page.items.filter((store) => !seenIds.has(store.id)),
-          ];
+            seenIds.add(store.id);
+            merged.push(store);
+          });
+
+          return merged;
         });
         setHasNext(page.hasNext);
         setNextCursor(page.nextCursor);
@@ -328,6 +364,7 @@ export function CvsStoreSearchSheet({
         });
 
         mapRef.current = map;
+        preloadCvsMarkerImages();
         // 줌 배율이 바뀌면 마커 단계(pin/mid/dot)를 갈아끼운다. 상태를 거치지 않고
         // 직접 호출해 시트 전체 리렌더 없이 바뀐 마커만 갱신한다.
         sdk.event.addListener(map, "zoom_changed", applyMarkerStyles);
@@ -350,6 +387,18 @@ export function CvsStoreSearchSheet({
 
     return () => {
       isActive = false;
+
+      const sdk = window.kakao?.maps;
+
+      // 시트를 여닫을 때마다 map 이 새로 만들어지므로, 버려진 map 이 리스너
+      // 클로저를 물고 남지 않게 해제한다.
+      if (sdk && mapRef.current) {
+        sdk.event.removeListener(
+          mapRef.current,
+          "zoom_changed",
+          applyMarkerStyles,
+        );
+      }
     };
   }, [applyMarkerStyles]);
 
@@ -373,16 +422,18 @@ export function CvsStoreSearchSheet({
     }
 
     const bounds = new sdk.LatLngBounds();
+    const zoomVariant = markerVariantForLevel(map.getLevel());
 
     locatedStores.forEach((store) => {
-      // 한 응답 안에 같은 id 가 중복으로 오면 Map 덮어쓰기로 먼저 그린 마커가
-      // 정리 불가능한 고아로 남으므로, 첫 마커만 만들고 나머지는 건너뛴다.
-      if (markersRef.current.has(store.id)) {
-        return;
-      }
-
+      const variant =
+        store.id === selectedStoreIdRef.current ? "pin-selected" : zoomVariant;
       const position = new sdk.LatLng(store.latitude!, store.longitude!);
-      const marker = new sdk.Marker({ position, title: store.name });
+      const marker = new sdk.Marker({
+        image: getCvsMarkerImage(sdk, store.brand, variant),
+        position,
+        title: store.name,
+        zIndex: variant === "pin-selected" ? 2 : 1,
+      });
 
       marker.setMap(map);
       sdk.event.addListener(marker, "click", () => {
@@ -390,7 +441,7 @@ export function CvsStoreSearchSheet({
       });
       bounds.extend(position);
       markersRef.current.set(store.id, {
-        appliedVariant: null,
+        appliedVariant: variant,
         brand: store.brand,
         marker,
       });
@@ -418,14 +469,14 @@ export function CvsStoreSearchSheet({
       }
     }
 
-    // fit 이후에 적용해야 이동이 끝난 축척 기준의 단계로 첫 페인트부터 그려진다.
+    // fit 으로 축척이 바뀌었을 수 있으므로 이동이 끝난 레벨 기준으로 한 번 보정한다.
     applyMarkerStyles();
 
     return () => {
       markersRef.current.forEach((entry) => entry.marker.setMap(null));
       markersRef.current = new Map();
     };
-  }, [applyMarkerStyles, isMapReady, stores]);
+  }, [applyMarkerStyles, getCvsMarkerImage, isMapReady, stores]);
 
   // 선택이 바뀌면 이전 선택 해제·새 선택 강조만 갱신된다 (나머지는 appliedVariant 스킵).
   useEffect(() => {
