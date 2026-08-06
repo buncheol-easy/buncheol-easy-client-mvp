@@ -975,7 +975,9 @@ export function UploadProductForm({
     }
 
     const animationFrame = window.requestAnimationFrame(() => {
-      const product = readUploadedProduct(editProductId);
+      const product = editProductId.startsWith("uploaded-")
+        ? readUploadedProduct(editProductId)
+        : null;
 
       if (!product) {
         const accessToken = authState.accessToken;
