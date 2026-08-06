@@ -39,6 +39,12 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
   },
+  verification: {
+    // 네이버 서치어드바이저 소유확인 (2026-08-06)
+    other: {
+      "naver-site-verification": "99016790832a49d51e3ae3f91a69e31883816655",
+    },
+  },
 };
 
 // 사업자 정보는 components/BusinessFooter.tsx 의 표기와 동일하게 유지한다.
