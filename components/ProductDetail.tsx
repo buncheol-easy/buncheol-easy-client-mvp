@@ -536,6 +536,11 @@ const MEMBER_STATUS_CHIP_LABELS = {
   otherPaymentWaiting: "다른 사람이 주문 진행중이에요",
 } as const;
 
+// 멤버 슬롯 오버레이 칩 공통 스타일 — 버튼/스팬 분기가 같은 모양을 유지하도록 한 곳에 둔다.
+// max-w+truncate 는 좁은 뷰포트·글꼴 확대에서 긴 라벨이 잘릴 때 말줄임으로 처리하기 위함.
+const memberStatusChipClassName =
+  "max-w-[calc(100%-2rem)] truncate rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur";
+
 // 서버 participatedByMe(상세 응답) 또는 이 세션에서 방금 참여한 로컬 상태로 "내 참여"를 판별한다.
 function isOptionParticipatedByMe(option: ProductOption, myBid?: number) {
   return (
@@ -3402,13 +3407,15 @@ export function ProductDetail({
                           {isMyPaymentWaitingChip ? (
                             <button
                               type="button"
-                              className="pointer-events-auto whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur"
+                              aria-label={`${blockChipLabel}, 내 참여 내역 보기`}
+                              className={`relative pointer-events-auto after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipClassName}`}
                               onClick={openBidHistory}
                             >
-                              {blockChipLabel} ›
+                              {blockChipLabel}
+                              <span aria-hidden="true"> ›</span>
                             </button>
                           ) : (
-                            <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
+                            <span className={memberStatusChipClassName}>
                               {blockChipLabel}
                             </span>
                           )}
