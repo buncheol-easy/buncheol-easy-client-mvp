@@ -3335,12 +3335,19 @@ export function ProductDetail({
                       myBids[option.id],
                       product.isApiProduct === true,
                     ) ?? productOptionBlockLabel;
+                  const isMine = isOptionParticipatedByMe(
+                    option,
+                    myBids[option.id],
+                  );
                   const blockChipLabel = getOptionPurchaseBlockChipLabel(
                     overlayLabel,
                     option,
                     deadlineTick,
-                    isOptionParticipatedByMe(option, myBids[option.id]),
+                    isMine,
                   );
+                  const isMyPaymentWaitingChip =
+                    isMine &&
+                    overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting;
 
                   return (
                     <div
@@ -3389,12 +3396,22 @@ export function ProductDetail({
                       </div>
                       {blockChipLabel ? (
                         <div
-                          aria-hidden="true"
+                          aria-hidden={isMyPaymentWaitingChip ? undefined : true}
                           className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
                         >
-                          <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
-                            {blockChipLabel}
-                          </span>
+                          {isMyPaymentWaitingChip ? (
+                            <button
+                              type="button"
+                              className="pointer-events-auto whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur"
+                              onClick={openBidHistory}
+                            >
+                              {blockChipLabel} ›
+                            </button>
+                          ) : (
+                            <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
+                              {blockChipLabel}
+                            </span>
+                          )}
                         </div>
                       ) : null}
                     </div>
