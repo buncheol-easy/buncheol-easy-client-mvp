@@ -773,7 +773,7 @@ export function UploadProductForm({
           !isMemberMinimumPriceInput(memberMinimumPrices[member.id] ?? ""),
       )
     ) {
-      return "옵션 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)";
+      return "멤버 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)";
     }
 
     // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라

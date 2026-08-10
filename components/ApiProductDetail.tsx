@@ -120,7 +120,7 @@ function toPublicPreviewProduct(
   requiresLogin: boolean,
 ): ProductDetailItem {
   const productId = item.productId ?? item.id;
-  const optionLabel = item.member || item.targetMembers?.[0] || "옵션";
+  const optionLabel = item.member || item.targetMembers?.[0] || "멤버";
   const lockedLabel = requiresLogin ? "로그인 후 확인" : "확인 필요";
 
   return {

@@ -4,6 +4,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { BackIcon } from "@/components/icons";
 import {
+  ConfirmSheet,
+  type ConfirmSheetRequest,
+} from "@/components/ConfirmSheet";
+import {
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
   rejectParticipationPaymentSent,
@@ -309,6 +313,9 @@ export function HostedBuncheolManage({
   >({});
   // C2C 액션(성사 확정·부분 확정·입금확인·반려·운송장) 진행 중 식별자 — 중복 호출 방지.
   const [pendingC2CAction, setPendingC2CAction] = useState<string | null>(null);
+  // 되돌리기 어려운 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
+  const [confirmSheetRequest, setConfirmSheetRequest] =
+    useState<ConfirmSheetRequest | null>(null);
   const [participantTrackingInputs, setParticipantTrackingInputs] = useState<
     Record<string, string>
   >({});
@@ -572,7 +579,7 @@ export function HostedBuncheolManage({
 
   // C2C 성사 확정 — 신청 전원을 입금 대기(24h)로 일괄 전이 + 입금 안내 알림톡 발송.
   // 정원 미달은 개최자 재량 확정 허용, 미달 경고 후 재확인만 (docs/46 §7.1-2).
-  async function handleConfirmRecruitment() {
+  function requestConfirmRecruitment() {
     if (!detail || pendingC2CAction) {
       return;
     }
@@ -581,13 +588,22 @@ export function HostedBuncheolManage({
     const applicantCount = c2cAppliedCount;
     const isUnderMinHeadcount =
       minHeadcount > 0 && applicantCount < minHeadcount;
-    const confirmMessage = isUnderMinHeadcount
-      ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}명만 신청했어요. 미달인 채로 성사를 확정할까요?\n확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
-      : `성사를 확정할까요?\n신청자 ${applicantCount}명 전원에게 입금 안내 알림톡이 발송돼요.`;
 
-    if (!window.confirm(confirmMessage)) {
-      // 웹뷰가 confirm 을 억제해 false 를 돌려줘도 무반응처럼 보이지 않게 남긴다.
-      setMessage("성사 확정을 취소했어요.");
+    setConfirmSheetRequest({
+      confirmLabel: "성사 확정",
+      description: isUnderMinHeadcount
+        ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}명만 신청했어요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
+        : `신청자 ${applicantCount}명 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runConfirmRecruitment(applicantCount);
+      },
+      title: "성사를 확정할까요?",
+    });
+  }
+
+  async function runConfirmRecruitment(applicantCount: number) {
+    if (pendingC2CAction) {
       return;
     }
 
@@ -619,17 +635,24 @@ export function HostedBuncheolManage({
   }
 
   // C2C 입금 수집 종료(부분 확정) — 입금 확인된 참여만으로 진행 확정 (docs/46 §7.1-6).
-  async function handleFinalizeCollected() {
+  function requestFinalizeCollected() {
     if (!detail || pendingC2CAction) {
       return;
     }
 
-    if (
-      !window.confirm(
-        "입금 수집을 종료하고 진행을 확정할까요?\n입금 확인된 참여만으로 진행돼요.",
-      )
-    ) {
-      setMessage("진행 확정을 취소했어요.");
+    setConfirmSheetRequest({
+      confirmLabel: "진행 확정",
+      description: "입금 확인된 참여만으로 진행돼요.",
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runFinalizeCollected();
+      },
+      title: "입금 수집을 종료하고 진행을 확정할까요?",
+    });
+  }
+
+  async function runFinalizeCollected() {
+    if (pendingC2CAction) {
       return;
     }
 
@@ -692,7 +715,7 @@ export function HostedBuncheolManage({
   }
 
   // C2C 미입금 반려 — 보냈어요 해제 + 기한 +24h 연장 + 재확인 알림톡 (docs/46 §4.5).
-  async function handleRejectPaymentSent(
+  function requestRejectPaymentSent(
     participant: BuncheolManagementParticipant,
   ) {
     if (pendingC2CAction) {
@@ -702,12 +725,21 @@ export function HostedBuncheolManage({
     const depositorName =
       participant.refundAccount?.holder || participant.participantNickname;
 
-    if (
-      !window.confirm(
-        `${depositorName}님의 '보냈어요' 표시를 해제할까요?\n입금 기한이 24시간 연장되고 입금 재확인 알림톡이 발송돼요.`,
-      )
-    ) {
-      setMessage("반려를 취소했어요.");
+    setConfirmSheetRequest({
+      confirmLabel: "표시 해제",
+      description: `${depositorName}님의 입금 기한이 24시간 연장되고 입금 재확인 알림톡이 발송돼요.`,
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runRejectPaymentSent(participant);
+      },
+      title: "'보냈어요' 표시를 해제할까요?",
+    });
+  }
+
+  async function runRejectPaymentSent(
+    participant: BuncheolManagementParticipant,
+  ) {
+    if (pendingC2CAction) {
       return;
     }
 
@@ -888,7 +920,7 @@ export function HostedBuncheolManage({
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
-                <p className="text-[11px] font-medium text-black/35">{"\uc635\uc158"}</p>
+                <p className="text-[11px] font-medium text-black/35">{"멤버"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
                   {`${memberCount}\uac1c`}
                 </p>
@@ -975,7 +1007,7 @@ export function HostedBuncheolManage({
               <button
                 className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
                 disabled={c2cAppliedCount === 0 || pendingC2CAction !== null}
-                onClick={() => void handleConfirmRecruitment()}
+                onClick={requestConfirmRecruitment}
                 type="button"
               >
                 {pendingC2CAction === "confirm-recruitment"
@@ -1013,7 +1045,7 @@ export function HostedBuncheolManage({
                   c2cConfirmedCount === 0 ||
                   pendingC2CAction !== null
                 }
-                onClick={() => void handleFinalizeCollected()}
+                onClick={requestFinalizeCollected}
                 type="button"
               >
                 {pendingC2CAction === "finalize-collected"
@@ -1037,12 +1069,12 @@ export function HostedBuncheolManage({
           <section className="mt-6">
             <div className="mb-3">
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                {isC2C ? "참여자 관리" : "옵션별 주문 관리"}
+                {isC2C ? "참여자 관리" : "멤버별 주문 관리"}
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/40">
                 {isC2C
                   ? "입금자명과 통장 내역을 대조해 입금을 확인해요. 내역이 없으면 반려로 재확인을 요청할 수 있어요."
-                  : "공동구매 옵션별로 입금 확인과 운송장 등록을 이어서 처리해요."}
+                  : "공동구매 멤버별로 입금 확인과 운송장 등록을 이어서 처리해요."}
               </p>
             </div>
 
@@ -1078,7 +1110,7 @@ export function HostedBuncheolManage({
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {option.memberName ||
-                              `옵션 ${option.memberId ?? option.buncheolMemberId}`}
+                              `멤버 ${option.memberId ?? option.buncheolMemberId}`}
                           </p>
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
                             참여 {optionParticipants.length}명
@@ -1185,9 +1217,7 @@ export function HostedBuncheolManage({
                                         className="h-9 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:text-black/25"
                                         disabled={pendingC2CAction !== null}
                                         onClick={() =>
-                                          void handleRejectPaymentSent(
-                                            participant,
-                                          )
+                                          requestRejectPaymentSent(participant)
                                         }
                                         type="button"
                                       >
@@ -1373,7 +1403,7 @@ export function HostedBuncheolManage({
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[16px] font-semibold tracking-[-0.04em]">
-                          {option.memberName || `옵션 ${option.memberId ?? optionId}`}
+                          {option.memberName || `멤버 ${option.memberId ?? optionId}`}
                         </p>
                         <p className="mt-1 text-[12px] font-medium text-black/40">
                           참여 {option.participationCount}명
@@ -1624,6 +1654,11 @@ export function HostedBuncheolManage({
           </section>
         </div>
       </div>
+
+      <ConfirmSheet
+        onCancel={() => setConfirmSheetRequest(null)}
+        request={confirmSheetRequest}
+      />
     </main>
   );
 }

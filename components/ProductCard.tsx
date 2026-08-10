@@ -620,7 +620,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             {availableMemberNames.length > 0 ? (
               <>
                 <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
-                  가능 옵션
+                  가능 멤버
                 </span>
                 <span className="shrink-0 text-black/15">·</span>
                 <div className="relative min-w-0 flex-1">
@@ -652,7 +652,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
                     : "bg-black/5 text-black/38"
                 }`}
               >
-                남은 옵션 없음
+                남은 멤버 없음
               </span>
             )}
           </div>

@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type PointerEvent,
 } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
@@ -23,8 +24,11 @@ import {
   requestShippingAddresses,
   requestUserProfile,
   toProductDetailItem,
+  updateBankAccount,
+  createShippingAddress,
   type BankAccountInfo,
   type BuncheolManagementOption,
+  type CvsStore,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -180,6 +184,22 @@ const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
+
+// 접수처 검색 시트는 체크아웃에서 필요할 때만 로드한다 (카카오 지도 SDK 포함).
+const CvsStoreSearchSheet = dynamic(
+  () =>
+    import("@/components/CvsStoreSearchSheet").then(
+      (module) => module.CvsStoreSearchSheet,
+    ),
+  { ssr: false },
+);
+
+// 하이픈은 숫자 사이에만 허용 — 마이페이지 계좌 폼(ProfileContent)과 동일 규칙.
+const accountNumberPattern = /^\d+(-\d+)*$/;
+
+function sanitizeAccountNumber(value: string) {
+  return value.replace(/[^\d-]/g, "");
+}
 // 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
 const paymentWindowMs = 30 * 60 * 1000;
 // C2C 입금 창 — 성사 확정·추가 모집(즉시입금) 후 24시간 (docs/46 §7.1-3).
@@ -925,6 +945,18 @@ export function ProductDetail({
     useState(false);
   const [checkoutRefundAccount, setCheckoutRefundAccount] =
     useState<BankAccountInfo | null>(null);
+  // 체크아웃 이탈 없는 계좌 등록 시트 — 마이페이지 왕복(복원 로직 포함)을 대체한다.
+  const [isRefundAccountSheetOpen, setIsRefundAccountSheetOpen] =
+    useState(false);
+  const [refundAccountForm, setRefundAccountForm] = useState({
+    account: "",
+    bank: "",
+    holder: "",
+  });
+  const [refundAccountError, setRefundAccountError] = useState("");
+  const [isRefundAccountSaving, setIsRefundAccountSaving] = useState(false);
+  // 체크아웃 이탈 없는 배송지 추가 — 접수처 검색 시트에서 바로 등록한다.
+  const [isCvsStoreSearchOpen, setIsCvsStoreSearchOpen] = useState(false);
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
@@ -1173,6 +1205,88 @@ export function ProductDetail({
 
     writeDeliveryAddressState(nextAddressState);
     return nextAddressState;
+  }
+
+  // 체크아웃 안에서 환불계좌를 등록한다 — 저장 성공 시 진행 중이던 주문을 그대로 잇는다.
+  async function saveCheckoutRefundAccount() {
+    const bank = refundAccountForm.bank.trim();
+    const account = refundAccountForm.account.trim();
+    const holder = refundAccountForm.holder.trim();
+
+    if (!bank || !account || !holder) {
+      setRefundAccountError("은행·계좌번호·예금주를 모두 입력해 주세요.");
+      return;
+    }
+
+    if (!accountNumberPattern.test(account)) {
+      setRefundAccountError("하이픈(-)은 숫자 사이에만 넣을 수 있어요.");
+      return;
+    }
+
+    setIsRefundAccountSaving(true);
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        setRefundAccountError("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await updateBankAccount(accessToken, { account, bank, holder });
+      setCheckoutRefundAccount({ account, bank, holder });
+      setRefundAccountError("");
+      setIsRefundAccountSheetOpen(false);
+    } catch (error: unknown) {
+      setRefundAccountError(
+        error instanceof Error ? error.message : "계좌를 저장하지 못했어요.",
+      );
+    } finally {
+      setIsRefundAccountSaving(false);
+    }
+  }
+
+  // 접수처 선택 즉시 배송지를 등록하고 이번 체크아웃 배송지로 잡는다 — 페이지 이탈 없음.
+  async function handleCheckoutStoreSelected(store: CvsStore) {
+    setIsCvsStoreSearchOpen(false);
+
+    const accessToken = await getFreshAccessToken();
+
+    if (!accessToken) {
+      setCheckoutError("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    const storeType = store.brand === "CU" ? ("cu" as const) : ("gs25" as const);
+
+    try {
+      const previousAddressIds = new Set(
+        deliveryAddressState.addresses.map((address) => address.id),
+      );
+
+      await createShippingAddress(accessToken, {
+        branchName: `${getConvenienceStoreLabel(storeType)} ${store.name}`,
+        isDefault: !deliveryAddressState.defaultAddressIds[storeType],
+        storeCode: store.storeCode || undefined,
+        storeType,
+      });
+
+      const nextAddressState = await syncDeliveryAddressState(accessToken);
+      const addedAddress =
+        nextAddressState.addresses.find(
+          (address) => !previousAddressIds.has(address.id),
+        ) ?? null;
+
+      if (addedAddress) {
+        setCheckoutDeliveryAddress(addedAddress);
+      }
+
+      setCheckoutError("");
+    } catch (error: unknown) {
+      setCheckoutError(
+        error instanceof Error ? error.message : "배송지를 등록하지 못했어요.",
+      );
+    }
   }
   const bidDeliveryAddress =
     getBidDeliveryAddressFromState(deliveryAddressState);
@@ -1512,17 +1626,6 @@ export function ProductDetail({
     router.push(getAddressManagementHref(openAdd, options));
   }
 
-  // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
-  function navigateToProfileForRefundAccount() {
-    rememberCheckoutAddressReturnState(false);
-
-    const params = new URLSearchParams({
-      openAccount: "1",
-      returnTo: getProductDetailReturnHref({ restoreCheckoutConfirm: true }),
-    });
-
-    router.push(`/profile?${params.toString()}`);
-  }
 
   useEffect(() => {
     const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
@@ -2105,11 +2208,8 @@ export function ProductDetail({
       const shippingAddressId = Number(nextBidDeliveryAddress?.id);
 
       if (!Number.isFinite(shippingAddressId)) {
-        window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToAddressManagement(true, {
-          restoreCheckoutAddressSheet: true,
-        });
+        setIsCvsStoreSearchOpen(true);
         return;
       }
 
@@ -2127,9 +2227,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToProfileForRefundAccount();
+        setRefundAccountError("");
+        setIsRefundAccountSheetOpen(true);
         return;
       }
 
@@ -2213,11 +2313,8 @@ export function ProductDetail({
       const shippingAddressId = Number(nextBidDeliveryAddress?.id);
 
       if (!Number.isFinite(shippingAddressId)) {
-        window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToAddressManagement(true, {
-          restoreCheckoutAddressSheet: true,
-        });
+        setIsCvsStoreSearchOpen(true);
         return;
       }
 
@@ -2235,9 +2332,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToProfileForRefundAccount();
+        setRefundAccountError("");
+        setIsRefundAccountSheetOpen(true);
         return;
       }
 
@@ -2381,7 +2478,7 @@ export function ProductDetail({
 
         if (bankAccountKeys.size > 1) {
           throw new Error(
-            "선택한 옵션의 입금 계좌가 달라요. 참여 내역에서 각각 확인해 주세요.",
+            "선택한 멤버의 입금 계좌가 달라요. 참여 내역에서 각각 확인해 주세요.",
           );
         }
       } catch (error: unknown) {
@@ -3012,9 +3109,7 @@ export function ProductDetail({
       null;
 
     if (!selectedAddress) {
-      navigateToAddressManagement(true, {
-        restoreCheckoutAddressSheet: true,
-      });
+      setIsCvsStoreSearchOpen(true);
       return;
     }
 
@@ -3586,7 +3681,7 @@ export function ProductDetail({
               type="button"
               className="absolute inset-0 cursor-default"
               onClick={closeSheet}
-              aria-label="구매 옵션 닫기"
+              aria-label="멤버 선택 닫기"
             />
             <section
               className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
@@ -3632,7 +3727,7 @@ export function ProductDetail({
                           ? isC2CProduct && !isC2CCollectingProduct
                             ? "신청 확인"
                             : "주문 확인"
-                          : "구매 옵션"}
+                          : "멤버 선택"}
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
                     {checkoutStep === "payment"
@@ -3745,7 +3840,7 @@ export function ProductDetail({
 
                   <div className="mt-5 flex items-center justify-between border-t border-black/10 pt-4">
                     <span className="text-[14px] font-medium text-black/45">
-                      구매 옵션 {activeBidCount}개
+                      선택 멤버 {activeBidCount}명
                     </span>
                     <span className="text-[22px] font-semibold tracking-[-0.05em]">
                       {formatPrice(totalBidAmount)}
@@ -3769,7 +3864,7 @@ export function ProductDetail({
                 <>
                   <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                      <p className="text-[12px] font-semibold text-black/40">선택 옵션</p>
+                      <p className="text-[12px] font-semibold text-black/40">선택 멤버</p>
                       <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                         {selectedCheckoutItems[0]?.option.label ?? "-"}
                         {selectedCheckoutItems.length > 1
@@ -3958,7 +4053,7 @@ export function ProductDetail({
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[12px] font-semibold text-black/40">
-                            선택 옵션
+                            선택 멤버
                           </p>
                           <span className="text-[12px] font-semibold text-black/35">
                             {checkoutPaymentSummary.items.length}개
@@ -4305,11 +4400,7 @@ export function ProductDetail({
 
                 <button
                   className="flex h-14 w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
-                  onClick={() =>
-                    navigateToAddressManagement(true, {
-                      restoreCheckoutAddressSheet: true,
-                    })
-                  }
+                  onClick={() => setIsCvsStoreSearchOpen(true)}
                   type="button"
                 >
                   + 새 배송지 추가
@@ -4325,6 +4416,109 @@ export function ProductDetail({
               </button>
             </section>
           </div>
+        ) : null}
+
+        {isRefundAccountSheetOpen ? (
+          <div className="bid-sheet-backdrop bid-sheet-backdrop-active fixed inset-0 z-50 flex items-end">
+            <button
+              aria-label="계좌 등록 닫기"
+              className="absolute inset-0 cursor-default"
+              onClick={() => setIsRefundAccountSheetOpen(false)}
+              type="button"
+            />
+            <section className="bid-sheet-panel bid-sheet-panel-active relative mx-auto w-full max-w-[430px] rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)]">
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                환불계좌 등록
+              </h2>
+              <p className="mt-1 text-[13px] font-medium leading-5 text-black/45">
+                입금자명 확인과 환불에 쓰는 계좌예요. 등록하면 주문을 바로 이어갈
+                수 있어요.
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <label className="block">
+                  <span className="text-[12px] font-semibold text-black/45">
+                    은행
+                  </span>
+                  <input
+                    className="mt-1.5 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
+
+                      setRefundAccountForm((current) => ({
+                        ...current,
+                        bank: nextValue,
+                      }));
+                    }}
+                    placeholder="국민은행"
+                    value={refundAccountForm.bank}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[12px] font-semibold text-black/45">
+                    계좌번호
+                  </span>
+                  <input
+                    className="mt-1.5 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    inputMode="tel"
+                    onChange={(event) => {
+                      const nextValue = sanitizeAccountNumber(
+                        event.currentTarget.value,
+                      );
+
+                      setRefundAccountForm((current) => ({
+                        ...current,
+                        account: nextValue,
+                      }));
+                    }}
+                    placeholder="숫자 또는 하이픈 입력"
+                    value={refundAccountForm.account}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[12px] font-semibold text-black/45">
+                    예금주
+                  </span>
+                  <input
+                    className="mt-1.5 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
+
+                      setRefundAccountForm((current) => ({
+                        ...current,
+                        holder: nextValue,
+                      }));
+                    }}
+                    placeholder="김분철"
+                    value={refundAccountForm.holder}
+                  />
+                </label>
+              </div>
+
+              {refundAccountError ? (
+                <p className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
+                  {refundAccountError}
+                </p>
+              ) : null}
+
+              <button
+                className="mt-4 h-13 h-[52px] w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
+                disabled={isRefundAccountSaving}
+                onClick={() => void saveCheckoutRefundAccount()}
+                type="button"
+              >
+                {isRefundAccountSaving ? "저장 중" : "계좌 등록하고 이어가기"}
+              </button>
+            </section>
+          </div>
+        ) : null}
+
+        {isCvsStoreSearchOpen ? (
+          <CvsStoreSearchSheet
+            onClose={() => setIsCvsStoreSearchOpen(false)}
+            onSelect={(store) => void handleCheckoutStoreSelected(store)}
+          />
         ) : null}
 
         {isImageViewerOpen && productImages.length > 0 ? (
