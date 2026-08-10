@@ -437,9 +437,21 @@ export function HostedBuncheolManage({
   const c2cParticipantsByOptionId = getParticipantsByOptionId(
     activeC2CParticipants,
   );
-  // C2C 배송 집계는 winner(대표 1명)가 아닌 활성 참여 전건 기준.
+  // 옵션 id 공간이 어긋나 어느 카드에도 못 실린 참여 — 집계에는 잡히는데 리스트에서
+  // 사라지면 개최자가 액션을 못 하므로 경고로 드러낸다.
+  const c2cUnmatchedParticipantCount = activeC2CParticipants.filter(
+    (participant) =>
+      !participant.buncheolMemberId ||
+      !(detail?.options ?? []).some(
+        (option) => option.buncheolMemberId === participant.buncheolMemberId,
+      ),
+  ).length;
+  // C2C 배송 집계는 winner(대표 1명)가 아닌 활성 참여 전건 기준. 배송 스냅샷은 입금 전에도
+  // 생기므로(참여 생성 시 배송지 전송) 입금 확인 완료 건만 "운송장 대기"로 센다 — 행 렌더와 동일 조건.
   const c2cDeliveryReadyCount = activeC2CParticipants.filter(
     (participant) =>
+      (isParticipationConfirmedStatus(participant.status) ||
+        Boolean(participant.confirmedAt)) &&
       Boolean(participant.delivery?.deliveryId) &&
       !participant.delivery?.trackingNumber,
   ).length;
@@ -766,6 +778,13 @@ export function HostedBuncheolManage({
         trackingNumber,
       );
       await reloadManagementDetail(accessToken);
+      setParticipantTrackingInputs((current) => {
+        const next = { ...current };
+
+        delete next[participant.participationId];
+
+        return next;
+      });
       setMessage("운송장 번호를 등록했어요.");
     } catch (error: unknown) {
       setMessage(
@@ -1006,6 +1025,11 @@ export function HostedBuncheolManage({
                   입금 대기·보냈어요 참여를 확인하거나 반려로 정리하면 종료할 수
                   있어요. 기한이 지나면 미입금 신청은 자동 취소돼요.
                 </p>
+              ) : c2cConfirmedCount === 0 ? (
+                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                  입금 확인된 참여가 아직 없어요. 최소 1명을 확인해야 진행을
+                  확정할 수 있어요.
+                </p>
               ) : null}
             </section>
           ) : null}
@@ -1030,25 +1054,10 @@ export function HostedBuncheolManage({
               ) : isC2C ? (
                 // C2C: 다슬롯이라 대표 참여자(winner)가 아닌 활성 참여 전건을 멤버별로 보여준다.
                 detail.options.map((option) => {
-                  // 옵션 중첩 참여자와 최상위 participants 를 participationId 기준으로 머지 —
-                  // 서버가 최상위로만 내려주는 응답에서 목록이 통째로 비는 것 방지.
-                  const optionParticipants = [
-                    ...new Map(
-                      [
-                        ...(option.participants ?? []),
-                        ...(c2cParticipantsByOptionId[option.buncheolMemberId] ??
-                          []),
-                      ]
-                        .filter(
-                          (participant) =>
-                            !isParticipationCancelledStatus(participant.status),
-                        )
-                        .map(
-                          (participant) =>
-                            [participant.participationId, participant] as const,
-                        ),
-                    ).values(),
-                  ];
+                  // 파서(getBuncheolManagementDetailFromBody)가 최상위·옵션 중첩 참여자를
+                  // participationId 기준으로 이미 합쳐 두므로, 활성 참여 그룹핑만 쓰면 된다.
+                  const optionParticipants =
+                    c2cParticipantsByOptionId[option.buncheolMemberId] ?? [];
 
                   return (
                     <article
@@ -1104,6 +1113,9 @@ export function HostedBuncheolManage({
                             const isRowConfirming =
                               pendingC2CAction ===
                               `confirm:${participant.participationId}`;
+                            const isRowRejecting =
+                              pendingC2CAction ===
+                              `reject:${participant.participationId}`;
                             const isRowRegisteringTracking =
                               pendingC2CAction ===
                               `tracking:${participant.participationId}`;
@@ -1179,7 +1191,9 @@ export function HostedBuncheolManage({
                                         }
                                         type="button"
                                       >
-                                        입금 못 찾음
+                                        {isRowRejecting
+                                          ? "해제 중"
+                                          : "입금 못 찾음"}
                                       </button>
                                     ) : null}
                                     <button
@@ -1202,15 +1216,16 @@ export function HostedBuncheolManage({
                                 {isRowConfirmed && participant.delivery ? (
                                   <div className="mt-3 border-t border-black/[0.06] pt-3">
                                     <p className="text-[12px] font-medium text-black/40">
-                                      {getShippingMethodLabel(
-                                        participant.delivery.shippingMethod,
-                                      )}
-                                      {participant.delivery.storeName
-                                        ? ` · ${participant.delivery.storeName}`
-                                        : ""}
-                                      {participant.delivery.receiverPhoneNumber
-                                        ? ` · ${participant.delivery.receiverPhoneNumber}`
-                                        : ""}
+                                      {[
+                                        getShippingMethodLabel(
+                                          participant.delivery.shippingMethod,
+                                        ),
+                                        participant.delivery.storeName,
+                                        participant.delivery
+                                          .receiverPhoneNumber,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" · ")}
                                     </p>
                                     {hasTracking ? (
                                       <p className="mt-1.5 text-[13px] font-semibold text-black/55">
@@ -1598,6 +1613,13 @@ export function HostedBuncheolManage({
                 );
                 })
               )}
+              {isC2C && c2cUnmatchedParticipantCount > 0 ? (
+                <p className="rounded-[1rem] border border-[#F3C1C1] bg-[#fff2f2] px-4 py-3 text-[13px] font-medium leading-5 text-[#c03131]">
+                  멤버 정보와 연결되지 않은 참여가{" "}
+                  {c2cUnmatchedParticipantCount}건 있어요. 화면을 새로고침해도
+                  계속 보이면 분철이지로 문의해 주세요.
+                </p>
+              ) : null}
             </div>
           </section>
         </div>

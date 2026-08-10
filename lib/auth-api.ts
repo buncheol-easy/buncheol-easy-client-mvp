@@ -3561,13 +3561,13 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     deadline:
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||
       getStringValue(responseData, ["deadline", "buncheolDeadline"]),
+    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     groupName:
       getStringValue(data, ["groupName", "group"]) ||
       getStringValue(responseData, ["groupName", "group"]),
     id,
     memberCount: memberCount ?? undefined,
     minHeadcount: getNumberValue(data, ["minHeadcount"]) ?? undefined,
-    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     optionCount:
       getNumberValue(data, ["optionCount", "memberSlotCount", "memberCount"]) ??
       options.length,
