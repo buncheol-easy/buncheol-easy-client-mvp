@@ -1778,7 +1778,7 @@ export function UploadProductForm({
           )));
 
     if (!isApiEditMode && hasInvalidMemberAmount) {
-      setSubmitError("옵션 가격은 100원 단위로 입력해 주세요.");
+      setSubmitError("멤버 가격은 100원 단위로 입력해 주세요.");
       return;
     }
 

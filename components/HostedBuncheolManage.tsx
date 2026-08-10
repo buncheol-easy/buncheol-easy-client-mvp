@@ -922,7 +922,7 @@ export function HostedBuncheolManage({
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">{"멤버"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${memberCount}\uac1c`}
+                  {`${memberCount}명`}
                 </p>
               </div>
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">

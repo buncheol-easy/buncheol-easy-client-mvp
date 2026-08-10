@@ -63,8 +63,16 @@ import {
   getDeliveryAddressDisplayAlias,
   getDeliveryAddressDisplayBranchName,
   getPrioritizedDeliveryAddresses,
+  maxDeliveryAddressCount,
+  stripLeadingConvenienceStoreLabel,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
+import {
+  accountNumberPattern,
+  bankAccountFieldMaxLength,
+  sanitizeAccountNumber,
+} from "@/lib/bank-account";
+import { writeSettlementAccountState } from "@/lib/settlement-account-store";
 import {
   BackIcon,
   CloseIcon,
@@ -194,12 +202,6 @@ const CvsStoreSearchSheet = dynamic(
   { ssr: false },
 );
 
-// 하이픈은 숫자 사이에만 허용 — 마이페이지 계좌 폼(ProfileContent)과 동일 규칙.
-const accountNumberPattern = /^\d+(-\d+)*$/;
-
-function sanitizeAccountNumber(value: string) {
-  return value.replace(/[^\d-]/g, "");
-}
 // 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
 const paymentWindowMs = 30 * 60 * 1000;
 // C2C 입금 창 — 성사 확정·추가 모집(즉시입금) 후 24시간 (docs/46 §7.1-3).
@@ -955,8 +957,12 @@ export function ProductDetail({
   });
   const [refundAccountError, setRefundAccountError] = useState("");
   const [isRefundAccountSaving, setIsRefundAccountSaving] = useState(false);
+  const [isRefundAccountSheetEntered, setIsRefundAccountSheetEntered] =
+    useState(false);
   // 체크아웃 이탈 없는 배송지 추가 — 접수처 검색 시트에서 바로 등록한다.
   const [isCvsStoreSearchOpen, setIsCvsStoreSearchOpen] = useState(false);
+  const [isCheckoutAddressCreatePending, setIsCheckoutAddressCreatePending] =
+    useState(false);
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
@@ -1207,6 +1213,22 @@ export function ProductDetail({
     return nextAddressState;
   }
 
+  // 계좌 시트 등장 트랜지션 — 다른 시트들의 rAF 2단계 진입 패턴과 동일.
+  useEffect(() => {
+    if (!isRefundAccountSheetOpen) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      setIsRefundAccountSheetEntered(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      setIsRefundAccountSheetEntered(false);
+    };
+  }, [isRefundAccountSheetOpen]);
+
   // 체크아웃 안에서 환불계좌를 등록한다 — 저장 성공 시 진행 중이던 주문을 그대로 잇는다.
   async function saveCheckoutRefundAccount() {
     const bank = refundAccountForm.bank.trim();
@@ -1235,6 +1257,12 @@ export function ProductDetail({
 
       await updateBankAccount(accessToken, { account, bank, holder });
       setCheckoutRefundAccount({ account, bank, holder });
+      // 마이페이지 계좌 폼과 같은 공용 스토어를 갱신해 화면 간 표기가 어긋나지 않게 한다.
+      writeSettlementAccountState({
+        accountHolder: holder,
+        accountNumber: account,
+        bankName: bank,
+      });
       setRefundAccountError("");
       setIsRefundAccountSheetOpen(false);
     } catch (error: unknown) {
@@ -1248,6 +1276,10 @@ export function ProductDetail({
 
   // 접수처 선택 즉시 배송지를 등록하고 이번 체크아웃 배송지로 잡는다 — 페이지 이탈 없음.
   async function handleCheckoutStoreSelected(store: CvsStore) {
+    if (isCheckoutAddressCreatePending) {
+      return;
+    }
+
     setIsCvsStoreSearchOpen(false);
 
     const accessToken = await getFreshAccessToken();
@@ -1258,6 +1290,12 @@ export function ProductDetail({
     }
 
     const storeType = store.brand === "CU" ? ("cu" as const) : ("gs25" as const);
+    // 지점명에 브랜드 라벨이 이미 있으면 한 번만 붙인 형태로 저장한다 — 관리 화면과 동일 규칙
+    // (서버 storeType 판별이 지점명 문구에 의존할 수 있음).
+    const strippedStoreName =
+      stripLeadingConvenienceStoreLabel(storeType, store.name) || store.name;
+
+    setIsCheckoutAddressCreatePending(true);
 
     try {
       const previousAddressIds = new Set(
@@ -1265,27 +1303,50 @@ export function ProductDetail({
       );
 
       await createShippingAddress(accessToken, {
-        branchName: `${getConvenienceStoreLabel(storeType)} ${store.name}`,
+        branchName: `${getConvenienceStoreLabel(storeType)} ${strippedStoreName}`,
         isDefault: !deliveryAddressState.defaultAddressIds[storeType],
         storeCode: store.storeCode || undefined,
         storeType,
       });
 
       const nextAddressState = await syncDeliveryAddressState(accessToken);
+      // 신규 id 우선, 서버가 동일 지점을 dedupe 했다면 storeCode 로 재탐색한다.
       const addedAddress =
         nextAddressState.addresses.find(
           (address) => !previousAddressIds.has(address.id),
-        ) ?? null;
+        ) ??
+        (store.storeCode
+          ? nextAddressState.addresses.find(
+              (address) => address.storeCode === store.storeCode,
+            ) ?? null
+          : null);
 
       if (addedAddress) {
         setCheckoutDeliveryAddress(addedAddress);
+        setCheckoutError("");
+      } else {
+        setCheckoutError(
+          "배송지 등록 결과를 확인하지 못했어요. 목록에서 배송지를 선택해 주세요.",
+        );
+      }
+    } catch (error: unknown) {
+      let message =
+        error instanceof Error ? error.message : "배송지를 등록하지 못했어요.";
+
+      // 로컬 목록이 낡아 서버가 개수 제한으로 거부했는지 재동기화로 판정한다 — 관리 화면과 동일.
+      try {
+        const nextAddressState = await syncDeliveryAddressState(accessToken);
+
+        if (nextAddressState.addresses.length >= maxDeliveryAddressCount) {
+          message = `배송지는 최대 ${maxDeliveryAddressCount}개까지 등록할 수 있어요. 사용하지 않는 배송지를 삭제한 뒤 다시 시도해 주세요.`;
+        }
+      } catch {
+        // 재동기화 실패 시 원래 에러 메시지를 그대로 보여 준다.
       }
 
-      setCheckoutError("");
-    } catch (error: unknown) {
-      setCheckoutError(
-        error instanceof Error ? error.message : "배송지를 등록하지 못했어요.",
-      );
+      setCheckoutError(message);
+    } finally {
+      setIsCheckoutAddressCreatePending(false);
     }
   }
   const bidDeliveryAddress =
@@ -1484,54 +1545,6 @@ export function ProductDetail({
     return "지금은 구매할 수 없는 분철이에요";
   }
 
-  function getProductDetailReturnHref(
-    options: {
-      restoreCheckoutAddressSheet?: boolean;
-      restoreCheckoutConfirm?: boolean;
-    } = {},
-  ) {
-    const fallbackHref = `/products/${encodeURIComponent(buncheolId)}`;
-
-    if (typeof window === "undefined") {
-      return fallbackHref;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-
-    if (options.restoreCheckoutAddressSheet || options.restoreCheckoutConfirm) {
-      params.set("checkoutStep", "confirm");
-
-      if (options.restoreCheckoutAddressSheet) {
-        params.set("addressSheet", "1");
-      } else {
-        params.delete("addressSheet");
-      }
-
-      params.delete("checkoutOption");
-      getSelectedCheckoutOptionIds().forEach((optionId) => {
-        params.append("checkoutOption", optionId);
-      });
-
-      const checkoutAddressId =
-        checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null;
-
-      if (checkoutAddressId) {
-        params.set("checkoutAddress", checkoutAddressId);
-      } else {
-        params.delete("checkoutAddress");
-      }
-    }
-
-    const query = params.toString();
-    const currentHref = `${window.location.pathname}${query ? `?${query}` : ""}`;
-
-    return currentHref.startsWith("/products/") ? currentHref : fallbackHref;
-  }
-
-  function getSelectedCheckoutOptionIds() {
-    return getSelectedCheckoutReturnOptions().map((option) => option.id);
-  }
-
   function getSelectedCheckoutReturnOptions(): CheckoutAddressReturnOption[] {
     const currentReturnOptions = getCheckoutReturnOptionsForAmounts(bidAmounts);
 
@@ -1599,33 +1612,6 @@ export function ProductDetail({
       } satisfies CheckoutAddressReturnState),
     );
   }
-
-  function getAddressManagementHref(
-    openAdd = false,
-    options: { restoreCheckoutAddressSheet?: boolean } = {},
-  ) {
-    const params = new URLSearchParams({
-      returnTo: getProductDetailReturnHref(options),
-    });
-
-    if (openAdd) {
-      params.set("openAdd", "1");
-    }
-
-    return `/profile/addresses?${params.toString()}`;
-  }
-
-  function navigateToAddressManagement(
-    openAdd = false,
-    options: { restoreCheckoutAddressSheet?: boolean } = {},
-  ) {
-    if (options.restoreCheckoutAddressSheet) {
-      rememberCheckoutAddressReturnState(true);
-    }
-
-    router.push(getAddressManagementHref(openAdd, options));
-  }
-
 
   useEffect(() => {
     const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
@@ -3160,9 +3146,8 @@ export function ProductDetail({
       getCheckoutEligibleDeliveryAddressesFromState(nextAddressState);
 
     if (nextEligibleDeliveryAddresses.length === 0) {
-      navigateToAddressManagement(true, {
-        restoreCheckoutAddressSheet: true,
-      });
+      // 배송지가 하나도 없으면 이탈 대신 접수처 검색 시트로 바로 등록한다.
+      setIsCvsStoreSearchOpen(true);
       return;
     }
 
@@ -4056,7 +4041,7 @@ export function ProductDetail({
                             선택 멤버
                           </p>
                           <span className="text-[12px] font-semibold text-black/35">
-                            {checkoutPaymentSummary.items.length}개
+                            {checkoutPaymentSummary.items.length}명
                           </span>
                         </div>
                         <div className="mt-2 space-y-2">
@@ -4400,10 +4385,13 @@ export function ProductDetail({
 
                 <button
                   className="flex h-14 w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  disabled={isCheckoutAddressCreatePending}
                   onClick={() => setIsCvsStoreSearchOpen(true)}
                   type="button"
                 >
-                  + 새 배송지 추가
+                  {isCheckoutAddressCreatePending
+                    ? "배송지 등록 중"
+                    : "+ 새 배송지 추가"}
                 </button>
               </div>
 
@@ -4419,14 +4407,22 @@ export function ProductDetail({
         ) : null}
 
         {isRefundAccountSheetOpen ? (
-          <div className="bid-sheet-backdrop bid-sheet-backdrop-active fixed inset-0 z-50 flex items-end">
+          <div
+            className={`bid-sheet-backdrop fixed inset-0 z-50 flex items-end ${
+              isRefundAccountSheetEntered ? "bid-sheet-backdrop-active" : ""
+            }`}
+          >
             <button
               aria-label="계좌 등록 닫기"
               className="absolute inset-0 cursor-default"
               onClick={() => setIsRefundAccountSheetOpen(false)}
               type="button"
             />
-            <section className="bid-sheet-panel bid-sheet-panel-active relative mx-auto w-full max-w-[430px] rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)]">
+            <section
+              className={`bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+                isRefundAccountSheetEntered ? "bid-sheet-panel-active" : ""
+              }`}
+            >
               <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 환불계좌 등록
@@ -4451,6 +4447,7 @@ export function ProductDetail({
                         bank: nextValue,
                       }));
                     }}
+                    maxLength={bankAccountFieldMaxLength}
                     placeholder="국민은행"
                     value={refundAccountForm.bank}
                   />
@@ -4472,6 +4469,7 @@ export function ProductDetail({
                         account: nextValue,
                       }));
                     }}
+                    maxLength={bankAccountFieldMaxLength}
                     placeholder="숫자 또는 하이픈 입력"
                     value={refundAccountForm.account}
                   />
@@ -4490,6 +4488,7 @@ export function ProductDetail({
                         holder: nextValue,
                       }));
                     }}
+                    maxLength={bankAccountFieldMaxLength}
                     placeholder="김분철"
                     value={refundAccountForm.holder}
                   />
@@ -4503,7 +4502,7 @@ export function ProductDetail({
               ) : null}
 
               <button
-                className="mt-4 h-13 h-[52px] w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
+                className="mt-4 h-[52px] w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
                 disabled={isRefundAccountSaving}
                 onClick={() => void saveCheckoutRefundAccount()}
                 type="button"
@@ -4515,10 +4514,14 @@ export function ProductDetail({
         ) : null}
 
         {isCvsStoreSearchOpen ? (
-          <CvsStoreSearchSheet
-            onClose={() => setIsCvsStoreSearchOpen(false)}
-            onSelect={(store) => void handleCheckoutStoreSelected(store)}
-          />
+          // 시트 내부 z-40 이 배송지 선택 시트(z-50)에 가리지 않도록 z-[60] 스태킹
+          // 컨텍스트로 감싼다 — DOM 순서가 아닌 명시적 레이어로 위에 띄운다.
+          <div className="relative z-[60]">
+            <CvsStoreSearchSheet
+              onClose={() => setIsCvsStoreSearchOpen(false)}
+              onSelect={(store) => void handleCheckoutStoreSelected(store)}
+            />
+          </div>
         ) : null}
 
         {isImageViewerOpen && productImages.length > 0 ? (

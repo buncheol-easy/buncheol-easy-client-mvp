@@ -2368,7 +2368,12 @@ export function BidHistoryContent({
   async function handleMarkPaymentSent(bid: BidRecord) {
     const accessToken = authState.accessToken;
 
-    if (!accessToken || pendingParticipationId) {
+    if (!accessToken) {
+      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    if (pendingParticipationId) {
       return;
     }
 
@@ -2457,7 +2462,12 @@ export function BidHistoryContent({
   async function runRevertPaymentSent(bid: BidRecord) {
     const accessToken = authState.accessToken;
 
-    if (!accessToken || pendingParticipationId) {
+    if (!accessToken) {
+      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    if (pendingParticipationId) {
       return;
     }
 
@@ -2541,7 +2551,12 @@ export function BidHistoryContent({
   async function runCancelParticipation(bid: BidRecord) {
     const accessToken = authState.accessToken;
 
-    if (!accessToken || pendingParticipationId) {
+    if (!accessToken) {
+      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    if (pendingParticipationId) {
       return;
     }
 

@@ -72,12 +72,10 @@ function getEmptySettlementAccountState(): SettlementAccountState {
   };
 }
 
-function sanitizeAccountNumber(value: string) {
-  return value.replace(/[^\d-]/g, "");
-}
-
-// 하이픈은 숫자 사이에만 허용 — 선두/말미 하이픈과 연속 하이픈(--)을 막는다.
-const accountNumberPattern = /^\d+(-\d+)*$/;
+import {
+  accountNumberPattern,
+  sanitizeAccountNumber,
+} from "@/lib/bank-account";
 
 function getSettlementAccountState(profile: UserProfile | null) {
   const bankAccount = profile?.bankAccount;
