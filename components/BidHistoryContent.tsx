@@ -72,6 +72,7 @@ import {
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
+import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import {
   formatPaybackDeadlineNotice,
   PAYBACK_CTA_LABEL,
@@ -1091,6 +1092,13 @@ async function getBidRecordWithShippingData(
       deliveryId: mergedBidRecord.deliveryId ?? paymentDetail.deliveryId ?? null,
       deliveryStatus:
         paymentDetail.deliveryStatus ?? mergedBidRecord.deliveryStatus ?? null,
+      // 목록 응답에 flowType 이 빠지면 C2C 참여가 LEGACY(30분 창·만료 폴백)로
+      // 퇴화하므로 상세 응답으로 보강한다. 오픈채팅·보냈어요 시각도 동일.
+      flowType: mergedBidRecord.flowType ?? paymentDetail.flowType ?? null,
+      openChatUrl:
+        mergedBidRecord.openChatUrl ?? paymentDetail.openChatUrl ?? null,
+      paymentSentAt:
+        mergedBidRecord.paymentSentAt ?? paymentDetail.paymentSentAt ?? null,
       hostBankAccount:
         mergedBidRecord.hostBankAccount ?? paymentDetail.hostBankAccount,
       paidAt:
@@ -1119,9 +1127,11 @@ async function getBidRecordWithShippingData(
     return {
       ...mergedBidRecord,
       courier: product.courier,
+      flowType: mergedBidRecord.flowType ?? detail.flowType ?? null,
       hostBankAccount:
         mergedBidRecord.hostBankAccount ?? detail.hostBankAccount,
       imageUrl: mergedBidRecord.imageUrl ?? product.imageUrl,
+      openChatUrl: mergedBidRecord.openChatUrl ?? detail.openChatUrl ?? null,
       shippingMethods: product.shippingMethods,
     };
   }
@@ -1332,15 +1342,20 @@ export function BidHistoryContent({
   const actionablePaybackRecords = paymentBidRecords.filter((bid) =>
     isPaybackRequestable(bid),
   );
-  // C2C 는 신청(개최자 확정 대기)·보냈어요(개최자 확인 대기)도 상태가 서버에서 바뀌는
-  // 구간이라 폴링 대상에 포함한다.
-  const shouldRefreshPaymentState = paymentBidRecords.some(
-    (bid) =>
-      isBidRecordPaymentReady(bid, now) ||
-      (isC2CBidRecord(bid) &&
-        (isParticipationAppliedStatus(bid.participationStatus) ||
-          isParticipationPaymentSentStatus(bid.participationStatus))),
+  // 입금 대기(기한 압박 구간)는 15초 주기로 빠르게 갱신한다.
+  const hasUrgentPaymentPolling = paymentBidRecords.some((bid) =>
+    isBidRecordPaymentReady(bid, now),
   );
+  // C2C 신청(개최자 확정 대기)·보냈어요(확인 대기)는 며칠까지 갈 수 있는 대기라
+  // 폴링은 하되 60초 주기로 늦춘다 — 15초 N+1 요청이 무기한 도는 것 방지.
+  const hasIdleC2CPolling = paymentBidRecords.some(
+    (bid) =>
+      isC2CBidRecord(bid) &&
+      (isParticipationAppliedStatus(bid.participationStatus) ||
+        isParticipationPaymentSentStatus(bid.participationStatus)),
+  );
+  const shouldRefreshPaymentState =
+    hasUrgentPaymentPolling || hasIdleC2CPolling;
   const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
     deliveryAddresses,
     defaultAddressIds,
@@ -1405,6 +1420,9 @@ export function BidHistoryContent({
       isSelectedPaymentC2C &&
       isParticipationPaymentSentStatus(selectedPaymentBid.participationStatus),
   );
+  const selectedPaymentOpenChatHref = isSelectedPaymentC2C
+    ? getSafeOpenChatHref(selectedPaymentBid?.openChatUrl)
+    : null;
   const selectedPaymentRemainingTime = selectedPaymentBid
     ? formatPaymentCountdown(
         selectedPaymentBid.deadline,
@@ -1414,6 +1432,20 @@ export function BidHistoryContent({
         isSelectedPaymentC2C,
       )
     : "";
+  const selectedPaymentDeadlineMs = selectedPaymentBid
+    ? getPaymentDeadlineDate(
+        selectedPaymentBid.deadline,
+        selectedPaymentBid.paymentDueAt,
+        selectedPaymentBid.createdAt,
+        isSelectedPaymentC2C,
+      ).getTime()
+    : Number.NaN;
+  // 카운트다운에 초가 보이는 구간(1시간 미만)에만 1초 틱을 쓴다 — C2C 24시간 창에서
+  // 화면 변화 없는 매초 리렌더 방지. 임계 통과는 60초 틱이 now 를 갱신하며 자연 전환된다.
+  const shouldTickSelectedPaymentEverySecond =
+    !isSelectedPaymentC2C ||
+    (Number.isFinite(selectedPaymentDeadlineMs) &&
+      selectedPaymentDeadlineMs - now.getTime() < 3_600_000);
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNow(new Date());
@@ -1445,7 +1477,7 @@ export function BidHistoryContent({
   }, []);
 
   // 결제 정보 시트가 열려 있는 동안에는 입금 마감 카운트다운을 분철 상세처럼
-  // 초 단위로 갱신한다. 기한이 지나면 결제 대기 상태가 풀리면서 인터벌도 정리된다.
+  // 갱신한다(초가 보일 때만 1초 틱). 기한이 지나면 결제 대기가 풀리며 인터벌도 정리된다.
   useEffect(() => {
     if (!isPaymentSheetOpen || !isSelectedPaymentReady) {
       return;
@@ -1453,14 +1485,21 @@ export function BidHistoryContent({
 
     setNow(new Date());
 
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 1_000);
+    const timer = window.setInterval(
+      () => {
+        setNow(new Date());
+      },
+      shouldTickSelectedPaymentEverySecond ? 1_000 : 60_000,
+    );
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [isPaymentSheetOpen, isSelectedPaymentReady]);
+  }, [
+    isPaymentSheetOpen,
+    isSelectedPaymentReady,
+    shouldTickSelectedPaymentEverySecond,
+  ]);
 
   useEffect(() => {
     if (!restoreStoredViewState) {
@@ -1646,16 +1685,50 @@ export function BidHistoryContent({
       }
     }
 
+    let timer: number | null = null;
+    const pollIntervalMs = hasUrgentPaymentPolling ? 15_000 : 60_000;
+
+    function startPolling() {
+      if (timer !== null) {
+        return;
+      }
+
+      timer = window.setInterval(() => {
+        void refreshParticipations();
+      }, pollIntervalMs);
+    }
+
+    function stopPolling() {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    }
+
+    // 백그라운드 탭·웹뷰에서는 폴링을 멈추고, 복귀하면 즉시 1회 갱신 후 재개한다.
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        stopPolling();
+      } else {
+        void refreshParticipations();
+        startPolling();
+      }
+    }
+
     void refreshParticipations();
-    const timer = window.setInterval(() => {
-      void refreshParticipations();
-    }, 15_000);
+
+    if (document.visibilityState !== "hidden") {
+      startPolling();
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       isActive = false;
-      window.clearInterval(timer);
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [authState.isLoggedIn, shouldRefreshPaymentState]);
+  }, [authState.isLoggedIn, shouldRefreshPaymentState, hasUrgentPaymentPolling]);
 
   useEffect(() => {
     const rawReturnState = window.sessionStorage.getItem(addressReturnStateKey);
@@ -2329,10 +2402,13 @@ export function BidHistoryContent({
       }
 
       if (failure) {
-        setHistoryMessage(
-          failure.reason instanceof Error
-            ? failure.reason.message
-            : "보냈어요 표시에 실패했어요. 잠시 후 다시 시도해 주세요.",
+        // historyMessage 는 시트 백드롭(z-40)에 가려 안 보인다 — 시트 위(z-50) 토스트로 알린다.
+        showActionToast(
+          succeededIds.size > 0
+            ? `${targets.length}건 중 ${succeededIds.size}건만 표시됐어요. 다시 시도해 주세요.`
+            : failure.reason instanceof Error
+              ? failure.reason.message
+              : "보냈어요 표시에 실패했어요. 잠시 후 다시 시도해 주세요.",
         );
       } else {
         setHistoryMessage("");
@@ -2402,10 +2478,12 @@ export function BidHistoryContent({
       }
 
       if (failure) {
-        setHistoryMessage(
-          failure.reason instanceof Error
-            ? failure.reason.message
-            : "보냈어요 표시를 취소하지 못했어요.",
+        showActionToast(
+          succeededIds.size > 0
+            ? `${targets.length}건 중 ${succeededIds.size}건만 취소됐어요. 다시 시도해 주세요.`
+            : failure.reason instanceof Error
+              ? failure.reason.message
+              : "보냈어요 표시를 취소하지 못했어요.",
         );
       } else {
         setHistoryMessage("");
@@ -2690,7 +2768,11 @@ export function BidHistoryContent({
                 now,
               );
               const canCancel = canCancelBidRecord(bid);
-              const isActionPending = pendingParticipationId === bid.id;
+              const isActionPending = pendingParticipationId !== null;
+              const safeOpenChatHref =
+                isC2C && !isCancelled
+                  ? getSafeOpenChatHref(bid.openChatUrl)
+                  : null;
               const progressSteps = getBidRecordProgressSteps(bid, now);
               const shippingAddressLabel = getBidRecordShippingAddressLabel(bid);
               const cardShippingFee =
@@ -2847,7 +2929,14 @@ export function BidHistoryContent({
                           </div>
                         ) : null}
                         <div className="relative">
-                          <div className="absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]" />
+                          {/* 연결선 여백 = 첫·마지막 점의 열 중심(열 폭의 절반) — 5열 10%, 6열 8.33% */}
+                          <div
+                            className={
+                              progressSteps.length === 6
+                                ? "absolute left-[8.333%] right-[8.333%] top-[9px] h-px bg-[#CAD6A0]"
+                                : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
+                            }
+                          />
                           <div
                             className={`relative grid gap-1 ${
                               progressSteps.length === 6
@@ -2882,10 +2971,10 @@ export function BidHistoryContent({
                         </div>
                       </div>
 
-                      {isC2C && bid.openChatUrl && !isCancelled ? (
+                      {safeOpenChatHref ? (
                         <a
                           className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
-                          href={bid.openChatUrl}
+                          href={safeOpenChatHref}
                           rel="noreferrer"
                           target="_blank"
                         >
@@ -3416,10 +3505,10 @@ export function BidHistoryContent({
                   입금됩니다.
                 </p>
               ) : null}
-              {isSelectedPaymentC2C && selectedPaymentBid.openChatUrl ? (
+              {selectedPaymentOpenChatHref ? (
                 <a
                   className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/55 underline underline-offset-2"
-                  href={selectedPaymentBid.openChatUrl}
+                  href={selectedPaymentOpenChatHref}
                   rel="noreferrer"
                   target="_blank"
                 >

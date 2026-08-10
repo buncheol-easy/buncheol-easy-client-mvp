@@ -40,6 +40,7 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
+import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
 import {
@@ -2273,8 +2274,10 @@ export function ProductDetail({
 
         const firstParticipationId = resultParticipationIds[0] ?? "";
         // C2C 신청(무입금): 서버가 dueAt·계좌 없이 APPLIED 로 생성한다 (docs/46 §3-1).
-        // 확정 후 추가 모집(E1)은 dueAt 이 있는 즉시입금 응답이라 LEGACY 와 같은 경로를 탄다.
-        const isC2CAppliedResult = isC2CProduct && !result.paymentDueAt;
+        // 확정 후 추가 모집(E1, PAYMENT_COLLECTING)은 즉시입금 구간이라 dueAt 누락 응답이
+        // 와도 신청 완료로 오판하지 않도록 제외한다 — 입금 안내 경로(보충 조회 포함)를 태운다.
+        const isC2CAppliedResult =
+          isC2CProduct && !isC2CCollectingProduct && !result.paymentDueAt;
         let paymentDetail:
           | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
           | null = null;
@@ -2308,10 +2311,13 @@ export function ProductDetail({
           (sum, item) => sum + item.bidAmount,
           0,
         );
+        // 다슬롯 추가 신청은 배송비가 첫 참여에 귀속돼 0 이다 (docs/46 §4.7-A2) —
+        // 확인 스텝 표기와 동일하게 폴백 금액에서도 배송비를 더하지 않는다.
         const totalPaymentAmount =
           result.paymentAmount ??
           paymentDetail?.paymentAmount ??
-          totalBidAmount + estimatedShippingFee;
+          totalBidAmount +
+            (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
         const sharedShippingFee = Math.max(
           totalPaymentAmount - totalBidAmount,
           0,
@@ -2890,8 +2896,9 @@ export function ProductDetail({
       finishCloseSheet();
     }, 260);
 
-    // payment 단계 = 참여가 서버에 반영된 상태. 닫는 즉시 재조회해 슬롯 점유 상태를 맞춘다.
-    if (checkoutStep === "payment") {
+    // payment·applied 단계 = 참여가 서버에 반영된 상태. 닫는 즉시 재조회해
+    // 슬롯 점유 상태(saleStatus)를 맞춘다 — C2C 신청(APPLIED)도 슬롯을 선점한다.
+    if (checkoutStep === "payment" || checkoutStep === "applied") {
       void refreshDetailOptions();
     }
   }
@@ -3254,7 +3261,7 @@ export function ProductDetail({
                 className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
                   isPurchasableStatus &&
                   !isCancelledProduct &&
-                  !isDeadlinePassed
+                  !isDeadlineBlocked
                     ? "bg-[#DDE7B8] text-black"
                     : "bg-black/75 text-white backdrop-blur"
                 }`}
@@ -3378,10 +3385,10 @@ export function ProductDetail({
                   개최자 계좌로 직접 입금돼요. 상품·거래에 관한 책임은 개최자에게
                   있어요.
                 </p>
-                {product.openChatUrl ? (
+                {getSafeOpenChatHref(product.openChatUrl) ? (
                   <a
                     className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-semibold text-black/60 underline underline-offset-2"
-                    href={product.openChatUrl}
+                    href={getSafeOpenChatHref(product.openChatUrl) ?? undefined}
                     rel="noreferrer"
                     target="_blank"
                   >

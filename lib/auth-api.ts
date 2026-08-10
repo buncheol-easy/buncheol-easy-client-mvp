@@ -315,8 +315,6 @@ export type BuncheolDetail = BuncheolSummary & {
   members: BuncheolMember[];
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
   openChatUrl?: string | null;
-  // C2C 일괄 입금 기한 — 개최자 성사 확정 시 산정. LEGACY·확정 전엔 null.
-  paymentDueAt?: string | null;
   purchaseSite?: string;
   shippingOptions: BuncheolShippingOption[];
 };
@@ -2797,7 +2795,6 @@ function getBuncheolDetailFromBody(body: unknown) {
     description: getOptionalStringValue(data, ["description", "content"]),
     flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
-    paymentDueAt: getOptionalStringValue(data, ["paymentDueAt"]) ?? null,
     gs25ShippingFee:
       getOptionalNumberValue(data, [
         "gs25ShippingFee",

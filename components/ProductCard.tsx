@@ -286,6 +286,10 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
   const isPurchasable = isProductCardPurchasable(item);
+  // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
+  // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행 중" 유지).
+  const shouldDimCard =
+    !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
   const hasAvailableMemberNames = Array.isArray(item.availableMemberNames);
   const availableMemberNames = getAvailableMemberNames(item);
   const shouldShowAvailableMembers =
@@ -454,9 +458,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : (
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
           )}
-          {isPurchasable ? null : (
+          {shouldDimCard ? (
             <div className="absolute inset-0 bg-black/45" />
-          )}
+          ) : null}
           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
             <div className="flex min-w-0 flex-col items-start gap-1.5">
               <span
@@ -498,7 +502,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         </div>
 
         <div
-          className={`px-3.5 py-3.5 ${isPurchasable ? "" : "opacity-60"}`}
+          className={`px-3.5 py-3.5 ${shouldDimCard ? "opacity-60" : ""}`}
         >
           {shouldShowAvailableMembers ? (
             <div>
@@ -574,9 +578,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             신규
           </div>
         ) : null}
-        {isPurchasable ? null : (
+        {shouldDimCard ? (
           <div className="absolute inset-0 bg-black/45" />
-        )}
+        ) : null}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
           <p
             className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
@@ -610,7 +614,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : null}
       </div>
 
-      <div className={isPurchasable ? "" : "opacity-60"}>
+      <div className={shouldDimCard ? "opacity-60" : ""}>
         {shouldShowAvailableMembers ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (
