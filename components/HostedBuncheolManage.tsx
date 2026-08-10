@@ -17,8 +17,11 @@ import {
 import {
   getBuncheolStatusBadgeLabel,
   getDeliveryStatusLabel as getCentralDeliveryStatusLabel,
+  isBuncheolConfirmedStatus,
   isParticipationAwaitingPaymentStatus,
+  isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
+  isParticipationPaymentSentStatus,
 } from "@/lib/buncheol-states";
 import {
   getInitialAuthState,
@@ -138,7 +141,21 @@ function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
     return "입금 확인 완료";
   }
 
-  return "입금 대기";
+  if (isParticipationCancelledStatus(winner.paymentStatus)) {
+    return "참여 취소";
+  }
+
+  // C2C "보냈어요" — 참여자가 입금을 마쳤다고 알린 상태라 개최자에게 확인을 재촉한다.
+  if (isParticipationPaymentSentStatus(winner.paymentStatus)) {
+    return "입금 확인 필요";
+  }
+
+  if (isParticipationAwaitingPaymentStatus(winner.paymentStatus)) {
+    return "입금 대기";
+  }
+
+  // 알 수 없는 상태를 "입금 대기"로 접으면 개최자에게 틀린 신호가 되므로 raw 를 유지한다.
+  return winner.paymentStatus ?? "입금 대기";
 }
 
 function getParticipantsByOptionId(
@@ -544,7 +561,7 @@ export function HostedBuncheolManage({
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${
-                    detail.status === "CONFIRMED"
+                    isBuncheolConfirmedStatus(detail.status)
                       ? "bg-white text-black"
                       : "bg-white/12 text-white/75"
                   }`}
@@ -675,6 +692,8 @@ export function HostedBuncheolManage({
                   Boolean(option.winner?.paymentConfirmedAt);
                 // 운송장 등록은 분철이 진행확정(CONFIRMED)된 뒤에만 가능하다 — 모집중 발송 후
                 // 분철이 무산(최소 인원 미달 취소)되는 모순을 막는 서버 가드(DLV-009)와 동일 조건.
+                // 중앙 confirmed 계열(PAID 등 동의어 포함)로 넓히지 않고 서버 가드와 같은
+                // 정확한 CONFIRMED 비교를 의도적으로 유지한다.
                 const isBuncheolConfirmedForShipping =
                   detail.status === "CONFIRMED";
                 const canUseTrackingInput = Boolean(

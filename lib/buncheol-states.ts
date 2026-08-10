@@ -1,43 +1,13 @@
 // 분철·참여·배송 상태의 단일 기준 모듈. 상태 리터럴 비교와 한국어 라벨이 화면별 로컬 함수에
 // 흩어져 문구가 어긋나던 문제(진행확정/진행 확정, 모집종료/모집 종료, HOST_CANCELLED 미처리)를
-// 여기로 모은다. C2C 오픈에서 추가되는 상태(APPLIED·PAYMENT_SENT·PAYMENT_COLLECTING·
-// USER_CANCELLED)도 서버(docs/46)와 같은 이름으로 선반영한다.
+// 여기로 모은다. C2C 오픈에서 추가되는 상태값(PAYMENT_SENT·PAYMENT_COLLECTING 등)은
+// 서버(docs/46)와 같은 이름의 판정 함수로만 선반영하고, 상태 유니온 타입·사용자 노출 라벨은
+// 실제 소비 화면이 생기는 단계에서 함께 도입한다(미사용 카피의 검증 불가 문제 방지).
 
-export type FlowType = "LEGACY" | "C2C";
-
-export type BuncheolStatus =
-  | "RECRUITING"
-  | "PAYMENT_COLLECTING"
-  | "CONFIRMED"
-  | "CANCELLED"
-  | "HOST_CANCELLED"
-  | "DELETED";
-
-export type ParticipationStatus =
-  | "APPLIED"
-  | "AWAITING_PAYMENT"
-  | "PAYMENT_SENT"
-  | "CONFIRMED"
-  | "CANCELLED";
-
-export type ParticipationCancelReason =
-  | "PAYMENT_TIMEOUT"
-  | "BUNCHEOL_CANCELLED"
-  | "USER_CANCELLED";
-
-export type DeliveryStatus =
-  | "SNAPSHOTTED"
-  | "SHIPPING"
-  | "DELIVERED"
-  | "RECEIVED";
+type DeliveryStatus = "SNAPSHOTTED" | "SHIPPING" | "DELIVERED" | "RECEIVED";
 
 function normalizeStatusValue(status: string | null | undefined) {
   return status?.trim().toUpperCase() ?? "";
-}
-
-// 분철 flow_type. 컬럼 추가 전 응답에는 필드가 없으므로 C2C 명시가 아니면 전부 LEGACY 로 본다.
-export function getFlowType(value: string | null | undefined): FlowType {
-  return normalizeStatusValue(value) === "C2C" ? "C2C" : "LEGACY";
 }
 
 // ---------------------------------------------------------------------------
@@ -146,29 +116,18 @@ export function isParticipationCancelledStatus(
   return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
 }
 
-export function isParticipationAppliedStatus(status: string | null | undefined) {
-  return normalizeStatusValue(status) === "APPLIED";
-}
-
+// C2C "보냈어요" 마킹 상태 (docs/46 §1.1).
 export function isParticipationPaymentSentStatus(
   status: string | null | undefined,
 ) {
   return normalizeStatusValue(status) === "PAYMENT_SENT";
 }
 
-export const PARTICIPATION_STATUS_LABELS: Record<ParticipationStatus, string> = {
-  APPLIED: "신청됨",
-  AWAITING_PAYMENT: "결제 대기",
-  PAYMENT_SENT: "보냈어요",
-  CONFIRMED: "결제 완료",
-  CANCELLED: "취소",
-};
-
 // ---------------------------------------------------------------------------
 // 배송(delivery) 상태
 // ---------------------------------------------------------------------------
 
-export function normalizeDeliveryStatus(status: string | null | undefined) {
+function normalizeDeliveryStatus(status: string | null | undefined) {
   const normalizedStatus = normalizeStatusValue(status);
 
   return normalizedStatus === "" ? undefined : normalizedStatus;
@@ -186,7 +145,7 @@ export function isDeliveryShippingStatus(status: string | null | undefined) {
 
 // 참여자·개최자 화면 공용 라벨. 수령 확인(RECEIVED)을 따로 구분해야 하는 운영 도구는
 // (AdminPaymentsDashboard) 자체 라벨을 유지한다.
-export const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
+const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
   SNAPSHOTTED: "운송장 입력 전",
   SHIPPING: "배송 중",
   DELIVERED: "배송 완료",

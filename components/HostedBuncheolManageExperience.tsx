@@ -8,8 +8,8 @@ import {
 } from "@/components/BidHistoryContent";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HostedBuncheolManage } from "@/components/HostedBuncheolManage";
-import { getHistoryIndex } from "@/lib/history-index";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import { getHistoryIndex } from "@/lib/history-index";
 
 const MANAGE_PANEL_TRANSITION_MS = 240;
 

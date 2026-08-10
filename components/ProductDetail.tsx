@@ -1207,7 +1207,6 @@ export function ProductDetail({
     product.deadline,
     deadlineTick,
   );
-  const productStatus = product.status?.toUpperCase();
   // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
   const isCancelledProduct = isBuncheolCancelledStatus(product.status);
   const isConfirmedProduct = isBuncheolConfirmedStatus(product.status);
@@ -1320,7 +1319,7 @@ export function ProductDetail({
       return "구매 가능한 멤버가 없어요";
     }
 
-    if (productStatus === "CONFIRMED") {
+    if (isConfirmedProduct) {
       return "진행 확정된 분철이에요";
     }
 

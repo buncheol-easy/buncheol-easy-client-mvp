@@ -10,7 +10,10 @@ import {
 } from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { FEATURES } from "@/lib/feature-flags";
-import { getBuncheolStatusBadgeLabel } from "@/lib/buncheol-states";
+import {
+  getBuncheolStatusBadgeLabel,
+  isBuncheolDeletedStatus,
+} from "@/lib/buncheol-states";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
 const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
@@ -3626,14 +3629,6 @@ function getMemberLabel(memberNames: string[]) {
     : firstMember;
 }
 
-function isDeletedBuncheolStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
-function isRemovedBuncheolStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
 function getToneFromId(id: string) {
   const tones = [
     "from-black via-zinc-800 to-zinc-500",
@@ -3835,7 +3830,7 @@ export async function requestBuncheols(
     .map(getBuncheolSummaryFromRecord)
     .filter(
       (item): item is BuncheolSummary =>
-        item !== null && !isDeletedBuncheolStatus(item.status),
+        item !== null && !isBuncheolDeletedStatus(item.status),
     );
 
   // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
@@ -3883,7 +3878,7 @@ export async function requestAllBuncheols(
       .map(getBuncheolSummaryFromRecord)
       .filter(
         (item): item is BuncheolSummary =>
-          item !== null && !isDeletedBuncheolStatus(item.status),
+          item !== null && !isBuncheolDeletedStatus(item.status),
       );
 
     allSummaries.push(...pageSummaries);
@@ -4417,7 +4412,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
     );
 
   return buncheols.filter(
-    (buncheol) => !isRemovedBuncheolStatus(buncheol.status),
+    (buncheol) => !isBuncheolDeletedStatus(buncheol.status),
   );
 }
 
@@ -4484,7 +4479,7 @@ export async function requestBookmarkedBuncheols(
     }, []);
 
   return summaries.filter(
-    (summary) => !isDeletedBuncheolStatus(summary.status),
+    (summary) => !isBuncheolDeletedStatus(summary.status),
   );
 }
 
