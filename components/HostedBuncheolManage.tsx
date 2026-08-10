@@ -23,6 +23,7 @@ import {
   getFlowType,
   isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
+  isBuncheolRecruitingStatus,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
   isParticipationCancelledStatus,
@@ -432,6 +433,19 @@ export function HostedBuncheolManage({
   ).length;
   // 부분 확정은 미입금 활성 참여(입금 대기·보냈어요)가 0일 때만 가능하다 (docs/46 §4.7-E1).
   const c2cUnpaidActiveCount = c2cAwaitingCount + c2cPaymentSentCount;
+  // 서버가 참여자를 최상위 participants 로만 내려주는 응답 대비 — 옵션 중첩분과 머지한다.
+  const c2cParticipantsByOptionId = getParticipantsByOptionId(
+    activeC2CParticipants,
+  );
+  // C2C 배송 집계는 winner(대표 1명)가 아닌 활성 참여 전건 기준.
+  const c2cDeliveryReadyCount = activeC2CParticipants.filter(
+    (participant) =>
+      Boolean(participant.delivery?.deliveryId) &&
+      !participant.delivery?.trackingNumber,
+  ).length;
+  const c2cTrackingCompletedCount = activeC2CParticipants.filter((participant) =>
+    Boolean(participant.delivery?.trackingNumber),
+  ).length;
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -551,7 +565,8 @@ export function HostedBuncheolManage({
       return;
     }
 
-    const applicantCount = activeC2CParticipants.length;
+    // 확정으로 전이되는 대상은 APPLIED 뿐 — 화면 모수도 동일 기준으로 통일한다.
+    const applicantCount = c2cAppliedCount;
     const isUnderMinHeadcount =
       minHeadcount > 0 && applicantCount < minHeadcount;
     const confirmMessage = isUnderMinHeadcount
@@ -559,6 +574,8 @@ export function HostedBuncheolManage({
       : `성사를 확정할까요?\n신청자 ${applicantCount}명 전원에게 입금 안내 알림톡이 발송돼요.`;
 
     if (!window.confirm(confirmMessage)) {
+      // 웹뷰가 confirm 을 억제해 false 를 돌려줘도 무반응처럼 보이지 않게 남긴다.
+      setMessage("성사 확정을 취소했어요.");
       return;
     }
 
@@ -568,6 +585,7 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -599,6 +617,7 @@ export function HostedBuncheolManage({
         "입금 수집을 종료하고 진행을 확정할까요?\n입금 확인된 참여만으로 진행돼요.",
       )
     ) {
+      setMessage("진행 확정을 취소했어요.");
       return;
     }
 
@@ -608,6 +627,7 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -633,12 +653,13 @@ export function HostedBuncheolManage({
       return;
     }
 
-    setPendingC2CAction(participant.participationId);
+    setPendingC2CAction(`confirm:${participant.participationId}`);
 
     try {
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -674,15 +695,17 @@ export function HostedBuncheolManage({
         `${depositorName}님의 '보냈어요' 표시를 해제할까요?\n입금 기한이 24시간 연장되고 입금 재확인 알림톡이 발송돼요.`,
       )
     ) {
+      setMessage("반려를 취소했어요.");
       return;
     }
 
-    setPendingC2CAction(participant.participationId);
+    setPendingC2CAction(`reject:${participant.participationId}`);
 
     try {
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -727,12 +750,13 @@ export function HostedBuncheolManage({
       return;
     }
 
-    setPendingC2CAction(participant.participationId);
+    setPendingC2CAction(`tracking:${participant.participationId}`);
 
     try {
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -876,7 +900,7 @@ export function HostedBuncheolManage({
                 <>
                   <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
                     <p className="text-[11px] font-medium text-black/35">
-                      \uc2e0\uccad
+                      {"\uc2e0\uccad"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
                       {`${c2cAppliedCount}\uba85`}
@@ -884,7 +908,7 @@ export function HostedBuncheolManage({
                   </div>
                   <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
                     <p className="text-[11px] font-medium text-black/35">
-                      \ubcf4\ub0c8\uc5b4\uc694
+                      {"\ubcf4\ub0c8\uc5b4\uc694"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
                       {`${c2cPaymentSentCount}\uba85`}
@@ -897,7 +921,7 @@ export function HostedBuncheolManage({
                   운송장 대기
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${deliveryReadyCount}건`}
+                  {`${isC2C ? c2cDeliveryReadyCount : deliveryReadyCount}건`}
                 </p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -905,7 +929,7 @@ export function HostedBuncheolManage({
                   운송장 완료
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${trackingCompletedCount}건`}
+                  {`${isC2C ? c2cTrackingCompletedCount : trackingCompletedCount}건`}
                 </p>
               </div>
               <div className="col-span-2 rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -920,22 +944,18 @@ export function HostedBuncheolManage({
             </div>
           </section>
 
-          {isC2C && detail.status === "RECRUITING" ? (
+          {isC2C && isBuncheolRecruitingStatus(detail.status) ? (
             <section className="mt-4 rounded-[1.05rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 성사 확정
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                지금까지 신청 {activeC2CParticipants.length}명이에요. 확정하면
-                신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이
-                발송돼요.
+                지금까지 신청 {c2cAppliedCount}명이에요. 확정하면 신청자
+                전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.
               </p>
               <button
                 className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
-                disabled={
-                  activeC2CParticipants.length === 0 ||
-                  pendingC2CAction !== null
-                }
+                disabled={c2cAppliedCount === 0 || pendingC2CAction !== null}
                 onClick={() => void handleConfirmRecruitment()}
                 type="button"
               >
@@ -943,7 +963,7 @@ export function HostedBuncheolManage({
                   ? "확정하는 중"
                   : "성사 확정하기"}
               </button>
-              {activeC2CParticipants.length === 0 ? (
+              {c2cAppliedCount === 0 ? (
                 <p className="mt-2 text-[12px] font-medium text-black/40">
                   신청자가 생기면 확정할 수 있어요.
                 </p>
@@ -1010,10 +1030,25 @@ export function HostedBuncheolManage({
               ) : isC2C ? (
                 // C2C: 다슬롯이라 대표 참여자(winner)가 아닌 활성 참여 전건을 멤버별로 보여준다.
                 detail.options.map((option) => {
-                  const optionParticipants = (option.participants ?? []).filter(
-                    (participant) =>
-                      !isParticipationCancelledStatus(participant.status),
-                  );
+                  // 옵션 중첩 참여자와 최상위 participants 를 participationId 기준으로 머지 —
+                  // 서버가 최상위로만 내려주는 응답에서 목록이 통째로 비는 것 방지.
+                  const optionParticipants = [
+                    ...new Map(
+                      [
+                        ...(option.participants ?? []),
+                        ...(c2cParticipantsByOptionId[option.buncheolMemberId] ??
+                          []),
+                      ]
+                        .filter(
+                          (participant) =>
+                            !isParticipationCancelledStatus(participant.status),
+                        )
+                        .map(
+                          (participant) =>
+                            [participant.participationId, participant] as const,
+                        ),
+                    ).values(),
+                  ];
 
                   return (
                     <article
@@ -1066,8 +1101,12 @@ export function HostedBuncheolManage({
                             const isRowApplied = isParticipationAppliedStatus(
                               participant.status,
                             );
-                            const isRowPending =
-                              pendingC2CAction === participant.participationId;
+                            const isRowConfirming =
+                              pendingC2CAction ===
+                              `confirm:${participant.participationId}`;
+                            const isRowRegisteringTracking =
+                              pendingC2CAction ===
+                              `tracking:${participant.participationId}`;
                             const trackingInput =
                               participantTrackingInputs[
                                 participant.participationId
@@ -1153,7 +1192,9 @@ export function HostedBuncheolManage({
                                       }
                                       type="button"
                                     >
-                                      {isRowPending ? "처리 중" : "입금 확인"}
+                                      {isRowConfirming
+                                        ? "처리 중"
+                                        : "입금 확인"}
                                     </button>
                                   </div>
                                 ) : null}
@@ -1220,7 +1261,7 @@ export function HostedBuncheolManage({
                                           }
                                           type="button"
                                         >
-                                          {isRowPending
+                                          {isRowRegisteringTracking
                                             ? "등록 중"
                                             : "운송장 등록"}
                                         </button>

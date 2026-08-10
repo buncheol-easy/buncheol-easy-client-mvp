@@ -790,8 +790,12 @@ export function UploadProductForm({
       return "배송비를 100원 단위로 입력해 주세요.";
     }
 
-    // 선택 입력 — 값이 있으면 카카오 오픈채팅(https://open.kakao.com/...) 주소만 허용한다.
-    if (openChatUrl.trim() && !getSafeOpenChatHref(openChatUrl.trim())) {
+    // 선택 입력(생성 모드 전용) — 값이 있으면 카카오 오픈채팅 주소만 허용한다.
+    if (
+      !isEditMode &&
+      openChatUrl.trim() &&
+      !getSafeOpenChatHref(openChatUrl.trim())
+    ) {
       return "오픈채팅 링크는 open.kakao.com 주소만 입력할 수 있어요.";
     }
 
@@ -1883,7 +1887,8 @@ export function UploadProductForm({
               description: product.description || undefined,
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
-              openChatUrl: openChatUrl.trim() || undefined,
+              // 검증을 통과한 정규화 값(스킴·호스트 소문자화)을 그대로 전송한다.
+              openChatUrl: getSafeOpenChatHref(openChatUrl.trim()) ?? undefined,
               gs25ShippingFee: getStoreShippingFee(
                 selectedShipping,
                 shippingPrices,
@@ -3098,26 +3103,30 @@ export function UploadProductForm({
                 </span>
               </label>
 
-              <label className="mt-6 block">
-                <span className="text-[13px] font-semibold text-black/45">
-                  오픈채팅 링크 (선택)
-                </span>
-                <input
-                  className="mt-2 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
-                  inputMode="url"
-                  maxLength={200}
-                  onChange={(event) =>
-                    setOpenChatUrl(event.currentTarget.value)
-                  }
-                  placeholder="https://open.kakao.com/o/..."
-                  type="url"
-                  value={openChatUrl}
-                />
-                <span className="mt-1.5 block text-[12px] font-medium leading-5 text-black/35">
-                  참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
-                  안내 화면에 노출돼요.
-                </span>
-              </label>
+              {/* 수정 요청(BuncheolModifyRequest)은 이 필드를 받지 않는다 — 입력이 조용히
+                  버려지지 않도록 생성 모드에서만 노출한다 (docs/46 §4.7-E4 서버 후속). */}
+              {isEditMode ? null : (
+                <label className="mt-6 block">
+                  <span className="text-[13px] font-semibold text-black/45">
+                    오픈채팅 링크 (선택)
+                  </span>
+                  <input
+                    className="mt-2 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    inputMode="url"
+                    maxLength={200}
+                    onChange={(event) =>
+                      setOpenChatUrl(event.currentTarget.value)
+                    }
+                    placeholder="https://open.kakao.com/o/..."
+                    type="url"
+                    value={openChatUrl}
+                  />
+                  <span className="mt-1.5 block text-[12px] font-medium leading-5 text-black/35">
+                    참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
+                    안내 화면에 노출돼요.
+                  </span>
+                </label>
+              )}
             </div>
 
             <button
