@@ -17,6 +17,7 @@ import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
+  isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -226,7 +227,10 @@ function getProductCardBadge(item: ProductCardItem) {
         ? "분철 취소"
         : isBuncheolConfirmedStatus(item.status)
           ? "진행 확정"
-          : "모집 종료",
+          : // C2C 입금 수집 구간 — 끝난 분철이 아니라 진행 중(추가 신청은 상세에서 가능).
+            isBuncheolPaymentCollectingStatus(item.status)
+            ? "입금 진행 중"
+            : "모집 종료",
       value: null,
     };
   }

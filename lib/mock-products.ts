@@ -34,6 +34,10 @@ export type ProductDetailItem = ProductCardItem & {
   courier: string;
   description: string;
   deadline: string;
+  // 분철 flow_type — 없으면 LEGACY 취급(getFlowType). C2C 신청 플로우 분기 키.
+  flowType?: string | null;
+  // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
+  openChatUrl?: string | null;
   imageUrl?: string;
   imageUrls?: string[];
   /** 등록 순 이미지 목록(id·대표 여부 포함). 대표사진이 첫 번째가 아닐 수 있다. */
