@@ -565,6 +565,7 @@ function getOptionPaymentWaitingLabel(
   option: ProductOption,
   now = Date.now(),
   isMine = false,
+  windowMs = paymentWindowMs,
 ) {
   const baseLabel = isMine
     ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
@@ -581,7 +582,7 @@ function getOptionPaymentWaitingLabel(
     return baseLabel;
   }
 
-  return `${baseLabel} · ${formatPaymentDueCountdown(dueAt, now)}`;
+  return `${baseLabel} · ${formatPaymentDueCountdown(dueAt, now, windowMs)}`;
 }
 
 function getTargetTags(product: ProductDetailItem) {
@@ -768,6 +769,7 @@ function getOptionPurchaseBlockChipLabel(
   option?: ProductOption,
   now = Date.now(),
   isMine = false,
+  windowMs = paymentWindowMs,
 ) {
   if (!overlayLabel) {
     return null;
@@ -791,7 +793,7 @@ function getOptionPurchaseBlockChipLabel(
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting) {
     return option
-      ? getOptionPaymentWaitingLabel(option, now, isMine)
+      ? getOptionPaymentWaitingLabel(option, now, isMine, windowMs)
       : isMine
         ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
         : MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
@@ -1281,7 +1283,15 @@ export function ProductDetail({
     isOptionParticipatedByMe(option, myBids[option.id]),
   );
   // C2C 는 1인 다슬롯 허용(docs/46 §7.1-11) — 활성 참여가 있어도 다른 멤버에 추가 신청 가능.
-  const isAdditionalC2CApplication = isC2CProduct && hasMyActiveParticipation;
+  // 추가 신청 판정은 서버 응답(participatedByMe)만 신뢰한다 — 로컬 myBids 는 같은 세션에서
+  // 취소한 뒤에도 남아 "배송비 0원" 오판(서버는 첫 참여로 부과)을 만들 수 있다.
+  const hasMyServerParticipation = auctionOptions.some(
+    (option) => option.participatedByMe === true,
+  );
+  const isAdditionalC2CApplication = isC2CProduct && hasMyServerParticipation;
+  const productOpenChatHref = isC2CProduct
+    ? getSafeOpenChatHref(product.openChatUrl)
+    : null;
   const canBidProduct =
     !isPublicPreview &&
     !isBidUnavailable &&
@@ -3385,10 +3395,10 @@ export function ProductDetail({
                   개최자 계좌로 직접 입금돼요. 상품·거래에 관한 책임은 개최자에게
                   있어요.
                 </p>
-                {getSafeOpenChatHref(product.openChatUrl) ? (
+                {productOpenChatHref ? (
                   <a
                     className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-semibold text-black/60 underline underline-offset-2"
-                    href={getSafeOpenChatHref(product.openChatUrl) ?? undefined}
+                    href={productOpenChatHref}
                     rel="noreferrer"
                     target="_blank"
                   >
@@ -3424,6 +3434,7 @@ export function ProductDetail({
                     option,
                     deadlineTick,
                     isMine,
+                    isC2CProduct ? c2cPaymentWindowMs : paymentWindowMs,
                   );
                   // 내 진행중 주문·C2C 신청 칩은 참여 내역으로 이동하는 버튼으로 렌더한다.
                   const isMyPaymentWaitingChip =
@@ -3664,6 +3675,7 @@ export function ProductDetail({
                           option,
                           deadlineTick,
                           isOptionParticipatedByMe(option, myBids[option.id]),
+                          isC2CProduct ? c2cPaymentWindowMs : paymentWindowMs,
                         );
 
                       return (
@@ -3781,13 +3793,20 @@ export function ProductDetail({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-[12px] font-semibold text-black/40">배송지</p>
+                          {/* 추가 신청은 서버가 첫 참여 배송지 스냅샷을 강제한다(docs/46 §4.7-A1).
+                              현재 선택값을 그대로 보여주면 실제 배송지와 다를 수 있어 문구로 대체한다. */}
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                            {checkoutDeliveryAddress
-                              ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
-                              : "등록된 배송지 없음"}
+                            {isAdditionalC2CApplication
+                              ? "첫 신청 때 선택한 배송지"
+                              : checkoutDeliveryAddress
+                                ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
+                                : "등록된 배송지 없음"}
                           </p>
                           <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
-                            {checkoutDeliveryAddress?.address ?? "배송지를 등록해 주세요."}
+                            {isAdditionalC2CApplication
+                              ? "첫 신청 배송지로 함께 배송돼요."
+                              : checkoutDeliveryAddress?.address ??
+                                "배송지를 등록해 주세요."}
                           </p>
                         </div>
                         {isAdditionalC2CApplication ? null : (

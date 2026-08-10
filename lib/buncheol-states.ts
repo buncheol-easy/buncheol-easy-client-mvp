@@ -143,6 +143,13 @@ export function isParticipationPaymentSentStatus(
   return normalizeStatusValue(status) === "PAYMENT_SENT";
 }
 
+// C2C 참여자 자발 취소 사유 — 서버 ParticipationCancelReason.USER_CANCELLED (docs/46 §5).
+export const USER_CANCELLED_REASON = "USER_CANCELLED";
+
+export function isUserCancelledReason(reason: string | null | undefined) {
+  return normalizeStatusValue(reason) === USER_CANCELLED_REASON;
+}
+
 // ---------------------------------------------------------------------------
 // 배송(delivery) 상태
 // ---------------------------------------------------------------------------

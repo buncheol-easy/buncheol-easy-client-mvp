@@ -69,6 +69,8 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
   isParticipationPaymentSentStatus,
+  isUserCancelledReason,
+  USER_CANCELLED_REASON,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -486,10 +488,12 @@ function canViewBidRecordPaymentSheet(bid: BidRecord, now: Date) {
 }
 
 // C2C 자발 취소 가능 구간 — 신청(자유)·입금 대기(허용). 보냈어요 이후는 문의 경유 (docs/46 §5).
-function canCancelBidRecord(bid: BidRecord) {
+// 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 취소 버튼을 내리지 않는다.
+function canCancelBidRecord(bid: BidRecord, now: Date) {
   return (
     isC2CBidRecord(bid) &&
     !isBidRecordCancelled(bid) &&
+    !isBidRecordPaymentExpired(bid, now) &&
     (isParticipationAppliedStatus(bid.participationStatus) ||
       isParticipationAwaitingPaymentStatus(bid.participationStatus))
   );
@@ -519,7 +523,7 @@ function getBidRecordCancellationKind(bid: BidRecord) {
   }
 
   // C2C 자발 취소 — 분철 취소·만료와 구분해 귀책을 정확히 표기한다 (docs/46 §5).
-  if (bid.cancelReason === "USER_CANCELLED") {
+  if (isUserCancelledReason(bid.cancelReason)) {
     return "USER_CANCELLED";
   }
 
@@ -1686,7 +1690,9 @@ export function BidHistoryContent({
     }
 
     let timer: number | null = null;
-    const pollIntervalMs = hasUrgentPaymentPolling ? 15_000 : 60_000;
+    // 입금 대기(기한 압박)는 15초, 확정·확인 대기(며칠 갈 수 있음)는 180초 —
+    // 장기 대기 상태의 폴링이 무기한 고빈도로 돌지 않게 한다.
+    const pollIntervalMs = hasUrgentPaymentPolling ? 15_000 : 180_000;
 
     function startPolling() {
       if (timer !== null) {
@@ -1854,7 +1860,9 @@ export function BidHistoryContent({
         }
 
         if (filter === "payment") {
-          return isBidRecordPaymentReady(bid, now);
+          // C2C 보냈어요(확인 대기)도 입금 축 탭에 남긴다 — 마킹 직후 카드가 증발하면
+          // 오마킹 셀프 수정(보냈어요 취소) 진입점이 전체 탭으로 숨는다.
+          return canViewBidRecordPaymentSheet(bid, now);
         }
 
         if (filter === "confirmed") {
@@ -2521,7 +2529,7 @@ export function BidHistoryContent({
                 ? {
                     ...record,
                     participationStatus: "CANCELLED",
-                    cancelReason: "USER_CANCELLED",
+                    cancelReason: USER_CANCELLED_REASON,
                   }
                 : record,
             )
@@ -2767,7 +2775,7 @@ export function BidHistoryContent({
                 bid,
                 now,
               );
-              const canCancel = canCancelBidRecord(bid);
+              const canCancel = canCancelBidRecord(bid, now);
               const isActionPending = pendingParticipationId !== null;
               const safeOpenChatHref =
                 isC2C && !isCancelled

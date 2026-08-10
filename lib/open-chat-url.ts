@@ -1,6 +1,9 @@
-// 개최자가 입력한 오픈채팅 URL 을 href 에 바인딩하기 전 스킴을 검증한다.
-// React 는 href 스킴을 검사하지 않으므로 javascript:·intent: 등이 저장되면
-// 클릭 시 앱 오리진에서 실행될 수 있다 — https 만 링크로 허용한다(그 외는 미노출).
+// 개최자가 입력한 오픈채팅 URL 을 href 에 바인딩하기 전 검증한다.
+// ① 스킴: React 는 href 스킴을 검사하지 않으므로 javascript:·intent: 등이 저장되면
+//    클릭 시 앱 오리진에서 실행될 수 있다 — https 만 허용.
+// ② 호스트: "개최자 오픈채팅 참여하기"라는 신뢰 문구로 노출되는 UGC 링크라
+//    카카오 오픈채팅(open.kakao.com)만 허용한다 — 입금 직전 화면의 피싱 링크 방지
+//    (서버 개최 폼 검증과 같은 기준, docs/46 §4.6).
 export function getSafeOpenChatHref(value: string | null | undefined) {
   if (!value) {
     return null;
@@ -9,7 +12,9 @@ export function getSafeOpenChatHref(value: string | null | undefined) {
   try {
     const url = new URL(value);
 
-    return url.protocol === "https:" ? url.toString() : null;
+    return url.protocol === "https:" && url.hostname === "open.kakao.com"
+      ? url.toString()
+      : null;
   } catch {
     return null;
   }
