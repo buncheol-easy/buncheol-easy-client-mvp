@@ -1,14 +1,14 @@
-import type { BankAccountInfo } from "@/lib/auth-api";
 import type { DeliveryAddress } from "@/lib/mock-delivery-addresses";
 
-// v2: bidAmount 의미가 "입금 총액" → "멤버(상품) 금액"으로 바뀌어(참여 단일 선택 전환),
-// 구 번들이 써둔 총액 엔트리가 새 번들에서 멤버 가격으로 읽히지 않도록 키를 올려 통째로 무효화한다.
-const participationPaymentCacheKey = "buncheol-participation-payment-cache-v2";
+// v3: 개최자 계좌(hostBankAccount)를 캐시에서 제거 — C2C 오픈 후에는 일반 유저 계좌가
+// sessionStorage 에 평문으로 남게 되므로(docs/48 §6.3-6) 계좌는 항상 서버에서 조회한다.
+// 키를 올려 계좌가 담긴 구 번들의 v2 엔트리를 통째로 무효화한다.
+// (v2: bidAmount 의미가 "입금 총액" → "멤버(상품) 금액"으로 바뀐 참여 단일 선택 전환분)
+const participationPaymentCacheKey = "buncheol-participation-payment-cache-v3";
 const maxCachedPaymentCount = 40;
 
 export type CachedParticipationPayment = {
   bidAmount?: number | null;
-  hostBankAccount?: BankAccountInfo | null;
   participationId: string;
   participationStatus?: string;
   paymentAmount?: number | null;

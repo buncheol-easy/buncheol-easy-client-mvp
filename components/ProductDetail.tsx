@@ -33,7 +33,13 @@ import {
 } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import {
+  isBuncheolCancelledStatus,
+  isBuncheolConfirmedStatus,
+  isBuncheolPurchasableStatus,
+} from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
+import { getHistoryIndex } from "@/lib/history-index";
 import {
   getDeliveryAddressStateFromSyncedAddresses,
   getInitialDeliveryAddressState,
@@ -345,12 +351,6 @@ function OptionAvatar({
 
 function getHistoryState() {
   return window.history.state as ProductHistoryState | null;
-}
-
-function getHistoryIndex() {
-  const historyState = getHistoryState();
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
 function hasBidHistoryEntryState() {
@@ -1208,12 +1208,10 @@ export function ProductDetail({
     deadlineTick,
   );
   const productStatus = product.status?.toUpperCase();
-  const isCancelledProduct =
-    productStatus === "CANCELLED" || productStatus === "CANCELED";
-  const isConfirmedProduct =
-    productStatus === "CONFIRMED" || productStatus === "PAYMENT_CONFIRMED";
-  const isPurchasableStatus =
-    !productStatus || productStatus === "RECRUITING";
+  // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
+  const isCancelledProduct = isBuncheolCancelledStatus(product.status);
+  const isConfirmedProduct = isBuncheolConfirmedStatus(product.status);
+  const isPurchasableStatus = isBuncheolPurchasableStatus(product.status);
   const shouldDimProductMedia =
     !isPublicPreview &&
     (!isPurchasableStatus || isCancelledProduct || isDeadlinePassed);
@@ -2297,9 +2295,9 @@ export function ProductDetail({
           const nextPaymentAmount = bidAmount + nextShippingFee;
 
           if (participationId) {
+            // 개최자 계좌는 세션 캐시에 저장하지 않는다(v3) — 화면 노출은 메모리 상태로만.
             writeCachedParticipationPayment({
               bidAmount,
-              hostBankAccount,
               participationId,
               participationStatus: sharedParticipationStatus,
               paymentAmount: nextPaymentAmount,
@@ -3822,11 +3820,6 @@ export function ProductDetail({
                               <div className="min-w-0">
                                 <p className="truncate text-[13px] font-semibold tracking-[-0.04em]">
                                   {item.option.label}
-                                </p>
-                                <p className="hidden">
-                                  {item.shippingFee > 0
-                                    ? `배송비 ${formatPrice(item.shippingFee)} 포함`
-                                    : "묶음 배송비 0원"}
                                 </p>
                               </div>
                               <span className="shrink-0 text-[13px] font-semibold tracking-[-0.04em]">

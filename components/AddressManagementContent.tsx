@@ -11,6 +11,7 @@ import {
 } from "react";
 import dynamic from "next/dynamic";
 import { BackIcon, CloseIcon, SearchIcon } from "@/components/icons";
+import { getHistoryIndex } from "@/lib/history-index";
 import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
   ApiRequestError,
@@ -78,12 +79,6 @@ function getDeliveryAddressDeleteErrorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
     : "배송지를 삭제하지 못했어요.";
-}
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
 export function AddressManagementContent({

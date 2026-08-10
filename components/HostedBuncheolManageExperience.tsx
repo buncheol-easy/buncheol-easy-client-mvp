@@ -8,6 +8,7 @@ import {
 } from "@/components/BidHistoryContent";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HostedBuncheolManage } from "@/components/HostedBuncheolManage";
+import { getHistoryIndex } from "@/lib/history-index";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 
 const MANAGE_PANEL_TRANSITION_MS = 240;
@@ -15,12 +16,6 @@ const MANAGE_PANEL_TRANSITION_MS = 240;
 type HostedBuncheolManageExperienceProps = {
   id: string;
 };
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function HostedBuncheolManageExperience({
   id,

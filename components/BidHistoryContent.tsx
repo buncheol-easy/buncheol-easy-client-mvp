@@ -50,7 +50,21 @@ import {
   type MyParticipation,
   type ShippingFeePaybackInfo,
 } from "@/lib/auth-api";
+import {
+  getBuncheolStatusBadgeLabel,
+  isBuncheolCancelledStatus,
+  isBuncheolConfirmedStatus,
+  isBuncheolDeletedStatus,
+  isBuncheolHostCancelledStatus,
+  isBuncheolRecruitingStatus,
+  isDeliveryCompletedStatus,
+  isDeliveryShippingStatus,
+  isParticipationAwaitingPaymentStatus,
+  isParticipationCancelledStatus,
+  isParticipationConfirmedStatus,
+} from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
+import { getHistoryIndex } from "@/lib/history-index";
 import {
   formatPaybackDeadlineNotice,
   PAYBACK_CTA_LABEL,
@@ -76,7 +90,6 @@ import {
 } from "@/lib/participation-payment-cache";
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { SlidingFilterChips, SlidingTabs } from "@/components/SlidingTabs";
-import { isTransferPaymentRequestedStatus } from "@/lib/transfer-payment";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -88,12 +101,6 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
 const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
 export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 function parseDeadline(deadline: string) {
   const match = deadline
@@ -264,38 +271,40 @@ const bidProgressStepLabels = [
   "결제 대기",
   "결제 완료",
   "진행 확정",
-  "배송중",
+  "배송 중",
   "배송 완료",
 ] as const;
 
+// 라벨은 진행바(bidProgressStepLabels)와 같은 문자열을 재사용한다 — 두 곳이 어긋나면
+// 안내 시트와 진행바가 서로 다른 단계 이름을 보여주게 된다.
 const participationStatusGuide = [
   {
     icon: BanknoteIcon,
-    label: "결제 대기",
+    label: bidProgressStepLabels[0],
     description:
       "주문 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 결제 정보 버튼에서 확인할 수 있어요.",
   },
   {
     icon: CheckIcon,
-    label: "결제 완료",
+    label: bidProgressStepLabels[1],
     description:
       "관리자가 입금을 확인한 상태예요. 마감 때 최소 인원이 모이면 진행 확정으로 바뀌어요.",
   },
   {
     icon: UsersRoundIcon,
-    label: "진행 확정",
+    label: bidProgressStepLabels[2],
     description:
       "최소 인원이 모여 분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
   },
   {
     icon: TruckIcon,
-    label: "배송중",
+    label: bidProgressStepLabels[3],
     description:
       "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
   },
   {
     icon: PackageCheckIcon,
-    label: "배송 완료",
+    label: bidProgressStepLabels[4],
     description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
   },
 ] as const;
@@ -385,13 +394,9 @@ type BidRecord = {
   payback?: ShippingFeePaybackInfo | null;
 };
 
-function isRecruitingStatus(status: string | undefined) {
-  return !status || status === "RECRUITING";
-}
-
 function isBidRecordClosed(bid: BidRecord, now: Date) {
-  if (bid.buncheolStatus && !isRecruitingStatus(bid.buncheolStatus)) {
-    return !isRecruitingStatus(bid.buncheolStatus);
+  if (bid.buncheolStatus && !isBuncheolRecruitingStatus(bid.buncheolStatus)) {
+    return true;
   }
 
   const deadlineDate = parseDeadline(bid.deadline);
@@ -406,42 +411,25 @@ function isBidRecordPaymentReady(bid: BidRecord, now: Date) {
   return (
     !isBidRecordCancelled(bid) &&
     !isBidRecordPaymentConfirmed(bid) &&
-    (isPaymentWaitingParticipationStatus(bid.participationStatus) ||
+    (isParticipationAwaitingPaymentStatus(bid.participationStatus) ||
       (isBidRecordClosed(bid, now) && bid.rank === 1)) &&
     !isBidRecordPaymentExpired(bid, now)
   );
 }
 
-function isPaymentWaitingParticipationStatus(status: string | undefined) {
-  return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
-}
-
-function isPaymentConfirmedParticipationStatus(status: string | undefined) {
-  return status === "CONFIRMED" || status === "PAYMENT_CONFIRMED";
-}
-
 function isBidRecordPaymentConfirmed(bid: BidRecord) {
   return (
     Boolean(bid.paidAt) ||
-    isPaymentConfirmedParticipationStatus(bid.participationStatus)
+    isParticipationConfirmedStatus(bid.participationStatus)
   );
-}
-
-function isCancelledParticipationStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "CANCELED";
-}
-
-function isCancelledBuncheolStatus(status: string | undefined) {
-  return status === "CANCELLED" || status === "CANCELED";
 }
 
 // 분철이 취소(자동/개최자)됐는데 참여 취소가 아직 전파되지 않은 응답도 취소로 본다 —
 // 취소 배지 아래 결제 대기 CTA 가 노출되는 모순을 막는다.
 function isBidRecordCancelled(bid: BidRecord) {
   return (
-    isCancelledParticipationStatus(bid.participationStatus) ||
-    isCancelledBuncheolStatus(bid.buncheolStatus) ||
-    isHostCancelledBuncheolStatus(bid.buncheolStatus)
+    isParticipationCancelledStatus(bid.participationStatus) ||
+    isBuncheolCancelledStatus(bid.buncheolStatus)
   );
 }
 
@@ -458,17 +446,12 @@ function getBidRecordCancellationKind(bid: BidRecord) {
 
   if (
     bid.cancelReason === "BUNCHEOL_CANCELLED" ||
-    isCancelledBuncheolStatus(bid.buncheolStatus) ||
-    isHostCancelledBuncheolStatus(bid.buncheolStatus)
+    isBuncheolCancelledStatus(bid.buncheolStatus)
   ) {
     return "BUNCHEOL_CANCELLED";
   }
 
   return "PAYMENT_TIMEOUT";
-}
-
-function isHostCancelledBuncheolStatus(status: string | undefined) {
-  return status === "HOST_CANCELLED";
 }
 
 type BuncheolChipTone =
@@ -485,15 +468,14 @@ function getBidRecordBuncheolChip(
   now: Date,
 ): { label: string; tone: BuncheolChipTone } {
   if (
-    isCancelledBuncheolStatus(bid.buncheolStatus) ||
-    isHostCancelledBuncheolStatus(bid.buncheolStatus) ||
+    isBuncheolCancelledStatus(bid.buncheolStatus) ||
     getBidRecordCancellationKind(bid) === "BUNCHEOL_CANCELLED"
   ) {
     return { label: "취소", tone: "cancelled" };
   }
 
-  if (bid.buncheolStatus === "CONFIRMED") {
-    return { label: "진행확정", tone: "confirmed" };
+  if (isBuncheolConfirmedStatus(bid.buncheolStatus)) {
+    return { label: "진행 확정", tone: "confirmed" };
   }
 
   if (isBidRecordClosed(bid, now)) {
@@ -539,11 +521,11 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     };
   }
 
-  const buncheolCancelDescription = isHostCancelledBuncheolStatus(
+  const buncheolCancelDescription = isBuncheolHostCancelledStatus(
     bid.buncheolStatus,
   )
     ? "개최자 사정으로 분철이 취소됐어요."
-    : isCancelledBuncheolStatus(bid.buncheolStatus)
+    : isBuncheolCancelledStatus(bid.buncheolStatus)
       ? "최소 인원이 모이지 않아 분철이 취소됐어요."
       : "취소된 분철이에요.";
 
@@ -553,19 +535,14 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
   };
 }
 
-function isDeletedProductStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
 function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
   const isPaymentCandidate =
-    isPaymentWaitingParticipationStatus(bid.participationStatus) ||
+    isParticipationAwaitingPaymentStatus(bid.participationStatus) ||
     (isBidRecordClosed(bid, now) && bid.rank === 1);
 
   if (
     isBidRecordCancelled(bid) ||
     isBidRecordPaymentConfirmed(bid) ||
-    isTransferPaymentRequestedStatus(bid.participationStatus) ||
     !isPaymentCandidate
   ) {
     return false;
@@ -583,29 +560,10 @@ function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
   );
 }
 
-function isBidRecordTransferRequested(bid: BidRecord) {
-  return (
-    !isBidRecordPaymentConfirmed(bid) &&
-    isTransferPaymentRequestedStatus(bid.participationStatus)
-  );
-}
-
-function getNormalizedDeliveryStatus(status: string | null | undefined) {
-  return status?.trim().toUpperCase();
-}
-
-function isDeliveryCompletedStatus(status: string | null | undefined) {
-  const normalizedStatus = getNormalizedDeliveryStatus(status);
-
-  return normalizedStatus === "DELIVERED" || normalizedStatus === "RECEIVED";
-}
-
 function isDeliveryInProgress(bid: BidRecord) {
-  const normalizedStatus = getNormalizedDeliveryStatus(bid.deliveryStatus);
-
   return (
-    normalizedStatus === "SHIPPING" ||
-    isDeliveryCompletedStatus(normalizedStatus) ||
+    isDeliveryShippingStatus(bid.deliveryStatus) ||
+    isDeliveryCompletedStatus(bid.deliveryStatus) ||
     Boolean(bid.trackingNumber)
   );
 }
@@ -650,10 +608,10 @@ function getBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   }
 
   if (isBidRecordPaymentConfirmed(bid)) {
-    return bid.buncheolStatus === "CONFIRMED" ? 2 : 1;
+    return isBuncheolConfirmedStatus(bid.buncheolStatus) ? 2 : 1;
   }
 
-  if (isBidRecordTransferRequested(bid) || isBidRecordPaymentReady(bid, now)) {
+  if (isBidRecordPaymentReady(bid, now)) {
     return 0;
   }
 
@@ -693,10 +651,6 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
     return "결제 완료";
   }
 
-  if (isBidRecordTransferRequested(bid)) {
-    return "관리자 확인 중";
-  }
-
   if (isBidRecordPaymentExpired(bid, now)) {
     return "결제 만료";
   }
@@ -720,10 +674,6 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     return "관리자가 입금을 확인했어요.";
   }
 
-  if (isBidRecordTransferRequested(bid)) {
-    return "관리자가 입금을 확인하고 있어요.";
-  }
-
   if (isBidRecordPaymentExpired(bid, now)) {
     return "입금 기한이 지나 참여가 취소됐을 수 있어요.";
   }
@@ -743,8 +693,8 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
 }
 
 function isHostedProductClosed(product: ProductDetailItem, now: Date) {
-  if (product.status && !isRecruitingStatus(product.status)) {
-    return !isRecruitingStatus(product.status);
+  if (product.status && !isBuncheolRecruitingStatus(product.status)) {
+    return true;
   }
 
   const deadlineDate = parseHistoryDeadline(product.deadline);
@@ -826,7 +776,7 @@ function getBidRecordFromParticipation(
     "";
   const rank =
     participation.closedRank ??
-    (isPaymentWaitingParticipationStatus(participationStatus) ? 1 : 0);
+    (isParticipationAwaitingPaymentStatus(participationStatus) ? 1 : 0);
   const shippingMethods = getShippingMethodsFromOptions(
     participation.shippingOptions ?? [],
   );
@@ -850,11 +800,9 @@ function getBidRecordFromParticipation(
       getCachedProductImageUrl(participation.buncheolId),
     optionLabel: participation.memberName,
     participantCount: 0,
-    paidAt:
-      participation.participationStatus === "CONFIRMED" ||
-      participation.participationStatus === "PAYMENT_CONFIRMED"
-        ? "결제 완료"
-        : null,
+    paidAt: isParticipationConfirmedStatus(participation.participationStatus)
+      ? "결제 완료"
+      : null,
     buncheolStatus: participation.buncheolStatus,
     deliveryId: participation.deliveryId,
     deliveryStatus: participation.deliveryStatus,
@@ -873,8 +821,8 @@ function getBidRecordFromParticipation(
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
     shippingFee: participation.shippingFee ?? cachedPayment?.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
-    hostBankAccount:
-      participation.hostBankAccount ?? cachedPayment?.hostBankAccount ?? null,
+    // 개최자 계좌는 세션 캐시에 저장하지 않으므로(v3) 서버 응답에만 의존한다.
+    hostBankAccount: participation.hostBankAccount ?? null,
     submittedAt: "",
     title: participation.buncheolTitle,
     tone: getToneFromId(participation.buncheolId),
@@ -910,7 +858,7 @@ function getCachedBuncheolDetail(
 // HOST_CANCELLED 는 isBidRecordCancelled 가 취소로 판정하므로 별도 검사가 필요 없다.
 function isBuncheolDetailInaccessible(bid: BidRecord) {
   return (
-    isBidRecordCancelled(bid) || isDeletedProductStatus(bid.buncheolStatus)
+    isBidRecordCancelled(bid) || isBuncheolDeletedStatus(bid.buncheolStatus)
   );
 }
 
@@ -930,9 +878,7 @@ async function getBidRecordWithShippingData(
   const shouldFetchParticipationDetail =
     !hasListShippingData &&
     !isBidRecordCancelled(bidRecord) &&
-    (isBidRecordPaymentConfirmed(bidRecord) ||
-      isBidRecordTransferRequested(bidRecord) ||
-      Boolean(bidRecord.deliveryId));
+    (isBidRecordPaymentConfirmed(bidRecord) || Boolean(bidRecord.deliveryId));
 
   if (!shouldFetchBuncheolDetail && !shouldFetchParticipationDetail) {
     return bidRecord;
@@ -971,7 +917,7 @@ async function getBidRecordWithShippingData(
         mergedBidRecord.hostBankAccount ?? paymentDetail.hostBankAccount,
       paidAt:
         mergedBidRecord.paidAt ??
-        (isPaymentConfirmedParticipationStatus(participationStatus)
+        (isParticipationConfirmedStatus(participationStatus)
           ? "결제 완료"
           : null),
       participationStatus,
@@ -1022,7 +968,7 @@ function getHostedProductFromBuncheol(
     era: buncheol.groupName,
     rating: "0.0",
     reviews: String(buncheol.activeParticipationCount),
-    badge: buncheol.status === "RECRUITING" ? "모집중" : buncheol.status === "CONFIRMED" ? "진행확정" : buncheol.status === "CANCELLED" ? "취소" : "모집종료",
+    badge: getBuncheolStatusBadgeLabel(buncheol.status),
     liked: buncheol.bookmarked,
     tone: getToneFromId(buncheol.id),
     courier: "배송 방법 확인 필요",
@@ -1202,9 +1148,8 @@ export function BidHistoryContent({
   const actionablePaybackRecords = paymentBidRecords.filter((bid) =>
     isPaybackRequestable(bid),
   );
-  const shouldRefreshPaymentState = paymentBidRecords.some(
-    (bid) =>
-      isBidRecordPaymentReady(bid, now) || isBidRecordTransferRequested(bid),
+  const shouldRefreshPaymentState = paymentBidRecords.some((bid) =>
+    isBidRecordPaymentReady(bid, now),
   );
   const prioritizedDeliveryAddresses = getPrioritizedDeliveryAddresses(
     deliveryAddresses,
@@ -1627,16 +1572,13 @@ export function BidHistoryContent({
       .filter((bid) => {
         if (
           filter !== "all" &&
-          isCancelledParticipationStatus(bid.participationStatus)
+          isParticipationCancelledStatus(bid.participationStatus)
         ) {
           return false;
         }
 
         if (filter === "payment") {
-          return (
-            isBidRecordPaymentReady(bid, now) ||
-            isBidRecordTransferRequested(bid)
-          );
+          return isBidRecordPaymentReady(bid, now);
         }
 
         if (filter === "confirmed") {
@@ -1662,7 +1604,7 @@ export function BidHistoryContent({
       .filter((product) => {
         const isClosed = isHostedProductClosed(product, now);
 
-        if (isDeletedProductStatus(product.status)) {
+        if (isBuncheolDeletedStatus(product.status)) {
           return false;
         }
 
@@ -1767,7 +1709,6 @@ export function BidHistoryContent({
 
           writeCachedParticipationPayment({
             bidAmount: detailItemAmount ?? selectedBid.amount,
-            hostBankAccount: paymentDetail.hostBankAccount,
             participationId: paymentDetail.participationId,
             participationStatus: paymentDetail.paymentStatus,
             paymentAmount: paymentDetail.paymentAmount,
@@ -2313,14 +2254,11 @@ export function BidHistoryContent({
             {!isBidRecordsLoading && records.length > 0 ? (
             <div className="content-reveal space-y-3">
             {records.map((bid) => {
-              const isClosed = isBidRecordClosed(bid, now);
               const isCancelled = isBidRecordCancelled(bid);
               const cancellationNotice = getBidRecordCancellationNotice(bid);
               const buncheolChip = getBidRecordBuncheolChip(bid, now);
-              const isPaymentExpired = isBidRecordPaymentExpired(bid, now);
               const isPaymentReady = isBidRecordPaymentReady(bid, now);
               const isPaymentConfirmed = isBidRecordPaymentConfirmed(bid);
-              const isTransferRequested = isBidRecordTransferRequested(bid);
               const progressSteps = getBidRecordProgressSteps(bid, now);
               const shippingAddressLabel = getBidRecordShippingAddressLabel(bid);
               const cardShippingFee =
@@ -2506,63 +2444,8 @@ export function BidHistoryContent({
                         </div>
                       </div>
 
-                      <div
-                        className={isPaymentReady ? "mt-4 flex justify-end" : "hidden"}
-                      >
-                        <div
-                          className="hidden"
-                        >
-                          {isCancelled ? (
-                            <p>{getBidRecordPaymentStatusDescription(bid, now)}</p>
-                          ) : isClosed ? (
-                            isPaymentConfirmed ? (
-                              <>
-                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
-                                <p className="mt-0.5 text-black/45">
-                                  {bid.paidAt && bid.paidAt !== "결제 완료"
-                                    ? `결제일 ${bid.paidAt}`
-                                    : getBidRecordPaymentStatusDescription(
-                                        bid,
-                                        now,
-                                      )}
-                                </p>
-                              </>
-                            ) : isTransferRequested ? (
-                              <>
-                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
-                                <p className="mt-0.5 text-black/45">
-                                  {getBidRecordPaymentStatusDescription(bid, now)}
-                                </p>
-                              </>
-                            ) : isPaymentExpired ? (
-                              <>
-                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
-                                <p className="mt-0.5 text-black/45">
-                                  {getBidRecordPaymentStatusDescription(bid, now)}
-                                </p>
-                              </>
-                            ) : isPaymentReady ? (
-                              <>
-                                <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
-                                <p className="mt-0.5 text-black/45">
-                                  {getBidRecordPaymentStatusDescription(bid, now)}
-                                </p>
-                              </>
-                            ) : (
-                              <p>{getBidRecordPaymentStatusDescription(bid, now)}</p>
-                            )
-                          ) : isPaymentReady ? (
-                            <>
-                              <p>{getBidRecordPaymentStatusLabel(bid, now)}</p>
-                              <p className="mt-0.5 text-black/45">
-                                {getBidRecordPaymentStatusDescription(bid, now)}
-                              </p>
-                            </>
-                          ) : (
-                            <p>{getBidRecordPaymentStatusDescription(bid, now)}</p>
-                          )}
-                        </div>
-                        {isPaymentReady ? (
+                      {isPaymentReady ? (
+                        <div className="mt-4 flex justify-end">
                           <button
                             className="shrink-0 rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                             onClick={() => openPaymentSheet(bid.id)}
@@ -2570,8 +2453,8 @@ export function BidHistoryContent({
                           >
                             결제 정보
                           </button>
-                        ) : null}
-                      </div>
+                        </div>
+                      ) : null}
                       {bid.deliveryId && isPaymentConfirmed ? (
                         <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
                           <div className="flex items-center justify-between gap-3">
@@ -2706,10 +2589,7 @@ export function BidHistoryContent({
               <div className="content-reveal space-y-3">
               {hostedRecords.map((product) => {
                 const isClosed = isHostedProductClosed(product, now);
-                const isCancelled =
-                  product.status === "CANCELLED" ||
-                  product.status === "CANCELED" ||
-                  product.status === "HOST_CANCELLED";
+                const isCancelled = isBuncheolCancelledStatus(product.status);
                 const optionCount =
                   product.optionCount ??
                   product.targetMembers?.length ??
@@ -2753,7 +2633,7 @@ export function BidHistoryContent({
                           </div>
                           <span
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              product.status === "CONFIRMED"
+                              isBuncheolConfirmedStatus(product.status)
                                 ? "bg-[#E4F6A5] text-black/70"
                                 : isClosed
                                   ? "bg-[#f3f3f3] text-black/50"
@@ -2762,8 +2642,8 @@ export function BidHistoryContent({
                           >
                             {isCancelled
                               ? "취소"
-                              : product.status === "CONFIRMED"
-                                ? "진행확정"
+                              : isBuncheolConfirmedStatus(product.status)
+                                ? "진행 확정"
                                 : isClosed
                                   ? "모집 종료"
                                   : "모집중"}
@@ -2903,7 +2783,7 @@ export function BidHistoryContent({
               </div>
               <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
                 사진 아래 칩은 분철 자체의 상태예요. 모집 중에는 마감까지 남은
-                날(D-day)을, 마감 후에는 진행확정·취소 여부를 보여줘요.
+                날(D-day)을, 마감 후에는 진행 확정·취소 여부를 보여줘요.
               </p>
               <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
                 마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가

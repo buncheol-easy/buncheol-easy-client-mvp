@@ -14,6 +14,12 @@ import {
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import {
+  isBuncheolCancelledStatus,
+  isBuncheolConfirmedStatus,
+  isBuncheolPurchasableStatus,
+} from "@/lib/buncheol-states";
+import { getHistoryIndex } from "@/lib/history-index";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import { homeListingsQueryKey } from "@/lib/query-keys";
 
@@ -197,35 +203,6 @@ function getReadableDeadlineBadge(deadline: string) {
   };
 }
 
-function isPurchasableCardStatus(status: string | undefined) {
-  const normalizedStatus = status?.trim().toUpperCase();
-
-  if (!normalizedStatus) {
-    return true;
-  }
-
-  return normalizedStatus === "RECRUITING" || normalizedStatus === "PUBLIC_PREVIEW";
-}
-
-function isCancelledCardStatus(status: string | undefined) {
-  const normalizedStatus = status?.trim().toUpperCase();
-
-  return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
-}
-
-// 진행확정 이후 상태군. 조기 확정은 매진+전원 입금확인일 때만 일어나므로 "진행 확정 = 참여 불가"가 항상 성립한다.
-function isConfirmedCardStatus(status: string | undefined) {
-  const normalizedStatus = status?.trim().toUpperCase();
-
-  return [
-    "CONFIRMED",
-    "PAYMENT_CONFIRMED",
-    "PAID",
-    "SETTLING",
-    "FINISHED",
-  ].includes(normalizedStatus ?? "");
-}
-
 function isCardDeadlineOpen(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
@@ -235,15 +212,19 @@ function isCardDeadlineOpen(deadline: string) {
 }
 
 function isProductCardPurchasable(item: ProductCardItem) {
-  return isPurchasableCardStatus(item.status) && isCardDeadlineOpen(item.deadline);
+  return (
+    isBuncheolPurchasableStatus(item.status) && isCardDeadlineOpen(item.deadline)
+  );
 }
 
+// 취소(개최자 취소 HOST_CANCELLED 포함)·진행 확정 계열 판정은 중앙 모듈 기준.
+// 그 외 비구매 상태(마감 지남 등)는 "모집 종료"로 접는다.
 function getProductCardBadge(item: ProductCardItem) {
   if (!isProductCardPurchasable(item)) {
     return {
-      label: isCancelledCardStatus(item.status)
+      label: isBuncheolCancelledStatus(item.status)
         ? "분철 취소"
-        : isConfirmedCardStatus(item.status)
+        : isBuncheolConfirmedStatus(item.status)
           ? "진행 확정"
           : "모집 종료",
       value: null,
@@ -325,12 +306,6 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       !event.shiftKey &&
       !event.altKey
     );
-  }
-
-  function getHistoryIndex() {
-    const historyState = window.history.state as { idx?: unknown } | null;
-
-    return typeof historyState?.idx === "number" ? historyState.idx : null;
   }
 
   function rememberFavoritesProductEntry() {
