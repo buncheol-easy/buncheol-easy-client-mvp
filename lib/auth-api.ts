@@ -131,6 +131,8 @@ export type CreateBuncheolRequest = {
   description?: string;
   groupId: number;
   gs25ShippingFee?: number;
+  /** C2C 참여자 소통 채널(카카오 오픈채팅) — 선택, 최대 200자 (docs/46 §7.1-10). */
+  openChatUrl?: string;
   purchaseSite: string;
   /** 대표사진으로 쓸 images 파트 내 인덱스(0-base, 필수). 이미지 순서는 업로드 순서 그대로 저장된다. */
   thumbnailIndex: number;
@@ -356,6 +358,8 @@ export type BuncheolManagementParticipant = {
   memberName: string;
   participantNickname: string;
   participationId: string;
+  // C2C "보냈어요" 마킹 시각 — 개최자가 통장 대조 우선순위를 잡는 근거 (docs/46 §4.6).
+  paymentSentAt?: string | null;
   refundAccount?: BankAccountInfo | null;
   status: string;
 };
@@ -374,6 +378,8 @@ export type BuncheolManagementOption = {
 export type BuncheolManagementDetail = {
   confirmedCount?: number;
   deadline: string;
+  // 분철 flow_type — 없으면 LEGACY 취급 (getFlowType).
+  flowType?: string | null;
   groupName: string;
   id: string;
   memberCount?: number;
@@ -381,6 +387,8 @@ export type BuncheolManagementDetail = {
   optionCount: number;
   options: BuncheolManagementOption[];
   participants: BuncheolManagementParticipant[];
+  // C2C 일괄 입금 기한 — 성사 확정 시 산정 (docs/46 §4.1).
+  paymentDueAt?: string | null;
   purchaseSite?: string;
   status: BuncheolStatus;
   title: string;
@@ -3321,6 +3329,7 @@ function getBuncheolManagementParticipantFromRecord(
       "옵션",
     participantNickname,
     participationId,
+    paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
     refundAccount,
     status:
       getOptionalStringValue(record, [
@@ -3558,11 +3567,13 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     id,
     memberCount: memberCount ?? undefined,
     minHeadcount: getNumberValue(data, ["minHeadcount"]) ?? undefined,
+    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     optionCount:
       getNumberValue(data, ["optionCount", "memberSlotCount", "memberCount"]) ??
       options.length,
     options,
     participants,
+    paymentDueAt: getOptionalStringValue(data, ["paymentDueAt"]) ?? null,
     purchaseSite: getOptionalStringValue(data, [
       "purchaseSite",
       "purchaseSource",
@@ -4609,6 +4620,77 @@ export async function requestPaymentConfirmation(
       return;
     }
 
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C 개최자 성사 확정 — 신청(APPLIED) 전원을 일괄 입금 기한(24h)과 함께 입금 대기로
+// 전이하고 입금 안내 알림톡이 발송된다 (docs/46 §4.1). 정원 미달 재량·조기 확정 허용.
+export async function confirmBuncheolRecruitment(
+  accessToken: string,
+  buncheolId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/confirm`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const data = getNestedData(await readJsonBody(response));
+
+  return {
+    awaitingCount: isRecord(data)
+      ? getOptionalNumberValue(data, ["awaitingCount"]) ?? null
+      : null,
+    paymentDueAt: isRecord(data)
+      ? getOptionalStringValue(data, ["paymentDueAt"]) ?? null
+      : null,
+  };
+}
+
+// C2C 입금 수집 종료(부분 확정) — 기한 경과로 미입금 슬롯이 정리된 뒤 확정 참여만으로
+// 진행을 확정한다. 미입금 활성 참여가 남아 있으면 서버가 거부한다 (docs/46 §7.1-6).
+export async function finalizeBuncheolCollected(
+  accessToken: string,
+  buncheolId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/finalize-collected`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C 개최자 미입금 반려 — 입금 내역을 찾지 못한 "보냈어요"를 입금 대기로 되돌리고
+// 기한을 +24h 연장하며 참여자에게 재확인 안내가 발송된다 (docs/46 §4.5).
+export async function rejectParticipationPaymentSent(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/reject-payment`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
 }

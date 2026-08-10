@@ -38,6 +38,7 @@ import {
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import {
   getInitialAuthState,
   readAuthState,
@@ -637,6 +638,7 @@ export function UploadProductForm({
     useState(false);
   const [closingDate, setClosingDate] = useState("");
   const [description, setDescription] = useState("");
+  const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [memberToastMessage, setMemberToastMessage] = useState("");
   const [memberToastTargetId, setMemberToastTargetId] = useState<string | null>(
@@ -786,6 +788,11 @@ export function UploadProductForm({
       )
     ) {
       return "배송비를 100원 단위로 입력해 주세요.";
+    }
+
+    // 선택 입력 — 값이 있으면 카카오 오픈채팅(https://open.kakao.com/...) 주소만 허용한다.
+    if (openChatUrl.trim() && !getSafeOpenChatHref(openChatUrl.trim())) {
+      return "오픈채팅 링크는 open.kakao.com 주소만 입력할 수 있어요.";
     }
 
     return "";
@@ -1876,6 +1883,7 @@ export function UploadProductForm({
               description: product.description || undefined,
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
+              openChatUrl: openChatUrl.trim() || undefined,
               gs25ShippingFee: getStoreShippingFee(
                 selectedShipping,
                 shippingPrices,
@@ -3087,6 +3095,27 @@ export function UploadProductForm({
                 />
                 <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
                   {description.length}/{maxDescriptionLength}자
+                </span>
+              </label>
+
+              <label className="mt-6 block">
+                <span className="text-[13px] font-semibold text-black/45">
+                  오픈채팅 링크 (선택)
+                </span>
+                <input
+                  className="mt-2 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                  inputMode="url"
+                  maxLength={200}
+                  onChange={(event) =>
+                    setOpenChatUrl(event.currentTarget.value)
+                  }
+                  placeholder="https://open.kakao.com/o/..."
+                  type="url"
+                  value={openChatUrl}
+                />
+                <span className="mt-1.5 block text-[12px] font-medium leading-5 text-black/35">
+                  참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
+                  안내 화면에 노출돼요.
                 </span>
               </label>
             </div>
