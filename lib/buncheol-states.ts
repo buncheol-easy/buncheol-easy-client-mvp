@@ -6,8 +6,16 @@
 
 type DeliveryStatus = "SNAPSHOTTED" | "SHIPPING" | "DELIVERED" | "RECEIVED";
 
+export type FlowType = "LEGACY" | "C2C";
+
 function normalizeStatusValue(status: string | null | undefined) {
   return status?.trim().toUpperCase() ?? "";
+}
+
+// 분철 flow_type (docs/46 §2.1). 컬럼 추가 전 응답에는 필드가 없으므로
+// C2C 명시가 아니면 전부 LEGACY 로 본다 — 기존 분철이 새 플로우를 타는 사고 방지.
+export function getFlowType(value: string | null | undefined): FlowType {
+  return normalizeStatusValue(value) === "C2C" ? "C2C" : "LEGACY";
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +52,13 @@ export function isBuncheolConfirmedStatus(status: string | null | undefined) {
 
 export function isBuncheolDeletedStatus(status: string | null | undefined) {
   return normalizeStatusValue(status) === "DELETED";
+}
+
+// C2C 입금 수집 중 — 개최자 성사 확정 후 전원 입금확인 전 구간 (docs/46 §1.2).
+export function isBuncheolPaymentCollectingStatus(
+  status: string | null | undefined,
+) {
+  return normalizeStatusValue(status) === "PAYMENT_COLLECTING";
 }
 
 // 상태 필드가 없는 구 응답·목업은 모집중으로 취급한다.
@@ -116,11 +131,23 @@ export function isParticipationCancelledStatus(
   return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
 }
 
+// C2C 신청(무입금 슬롯 선점) 상태 (docs/46 §1.1). 입금 기한 없음, 계좌 비노출.
+export function isParticipationAppliedStatus(status: string | null | undefined) {
+  return normalizeStatusValue(status) === "APPLIED";
+}
+
 // C2C "보냈어요" 마킹 상태 (docs/46 §1.1).
 export function isParticipationPaymentSentStatus(
   status: string | null | undefined,
 ) {
   return normalizeStatusValue(status) === "PAYMENT_SENT";
+}
+
+// C2C 참여자 자발 취소 사유 — 서버 ParticipationCancelReason.USER_CANCELLED (docs/46 §5).
+export const USER_CANCELLED_REASON = "USER_CANCELLED";
+
+export function isUserCancelledReason(reason: string | null | undefined) {
+  return normalizeStatusValue(reason) === USER_CANCELLED_REASON;
 }
 
 // ---------------------------------------------------------------------------

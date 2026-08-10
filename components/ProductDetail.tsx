@@ -34,10 +34,13 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
+  getFlowType,
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
+  isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
+import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
 import {
@@ -179,10 +182,13 @@ const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
 // 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
 const paymentWindowMs = 30 * 60 * 1000;
+// C2C 입금 창 — 성사 확정·추가 모집(즉시입금) 후 24시간 (docs/46 §7.1-3).
+const c2cPaymentWindowMs = 24 * 60 * 60 * 1000;
 const sheetDragCloseThreshold = 72;
 const kstOffsetHours = 9;
 
-type CheckoutSheetStep = "options" | "confirm" | "payment";
+// applied 는 C2C 신청(무입금) 완료 화면 — 계좌·기한 없이 확정 대기를 안내한다.
+type CheckoutSheetStep = "options" | "confirm" | "payment" | "applied";
 
 type CheckoutDraftItem = {
   bidAmount: number;
@@ -461,6 +467,7 @@ function parseCheckoutDateTime(value: string | null | undefined) {
 function formatPaymentDueCountdown(
   value: string | null | undefined,
   now = Date.now(),
+  windowMs = paymentWindowMs,
 ) {
   const dueDate = parseCheckoutDateTime(value);
 
@@ -468,11 +475,11 @@ function formatPaymentDueCountdown(
     return "-";
   }
 
-  // 입금 기한은 선점 시점 + 30분을 넘을 수 없다. 서버 절대시각과 클라이언트
-  // 시계의 오차로 남은시간이 30분을 초과해 보이지 않도록 상한을 건다.
+  // 입금 기한은 입금 창(LEGACY 30분 / C2C 24시간)을 넘을 수 없다. 서버 절대시각과
+  // 클라이언트 시계의 오차로 남은시간이 창을 초과해 보이지 않도록 상한을 건다.
   const remainingMilliseconds = Math.min(
     dueDate.getTime() - now,
-    paymentWindowMs,
+    windowMs,
   );
 
   if (remainingMilliseconds <= 0) {
@@ -498,12 +505,13 @@ function formatPaymentDueCountdown(
   return `${minutes}분 ${seconds.toString().padStart(2, "0")}초 남음`;
 }
 
-// 참여 직후 받은 입금 기한을 응답 수신 시각 + 30분으로 상한 보정한다.
-// 서버·클라이언트 시계가 어긋나도 방금 시작한 카운트다운이 30분을 넘거나
+// 참여 직후 받은 입금 기한을 응답 수신 시각 + 입금 창으로 상한 보정한다.
+// 서버·클라이언트 시계가 어긋나도 방금 시작한 카운트다운이 창을 넘거나
 // 실제 만료보다 늦게 끝나 보이지 않는다 (만료 판정 자체는 서버가 한다).
 function clampPaymentDueAt(
   dueAt: string | null | undefined,
   receivedAt: number,
+  windowMs = paymentWindowMs,
 ): string | null | undefined {
   if (!dueAt) {
     return dueAt;
@@ -515,7 +523,7 @@ function clampPaymentDueAt(
     return dueAt;
   }
 
-  const maxDueAtMs = receivedAt + paymentWindowMs;
+  const maxDueAtMs = receivedAt + windowMs;
 
   return dueDate.getTime() > maxDueAtMs
     ? new Date(maxDueAtMs).toISOString()
@@ -523,6 +531,7 @@ function clampPaymentDueAt(
 }
 
 const PURCHASE_OPTION_LABELS = {
+  applied: "신청이 완료된 멤버예요",
   complete: "구매가 완료됐어요",
   paymentWaiting: "입금 대기중",
   unavailable: "선택할 수 없는 멤버예요",
@@ -530,8 +539,10 @@ const PURCHASE_OPTION_LABELS = {
 
 // 멤버 슬롯 칩에 실제로 노출되는 문구. PURCHASE_OPTION_LABELS 는 상태 판별용 내부 값이라 분리한다.
 const MEMBER_STATUS_CHIP_LABELS = {
+  myApplied: "내가 신청한 멤버",
   myComplete: "내가 구매한 멤버",
   myPaymentWaiting: "내 주문이 진행중이에요",
+  otherApplied: "다른 사람이 신청했어요",
   otherComplete: "매진",
   otherPaymentWaiting: "다른 사람이 주문 진행중이에요",
 } as const;
@@ -554,6 +565,7 @@ function getOptionPaymentWaitingLabel(
   option: ProductOption,
   now = Date.now(),
   isMine = false,
+  windowMs = paymentWindowMs,
 ) {
   const baseLabel = isMine
     ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
@@ -570,7 +582,7 @@ function getOptionPaymentWaitingLabel(
     return baseLabel;
   }
 
-  return `${baseLabel} · ${formatPaymentDueCountdown(dueAt, now)}`;
+  return `${baseLabel} · ${formatPaymentDueCountdown(dueAt, now, windowMs)}`;
 }
 
 function getTargetTags(product: ProductDetailItem) {
@@ -706,6 +718,11 @@ function getOptionPurchaseOverlayLabel(
 ) {
   const saleStatus = option.saleStatus?.toUpperCase();
 
+  // C2C 신청(무입금)이 선점한 슬롯 (docs/46 §4.6 — BuncheolMemberSaleStatus.APPLIED).
+  if (saleStatus === "APPLIED") {
+    return PURCHASE_OPTION_LABELS.applied;
+  }
+
   if (saleStatus === "AWAITING_PAYMENT") {
     return PURCHASE_OPTION_LABELS.paymentWaiting;
   }
@@ -752,6 +769,7 @@ function getOptionPurchaseBlockChipLabel(
   option?: ProductOption,
   now = Date.now(),
   isMine = false,
+  windowMs = paymentWindowMs,
 ) {
   if (!overlayLabel) {
     return null;
@@ -759,6 +777,12 @@ function getOptionPurchaseBlockChipLabel(
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.unavailable) {
     return "구매 불가";
+  }
+
+  if (overlayLabel === PURCHASE_OPTION_LABELS.applied) {
+    return isMine
+      ? MEMBER_STATUS_CHIP_LABELS.myApplied
+      : MEMBER_STATUS_CHIP_LABELS.otherApplied;
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.complete) {
@@ -769,7 +793,7 @@ function getOptionPurchaseBlockChipLabel(
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting) {
     return option
-      ? getOptionPaymentWaitingLabel(option, now, isMine)
+      ? getOptionPaymentWaitingLabel(option, now, isMine, windowMs)
       : isMine
         ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting
         : MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
@@ -1210,15 +1234,22 @@ export function ProductDetail({
   // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
   const isCancelledProduct = isBuncheolCancelledStatus(product.status);
   const isConfirmedProduct = isBuncheolConfirmedStatus(product.status);
-  const isPurchasableStatus = isBuncheolPurchasableStatus(product.status);
+  const isC2CProduct = getFlowType(product.flowType) === "C2C";
+  // E1(docs/46 §4.7): C2C 확정 후(PAYMENT_COLLECTING) 빈 슬롯은 즉시입금으로 추가 신청을
+  // 받는다 — deadline(신청 마감)이 지났어도 열어둔다. 분철 CONFIRMED 후에는 서버가 차단.
+  const isC2CCollectingProduct =
+    isC2CProduct && isBuncheolPaymentCollectingStatus(product.status);
+  const isPurchasableStatus =
+    isBuncheolPurchasableStatus(product.status) || isC2CCollectingProduct;
+  const isDeadlineBlocked = isDeadlinePassed && !isC2CCollectingProduct;
   const shouldDimProductMedia =
     !isPublicPreview &&
-    (!isPurchasableStatus || isCancelledProduct || isDeadlinePassed);
+    (!isPurchasableStatus || isCancelledProduct || isDeadlineBlocked);
   const productOptionBlockLabel = isPublicPreview
     ? null
     : isCancelledProduct
       ? "분철 취소"
-      : isDeadlinePassed
+      : isDeadlineBlocked
         ? "구매 마감"
         : isConfirmedProduct
           ? "진행 확정"
@@ -1251,12 +1282,22 @@ export function ProductDetail({
   const hasMyActiveParticipation = auctionOptions.some((option) =>
     isOptionParticipatedByMe(option, myBids[option.id]),
   );
+  // C2C 는 1인 다슬롯 허용(docs/46 §7.1-11) — 활성 참여가 있어도 다른 멤버에 추가 신청 가능.
+  // 추가 신청 판정은 서버 응답(participatedByMe)만 신뢰한다 — 로컬 myBids 는 같은 세션에서
+  // 취소한 뒤에도 남아 "배송비 0원" 오판(서버는 첫 참여로 부과)을 만들 수 있다.
+  const hasMyServerParticipation = auctionOptions.some(
+    (option) => option.participatedByMe === true,
+  );
+  const isAdditionalC2CApplication = isC2CProduct && hasMyServerParticipation;
+  const productOpenChatHref = isC2CProduct
+    ? getSafeOpenChatHref(product.openChatUrl)
+    : null;
   const canBidProduct =
     !isPublicPreview &&
     !isBidUnavailable &&
     !isHostedProduct &&
-    !hasMyActiveParticipation &&
-    !isDeadlinePassed &&
+    (!hasMyActiveParticipation || isC2CProduct) &&
+    !isDeadlineBlocked &&
     isPurchasableStatus &&
     hasSelectableOption;
   const isMainBidButtonDisabled =
@@ -1307,16 +1348,19 @@ export function ProductDetail({
       return "취소된 분철이에요";
     }
 
-    if (hasMyActiveParticipation) {
+    // C2C 다슬롯 허용 — 이미 참여했어도 다른 멤버 신청을 막지 않는다.
+    if (hasMyActiveParticipation && !isC2CProduct) {
       return "이미 참여한 분철이에요";
     }
 
-    if (isDeadlinePassed) {
-      return "구매 기한이 지났어요";
+    if (isDeadlineBlocked) {
+      return isC2CProduct ? "신청 기한이 지났어요" : "구매 기한이 지났어요";
     }
 
     if (!hasSelectableOption) {
-      return "구매 가능한 멤버가 없어요";
+      return isC2CProduct
+        ? "신청 가능한 멤버가 없어요"
+        : "구매 가능한 멤버가 없어요";
     }
 
     if (isConfirmedProduct) {
@@ -2239,11 +2283,17 @@ export function ProductDetail({
         }
 
         const firstParticipationId = resultParticipationIds[0] ?? "";
+        // C2C 신청(무입금): 서버가 dueAt·계좌 없이 APPLIED 로 생성한다 (docs/46 §3-1).
+        // 확정 후 추가 모집(E1, PAYMENT_COLLECTING)은 즉시입금 구간이라 dueAt 누락 응답이
+        // 와도 신청 완료로 오판하지 않도록 제외한다 — 입금 안내 경로(보충 조회 포함)를 태운다.
+        const isC2CAppliedResult =
+          isC2CProduct && !isC2CCollectingProduct && !result.paymentDueAt;
         let paymentDetail:
           | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
           | null = null;
 
         if (
+          !isC2CAppliedResult &&
           firstParticipationId &&
           (!result.hostBankAccount ||
             result.paymentAmount === null ||
@@ -2271,10 +2321,13 @@ export function ProductDetail({
           (sum, item) => sum + item.bidAmount,
           0,
         );
+        // 다슬롯 추가 신청은 배송비가 첫 참여에 귀속돼 0 이다 (docs/46 §4.7-A2) —
+        // 확인 스텝 표기와 동일하게 폴백 금액에서도 배송비를 더하지 않는다.
         const totalPaymentAmount =
           result.paymentAmount ??
           paymentDetail?.paymentAmount ??
-          totalBidAmount + estimatedShippingFee;
+          totalBidAmount +
+            (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
         const sharedShippingFee = Math.max(
           totalPaymentAmount - totalBidAmount,
           0,
@@ -2282,11 +2335,15 @@ export function ProductDetail({
         const sharedPaymentDueAt = clampPaymentDueAt(
           result.paymentDueAt ?? paymentDetail?.paymentDueAt,
           Date.now(),
+          isC2CProduct ? c2cPaymentWindowMs : paymentWindowMs,
         );
-        const sharedParticipationStatus =
-          result.participationStatus ||
-          paymentDetail?.paymentStatus ||
-          "AWAITING_PAYMENT";
+        // 참여 생성 응답에는 상태 필드가 없어 파서가 AWAITING_PAYMENT 로 폴백한다 —
+        // C2C 신청은 APPLIED 로 바로잡는다 (dueAt 부재 = 확정 전 신청).
+        const sharedParticipationStatus = isC2CAppliedResult
+          ? "APPLIED"
+          : result.participationStatus ||
+            paymentDetail?.paymentStatus ||
+            "AWAITING_PAYMENT";
 
         checkoutRequestItems.forEach(({ bidAmount, option }, index) => {
           const participationId = resultParticipationIds[index] ?? "";
@@ -2389,7 +2446,12 @@ export function ProductDetail({
         ),
       });
       pendingCheckoutRestoreRef.current = null;
-      setCheckoutStep("payment");
+      // C2C 신청은 입금 안내 대신 신청 완료 화면으로 — 계좌·기한이 아직 없다.
+      setCheckoutStep(
+        paymentItems.some((item) => item.participationStatus === "APPLIED")
+          ? "applied"
+          : "payment",
+      );
       setIsBidSubmitPending(false);
       return;
     } else {
@@ -2844,8 +2906,9 @@ export function ProductDetail({
       finishCloseSheet();
     }, 260);
 
-    // payment 단계 = 참여가 서버에 반영된 상태. 닫는 즉시 재조회해 슬롯 점유 상태를 맞춘다.
-    if (checkoutStep === "payment") {
+    // payment·applied 단계 = 참여가 서버에 반영된 상태. 닫는 즉시 재조회해
+    // 슬롯 점유 상태(saleStatus)를 맞춘다 — C2C 신청(APPLIED)도 슬롯을 선점한다.
+    if (checkoutStep === "payment" || checkoutStep === "applied") {
       void refreshDetailOptions();
     }
   }
@@ -3208,7 +3271,7 @@ export function ProductDetail({
                 className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
                   isPurchasableStatus &&
                   !isCancelledProduct &&
-                  !isDeadlinePassed
+                  !isDeadlineBlocked
                     ? "bg-[#DDE7B8] text-black"
                     : "bg-black/75 text-white backdrop-blur"
                 }`}
@@ -3320,6 +3383,31 @@ export function ProductDetail({
               </p>
             </div>
 
+            {isC2CProduct ? (
+              // flow_type 기반 책임 표시 구분 (docs/46 §7.1-4): C2C 분철은 중개 거래임을
+              // 상세에서 상시 고지한다. LEGACY(운영진 개최)는 기존 직접판매 표기 유지.
+              <div className="mt-6 rounded-[0.95rem] border border-black/10 bg-[#fafafa] px-4 py-4">
+                <p className="text-[13px] font-semibold tracking-[-0.04em]">
+                  개최자가 직접 진행하는 분철이에요
+                </p>
+                <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/45">
+                  분철이지는 통신판매중개자로 거래 당사자가 아니며, 대금은
+                  개최자 계좌로 직접 입금돼요. 상품·거래에 관한 책임은 개최자에게
+                  있어요.
+                </p>
+                {productOpenChatHref ? (
+                  <a
+                    className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-semibold text-black/60 underline underline-offset-2"
+                    href={productOpenChatHref}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    개최자 오픈채팅 참여하기 →
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="mt-8 border-t border-black/10 pt-6">
               <div className="flex items-end justify-between gap-3">
                 <h2 className="text-[18px] font-semibold">
@@ -3346,10 +3434,13 @@ export function ProductDetail({
                     option,
                     deadlineTick,
                     isMine,
+                    isC2CProduct ? c2cPaymentWindowMs : paymentWindowMs,
                   );
+                  // 내 진행중 주문·C2C 신청 칩은 참여 내역으로 이동하는 버튼으로 렌더한다.
                   const isMyPaymentWaitingChip =
                     isMine &&
-                    overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting;
+                    (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting ||
+                      overlayLabel === PURCHASE_OPTION_LABELS.applied);
 
                   return (
                     <div
@@ -3451,10 +3542,14 @@ export function ProductDetail({
         <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
           {!isHostedProduct &&
           !isCancelledProduct &&
-          !isDeadlinePassed &&
+          !isDeadlineBlocked &&
           isPurchasableStatus ? (
             <p className="mb-2 text-center text-[11px] font-medium text-black/40">
-              분철당 1명의 멤버에게 1번만 참여할 수 있어요.
+              {isC2CProduct
+                ? isC2CCollectingProduct
+                  ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
+                  : "지금은 신청만 하고, 개최자가 확정하면 입금해요."
+                : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
             </p>
           ) : null}
           <button
@@ -3466,11 +3561,17 @@ export function ProductDetail({
             }
           >
             {isPublicPreview
-              ? "로그인 후 구매하기"
+              ? isC2CProduct
+                ? "로그인 후 신청하기"
+                : "로그인 후 구매하기"
               : isBidUnavailable
-                ? "구매하기"
+                ? isC2CProduct
+                  ? "신청하기"
+                  : "구매하기"
                 : canBidProduct
-                  ? "구매하기"
+                  ? isC2CProduct && !isC2CCollectingProduct
+                    ? "신청하기"
+                    : "구매하기"
                   : getBidUnavailableMessage()}
           </button>
         </div>
@@ -3525,16 +3626,26 @@ export function ProductDetail({
                   <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
                     {checkoutStep === "payment"
                       ? "입금 안내"
-                      : checkoutStep === "confirm"
-                        ? "주문 확인"
-                        : "구매 옵션"}
+                      : checkoutStep === "applied"
+                        ? "신청 완료"
+                        : checkoutStep === "confirm"
+                          ? isC2CProduct && !isC2CCollectingProduct
+                            ? "신청 확인"
+                            : "주문 확인"
+                          : "구매 옵션"}
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
                     {checkoutStep === "payment"
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
-                      : checkoutStep === "confirm"
-                        ? "주문하면 입금 계좌와 마감 시각이 안내돼요."
-                        : "구매할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
+                      : checkoutStep === "applied"
+                        ? "개최자가 성사를 확정하면 입금 안내를 드려요."
+                        : checkoutStep === "confirm"
+                          ? isC2CProduct && !isC2CCollectingProduct
+                            ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
+                            : "주문하면 입금 계좌와 마감 시각이 안내돼요."
+                          : isC2CProduct
+                            ? "신청할 멤버를 선택해 주세요. 여러 멤버에 각각 신청할 수 있어요."
+                            : "구매할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                   </p>
                 </div>
                 <button
@@ -3564,6 +3675,7 @@ export function ProductDetail({
                           option,
                           deadlineTick,
                           isOptionParticipatedByMe(option, myBids[option.id]),
+                          isC2CProduct ? c2cPaymentWindowMs : paymentWindowMs,
                         );
 
                       return (
@@ -3681,29 +3793,40 @@ export function ProductDetail({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-[12px] font-semibold text-black/40">배송지</p>
+                          {/* 추가 신청은 서버가 첫 참여 배송지 스냅샷을 강제한다(docs/46 §4.7-A1).
+                              현재 선택값을 그대로 보여주면 실제 배송지와 다를 수 있어 문구로 대체한다. */}
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                            {checkoutDeliveryAddress
-                              ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
-                              : "등록된 배송지 없음"}
+                            {isAdditionalC2CApplication
+                              ? "첫 신청 때 선택한 배송지"
+                              : checkoutDeliveryAddress
+                                ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
+                                : "등록된 배송지 없음"}
                           </p>
                           <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
-                            {checkoutDeliveryAddress?.address ?? "배송지를 등록해 주세요."}
+                            {isAdditionalC2CApplication
+                              ? "첫 신청 배송지로 함께 배송돼요."
+                              : checkoutDeliveryAddress?.address ??
+                                "배송지를 등록해 주세요."}
                           </p>
                         </div>
-                        <button
-                          className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/55"
-                          onClick={() => void openCheckoutAddressSheet()}
-                          type="button"
-                        >
-                          {checkoutDeliveryAddress
-                            ? "변경"
-                            : checkoutEligibleDeliveryAddresses.length > 0
-                              ? "선택"
-                              : "추가"}
-                        </button>
+                        {isAdditionalC2CApplication ? null : (
+                          <button
+                            className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/55"
+                            onClick={() => void openCheckoutAddressSheet()}
+                            type="button"
+                          >
+                            {checkoutDeliveryAddress
+                              ? "변경"
+                              : checkoutEligibleDeliveryAddresses.length > 0
+                                ? "선택"
+                                : "추가"}
+                          </button>
+                        )}
                       </div>
                       <p className="mt-2.5 text-[12px] font-medium leading-5 text-black/40">
-                        택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요.
+                        {isAdditionalC2CApplication
+                          ? "추가 신청은 첫 신청과 같은 배송지·입금자명으로 묶여요. 배송비도 추가로 부과되지 않아요."
+                          : "택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요."}
                       </p>
                     </div>
 
@@ -3714,12 +3837,20 @@ export function ProductDetail({
                       </div>
                       <div className="mt-2 flex items-center justify-between text-[13px] font-semibold text-white/60">
                         <span>예상 배송비</span>
-                        <span>{formatPrice(estimatedShippingAmount)}</span>
+                        <span>
+                          {isAdditionalC2CApplication
+                            ? "0원 (첫 신청에 포함)"
+                            : formatPrice(estimatedShippingAmount)}
+                        </span>
                       </div>
                       <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
                         <span className="text-[14px] font-semibold text-white/70">총 예상 금액</span>
                         <span className="text-[22px] font-semibold tracking-[-0.05em] text-[#DDE7B8]">
-                          {formatPrice(estimatedCheckoutTotal)}
+                          {formatPrice(
+                            isAdditionalC2CApplication
+                              ? totalBidAmount
+                              : estimatedCheckoutTotal,
+                          )}
                         </span>
                       </div>
                       {isShippingFeePaybackProduct ? (
@@ -3736,8 +3867,22 @@ export function ProductDetail({
                     </div>
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
-                      주문하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요.
+                      {isC2CProduct && !isC2CCollectingProduct
+                        ? "신청 단계에서는 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 드리고, 확정 전에는 언제든 무료로 취소할 수 있어요."
+                        : isC2CCollectingProduct
+                          ? "신청하면 24시간 입금 기한이 정해져요. 기한 내에 입금하지 않으면 신청이 자동 취소돼요."
+                          : "주문하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요."}
                     </p>
+                    {isC2CProduct ? (
+                      // 중개자 고지(전상법 §20① — docs/41 §3.3-1) + 미성년자 §13③ 취소 가능성 고지
+                      // (docs/43 §2-5): 계약 체결 화면에 미리 노출한다.
+                      <p className="px-1 text-[11px] font-medium leading-4 text-black/35">
+                        분철이지는 통신판매중개자로 거래 당사자가 아니며, 대금은
+                        개최자 계좌로 직접 입금됩니다. 미성년자가 법정대리인
+                        동의 없이 체결한 계약은 본인 또는 법정대리인이 취소할 수
+                        있습니다.
+                      </p>
+                    ) : null}
                     {checkoutError ? (
                       <p
                         className="error-shake rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
@@ -3767,7 +3912,13 @@ export function ProductDetail({
                       onClick={() => void handleSubmitBids()}
                       type="button"
                     >
-                      {isBidSubmitPending ? "주문 접수 중" : "이대로 주문할게요!"}
+                      {isC2CProduct && !isC2CCollectingProduct
+                        ? isBidSubmitPending
+                          ? "신청 접수 중"
+                          : "이대로 신청할게요!"
+                        : isBidSubmitPending
+                          ? "주문 접수 중"
+                          : "이대로 주문할게요!"}
                     </button>
                   </div>
                 </>
@@ -3787,6 +3938,9 @@ export function ProductDetail({
                               {formatPaymentDueCountdown(
                                 checkoutPaymentSummary.paymentDueAt,
                                 deadlineTick,
+                                isC2CProduct
+                                  ? c2cPaymentWindowMs
+                                  : paymentWindowMs,
                               )}
                             </p>
                           </div>
@@ -3869,15 +4023,23 @@ export function ProductDetail({
                               </span>
                             </p>
                             <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/45">
-                              이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로
-                              보내면 확인이 늦어질 수 있어요.
+                              {isC2CProduct
+                                ? "이 이름으로 보내야 개최자가 입금을 확인할 수 있어요."
+                                : "이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로 보내면 확인이 늦어질 수 있어요."}
                             </p>
                           </>
                         ) : null}
                         <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                          송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행
-                          상황은 참여 내역에서 확인할 수 있어요.
+                          {isC2CProduct
+                            ? "송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."
+                            : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}
                         </p>
+                        {isC2CProduct ? (
+                          <p className="mt-1 text-[11px] font-medium leading-4 text-black/35">
+                            분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
+                            직접 입금됩니다.
+                          </p>
+                        ) : null}
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                             <p className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]">
@@ -3940,6 +4102,90 @@ export function ProductDetail({
                     입금 정보를 불러오고 있어요.
                   </div>
                 )
+              ) : null}
+
+              {checkoutStep === "applied" && checkoutPaymentSummary ? (
+                <>
+                  <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                    <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
+                      <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                        신청 완료
+                      </p>
+                      <p className="mt-1 text-[20px] font-semibold tracking-[-0.05em] text-white">
+                        신청이 접수됐어요!
+                      </p>
+                      <p className="mt-3 text-[12px] font-medium leading-5 text-white/60">
+                        지금은 입금하지 않아도 돼요. 개최자가 성사를 확정하면
+                        알림톡으로 입금 계좌와 기한을 안내드려요.
+                      </p>
+                    </div>
+
+                    <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[12px] font-semibold text-black/40">
+                          신청한 멤버
+                        </p>
+                        <span className="text-[12px] font-semibold text-black/35">
+                          {checkoutPaymentSummary.items.length}개
+                        </span>
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {checkoutPaymentSummary.items.map((item) => (
+                          <div
+                            className="flex items-center justify-between gap-3 rounded-[0.75rem] bg-white px-3 py-2"
+                            key={item.participationId}
+                          >
+                            <p className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.04em]">
+                              {item.option.label}
+                            </p>
+                            <span className="shrink-0 text-[13px] font-semibold tracking-[-0.04em]">
+                              {formatPrice(item.bidAmount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                      <div className="flex items-center justify-between text-[13px] font-semibold text-black/55">
+                        <span>성사 시 입금할 금액</span>
+                        <span className="text-[16px] tracking-[-0.04em] text-black">
+                          {formatPrice(checkoutPaymentSummary.totalAmount)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                        배송비 포함 예상 금액이에요. 정확한 금액은 성사 확정
+                        알림에서 다시 안내드려요.
+                      </p>
+                    </div>
+
+                    <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
+                      개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
+                      있어요.
+                    </p>
+                    <p className="px-1 text-[11px] font-medium leading-4 text-black/35">
+                      분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
+                      입금됩니다.
+                    </p>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
+                    <button
+                      className="h-14 rounded-full bg-[#CFE86B] text-[16px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
+                      onClick={closeSheet}
+                      type="button"
+                    >
+                      확인했어요
+                    </button>
+                    <button
+                      className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
+                      onClick={openBidHistory}
+                      type="button"
+                    >
+                      참여 내역 보기
+                    </button>
+                  </div>
+                </>
               ) : null}
             </section>
           </div>

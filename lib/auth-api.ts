@@ -304,6 +304,8 @@ export type BuncheolImageInfo = {
 export type BuncheolDetail = BuncheolSummary & {
   cuShippingFee?: number;
   description?: string;
+  // 분철 flow_type — 필드가 없는 구 응답은 LEGACY 로 취급한다 (getFlowType).
+  flowType?: string | null;
   gs25ShippingFee?: number;
   hostBankAccount?: BankAccountInfo | null;
   /** 등록 순(업로드 순) 이미지 목록. 이미지가 있으면 정확히 1장이 thumbnail=true */
@@ -311,6 +313,8 @@ export type BuncheolDetail = BuncheolSummary & {
   minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
+  // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
+  openChatUrl?: string | null;
   purchaseSite?: string;
   shippingOptions: BuncheolShippingOption[];
 };
@@ -410,12 +414,18 @@ export type MyParticipation = {
   deliveryId?: string | null;
   deliveryStatus?: string | null;
   thumbnailUrl?: string;
+  // 분철 flow_type — 필드가 없는 구 응답은 LEGACY 로 취급한다 (getFlowType).
+  flowType?: string | null;
   memberName: string;
+  // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
+  openChatUrl?: string | null;
   participationId: string;
   participationStatus: string;
   payback?: ShippingFeePaybackInfo | null;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
+  // C2C "보냈어요" 마킹 시각 — 마킹 안 했으면 null.
+  paymentSentAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
   shippingAddress?: DeliveryAddress | null;
@@ -434,10 +444,13 @@ export type ParticipationPaymentDetail = {
   bidAmount: number;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
+  flowType?: string | null;
   hostBankAccount: BankAccountInfo | null;
+  openChatUrl?: string | null;
   participationId: string;
   paymentAmount: number | null;
   paymentDueAt?: string | null;
+  paymentSentAt?: string | null;
   paymentStatus: string;
   shippingAddress?: DeliveryAddress | null;
   shippingFee: number | null;
@@ -1081,6 +1094,9 @@ function getParticipationPaymentDetailFromBody(
         : undefined) ??
       getOptionalStringValue(data, participationDeliveryStatusKeys) ??
       null,
+    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
+    openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
+    paymentSentAt: getOptionalStringValue(data, ["paymentSentAt"]) ?? null,
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
@@ -2777,6 +2793,8 @@ function getBuncheolDetailFromBody(body: unknown) {
           ])
         : undefined),
     description: getOptionalStringValue(data, ["description", "content"]),
+    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
+    openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
     gs25ShippingFee:
       getOptionalNumberValue(data, [
         "gs25ShippingFee",
@@ -3782,6 +3800,8 @@ export function toProductDetailItem(
     description:
       detail.description?.trim() ||
       "판매자가 상품 설명을 작성하지 않았습니다.",
+    flowType: detail.flowType ?? null,
+    openChatUrl: detail.openChatUrl ?? null,
     // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 images(등록 순)를 그대로 쓴다.
     imageUrl: detail.thumbnailUrl ?? detail.images[0]?.url,
     imageUrls: detail.images.map((image) => image.url),
@@ -4289,6 +4309,18 @@ export async function requestMyParticipations(accessToken: string) {
             "dueAt",
           ]) ??
           null,
+        flowType:
+          getOptionalStringValue(record, ["flowType"]) ??
+          (buncheol ? getOptionalStringValue(buncheol, ["flowType"]) : null) ??
+          null,
+        openChatUrl:
+          getOptionalStringValue(record, ["openChatUrl"]) ??
+          (buncheol
+            ? getOptionalStringValue(buncheol, ["openChatUrl"])
+            : null) ??
+          null,
+        paymentSentAt:
+          getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
         createdAt:
           getOptionalStringValue(record, [
             "createdAt",
@@ -4580,6 +4612,66 @@ export async function requestPaymentConfirmation(
     throw new Error(await parseErrorMessage(response));
   }
 }
+
+// C2C "보냈어요" 마킹 — 입금 후 참여자가 표시(AWAITING_PAYMENT → PAYMENT_SENT).
+// 서버가 멱등 처리하므로(docs/46 §4.2) 이미 마킹된 참여에 다시 호출해도 성공한다.
+export async function requestParticipationPaymentSent(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C "보냈어요" 마킹 철회 — 오마킹 셀프 수정(PAYMENT_SENT → AWAITING_PAYMENT 복귀).
+export async function revertParticipationPaymentSent(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C 참여자 자발 취소 — APPLIED(자유)·AWAITING_PAYMENT(허용)에서만 성공한다.
+// PAYMENT_SENT·CONFIRMED 는 서버가 거부(BCH-087)하며 FE 는 문의 안내로 유도한다 (docs/46 §4.4).
+export async function cancelParticipation(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
 // 배송비 돌려받기 신청 (재신청 포함). 검증 실패는 서버가 400(URL 형식)·409(대상 아님/이미 신청/트윗 중복)로
 // 구분해 내려주므로 status 를 보존한 ApiRequestError 로 던진다.
 export async function requestShippingFeePayback(
