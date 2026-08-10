@@ -22,6 +22,10 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import {
+  isBuncheolCancelledStatus,
+  isBuncheolDeletedStatus,
+} from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 
@@ -82,10 +86,9 @@ function isClosedByStatus(status: string | undefined) {
   return Boolean(status && status.toUpperCase() !== "RECRUITING");
 }
 
-function isDeletedProductStatus(status: string | undefined) {
-  const normalizedStatus = status?.toUpperCase();
-
-  return normalizedStatus === "CANCELLED" || normalizedStatus === "DELETED";
+// 취소(개최자 취소 HOST_CANCELLED 포함)·삭제된 분철은 찜 목록에서 숨긴다.
+function isCancelledOrDeletedProductStatus(status: string | undefined) {
+  return isBuncheolCancelledStatus(status) || isBuncheolDeletedStatus(status);
 }
 
 function shouldHideClosedProduct(product: ProductCardItem, now: Date) {
@@ -266,7 +269,7 @@ export function FavoritesContent({
 
     return sourceProducts
       .filter((product) => {
-        if (isDeletedProductStatus(product.status)) {
+        if (isCancelledOrDeletedProductStatus(product.status)) {
           return false;
         }
 

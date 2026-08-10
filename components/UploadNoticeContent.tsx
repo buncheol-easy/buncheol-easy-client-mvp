@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BackIcon } from "@/components/icons";
+import { getHistoryIndex } from "@/lib/history-index";
 
 // 안내 문구는 확정 전 임시 카피입니다. 내용 확정 시 아래 상수만 교체하세요.
 const noticeHeadline = "분철 개최는 운영진이 함께 진행해요";
@@ -26,12 +27,6 @@ const noticeItems = [
   },
 ];
 const contactEmail = "teameasy024@gmail.com";
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function UploadNoticeContent() {
   const router = useRouter();

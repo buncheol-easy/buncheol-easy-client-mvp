@@ -10,6 +10,10 @@ import {
 } from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { FEATURES } from "@/lib/feature-flags";
+import {
+  getBuncheolStatusBadgeLabel,
+  isBuncheolDeletedStatus,
+} from "@/lib/buncheol-states";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
 const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
@@ -319,7 +323,6 @@ export type BuncheolManagementWinner = {
   paymentAmount?: number | null;
   paymentConfirmedAt?: string;
   paymentDueAt?: string;
-  paymentReportedAt?: string;
   paymentStatus?: string;
   participationId?: string;
   receiverNickname?: string;
@@ -2910,17 +2913,6 @@ function getBuncheolManagementWinnerFromRecord(
       "paymentDeadline",
       "dueAt",
     ]),
-    paymentReportedAt: getOptionalStringValue(record, [
-      "paymentReportedAt",
-      "paymentRequestedAt",
-      "paymentReportedTime",
-      "paymentRequestTime",
-      "confirmedAt",
-      "reportedAt",
-      "requestedAt",
-      "paidReportedAt",
-      "paidAt",
-    ]),
     paymentStatus: getOptionalStringValue(record, [
       "paymentStatus",
       "participationStatus",
@@ -3442,8 +3434,6 @@ function getBuncheolManagementOptionFromRecord(
             winner.paymentConfirmedAt ??
             fallbackWinnerFields.paymentConfirmedAt,
           paymentDueAt: winner.paymentDueAt ?? fallbackWinnerFields.paymentDueAt,
-          paymentReportedAt:
-            winner.paymentReportedAt ?? fallbackWinnerFields.paymentReportedAt,
           paymentStatus: winner.paymentStatus ?? fallbackWinnerFields.paymentStatus,
           receiverNickname:
             winner.receiverNickname ?? fallbackWinnerFields.receiverNickname,
@@ -3639,28 +3629,6 @@ function getMemberLabel(memberNames: string[]) {
     : firstMember;
 }
 
-function getStatusBadge(status: string) {
-  const statusLabels: Record<string, string> = {
-    CANCELLED: "분철 취소",
-    CONFIRMED: "진행확정",
-    CLOSED: "모집종료",
-    FINISHED: "진행확정",
-    PAID: "진행확정",
-    RECRUITING: "모집중",
-    SETTLING: "진행확정",
-  };
-
-  return statusLabels[status] ?? status;
-}
-
-function isDeletedBuncheolStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
-function isRemovedBuncheolStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
 function getToneFromId(id: string) {
   const tones = [
     "from-black via-zinc-800 to-zinc-500",
@@ -3736,7 +3704,7 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     deadline: formatKoreaDateTime(summary.deadline),
     rating: "0.0",
     reviews: String(summary.activeParticipationCount ?? 0),
-    badge: getStatusBadge(summary.status),
+    badge: getBuncheolStatusBadgeLabel(summary.status),
     imageUrl: summary.thumbnailUrl,
     isHostedByMe: summary.isHostedByMe,
     liked: summary.bookmarked,
@@ -3862,7 +3830,7 @@ export async function requestBuncheols(
     .map(getBuncheolSummaryFromRecord)
     .filter(
       (item): item is BuncheolSummary =>
-        item !== null && !isDeletedBuncheolStatus(item.status),
+        item !== null && !isBuncheolDeletedStatus(item.status),
     );
 
   // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
@@ -3910,7 +3878,7 @@ export async function requestAllBuncheols(
       .map(getBuncheolSummaryFromRecord)
       .filter(
         (item): item is BuncheolSummary =>
-          item !== null && !isDeletedBuncheolStatus(item.status),
+          item !== null && !isBuncheolDeletedStatus(item.status),
       );
 
     allSummaries.push(...pageSummaries);
@@ -3985,24 +3953,6 @@ export async function requestBuncheolManagement(
   }
 
   return detail;
-}
-
-export async function requestCloseBuncheol(
-  accessToken: string,
-  buncheolId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/close`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
 }
 
 const buncheolHostPermissionErrorCode = "USR-031";
@@ -4462,7 +4412,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
     );
 
   return buncheols.filter(
-    (buncheol) => !isRemovedBuncheolStatus(buncheol.status),
+    (buncheol) => !isBuncheolDeletedStatus(buncheol.status),
   );
 }
 
@@ -4529,7 +4479,7 @@ export async function requestBookmarkedBuncheols(
     }, []);
 
   return summaries.filter(
-    (summary) => !isDeletedBuncheolStatus(summary.status),
+    (summary) => !isBuncheolDeletedStatus(summary.status),
   );
 }
 

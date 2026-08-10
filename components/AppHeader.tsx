@@ -6,18 +6,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BellIcon, SearchIcon } from "@/components/icons";
 import { FEATURES } from "@/lib/feature-flags";
+import { getHistoryIndex } from "@/lib/history-index";
 
 const SEARCH_ENTRY_HISTORY_INDEX_KEY = "buncheol-search-entry-history-index";
 
 type AppHeaderProps = {
   tone?: "dark" | "light";
 };
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function AppHeader({ tone = "dark" }: AppHeaderProps) {
   const pathname = usePathname();

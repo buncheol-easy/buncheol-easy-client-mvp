@@ -15,6 +15,15 @@ import {
   type BuncheolManagementWinner,
 } from "@/lib/auth-api";
 import {
+  getBuncheolStatusBadgeLabel,
+  getDeliveryStatusLabel as getCentralDeliveryStatusLabel,
+  isBuncheolConfirmedStatus,
+  isParticipationAwaitingPaymentStatus,
+  isParticipationCancelledStatus,
+  isParticipationConfirmedStatus,
+  isParticipationPaymentSentStatus,
+} from "@/lib/buncheol-states";
+import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
@@ -75,52 +84,8 @@ function getWinnerBidAmount(option: BuncheolManagementOption) {
   return option.winner?.paymentAmount ?? option.winner?.bidAmount ?? null;
 }
 
-function isPaymentConfirmedStatus(status: string | undefined) {
-  return status === "CONFIRMED" || status === "PAYMENT_CONFIRMED";
-}
-
-function isPaymentAwaitingStatus(status: string | undefined) {
-  return status === "AWAITING_PAYMENT" || status === "PENDING_PAYMENT";
-}
-
-function isPaymentReportedStatus(status: string | undefined) {
-  return (
-    status === "PAYMENT_REPORTED" ||
-    status === "REPORTED" ||
-    status === "PAID_REPORTED" ||
-    status === "PAYMENT_REPORT" ||
-    status === "PAYMENT_CONFIRMING" ||
-    status === "CONFIRMATION_REQUESTED" ||
-    status === "TRANSFER_REQUESTED"
-  );
-}
-
-function hasPaymentReport(option: BuncheolManagementOption) {
-  return Boolean(
-    option.winner?.paymentReportedAt ||
-      isPaymentReportedStatus(option.winner?.paymentStatus) ||
-      isPaymentConfirmedStatus(option.winner?.paymentStatus),
-  );
-}
-
 function getBuncheolStatusLabel(detail: BuncheolManagementDetail) {
-  if (detail.status === "CONFIRMED") {
-    return "\uc9c4\ud589 \ud655\uc815";
-  }
-
-  if (detail.status === "CANCELLED" || detail.status === "CANCELED") {
-    return "\ucde8\uc18c\ub428";
-  }
-
-  if (detail.status === "CLOSED") {
-    return "\ubaa8\uc9d1 \uc885\ub8cc";
-  }
-
-  if (detail.status === "RECRUITING") {
-    return "\ubaa8\uc9d1\uc911";
-  }
-
-  return detail.status;
+  return getBuncheolStatusBadgeLabel(detail.status);
 }
 
 function isPastDateTime(value: string | undefined) {
@@ -149,24 +114,13 @@ function getShippingMethodLabel(method: string | undefined) {
   return method;
 }
 
+// 운송장 입력 전(SNAPSHOTTED)에는 배송 상태를 표시하지 않는다.
 function getDeliveryStatusLabel(status: string | undefined) {
   if (!status || status === "SNAPSHOTTED") {
     return "";
   }
 
-  if (status === "SHIPPING") {
-    return "배송 중";
-  }
-
-  if (status === "DELIVERED") {
-    return "배송 완료";
-  }
-
-  if (status === "RECEIVED") {
-    return "배송 완료";
-  }
-
-  return status;
+  return getCentralDeliveryStatusLabel(status);
 }
 
 function getWinnerReceiverLabel(
@@ -180,18 +134,27 @@ function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
     return "참여 없음";
   }
 
-  if (winner.paymentConfirmedAt || isPaymentConfirmedStatus(winner.paymentStatus)) {
+  if (
+    winner.paymentConfirmedAt ||
+    isParticipationConfirmedStatus(winner.paymentStatus)
+  ) {
     return "입금 확인 완료";
   }
 
-  if (isPaymentAwaitingStatus(winner.paymentStatus)) {
+  if (isParticipationCancelledStatus(winner.paymentStatus)) {
+    return "참여 취소";
+  }
+
+  // C2C "보냈어요" — 참여자가 입금을 마쳤다고 알린 상태라 개최자에게 확인을 재촉한다.
+  if (isParticipationPaymentSentStatus(winner.paymentStatus)) {
+    return "입금 확인 필요";
+  }
+
+  if (isParticipationAwaitingPaymentStatus(winner.paymentStatus)) {
     return "입금 대기";
   }
 
-  if (isPaymentReportedStatus(winner.paymentStatus)) {
-    return "입금 확인 대기";
-  }
-
+  // 알 수 없는 상태를 "입금 대기"로 접으면 개최자에게 틀린 신호가 되므로 raw 를 유지한다.
   return winner.paymentStatus ?? "입금 대기";
 }
 
@@ -219,10 +182,10 @@ function getCurrentParticipant(
 ) {
   return (
     participants.find((participant) =>
-      isPaymentAwaitingStatus(participant.status),
+      isParticipationAwaitingPaymentStatus(participant.status),
     ) ??
     participants.find((participant) =>
-      isPaymentConfirmedStatus(participant.status),
+      isParticipationConfirmedStatus(participant.status),
     ) ??
     participants[0] ??
     null
@@ -402,10 +365,10 @@ export function HostedBuncheolManage({
   const confirmedCount =
     detail?.confirmedCount ??
     detail?.participants.filter((participant) =>
-      isPaymentConfirmedStatus(participant.status),
+      isParticipationConfirmedStatus(participant.status),
     ).length ??
     detail?.options.filter((option) =>
-      isPaymentConfirmedStatus(option.winner?.paymentStatus),
+      isParticipationConfirmedStatus(option.winner?.paymentStatus),
     ).length ??
     0;
   const minHeadcount = detail?.minHeadcount ?? 0;
@@ -419,12 +382,12 @@ export function HostedBuncheolManage({
       : 0;
   const awaitingPaymentCount =
     detail?.options.filter((option) =>
-      isPaymentAwaitingStatus(option.winner?.paymentStatus),
+      isParticipationAwaitingPaymentStatus(option.winner?.paymentStatus),
     ).length ?? 0;
   const deliveryReadyCount =
     detail?.options.filter((option) => {
       const isPaymentConfirmed =
-        isPaymentConfirmedStatus(option.winner?.paymentStatus) ||
+        isParticipationConfirmedStatus(option.winner?.paymentStatus) ||
         Boolean(option.winner?.paymentConfirmedAt);
 
       return (
@@ -598,7 +561,7 @@ export function HostedBuncheolManage({
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${
-                    detail.status === "CONFIRMED"
+                    isBuncheolConfirmedStatus(detail.status)
                       ? "bg-white text-black"
                       : "bg-white/12 text-white/75"
                   }`}
@@ -711,7 +674,7 @@ export function HostedBuncheolManage({
                   isShipped: false,
                   trackingNumber: option.winner?.trackingNumber ?? "",
                 };
-                const isPaymentAwaiting = isPaymentAwaitingStatus(
+                const isPaymentAwaiting = isParticipationAwaitingPaymentStatus(
                   option.winner?.paymentStatus,
                 );
                 const isConfirming =
@@ -725,10 +688,12 @@ export function HostedBuncheolManage({
                   option.winner?.deliveryStatus,
                 );
                 const isPaymentConfirmed =
-                  isPaymentConfirmedStatus(option.winner?.paymentStatus) ||
+                  isParticipationConfirmedStatus(option.winner?.paymentStatus) ||
                   Boolean(option.winner?.paymentConfirmedAt);
                 // 운송장 등록은 분철이 진행확정(CONFIRMED)된 뒤에만 가능하다 — 모집중 발송 후
                 // 분철이 무산(최소 인원 미달 취소)되는 모순을 막는 서버 가드(DLV-009)와 동일 조건.
+                // 중앙 confirmed 계열(PAID 등 동의어 포함)로 넓히지 않고 서버 가드와 같은
+                // 정확한 CONFIRMED 비교를 의도적으로 유지한다.
                 const isBuncheolConfirmedForShipping =
                   detail.status === "CONFIRMED";
                 const canUseTrackingInput = Boolean(
@@ -746,9 +711,7 @@ export function HostedBuncheolManage({
                 );
                 const shouldShowPaymentRecord =
                   Boolean(option.winner) &&
-                  (isPaymentAwaiting ||
-                    isPaymentConfirmed ||
-                    hasPaymentReport(option));
+                  (isPaymentAwaiting || isPaymentConfirmed);
                 const optionPurchaseAmount = getHighestBidAmount(option);
                 const paymentAmount = getWinnerBidAmount(option);
                 const hasOrder = Boolean(option.winner);
@@ -993,7 +956,7 @@ export function HostedBuncheolManage({
                                       ? "운송장 번호 입력"
                                       : isBuncheolConfirmedForShipping
                                         ? "배송 ID 확인 중"
-                                        : "분철 진행확정 후 등록 가능"
+                                        : "분철 진행 확정 후 등록 가능"
                                   }
                                   value={deliveryState.trackingNumber}
                                 />

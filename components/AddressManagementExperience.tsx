@@ -13,6 +13,7 @@ import {
   ProfileContent,
 } from "@/components/ProfileContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import { getHistoryIndex } from "@/lib/history-index";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
 const ADDRESS_PANEL_TRANSITION_MS = 240;
@@ -21,12 +22,6 @@ type AddressManagementExperienceProps = {
   openFormOnEntry: boolean;
   returnHref: string | null;
 };
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function AddressManagementExperience({
   openFormOnEntry,
