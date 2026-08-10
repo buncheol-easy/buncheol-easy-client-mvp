@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  accountNumberPattern,
+  bankAccountFieldMaxLength,
+  sanitizeAccountNumber,
+} from "@/lib/bank-account";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -72,10 +77,7 @@ function getEmptySettlementAccountState(): SettlementAccountState {
   };
 }
 
-import {
-  accountNumberPattern,
-  sanitizeAccountNumber,
-} from "@/lib/bank-account";
+
 
 function getSettlementAccountState(profile: UserProfile | null) {
   const bankAccount = profile?.bankAccount;
@@ -307,11 +309,12 @@ export function ProfileContent({
   );
   const canSaveSettlementAccount =
     settlementAccountForm.bankName.trim().length > 0 &&
-    settlementAccountForm.bankName.trim().length <= 50 &&
+    settlementAccountForm.bankName.trim().length <= bankAccountFieldMaxLength &&
     isSettlementAccountNumberValid &&
-    settlementAccountForm.accountNumber.replace(/\D/g, "").length <= 50 &&
+    settlementAccountForm.accountNumber.replace(/\D/g, "").length <=
+      bankAccountFieldMaxLength &&
     settlementAccountForm.accountHolder.trim().length > 0 &&
-    settlementAccountForm.accountHolder.trim().length <= 50;
+    settlementAccountForm.accountHolder.trim().length <= bankAccountFieldMaxLength;
 
   const defaultDeliveryAddresses = getDefaultDeliveryAddressesByType(
     deliveryAddresses,

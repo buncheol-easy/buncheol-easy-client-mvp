@@ -963,6 +963,10 @@ export function ProductDetail({
   const [isCvsStoreSearchOpen, setIsCvsStoreSearchOpen] = useState(false);
   const [isCheckoutAddressCreatePending, setIsCheckoutAddressCreatePending] =
     useState(false);
+  // setState 스냅샷 가드는 await 사이 재진입을 못 막는다 — ref 로 즉시 잠근다 (ConfirmSheet 와 동일 패턴).
+  const checkoutAddressCreateRef = useRef(false);
+  const productToastTimerRef = useRef<number | null>(null);
+  const [productToast, setProductToast] = useState("");
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
@@ -1152,6 +1156,16 @@ export function ProductDetail({
     product.shippingMethods,
     product.courier,
   );
+  // 접수처 검색 시트에 넘길 허용 브랜드 — 상품이 취급하지 않는 편의점 배송지를
+  // 등록해 결제 불가 루프에 빠지는 것 방지 (storeType "cu"/"gs25" → 브랜드 "CU"/"GS25").
+  const checkoutAllowedCvsBrands =
+    availableShippingStoreTypes.length > 0
+      ? availableShippingStoreTypes.map((storeType) =>
+          storeType === "cu" ? ("CU" as const) : ("GS25" as const),
+        )
+      : undefined;
+  const isAddressLimitReached =
+    deliveryAddressState.addresses.length >= maxDeliveryAddressCount;
   function getBidDeliveryAddressFromState(
     addressState: typeof deliveryAddressState,
   ) {
@@ -1213,6 +1227,26 @@ export function ProductDetail({
     return nextAddressState;
   }
 
+  function showProductToast(message: string) {
+    if (productToastTimerRef.current !== null) {
+      window.clearTimeout(productToastTimerRef.current);
+    }
+
+    setProductToast(message);
+    productToastTimerRef.current = window.setTimeout(() => {
+      setProductToast("");
+      productToastTimerRef.current = null;
+    }, 3200);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (productToastTimerRef.current !== null) {
+        window.clearTimeout(productToastTimerRef.current);
+      }
+    };
+  }, []);
+
   // 계좌 시트 등장 트랜지션 — 다른 시트들의 rAF 2단계 진입 패턴과 동일.
   useEffect(() => {
     if (!isRefundAccountSheetOpen) {
@@ -1245,6 +1279,18 @@ export function ProductDetail({
       return;
     }
 
+    // maxLength 속성은 붙여넣기·IME 조합에서 우회될 수 있어 저장 시점에 재검증한다.
+    if (
+      bank.length > bankAccountFieldMaxLength ||
+      holder.length > bankAccountFieldMaxLength ||
+      account.replace(/\D/g, "").length > bankAccountFieldMaxLength
+    ) {
+      setRefundAccountError(
+        `은행·계좌번호·예금주는 ${bankAccountFieldMaxLength}자 이내로 입력해 주세요.`,
+      );
+      return;
+    }
+
     setIsRefundAccountSaving(true);
 
     try {
@@ -1265,6 +1311,7 @@ export function ProductDetail({
       });
       setRefundAccountError("");
       setIsRefundAccountSheetOpen(false);
+      showProductToast("환불계좌를 등록했어요. 이어서 주문해 주세요.");
     } catch (error: unknown) {
       setRefundAccountError(
         error instanceof Error ? error.message : "계좌를 저장하지 못했어요.",
@@ -1276,20 +1323,44 @@ export function ProductDetail({
 
   // 접수처 선택 즉시 배송지를 등록하고 이번 체크아웃 배송지로 잡는다 — 페이지 이탈 없음.
   async function handleCheckoutStoreSelected(store: CvsStore) {
-    if (isCheckoutAddressCreatePending) {
+    if (checkoutAddressCreateRef.current) {
       return;
     }
 
+    checkoutAddressCreateRef.current = true;
     setIsCvsStoreSearchOpen(false);
+
+    const storeType = store.brand === "CU" ? ("cu" as const) : ("gs25" as const);
+
+    // 시트가 브랜드를 제한하지만, 매핑 실패 등으로 새어 들어온 비취급 브랜드는 여기서 차단한다.
+    if (
+      availableShippingStoreTypes.length > 0 &&
+      !availableShippingStoreTypes.includes(storeType)
+    ) {
+      checkoutAddressCreateRef.current = false;
+      setCheckoutError(
+        `이 분철은 ${availableShippingStoreTypes
+          .map(getConvenienceStoreLabel)
+          .join("·")} 지점으로만 받을 수 있어요.`,
+      );
+      return;
+    }
+
+    if (isAddressLimitReached) {
+      checkoutAddressCreateRef.current = false;
+      setCheckoutError(
+        `배송지는 최대 ${maxDeliveryAddressCount}개까지 등록할 수 있어요. 배송지 관리에서 정리한 뒤 다시 시도해 주세요.`,
+      );
+      return;
+    }
 
     const accessToken = await getFreshAccessToken();
 
     if (!accessToken) {
+      checkoutAddressCreateRef.current = false;
       setCheckoutError("로그인이 만료됐어요. 다시 로그인해 주세요.");
       return;
     }
-
-    const storeType = store.brand === "CU" ? ("cu" as const) : ("gs25" as const);
     // 지점명에 브랜드 라벨이 이미 있으면 한 번만 붙인 형태로 저장한다 — 관리 화면과 동일 규칙
     // (서버 storeType 판별이 지점명 문구에 의존할 수 있음).
     const strippedStoreName =
@@ -1324,6 +1395,7 @@ export function ProductDetail({
       if (addedAddress) {
         setCheckoutDeliveryAddress(addedAddress);
         setCheckoutError("");
+        showProductToast("배송지를 등록했어요. 이어서 주문해 주세요.");
       } else {
         setCheckoutError(
           "배송지 등록 결과를 확인하지 못했어요. 목록에서 배송지를 선택해 주세요.",
@@ -1346,6 +1418,7 @@ export function ProductDetail({
 
       setCheckoutError(message);
     } finally {
+      checkoutAddressCreateRef.current = false;
       setIsCheckoutAddressCreatePending(false);
     }
   }
@@ -1613,6 +1686,9 @@ export function ProductDetail({
     );
   }
 
+  // NOTE: 아래 URL 쿼리(checkoutStep/addressSheet/checkoutOption/checkoutAddress) 복원
+  // 분기의 생산자(마이페이지·배송지 관리 왕복)는 이 PR 에서 제거됐다. 과거 공유된 링크
+  // 호환용으로 한시 유지하며, 후속 정리 대상이다.
   useEffect(() => {
     const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
     const paymentDueDate = parseCheckoutDateTime(paymentDueAt);
@@ -2195,7 +2271,7 @@ export function ProductDetail({
 
       if (!Number.isFinite(shippingAddressId)) {
         setIsBidSubmitPending(false);
-        setIsCvsStoreSearchOpen(true);
+        void openCheckoutAddressSheet();
         return;
       }
 
@@ -2300,7 +2376,7 @@ export function ProductDetail({
 
       if (!Number.isFinite(shippingAddressId)) {
         setIsBidSubmitPending(false);
-        setIsCvsStoreSearchOpen(true);
+        void openCheckoutAddressSheet();
         return;
       }
 
@@ -3145,8 +3221,12 @@ export function ProductDetail({
     const nextEligibleDeliveryAddresses =
       getCheckoutEligibleDeliveryAddressesFromState(nextAddressState);
 
-    if (nextEligibleDeliveryAddresses.length === 0) {
+    if (
+      nextEligibleDeliveryAddresses.length === 0 &&
+      nextAddressState.addresses.length < maxDeliveryAddressCount
+    ) {
       // 배송지가 하나도 없으면 이탈 대신 접수처 검색 시트로 바로 등록한다.
+      // 상한(5개)까지 찼는데 전부 비취급 브랜드면 시트를 열어 관리 링크로 안내한다.
       setIsCvsStoreSearchOpen(true);
       return;
     }
@@ -4386,12 +4466,18 @@ export function ProductDetail({
                 <button
                   className="flex h-14 w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
                   disabled={isCheckoutAddressCreatePending}
-                  onClick={() => setIsCvsStoreSearchOpen(true)}
+                  onClick={() =>
+                    isAddressLimitReached
+                      ? router.push("/profile/addresses")
+                      : setIsCvsStoreSearchOpen(true)
+                  }
                   type="button"
                 >
                   {isCheckoutAddressCreatePending
                     ? "배송지 등록 중"
-                    : "+ 새 배송지 추가"}
+                    : isAddressLimitReached
+                      ? `배송지가 가득 찼어요 (최대 ${maxDeliveryAddressCount}개) · 관리로 이동`
+                      : "+ 새 배송지 추가"}
                 </button>
               </div>
 
@@ -4415,7 +4501,12 @@ export function ProductDetail({
             <button
               aria-label="계좌 등록 닫기"
               className="absolute inset-0 cursor-default"
-              onClick={() => setIsRefundAccountSheetOpen(false)}
+              onClick={() => {
+                // 저장 요청이 나간 뒤 닫히면 성공 여부를 알 수 없다 — 저장 중엔 닫지 않는다.
+                if (!isRefundAccountSaving) {
+                  setIsRefundAccountSheetOpen(false);
+                }
+              }}
               type="button"
             />
             <section
@@ -4516,11 +4607,26 @@ export function ProductDetail({
         {isCvsStoreSearchOpen ? (
           // 시트 내부 z-40 이 배송지 선택 시트(z-50)에 가리지 않도록 z-[60] 스태킹
           // 컨텍스트로 감싼다 — DOM 순서가 아닌 명시적 레이어로 위에 띄운다.
+          // ⚠️ 이 래퍼가 새 스태킹 컨텍스트라, 이 시트 위에 무언가를 띄우려면
+          // z-index 를 래퍼 기준으로 계산해야 한다.
           <div className="relative z-[60]">
             <CvsStoreSearchSheet
+              allowedBrands={checkoutAllowedCvsBrands}
               onClose={() => setIsCvsStoreSearchOpen(false)}
               onSelect={(store) => void handleCheckoutStoreSelected(store)}
             />
+          </div>
+        ) : null}
+
+        {productToast ? (
+          <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[70] flex justify-center px-6">
+            <p
+              aria-live="polite"
+              className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+              role="status"
+            >
+              {productToast}
+            </p>
           </div>
         ) : null}
 

@@ -46,7 +46,26 @@ export function ConfirmSheet({
       window.cancelAnimationFrame(frame);
       setIsEntered(false);
     };
-  }, [isOpen]);
+  }, [isOpen, request]);
+
+  // 네이티브 confirm 처럼 Escape 로 닫을 수 있게 한다 (데스크톱·외장 키보드).
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onCancel();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onCancel]);
 
   if (!request) {
     return null;
@@ -68,12 +87,18 @@ export function ConfirmSheet({
         type="button"
       />
       <section
+        aria-labelledby="confirm-sheet-title"
+        aria-modal="true"
         className={`bid-sheet-panel relative mx-auto w-full max-w-[430px] rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
           isEntered ? "bid-sheet-panel-active" : ""
         }`}
+        role="dialog"
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
-        <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+        <h2
+          className="text-[19px] font-semibold tracking-[-0.05em]"
+          id="confirm-sheet-title"
+        >
           {request.title}
         </h2>
         {request.description ? (
