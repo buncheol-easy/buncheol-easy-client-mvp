@@ -1836,13 +1836,10 @@ export function IntroContent() {
                   <XLogoIcon className="h-[18px] w-[18px]" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-black/32">
-                    Follow
+                  <span className="block text-[17px] font-semibold leading-none tracking-[-0.06em]">
+                    공식 X 계정 보러 가기
                   </span>
-                  <span className="mt-1.5 block text-[17px] font-semibold leading-none tracking-[-0.06em]">
-                    X에서 새 분철 소식 받기
-                  </span>
-                  <span className="mt-1.5 block text-[12px] font-semibold leading-none tracking-[-0.03em] text-black/38">
+                  <span className="mt-2 block text-[12px] font-semibold leading-none tracking-[-0.03em] text-black/38">
                     {X_HANDLE}
                   </span>
                   <span className="sr-only">(새 창에서 열림)</span>
