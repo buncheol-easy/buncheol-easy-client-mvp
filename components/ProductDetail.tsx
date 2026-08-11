@@ -105,6 +105,9 @@ import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 type ProductDetailProps = {
   product: ProductDetailItem;
   backHref?: string;
+  // 서버 렌더 시각(ms). 카운트다운(deadlineTick 파생 텍스트·기한 판정)의 하이드레이션
+  // 첫 렌더를 SSR HTML 과 결정적으로 일치시켜 hydration mismatch 를 막는다.
+  initialNowMs?: number;
   initialReturnSource?: "home" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
   startEntered?: boolean;
@@ -894,6 +897,7 @@ function mergeManagementOptionPurchaseStates(
 export function ProductDetail({
   backHref,
   product,
+  initialNowMs,
   initialReturnSource,
   initialReturnQuery,
   startEntered = false,
@@ -990,7 +994,13 @@ export function ProductDetail({
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
-  const [deadlineTick, setDeadlineTick] = useState(() => Date.now());
+  // 서버 렌더 시각으로 시작해 하이드레이션 첫 렌더가 SSR HTML 과 정확히 일치하게
+  // 만든다(Date.now() 로 시작하면 초 단위 카운트다운 텍스트가 항상 어긋나 매 진입마다
+  // hydration 폴백이 발생). 마운트 직후 아래 effect 의 setDeadlineTick(Date.now()) 가
+  // 클라이언트 시계로 즉시 넘긴다.
+  const [deadlineTick, setDeadlineTick] = useState(
+    () => initialNowMs ?? Date.now(),
+  );
   const buncheolId = product.buncheolId ?? product.id;
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
