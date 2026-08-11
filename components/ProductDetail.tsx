@@ -38,6 +38,7 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
+  getBuncheolStatusBadgeLabel,
   getFlowType,
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
@@ -1487,6 +1488,16 @@ export function ProductDetail({
   // 받는다 — deadline(신청 마감)이 지났어도 열어둔다. 분철 CONFIRMED 후에는 서버가 차단.
   const isC2CCollectingProduct =
     isC2CProduct && isBuncheolPaymentCollectingStatus(product.status);
+  // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를,
+  // C2C 입금 수집 중에는 기한이 지나도 빈 슬롯 즉시입금 신청이 열려 있으므로
+  // 카운트다운의 "구매 마감" 대신 추가 신청 가능 문구를 보여준다.
+  const purchaseDeadlineDisplay = isCancelledProduct
+    ? getBuncheolStatusBadgeLabel(product.status)
+    : isConfirmedProduct
+      ? "구매 마감"
+      : isC2CCollectingProduct && isDeadlinePassed
+        ? "추가 신청 가능"
+        : purchaseDeadlineCountdown;
   const isPurchasableStatus =
     isBuncheolPurchasableStatus(product.status) || isC2CCollectingProduct;
   const isDeadlineBlocked = isDeadlinePassed && !isC2CCollectingProduct;
@@ -3462,7 +3473,7 @@ export function ProductDetail({
                     구매 기한
                   </p>
                   <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums">
-                    {purchaseDeadlineCountdown}
+                    {purchaseDeadlineDisplay}
                   </p>
                 </div>
               </div>
