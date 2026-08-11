@@ -38,6 +38,7 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
+  getBuncheolStatusBadgeLabel,
   getFlowType,
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
@@ -1482,18 +1483,21 @@ export function ProductDetail({
   // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
   const isCancelledProduct = isBuncheolCancelledStatus(product.status);
   const isConfirmedProduct = isBuncheolConfirmedStatus(product.status);
-  // 조기 확정(매진)·취소된 분철은 기한이 남아 있어도 더 살 수 없으므로
-  // 카운트다운 대신 마감 문구를 보여준다.
-  const purchaseDeadlineDisplay = isCancelledProduct
-    ? "분철 취소"
-    : isConfirmedProduct
-      ? "마감됨"
-      : purchaseDeadlineCountdown;
   const isC2CProduct = getFlowType(product.flowType) === "C2C";
   // E1(docs/46 §4.7): C2C 확정 후(PAYMENT_COLLECTING) 빈 슬롯은 즉시입금으로 추가 신청을
   // 받는다 — deadline(신청 마감)이 지났어도 열어둔다. 분철 CONFIRMED 후에는 서버가 차단.
   const isC2CCollectingProduct =
     isC2CProduct && isBuncheolPaymentCollectingStatus(product.status);
+  // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를,
+  // C2C 입금 수집 중에는 기한이 지나도 빈 슬롯 즉시입금 신청이 열려 있으므로
+  // 카운트다운의 "구매 마감" 대신 추가 신청 가능 문구를 보여준다.
+  const purchaseDeadlineDisplay = isCancelledProduct
+    ? getBuncheolStatusBadgeLabel(product.status)
+    : isConfirmedProduct
+      ? "구매 마감"
+      : isC2CCollectingProduct && isDeadlinePassed
+        ? "추가 신청 가능"
+        : purchaseDeadlineCountdown;
   const isPurchasableStatus =
     isBuncheolPurchasableStatus(product.status) || isC2CCollectingProduct;
   const isDeadlineBlocked = isDeadlinePassed && !isC2CCollectingProduct;
