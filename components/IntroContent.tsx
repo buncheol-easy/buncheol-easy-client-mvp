@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
+import { X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import {
   BackIcon,
@@ -23,6 +24,7 @@ import {
   PlusIcon,
   ProfileIcon,
   SearchIcon,
+  XLogoIcon,
 } from "@/components/icons";
 
 type RevealProps = {
@@ -1817,6 +1819,35 @@ export function IntroContent() {
                   ))}
                 </div>
               </div>
+            </Reveal>
+
+            <Reveal className="mt-4" delay={200}>
+              <a
+                aria-label={`분철이지 공식 X 계정 ${X_HANDLE} 새 창으로 열기`}
+                className="flex items-center gap-4 rounded-[1.5rem] border border-black/12 bg-white px-5 py-4 transition-colors hover:border-black/30 active:bg-black/[0.03]"
+                href={X_PROFILE_URL}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white">
+                  <XLogoIcon className="h-[18px] w-[18px]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-semibold uppercase tracking-[0.2em] text-black/32">
+                    Follow
+                  </span>
+                  <span className="mt-1.5 block text-[17px] font-semibold leading-none tracking-[-0.06em]">
+                    X에서 새 분철 소식 받기
+                  </span>
+                  <span className="mt-1.5 block text-[12px] font-semibold leading-none tracking-[-0.03em] text-black/38">
+                    {X_HANDLE}
+                  </span>
+                </span>
+                {/* 별도 화살표 아이콘이 없어 뒤로가기 셰브론을 뒤집어 쓴다. */}
+                <span aria-hidden="true" className="shrink-0 rotate-180 text-black/25">
+                  <BackIcon />
+                </span>
+              </a>
             </Reveal>
           </section>
 

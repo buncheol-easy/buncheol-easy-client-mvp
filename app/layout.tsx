@@ -6,7 +6,8 @@ import { JsonLd } from "@/components/JsonLd";
 import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
-import { SITE_URL } from "@/lib/site";
+import { XLogoIcon } from "@/components/icons";
+import { SITE_URL, X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { blackChromeViewport } from "@/lib/system-chrome";
 import { Suspense } from "react";
 import "./globals.css";
@@ -80,7 +81,7 @@ const organizationJsonLd = {
         areaServed: "KR",
         availableLanguage: ["Korean"],
       },
-      sameAs: ["https://pf.kakao.com/_LqxnGX"],
+      sameAs: ["https://pf.kakao.com/_LqxnGX", X_PROFILE_URL],
     },
     {
       "@type": "WebSite",
@@ -111,14 +112,28 @@ export default function RootLayout({
           <SystemChromeColorSync />
         </Suspense>
         <aside className="desktop-web-brand" aria-label="분철이지 웹 소개">
-          <div className="desktop-web-brand__logo">
-            {/* 데스크톱 전용 장식 로고 — priority 를 주면 모바일에서도 preload 되어 LCP 대역폭을 뺏는다. */}
-            <Image
-              alt="분철이지"
-              height={72}
-              src="/brand/logo-black.png"
-              width={224}
-            />
+          {/* 로고 줄 안에 X 버튼을 넣어 패널 높이를 늘리지 않는다.
+              세로 여백이 빠듯해 아래 min-height 게이트에 걸리면 패널이 통째로 사라진다. */}
+          <div className="desktop-web-brand__header">
+            <div className="desktop-web-brand__logo">
+              {/* 데스크톱 전용 장식 로고 — priority 를 주면 모바일에서도 preload 되어 LCP 대역폭을 뺏는다. */}
+              <Image
+                alt="분철이지"
+                height={72}
+                src="/brand/logo-black.png"
+                width={224}
+              />
+            </div>
+            <a
+              aria-label={`분철이지 공식 X 계정 ${X_HANDLE} 새 창으로 열기`}
+              className="desktop-web-brand__social"
+              href={X_PROFILE_URL}
+              rel="noopener noreferrer"
+              target="_blank"
+              title={`X ${X_HANDLE}`}
+            >
+              <XLogoIcon />
+            </a>
           </div>
           <div>
             <p className="desktop-web-brand__eyebrow">BUNCHEOL EASY</p>
