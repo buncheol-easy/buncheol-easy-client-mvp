@@ -26,18 +26,17 @@ import {
   writeUploadedProduct,
 } from "@/lib/hosted-products-store";
 import {
-  BuncheolHostPermissionError,
   createBuncheol,
   requestBuncheolDetail,
   requestGroupMembers,
   requestGroups,
   requestMyHostedBuncheols,
-  requestUserProfile,
   toProductDetailItem,
   updateBuncheol,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 
 // 카카오에서 복사한 주소는 스킴 없이 오는 경우가 흔하다("open.kakao.com/o/...") —
@@ -668,10 +667,13 @@ export function UploadProductForm({
   const [editingProduct, setEditingProduct] =
     useState<ProductDetailItem | null>(null);
   const [isApiEditLoading, setIsApiEditLoading] = useState(false);
-  const [isHostAccessResolved, setIsHostAccessResolved] = useState(false);
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
+  // 가입 미완료(전화번호 미등록) 유저를 /upload 직접 진입에서도 보완 화면으로 보낸다(공용 가드,
+  // 홈 경유와 동일 동작). 개최 자격(연령대·상한)은 서버 게이트가 제출 시 판정한다.
+  useProfileCompletionGuard();
+
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -863,51 +865,6 @@ export function UploadProductForm({
     loginReturnHref,
     router,
   ]);
-
-  useEffect(() => {
-    if (isEditMode || !authState.isLoggedIn) {
-      return;
-    }
-
-    let isActive = true;
-
-    (async () => {
-      try {
-        const accessToken = await getFreshAccessToken();
-
-        if (!isActive) {
-          return;
-        }
-
-        if (!accessToken) {
-          setIsHostAccessResolved(true);
-          return;
-        }
-
-        const profile = await requestUserProfile(accessToken);
-
-        if (!isActive) {
-          return;
-        }
-
-        if (profile.canHost === false) {
-          router.replace("/upload/notice");
-          return;
-        }
-
-        setIsHostAccessResolved(true);
-      } catch {
-        // 권한 확인에 실패하면 양식을 열어준다. 권한 없는 개최는 서버가 403으로 막는다.
-        if (isActive) {
-          setIsHostAccessResolved(true);
-        }
-      }
-    })();
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.isLoggedIn, isEditMode, router]);
 
   useEffect(() => {
     const query = idolQuery.trim();
@@ -1650,10 +1607,11 @@ export function UploadProductForm({
       editingProduct?.id.startsWith("uploaded-"),
     );
 
-    if (
-      !isLocalDraftEdit &&
-      (!authState.isLoggedIn || !authState.accessToken)
-    ) {
+    // 진입 시 선차단 제거로 이 파일의 유일한 토큰 갱신 지점이 사라졌다 — 폼을 다 채운 뒤
+    // 만료 토큰으로 401 나지 않게 액션 시점에 갱신한다(레포 관례: HostedBuncheolManage 등).
+    const accessToken = isLocalDraftEdit ? null : await getFreshAccessToken();
+
+    if (!isLocalDraftEdit && !accessToken) {
       router.push(
         createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
       );
@@ -1674,7 +1632,6 @@ export function UploadProductForm({
     );
     const orderedPhotos = photos;
     const orderedPhotoUrls = orderedPhotos.map((photo) => photo.url);
-    const accessToken = authState.accessToken;
     const apiGroupId = Number(selectedGroup.id);
     const apiMembers = targetMembers.map((member) => ({
       price: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
@@ -1948,11 +1905,6 @@ export function UploadProductForm({
           return;
         }
       } catch (error) {
-        if (error instanceof BuncheolHostPermissionError) {
-          router.replace("/upload/notice");
-          return;
-        }
-
         setSubmitError(
           error instanceof Error ? error.message : "분철 저장에 실패했어요.",
         );
@@ -2021,49 +1973,10 @@ export function UploadProductForm({
     };
   });
 
-  if (!isEditMode && !isHostAccessResolved) {
-    return (
-      <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
-        <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
-            <div className="absolute inset-0 flex flex-col bg-white">
-              <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-                <div className="upload-header__inner flex h-10 items-center justify-between">
-                  <button
-                    aria-label="이전 화면"
-                    className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
-                    onClick={() => router.replace("/")}
-                    type="button"
-                  >
-                    <BackIcon />
-                  </button>
-
-                  <div className="upload-header__copy translate-y-0.5 text-right">
-                    <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                      Upload
-                    </p>
-                    <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
-                      상품 등록
-                    </h1>
-                  </div>
-                </div>
-              </header>
-
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
-                <p className="text-[18px] font-semibold tracking-[-0.05em]">
-                  개최하기 화면을 준비하고 있어요
-                </p>
-                <p className="mt-2 text-[13px] font-semibold text-black/40">
-                  잠시만 기다려 주세요.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <BottomNavigator activeLabel="Upload" />
-        </div>
-      </main>
-    );
+  // 비로그인 직접 진입(딥링크·PWA) 시 로그인 리다이렉트(rAF 이후)가 돌기 전까지
+  // 조작 가능한 폼이 한 프레임 그려지는 것을 가린다.
+  if (!isEditMode && !authState.isLoggedIn) {
+    return null;
   }
 
   if (isApiEditMode) {
