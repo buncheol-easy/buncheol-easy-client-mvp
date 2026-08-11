@@ -967,6 +967,8 @@ export function ProductDetail({
     useState(false);
   // setState 스냅샷 가드는 await 사이 재진입을 못 막는다 — ref 로 즉시 잠근다 (ConfirmSheet 와 동일 패턴).
   const checkoutAddressCreateRef = useRef(false);
+  // 공유 시트가 뜨는 동안 재진입을 막는다 (checkoutAddressCreateRef 와 동일 패턴).
+  const isSharePendingRef = useRef(false);
   const productToastTimerRef = useRef<number | null>(null);
   const [productToast, setProductToast] = useState("");
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
@@ -1539,7 +1541,6 @@ export function ProductDetail({
   const canDeleteProduct = product.isApiProduct && isHostedProduct;
   // 임시 저장 분철(uploaded-)은 브라우저 로컬에만 있어 공유해도 열리지 않는다.
   const canShareProduct = product.isApiProduct === true;
-  const shareProductId = product.buncheolId ?? product.id;
   // 단일 선택 정책: 분철당 참여 1건(멤버 1명). 상세 응답의 participatedByMe/내 참여 목록은
   // 활성(입금확인중·확정) 참여만 표시하므로, 취소·만료된 참여는 재참여를 막지 않는다. 서버도 동일하게 거부한다.
   const hasMyActiveParticipation = auctionOptions.some((option) =>
@@ -3300,37 +3301,58 @@ export function ProductDetail({
   }
 
   async function handleShareProduct() {
-    // 진입 경로(?from=...)나 검색어가 링크에 섞이지 않도록 상세 canonical 경로만 공유한다.
-    // origin 은 현재 접속한 환경을 그대로 쓴다 — 스테이징에서 운영 링크가 나가지 않게 한다.
-    const shareUrl = `${window.location.origin}/products/${shareProductId}`;
-
-    if (typeof navigator.share === "function") {
-      try {
-        await navigator.share({ title: product.title, url: shareUrl });
-        trackEvent("buncheol_shared", {
-          buncheol_id: shareProductId,
-          method: "web_share",
-        });
-
-        return;
-      } catch (error) {
-        // 공유 시트를 사용자가 그냥 닫은 경우는 실패가 아니라 취소다. 링크 복사로 넘기지 않는다.
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-      }
+    // 공유 시트가 뜨는 사이 한 번 더 누르면 Web Share 가 InvalidStateError 로 거절한다.
+    // 그대로 두면 시트가 열린 채 복사 폴백이 돌아 토스트와 중복 이벤트가 남는다.
+    if (isSharePendingRef.current) {
+      return;
     }
 
-    // Web Share 미지원(데스크톱 브라우저 다수) 또는 공유 실패 시 링크 복사로 대체한다.
+    isSharePendingRef.current = true;
+
     try {
-      await navigator.clipboard.writeText(shareUrl);
-      trackEvent("buncheol_shared", {
-        buncheol_id: shareProductId,
-        method: "clipboard",
-      });
-      showProductToast("분철 링크를 복사했어요.");
-    } catch {
-      showProductToast("링크 복사에 실패했어요.");
+      // 진입 경로(?from=...)나 검색어가 링크에 섞이지 않도록 상세 canonical 경로만 공유한다.
+      // origin 은 현재 접속한 환경을 그대로 쓴다 — 스테이징에서 운영 링크가 나가지 않게 한다.
+      // (NEXT_PUBLIC_SITE_URL 은 배포 워크플로가 주입하지 않아 SITE_URL 은 항상 운영 도메인이다.)
+      const shareUrl = `${window.location.origin}/products/${encodeURIComponent(
+        buncheolId,
+      )}`;
+
+      if (typeof navigator.share === "function") {
+        try {
+          // title 만 넘기면 대상 앱 대부분이 이를 무시해 링크만 남는다. text 로 제목을 함께 싣는다.
+          await navigator.share({
+            title: product.title,
+            text: product.title,
+            url: shareUrl,
+          });
+          trackEvent("buncheol_shared", {
+            buncheol_id: buncheolId,
+            method: "web_share",
+          });
+
+          return;
+        } catch (error) {
+          // 공유 시트를 사용자가 그냥 닫은 경우는 실패가 아니라 취소다. 링크 복사로 넘기지 않는다.
+          // DOMException 대신 Error 로 reject 하는 웹뷰까지 취소로 인정한다.
+          if (error instanceof Error && error.name === "AbortError") {
+            return;
+          }
+        }
+      }
+
+      // Web Share 미지원(데스크톱 브라우저 다수) 또는 공유 실패 시 링크 복사로 대체한다.
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        trackEvent("buncheol_shared", {
+          buncheol_id: buncheolId,
+          method: "clipboard",
+        });
+        showProductToast("분철 링크를 복사했어요.");
+      } catch {
+        showProductToast("링크 복사에 실패했어요.");
+      }
+    } finally {
+      isSharePendingRef.current = false;
     }
   }
 
@@ -3393,7 +3415,7 @@ export function ProductDetail({
                 type="button"
                 className="product-detail-action motion-icon-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black"
                 onClick={() => void handleShareProduct()}
-                aria-label="분철 공유하기"
+                aria-label="분철 공유"
               >
                 <ShareIcon />
               </button>
