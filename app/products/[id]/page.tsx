@@ -132,6 +132,11 @@ export default async function ProductDetailPage({
     );
   }
 
+  // 서버 렌더 시각 — 카운트다운(deadlineTick)의 하이드레이션 첫 렌더를 SSR HTML 과
+  // 동일하게 만들기 위한 기준시각. 마운트 후에는 클라이언트 시계로 넘어간다.
+  // 요청 시각을 캡처하는 것이 목적이므로 purity 규칙을 의도적으로 예외 처리한다.
+  // eslint-disable-next-line react-hooks/purity -- 요청 시각 캡처가 목적
+  const initialNowMs = Date.now();
   // 빵부스러기 구조화 데이터 — 상세 조회 실패(삭제·비공개 등) 시 생략한다.
   let breadcrumbJsonLd: Record<string, unknown> | null = null;
   // 익명 조회 상세를 초기 HTML 에 실어 크롤러·첫 페인트가 실제 내용을 보게 한다.
@@ -183,6 +188,7 @@ export default async function ProductDetailPage({
       {breadcrumbJsonLd && <JsonLd data={breadcrumbJsonLd} />}
       <ApiProductDetail
         id={id}
+        initialNowMs={initialNowMs}
         initialProduct={initialProduct}
         isHostedView={isHostedView}
         returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}

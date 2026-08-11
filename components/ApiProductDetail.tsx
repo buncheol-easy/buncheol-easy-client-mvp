@@ -33,6 +33,8 @@ type ApiProductDetailProps = {
   // 서버에서 익명 조회한 상세 — 초기 HTML 에 상품 내용을 싣기 위한 값.
   // 마운트 후 기존 useEffect 가 토큰 포함 조회로 항상 덮어쓴다.
   initialProduct?: ProductDetailItem | null;
+  // 서버 렌더 시각(ms) — 카운트다운 첫 렌더를 SSR HTML 과 결정적으로 일치시킨다.
+  initialNowMs?: number;
   isHostedView?: boolean;
   returnQuery?: string;
   returnSource?: "home" | "bids" | "favorites" | "upload";
@@ -156,6 +158,7 @@ function toPublicPreviewProduct(
 export function ApiProductDetail({
   id,
   initialProduct = null,
+  initialNowMs,
   isHostedView = false,
   returnQuery,
   returnSource,
@@ -362,6 +365,7 @@ export function ApiProductDetail({
           backHref={
             returnSource || returnQuery !== undefined ? undefined : "/"
           }
+          initialNowMs={initialNowMs}
           initialReturnQuery={returnQuery}
           initialReturnSource={returnSource}
           onExitingChange={setIsDetailExiting}

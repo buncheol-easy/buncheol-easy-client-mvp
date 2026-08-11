@@ -105,6 +105,9 @@ import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 type ProductDetailProps = {
   product: ProductDetailItem;
   backHref?: string;
+  // 서버 렌더 시각(ms). 카운트다운(deadlineTick 파생 텍스트·기한 판정)의 하이드레이션
+  // 첫 렌더를 SSR HTML 과 결정적으로 일치시켜 hydration mismatch 를 막는다.
+  initialNowMs?: number;
   initialReturnSource?: "home" | "bids" | "favorites" | "upload";
   initialReturnQuery?: string;
   startEntered?: boolean;
@@ -894,6 +897,7 @@ function mergeManagementOptionPurchaseStates(
 export function ProductDetail({
   backHref,
   product,
+  initialNowMs,
   initialReturnSource,
   initialReturnQuery,
   startEntered = false,
@@ -990,7 +994,13 @@ export function ProductDetail({
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
-  const [deadlineTick, setDeadlineTick] = useState(() => Date.now());
+  // 서버 렌더 시각으로 시작해 하이드레이션 첫 렌더가 SSR HTML 과 정확히 일치하게
+  // 만든다(Date.now() 로 시작하면 초 단위 카운트다운 텍스트가 항상 어긋나 매 진입마다
+  // hydration 폴백이 발생). 마운트 직후 아래 effect 의 setDeadlineTick(Date.now()) 가
+  // 클라이언트 시계로 즉시 넘긴다.
+  const [deadlineTick, setDeadlineTick] = useState(
+    () => initialNowMs ?? Date.now(),
+  );
   const buncheolId = product.buncheolId ?? product.id;
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
@@ -3472,13 +3482,7 @@ export function ProductDetail({
                   <p className="text-[12px] font-medium text-black/45">
                     구매 기한
                   </p>
-                  {/* deadlineTick(현재 시각) 기반 카운트다운은 서버 렌더 시각과 하이드레이션
-                      시각이 달라 텍스트가 어긋날 수밖에 없다. 마운트 직후 effect에서
-                      setDeadlineTick 으로 즉시 보정되므로 하이드레이션 불일치 경고만 억제한다. */}
-                  <p
-                    className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums"
-                    suppressHydrationWarning
-                  >
+                  <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums">
                     {purchaseDeadlineDisplay}
                   </p>
                 </div>
@@ -3674,20 +3678,13 @@ export function ProductDetail({
                               type="button"
                               aria-label={`${blockChipLabel}, 내 참여 내역 보기`}
                               className={`relative pointer-events-auto after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipClassName}`}
-                              suppressHydrationWarning
                               onClick={openBidHistory}
                             >
                               {blockChipLabel}
                               <span aria-hidden="true"> ›</span>
                             </button>
                           ) : (
-                            // 입금 대기 칩의 남은시간(deadlineTick 파생)은 서버/클라 렌더
-                            // 시각 차이로 어긋날 수 있다 — 마운트 직후 effect에서 즉시
-                            // 보정되므로 경고만 억제.
-                            <span
-                              className={memberStatusChipClassName}
-                              suppressHydrationWarning
-                            >
+                            <span className={memberStatusChipClassName}>
                               {blockChipLabel}
                             </span>
                           )}
