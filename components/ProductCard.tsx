@@ -238,14 +238,14 @@ function getProductCardBadge(item: ProductCardItem) {
   return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
 }
 
+// 응답에 availableMemberNames 가 없는 목록(찜 목록 등)에서 전체 멤버를 구매 가능한
+// 것처럼 보여주지 않도록, 서버가 내려준 값이 있을 때만 남은 멤버로 취급한다.
 function getAvailableMemberNames(item: ProductCardItem) {
   if (Array.isArray(item.availableMemberNames)) {
     return getUniqueMemberNames(item.availableMemberNames);
   }
 
-  return getUniqueMemberNames(
-    item.targetMembers ?? [item.member],
-  );
+  return [];
 }
 
 function getAvailableMemberSummary(memberNames: string[]) {
@@ -292,8 +292,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
   const hasAvailableMemberNames = Array.isArray(item.availableMemberNames);
   const availableMemberNames = getAvailableMemberNames(item);
-  const shouldShowAvailableMembers =
-    hasAvailableMemberNames || availableMemberNames.length > 0;
+  // 남은 멤버 데이터가 없는 카드(찜 목록 등)는 대상 멤버 태그 표기로 대신한다.
+  const shouldShowAvailableMembers = hasAvailableMemberNames;
   const shouldPeekOptionRail = availableMemberNames.length > 3;
   const availableMemberSummary =
     availableMemberNames.length > 0
