@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { cache } from "react";
 import { ApiProductDetail } from "@/components/ApiProductDetail";
 import { JsonLd } from "@/components/JsonLd";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
-import { requestBuncheolDetail, toProductDetailItem } from "@/lib/auth-api";
+import {
+  ApiRequestError,
+  requestBuncheolDetail,
+  toProductDetailItem,
+} from "@/lib/auth-api";
+import { isBuncheolDeletedStatus } from "@/lib/buncheol-states";
 import type { ProductDetailItem } from "@/lib/mock-products";
 import { SITE_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
@@ -75,9 +81,13 @@ export async function generateMetadata({
       },
     };
   } catch (error) {
-    // 상세 조회 실패(삭제·비공개 등) 시 루트 레이아웃 기본 메타데이터를 쓴다.
-    console.warn(`[metadata] 분철 상세 조회 실패 (id=${id})`, error);
-    return {};
+    // 없는 분철(404)은 페이지 본문의 notFound() 로 이어지는 정상 흐름이라 경고를 남기지 않는다.
+    if (!(error instanceof ApiRequestError && error.status === 404)) {
+      console.warn(`[metadata] 분철 상세 조회 실패 (id=${id})`, error);
+    }
+
+    // 상세 조회 실패(삭제·비공개·일시 오류) 화면은 색인 대상이 아니다.
+    return { robots: { index: false, follow: false } };
   }
 }
 
@@ -150,9 +160,22 @@ export default async function ProductDetailPage({
         },
       ],
     };
-  } catch {
+  } catch (error) {
+    // 백엔드가 404 를 내려준 분철은 soft 404(HTTP 200) 대신 실제 404 문서로 응답한다.
+    if (error instanceof ApiRequestError && error.status === 404) {
+      notFound();
+    }
+
+    // 그 외 실패(네트워크·서버 오류)는 클라이언트 재조회에 맡긴다.
     // generateMetadata 쪽에서 이미 같은 실패를 로그로 남긴다.
     breadcrumbJsonLd = null;
+  }
+
+  // 백엔드 삭제(HOST_CANCELLED)는 상세에서 404 로 떨어지지만, 목록 파서가 방어적으로
+  // 거르는 DELETED 상태가 200 으로 내려오는 경우까지 같은 방어선을 둔다.
+  // notFound() 는 예외를 던지므로 위 catch 에 삼켜지지 않게 try 밖에서 호출한다.
+  if (initialProduct && isBuncheolDeletedStatus(initialProduct.status)) {
+    notFound();
   }
 
   return (

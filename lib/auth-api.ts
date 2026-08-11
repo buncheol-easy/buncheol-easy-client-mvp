@@ -3946,7 +3946,8 @@ export async function requestBuncheolDetail(
   }
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    // 삭제·비공개(404)를 서버 렌더링에서 구분할 수 있도록 status 를 보존해 던진다.
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   const detail = getBuncheolDetailFromBody(await readJsonBody(response));
