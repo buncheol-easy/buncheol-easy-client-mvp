@@ -369,8 +369,57 @@ body.is-pwa-standalone {
   flex-shrink: 0;
   height: 46px;
   justify-content: center;
+  position: relative;
   transition: opacity 160ms ease;
   width: 46px;
+}
+
+/* 아이콘 아래에 absolute 로 띄운다 — 헤더 행 높이(로고 72px)를 그대로 두기 위해서다.
+   링크 안에 두어 말풍선까지 클릭 영역이 되고, 접근 이름도 이 문구가 된다. */
+.desktop-web-brand__social-hint {
+  background: #ffffff;
+  border: 1px solid rgba(17, 17, 17, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(17, 17, 17, 0.08);
+  color: rgba(17, 17, 17, 0.6);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  padding: 8px 12px;
+  position: absolute;
+  right: 0;
+  /* 링크 박스(46px)는 터치 타깃이라 X 글리프(26px)보다 10px 크다. 꼬리 길이는 글리프 기준으로
+     잡아야 아이콘을 가리키는 것처럼 읽힌다 — 박스 아래 8px + 박스 여백 10px = 글리프까지 18px. */
+  top: calc(100% + 8px);
+  white-space: nowrap;
+}
+
+/* 꼬리 — 글리프까지 18px 중 13px 를 채운다. 다 채우면 화살표처럼 길어져 말풍선 꼴이 깨진다.
+   테두리가 있는 말풍선이라 삼각형을 두 겹으로 쌓는다: ::before 가 테두리색, ::after 가 배경색.
+   꼭짓점 x = 아이콘 중앙(우측 23px) 에 맞춘다 — 폭 16px 이면 right 15px, 14px 이면 right 16px. */
+.desktop-web-brand__social-hint::before,
+.desktop-web-brand__social-hint::after {
+  content: "";
+  height: 0;
+  position: absolute;
+  width: 0;
+}
+
+.desktop-web-brand__social-hint::before {
+  border-bottom: 13px solid rgba(17, 17, 17, 0.08);
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  right: 15px;
+  top: -13px;
+}
+
+.desktop-web-brand__social-hint::after {
+  border-bottom: 11px solid #ffffff;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  right: 16px;
+  top: -11px;
 }
 
 /* 패널 노출 조건(위 미디어 쿼리)에 마우스 없는 태블릿이 포함돼 있어, hover 를 감싸지

@@ -128,8 +128,9 @@ export default function RootLayout({
                 width={224}
               />
             </div>
+            {/* 마크만 두면 X 로고가 닫기 버튼처럼 읽힌다. 말풍선으로 무엇을 여는 링크인지 밝힌다.
+                aria-label 대신 가시 텍스트를 접근 이름으로 쓴다 (WCAG 2.5.3). */}
             <a
-              aria-label={`분철이지 공식 X 계정 ${X_HANDLE} 새 창으로 열기`}
               className="desktop-web-brand__social"
               href={X_PROFILE_URL}
               rel="noopener noreferrer"
@@ -139,6 +140,10 @@ export default function RootLayout({
               {/* 크기는 아이콘 props 로 넘긴다 — CSS 로 svg 를 덮으면 JSX 만 읽었을 때
                   기본값(h-5 w-5)이 적용되는 것처럼 보인다. */}
               <XLogoIcon className="h-[26px] w-[26px]" />
+              <span className="desktop-web-brand__social-hint">
+                X에서 새 소식을 확인해보세요
+              </span>
+              <span className="sr-only">(새 창에서 열림)</span>
             </a>
           </div>
           <div>
