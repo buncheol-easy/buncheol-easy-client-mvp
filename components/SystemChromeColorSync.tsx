@@ -62,6 +62,19 @@ function setMetaContent(name: string, content: string) {
   });
 }
 
+// 404 화면 등 경로 기반 판정 밖의 화면이 크롬 색을 직접 맞출 때도 재사용한다.
+export function applyChromeColors(top: string, bottom: string) {
+  document.documentElement.style.setProperty("--system-top-color", top);
+  document.documentElement.style.setProperty("--system-bottom-color", bottom);
+
+  setMetaContent("theme-color", top);
+  setMetaContent("msapplication-navbutton-color", top);
+  setMetaContent(
+    "apple-mobile-web-app-status-bar-style",
+    top === black ? "black-translucent" : "default",
+  );
+}
+
 export function SystemChromeColorSync() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -71,15 +84,7 @@ export function SystemChromeColorSync() {
     const hasSearchQuery = Boolean(searchQuery?.trim());
     const { top, bottom } = getChromeColors(pathname, hasSearchQuery);
 
-    document.documentElement.style.setProperty("--system-top-color", top);
-    document.documentElement.style.setProperty("--system-bottom-color", bottom);
-
-    setMetaContent("theme-color", top);
-    setMetaContent("msapplication-navbutton-color", top);
-    setMetaContent(
-      "apple-mobile-web-app-status-bar-style",
-      top === black ? "black-translucent" : "default",
-    );
+    applyChromeColors(top, bottom);
   }, [pathname, searchQuery]);
 
   return null;
