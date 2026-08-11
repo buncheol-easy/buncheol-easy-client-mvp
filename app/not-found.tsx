@@ -21,12 +21,12 @@ export default function NotFound() {
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col overflow-y-auto bg-white">
         <div className="m-auto flex flex-col items-center px-6 py-10 text-center">
           {/* 로고 에셋(1200×675)은 여백 포함 OG 캔버스라 고정 박스 + object-contain 으로 맞춘다 */}
-          <div className="relative h-12 w-40">
+          <div className="relative h-32 w-80 max-w-full">
             <Image
               alt="분철이지"
               className="object-contain"
               fill
-              sizes="160px"
+              sizes="320px"
               src="/brand/logo-black.png"
             />
           </div>
