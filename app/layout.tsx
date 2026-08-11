@@ -59,7 +59,7 @@ const organizationJsonLd = {
       url: `${SITE_URL}/`,
       logo: `${SITE_URL}/brand/logo-black.png`,
       description:
-        "K-POP 앨범·굿즈 분철(멤버별 나눔구매) 신청과 관리를 돕는 서비스. 분철이지는 통신판매 당사자로서 판매되는 분철 상품의 거래·청약철회·환불 책임을 직접 부담합니다.",
+        "K-POP 앨범·굿즈 분철(멤버별 나눔구매) 신청과 관리를 돕는 서비스. 분철이지가 직접 개최하는 분철은 분철이지가 통신판매 당사자로서 거래·청약철회·환불 책임을 부담하며, 회원이 개최하는 분철은 분철이지가 통신판매중개자로서 거래 당사자가 아닙니다.",
       taxID: "731-62-00820",
       identifier: {
         "@type": "PropertyValue",
