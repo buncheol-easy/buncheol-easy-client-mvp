@@ -70,10 +70,11 @@ function getTargetTags(item: ProductCardItem) {
 }
 
 function getUniqueMemberNames(names: string[]) {
+  // trim 전에 중복 제거하면 "리즈"/"리즈 " 가 둘 다 살아남아 중복 key 로 이어진다.
   return names
-    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
     .map((tag) => tag.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((tag, index, tags) => tags.indexOf(tag) === index);
 }
 
 function parseKoreaDateTime(value: string) {
@@ -238,16 +239,6 @@ function getProductCardBadge(item: ProductCardItem) {
   return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
 }
 
-function getAvailableMemberNames(item: ProductCardItem) {
-  if (Array.isArray(item.availableMemberNames)) {
-    return getUniqueMemberNames(item.availableMemberNames);
-  }
-
-  return getUniqueMemberNames(
-    item.targetMembers ?? [item.member],
-  );
-}
-
 function getAvailableMemberSummary(memberNames: string[]) {
   return memberNames.join(" · ");
 }
@@ -290,15 +281,15 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행 중" 유지).
   const shouldDimCard =
     !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
-  const hasAvailableMemberNames = Array.isArray(item.availableMemberNames);
-  const availableMemberNames = getAvailableMemberNames(item);
-  const shouldShowAvailableMembers =
-    hasAvailableMemberNames || availableMemberNames.length > 0;
-  const shouldPeekOptionRail = availableMemberNames.length > 3;
-  const availableMemberSummary =
-    availableMemberNames.length > 0
-      ? getAvailableMemberSummary(availableMemberNames)
-      : "";
+  // 서버가 availableMemberNames 를 내려준 경우에만 남은 멤버로 취급한다(null = 데이터 없음).
+  // 데이터가 없는 카드(찜 목록 등)는 전체 멤버를 남은 멤버처럼 보여주는 대신 대상 멤버 태그로 대체한다.
+  const availableMemberNames = Array.isArray(item.availableMemberNames)
+    ? getUniqueMemberNames(item.availableMemberNames)
+    : null;
+  const shouldPeekOptionRail = (availableMemberNames?.length ?? 0) > 3;
+  const availableMemberSummary = availableMemberNames?.length
+    ? getAvailableMemberSummary(availableMemberNames)
+    : "";
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
   const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
@@ -504,7 +495,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         <div
           className={`px-3.5 py-3.5 ${shouldDimCard ? "opacity-60" : ""}`}
         >
-          {shouldShowAvailableMembers ? (
+          {availableMemberNames !== null ? (
             <div>
               {availableMemberNames.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
@@ -527,7 +518,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               )}
             </div>
           ) : (
-            <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+            // 칩 행(24px)과 높이를 맞춰 데이터 유무에 따른 카드 높이 차이를 없앤다.
+            <p className="line-clamp-1 text-[12px] font-semibold leading-6 text-black/40">
               {targetTags.join(" ")}
             </p>
           )}
@@ -615,7 +607,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       </div>
 
       <div className={shouldDimCard ? "opacity-60" : ""}>
-        {shouldShowAvailableMembers ? (
+        {availableMemberNames !== null ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (
               <>
@@ -657,7 +649,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             )}
           </div>
         ) : (
-          <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+          // 칩 행과 동일한 하단 여백·1줄 고정으로 2열 그리드의 카드 높이를 맞춘다.
+          <p className="mb-1.5 line-clamp-1 text-[12px] font-semibold leading-5 text-black/40">
             {targetTags.join(" ")}
           </p>
         )}
