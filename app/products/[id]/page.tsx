@@ -15,19 +15,26 @@ const getBuncheolDetailCached = cache((id: string) =>
   requestBuncheolDetail(undefined, id),
 );
 
-// 분철 제목은 대부분 "…분철"로 끝나고 아티스트명을 이미 포함하는 경우가 많아,
-// 그대로 이어 붙이면 "프로미스나인 … 분철 분철"처럼 중복된다. 겹치는 조각은 생략한다.
+// 분철 제목은 대부분 "분철"이라는 말과 아티스트명을 이미 포함해, 그대로 이어 붙이면
+// "프로미스나인 … 분철 분철"처럼 중복된다. 겹치는 조각은 생략한다.
+// - "분철"은 위치를 따지지 않는다 — "…분철 (2차)", "…분철 모집합니다"처럼 꼬리가 붙는 제목이 흔하다.
+// - 아티스트명 비교는 대소문자·공백 표기 차이("IVE" vs "ive 앨범")를 흡수해 판정한다.
 function formatBuncheolPageTitle(groupName: string, title: string) {
+  const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, "");
   const trimmedTitle = title.trim();
   const trimmedGroupName = groupName.trim();
-  const base = [
-    trimmedTitle.includes(trimmedGroupName) ? "" : trimmedGroupName,
-    trimmedTitle,
-  ]
+  const titleHasGroupName =
+    trimmedGroupName.length > 0 &&
+    normalize(trimmedTitle).includes(normalize(trimmedGroupName));
+  const base = [titleHasGroupName ? "" : trimmedGroupName, trimmedTitle]
     .filter(Boolean)
     .join(" ");
 
-  return base.endsWith("분철") ? base : `${base} 분철`;
+  if (!base) {
+    return "분철";
+  }
+
+  return base.includes("분철") ? base : `${base} 분철`;
 }
 
 export async function generateMetadata({
