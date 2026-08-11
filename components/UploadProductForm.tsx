@@ -32,11 +32,9 @@ import {
   requestGroupMembers,
   requestGroups,
   requestMyHostedBuncheols,
-  requestUserProfile,
   toProductDetailItem,
   updateBuncheol,
 } from "@/lib/auth-api";
-import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 
@@ -668,7 +666,6 @@ export function UploadProductForm({
   const [editingProduct, setEditingProduct] =
     useState<ProductDetailItem | null>(null);
   const [isApiEditLoading, setIsApiEditLoading] = useState(false);
-  const [isHostAccessResolved, setIsHostAccessResolved] = useState(false);
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
@@ -863,51 +860,6 @@ export function UploadProductForm({
     loginReturnHref,
     router,
   ]);
-
-  useEffect(() => {
-    if (isEditMode || !authState.isLoggedIn) {
-      return;
-    }
-
-    let isActive = true;
-
-    (async () => {
-      try {
-        const accessToken = await getFreshAccessToken();
-
-        if (!isActive) {
-          return;
-        }
-
-        if (!accessToken) {
-          setIsHostAccessResolved(true);
-          return;
-        }
-
-        const profile = await requestUserProfile(accessToken);
-
-        if (!isActive) {
-          return;
-        }
-
-        if (profile.canHost === false) {
-          router.replace("/upload/notice");
-          return;
-        }
-
-        setIsHostAccessResolved(true);
-      } catch {
-        // 권한 확인에 실패하면 양식을 열어준다. 권한 없는 개최는 서버가 403으로 막는다.
-        if (isActive) {
-          setIsHostAccessResolved(true);
-        }
-      }
-    })();
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.isLoggedIn, isEditMode, router]);
 
   useEffect(() => {
     const query = idolQuery.trim();
@@ -2020,51 +1972,6 @@ export function UploadProductForm({
         : "가격 정보 없음",
     };
   });
-
-  if (!isEditMode && !isHostAccessResolved) {
-    return (
-      <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
-        <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
-            <div className="absolute inset-0 flex flex-col bg-white">
-              <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-                <div className="upload-header__inner flex h-10 items-center justify-between">
-                  <button
-                    aria-label="이전 화면"
-                    className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
-                    onClick={() => router.replace("/")}
-                    type="button"
-                  >
-                    <BackIcon />
-                  </button>
-
-                  <div className="upload-header__copy translate-y-0.5 text-right">
-                    <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                      Upload
-                    </p>
-                    <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
-                      상품 등록
-                    </h1>
-                  </div>
-                </div>
-              </header>
-
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
-                <p className="text-[18px] font-semibold tracking-[-0.05em]">
-                  개최하기 화면을 준비하고 있어요
-                </p>
-                <p className="mt-2 text-[13px] font-semibold text-black/40">
-                  잠시만 기다려 주세요.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <BottomNavigator activeLabel="Upload" />
-        </div>
-      </main>
-    );
-  }
 
   if (isApiEditMode) {
     return (
