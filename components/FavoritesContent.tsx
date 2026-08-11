@@ -482,6 +482,7 @@ export function FavoritesContent({
           {isFavoriteProductsLoading ? (
             <ProductGridSkeleton
               ariaLabel="찜한 상품을 불러오는 중"
+              memberRowVariant="text"
               variant="wide"
             />
           ) : filteredProducts.length > 0 ? (
