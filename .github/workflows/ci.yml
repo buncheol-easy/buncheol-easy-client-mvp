@@ -4,6 +4,10 @@ name: CI
 # 그동안 검증은 배포 이미지 빌드의 `npm run build` 하나뿐이었고 `npm run lint` 는
 # CI 어디에서도 돌지 않았다 — AGENTS.md 가 PR 전 실행을 요구했지만 강제 장치가 없었다.
 # main 타깃(릴리스 PR)도 커버 — main 머지는 곧장 production 배포로 이어진다.
+#
+# ⚠️ 이 워크플로만으로는 머지가 막히지 않는다. branch protection 의 required status check 에
+#    verify 잡을 등록해야 게이트가 된다 (#100). dev push 실행은 deploy-staging.yml 과 독립
+#    트리거라 병렬로 돌므로 배포를 막지 못한다 — 사후 신호로만 본다.
 on:
   push:
     branches:
@@ -15,7 +19,8 @@ on:
   workflow_dispatch:
 
 # 같은 PR 에 새 푸시가 오면 이전 실행을 취소한다 (러너 분수 절약).
-# PR 번호 기준이라 dev push 실행·수동 실행과는 그룹이 분리된다.
+# PR 은 pull_request.number 로, 그 외(dev push·수동 실행)는 github.ref 로 묶인다 —
+# dev 에서 workflow_dispatch 하면 dev push 실행과 같은 그룹이 되어 서로를 취소한다.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -35,9 +40,8 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          # 배포 이미지(Dockerfile FROM node:24-alpine)와 동일 메이저로 고정한다 —
-          # CI 가 통과한 코드가 배포 빌드에서 깨지는 상황을 막는다.
-          node-version: 24
+          # 배포 이미지(Dockerfile FROM node:24-alpine)와 동일 메이저. 버전은 .nvmrc 단일 출처.
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -49,10 +53,16 @@ jobs:
       - name: Type check
         # next build 도 타입체크를 하지만, 분리하면 타입 오류가 번들링 오류보다
         # 먼저·명확하게 드러난다 (빌드 로그를 끝까지 읽지 않아도 된다).
+        # typecheck 는 next typegen 을 선행한다 — 그러지 않으면 tsconfig 의
+        # .next/types/** 가 0개 파일에 매칭돼 Next 가 생성하는 라우트 타입 검증이 통째로 빠진다.
         run: npm run typecheck
 
       - name: Build
-        # 프로덕션 빌드가 통과하는지 확인. NEXT_PUBLIC_API_BASE_URL 은 주입하지 않는다 —
-        # next.config.ts 가 미설정 시 경고만 남기고 staging 폴백으로 동작하며,
-        # 여기서 검증하려는 것은 배포 대상 값이 아니라 빌드 가능 여부다.
+        env:
+          # 빌드 시 프리렌더되는 / 와 /sitemap.xml 이 staging 실서버를 때리지 않게 한다.
+          # 값을 비우면 lib/auth-api.ts 의 staging 폴백을 타므로 도달 불가 주소로 명시한다.
+          # 두 경로 모두 조회 실패 폴백이 있어(app/sitemap.ts, app/page.tsx) 빌드는 통과하고,
+          # 연결이 즉시 거절되므로 결정론적으로 끝난다 — sitemap 경로엔 타임아웃이 없어
+          # staging 이 매달리면 timeout-minutes 까지 대기하는 flaky red 가 난다.
+          NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:9
         run: npm run build
