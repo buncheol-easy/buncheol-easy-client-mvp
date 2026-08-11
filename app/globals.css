@@ -945,9 +945,13 @@ body.is-pwa-standalone {
   will-change: transform;
 }
 
-/* 어두운 섹션의 그라데이션 밴딩을 가리는 미세 노이즈. */
+/* 어두운 섹션의 그라데이션 밴딩을 가리는 미세 노이즈.
+   SVG 에 intrinsic size 를 주지 않으면 배경 영역 전체(섹션 높이 1000px 대 × DPR)로 한 장을
+   래스터화한다 — feTurbulence 는 CPU 필터라 초기 페인트 비용이 커진다. 160px 타일로 고정해
+   repeat 시킨다. 콘텐츠는 z-10 으로 올려 이 오버레이 위에 오게 한다. */
 .intro-grain::after {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
   content: "";
   inset: 0;
   mix-blend-mode: overlay;

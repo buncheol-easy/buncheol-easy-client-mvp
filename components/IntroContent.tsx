@@ -3,15 +3,18 @@
 import Link from "next/link";
 import {
   createContext,
+  memo,
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
   type ReactNode,
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
+import { isBuncheolRecruitingStatus } from "@/lib/buncheol-states";
 import { X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import {
@@ -130,6 +133,8 @@ function Reveal({
   const ref = useRef<HTMLDivElement | null>(null);
   const { prefersReducedMotion } = useContext(IntroMotionContext);
   const [isVisible, setIsVisible] = useState(false);
+  // 전이가 끝나면 will-change 를 놓아준다 — 30여 개가 페이지 수명 내내 합성 레이어를 붙잡지 않도록.
+  const [isSettled, setIsSettled] = useState(false);
 
   useEffect(() => {
     if (prefersReducedMotion) {
@@ -173,6 +178,7 @@ function Reveal({
   return (
     <div
       className={className}
+      onTransitionEnd={() => setIsSettled(true)}
       ref={ref}
       style={{
         opacity: shouldShow ? 1 : 0,
@@ -184,7 +190,8 @@ function Reveal({
         transition: prefersReducedMotion
           ? "none"
           : `opacity 620ms ${delay}ms cubic-bezier(0.16, 1, 0.3, 1), transform 620ms ${delay}ms cubic-bezier(0.16, 1, 0.3, 1)`,
-        willChange: prefersReducedMotion ? "auto" : "opacity, transform",
+        willChange:
+          prefersReducedMotion || isSettled ? "auto" : "opacity, transform",
       }}
     >
       {children}
@@ -511,23 +518,14 @@ function HomeMiniScreen() {
   );
 }
 
-function getThreeDaysLaterDeadlineText() {
-  const deadline = new Date();
-  deadline.setDate(deadline.getDate() + 3);
-
-  const year = deadline.getFullYear();
-  const month = String(deadline.getMonth() + 1).padStart(2, "0");
-  const day = String(deadline.getDate()).padStart(2, "0");
-  const hour = String(deadline.getHours()).padStart(2, "0");
-
-  return `${year}년 ${month}월 ${day}일 ${hour}시`;
-}
+// 목업의 구매 기한 — 렌더 중에 날짜를 만들면 정적 프리렌더된 HTML 에 빌드 시각(CI 는 UTC)이
+// 굳어 배포가 묵을수록 과거 날짜가 뜬다. 실제 화면 캡처처럼 고정 문자열로 둔다.
+const MOCKUP_PURCHASE_DEADLINE = "2026년 08월 14일 18시";
 
 // 분철 상세 — components/ProductDetail.tsx 의 섹션 순서·토큰을 그대로 따른다.
-function DetailMiniScreen({ progress }: { progress: number }) {
+const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const shouldLoadDetailImages = useDeferredMockupImages(frameRef);
-  const purchaseDeadlineText = getThreeDaysLaterDeadlineText();
   const memberSlots = [
     {
       image: "/intro-members/nct-dream/jaemin.webp",
@@ -614,11 +612,8 @@ function DetailMiniScreen({ progress }: { progress: number }) {
                 <p className="text-[12px] font-medium text-black/45">
                   구매 기한
                 </p>
-                <p
-                  className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums"
-                  suppressHydrationWarning
-                >
-                  {purchaseDeadlineText}
+                <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums">
+                  {MOCKUP_PURCHASE_DEADLINE}
                 </p>
               </div>
             </div>
@@ -740,7 +735,7 @@ function DetailMiniScreen({ progress }: { progress: number }) {
       </div>
     </div>
   );
-}
+});
 
 // 참여 진행 바 — C2C 6단계 (components/BidHistoryContent.tsx 의 c2cProgressStepLabels 와 동일 문자열).
 const introProgressSteps = [
@@ -753,7 +748,7 @@ const introProgressSteps = [
 ] as const;
 
 // 참여 내역 + 결제 정보 시트 — components/BidHistoryContent.tsx 의 카드·시트 구성을 따른다.
-function PaymentMiniScreen({ progress }: { progress: number }) {
+const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const shouldLoadPaymentImages = useDeferredMockupImages(frameRef);
   const isSheetOpen = progress > 0.28;
@@ -977,10 +972,10 @@ function PaymentMiniScreen({ progress }: { progress: number }) {
       </div>
     </div>
   );
-}
+});
 
 // 개최 분철 관리 — components/HostedBuncheolManage.tsx 의 운영 요약·입금 수집 중·참여자 관리 구성.
-function ManageMiniScreen({ progress }: { progress: number }) {
+const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const shouldLoadManageImages = useDeferredMockupImages(frameRef);
   const manageMembers = [
@@ -1183,7 +1178,7 @@ function ManageMiniScreen({ progress }: { progress: number }) {
       </div>
     </div>
   );
-}
+});
 
 const featureSlides: readonly FeatureSlide[] = [
   {
@@ -1308,44 +1303,75 @@ function ArrowRight() {
 }
 
 // 폰이 화면에 고정된 채 설명만 넘어가는 구간. 슬라이드별 진행도로 목업 내부 스크롤·시트까지 함께 움직인다.
+// 스크롤 구독을 이 컴포넌트가 직접 들고 있어야 부모(IntroContent) 가 매 프레임 리렌더되지 않는다.
 function FeatureStack({
   scrollContainerRef,
-  scrollTop,
 }: {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
-  scrollTop: number;
 }) {
   const stackRef = useRef<HTMLDivElement | null>(null);
   const [stackProgress, setStackProgress] = useState(0);
 
   useLayoutEffect(() => {
-    const stackElement = stackRef.current;
     const containerElement = scrollContainerRef.current;
 
-    if (!stackElement || !containerElement) {
+    if (!containerElement) {
       return;
     }
 
-    const stackRect = stackElement.getBoundingClientRect();
-    const containerRect = containerElement.getBoundingClientRect();
-    const travel = stackRect.height - containerRect.height;
+    let scheduledFrameId = 0;
 
-    if (travel <= 0) {
-      return;
+    function syncStackProgress() {
+      const stackElement = stackRef.current;
+
+      if (!stackElement || !containerElement) {
+        return;
+      }
+
+      const stackRect = stackElement.getBoundingClientRect();
+      const containerRect = containerElement.getBoundingClientRect();
+      const travel = stackRect.height - containerRect.height;
+
+      if (travel <= 0) {
+        return;
+      }
+
+      const nextProgress = clamp(
+        (containerRect.top - stackRect.top) / travel,
+        0,
+        1,
+      );
+
+      setStackProgress((currentProgress) =>
+        Math.abs(currentProgress - nextProgress) < 0.002
+          ? currentProgress
+          : nextProgress,
+      );
     }
 
-    const nextProgress = clamp(
-      (containerRect.top - stackRect.top) / travel,
-      0,
-      1,
-    );
+    function scheduleSync() {
+      if (scheduledFrameId) {
+        return;
+      }
 
-    setStackProgress((currentProgress) =>
-      Math.abs(currentProgress - nextProgress) < 0.002
-        ? currentProgress
-        : nextProgress,
-    );
-  }, [scrollContainerRef, scrollTop]);
+      scheduledFrameId = window.requestAnimationFrame(() => {
+        scheduledFrameId = 0;
+        syncStackProgress();
+      });
+    }
+
+    scheduleSync();
+    containerElement.addEventListener("scroll", scheduleSync, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleSync, { passive: true });
+
+    return () => {
+      window.cancelAnimationFrame(scheduledFrameId);
+      containerElement.removeEventListener("scroll", scheduleSync);
+      window.removeEventListener("resize", scheduleSync);
+    };
+  }, [scrollContainerRef]);
 
   // 앞뒤 10% 는 첫·마지막 슬라이드가 고정된 채 머무는 구간 — 없으면 마지막 슬라이드를 보자마자 sticky 가 풀린다.
   const slidePosition =
@@ -1361,9 +1387,11 @@ function FeatureStack({
     <section
       className="relative"
       ref={stackRef}
-      style={{ height: `${featureSlides.length * 100 + 40}dvh` }}
+      style={{
+        height: `calc(var(--intro-vh, 100dvh) * ${featureSlides.length + 0.4})`,
+      }}
     >
-      <div className="sticky top-0 flex h-[100dvh] flex-col justify-center overflow-hidden px-6">
+      <div className="sticky top-0 flex h-[var(--intro-vh,100dvh)] flex-col justify-center overflow-hidden px-6">
         <div className="pointer-events-none absolute left-1/2 top-1/2 h-[26rem] w-[26rem] -translate-x-1/2 -translate-y-[38%] rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.34),transparent_66%)] blur-[64px]" />
 
         <div className="relative h-[9.5rem]">
@@ -1421,7 +1449,7 @@ function FeatureStack({
         </div>
 
         <div className="relative mt-5">
-          <MiniPhone widthClassName="w-[min(18rem,calc((100dvh-15rem)/2.42))]">
+          <MiniPhone widthClassName="w-[min(18rem,calc((var(--intro-vh,100dvh)-15rem)/2.42))]">
             <div className="absolute inset-0">
               {featureSlides.map(({ title }, index) => (
                 <div
@@ -1453,7 +1481,6 @@ export function IntroContent() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const homeScrollOffsetRef = useRef(0);
   const [homeScrollOffset, setHomeScrollOffset] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [isMarkerOn, setIsMarkerOn] = useState(false);
   const [liveBuncheolTitle, setLiveBuncheolTitle] = useState<string | null>(
@@ -1502,6 +1529,40 @@ export function IntroContent() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  // 100dvh 는 설치형 PWA 에서 실제 스크롤포트보다 크다 — main 이 safe-area inset 만큼
+  // padding 을 먹고 border-box 라 컨테이너 높이에서 그만큼 빠진다(globals.css 의 standalone 블록).
+  // sticky 패널·폰 크기·히어로 높이는 이 변수를 기준으로 잡는다.
+  useLayoutEffect(() => {
+    const scrollElement = scrollContainerRef.current;
+
+    if (!scrollElement) {
+      return;
+    }
+
+    const activeScrollElement: HTMLDivElement = scrollElement;
+
+    function syncViewportHeight() {
+      activeScrollElement.style.setProperty(
+        "--intro-vh",
+        `${activeScrollElement.clientHeight}px`,
+      );
+    }
+
+    syncViewportHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", syncViewportHeight);
+
+      return () => window.removeEventListener("resize", syncViewportHeight);
+    }
+
+    const resizeObserver = new ResizeObserver(syncViewportHeight);
+
+    resizeObserver.observe(activeScrollElement);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
   useLayoutEffect(() => {
     const scrollElement = scrollContainerRef.current;
 
@@ -1521,10 +1582,8 @@ export function IntroContent() {
         documentScrollTop,
       );
 
-      setScrollTop((currentScrollTop) =>
-        currentScrollTop === nextScrollTop ? currentScrollTop : nextScrollTop,
-      );
-
+      // 히어로 목업 전용 오프셋이라 360px 에서 멈춘다 — 그 뒤로는 상태가 안 바뀌어
+      // 스크롤 내내 리렌더가 이어지지 않는다.
       const nextHomeScrollOffset = Math.min(
         360,
         Math.max(0, Math.round(nextScrollTop * 0.8)),
@@ -1568,14 +1627,21 @@ export function IntroContent() {
   useEffect(() => {
     let isActive = true;
 
-    requestBuncheols(undefined, { size: 2 })
+    // 목록 API 는 hideClosed·sort 파라미터를 받지 않고(BuncheolController#searchBuncheols)
+    // 모집중 → 진행확정 → 인원미달취소 순으로 이어 붙여 내려준다. "지금 열린 분철" 문구에 맞추려면
+    // 모집중만 클라에서 걸러야 해서, 앞 구간을 넉넉히 받아 필터링한다.
+    requestBuncheols(undefined, { size: 12 })
       .then((items) => {
-        if (!isActive || items.length === 0) {
+        const openItems = items.filter((item) =>
+          isBuncheolRecruitingStatus(item.status),
+        );
+
+        if (!isActive || openItems.length === 0) {
           return;
         }
 
-        setRecentBuncheols(items.slice(0, 2).map(toIntroRecentBuncheol));
-        setLiveBuncheolTitle(items[0]?.title ?? null);
+        setRecentBuncheols(openItems.slice(0, 2).map(toIntroRecentBuncheol));
+        setLiveBuncheolTitle(openItems[0]?.title ?? null);
       })
       .catch(() => {
         if (!isActive) {
@@ -1590,16 +1656,19 @@ export function IntroContent() {
     };
   }, []);
 
+  const motionContextValue = useMemo(
+    () => ({ homeScrollOffset, prefersReducedMotion }),
+    [homeScrollOffset, prefersReducedMotion],
+  );
+
   return (
-    <IntroMotionContext.Provider
-      value={{ homeScrollOffset, prefersReducedMotion }}
-    >
+    <IntroMotionContext.Provider value={motionContextValue}>
       <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] min-h-[100dvh] overflow-hidden bg-white text-[#0A0B0D]">
         <div
           className="mx-auto h-full w-full max-w-[430px] overflow-x-hidden overflow-y-auto overscroll-contain bg-white"
           ref={scrollContainerRef}
         >
-          <section className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFCFC_62%,#F6F7F8_100%)] px-6 pb-10 pt-5">
+          <section className="relative flex min-h-[var(--intro-vh,100dvh)] flex-col overflow-hidden bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFCFC_62%,#F6F7F8_100%)] px-6 pb-10 pt-5">
             <div className="pointer-events-none absolute -right-28 -top-10 h-[24rem] w-[24rem] rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.5),transparent_64%)] blur-[64px]" />
             <div className="pointer-events-none absolute -left-24 top-[38%] h-[20rem] w-[20rem] rounded-full bg-[radial-gradient(circle,rgba(10,11,13,0.05),transparent_66%)] blur-[64px]" />
 
@@ -1628,7 +1697,10 @@ export function IntroContent() {
                   <br />
                   분철을 더
                   <br />
-                  <span className="relative inline-block">
+                  {/* isolate 필수 — 형광펜이 -z-10 이라 stacking context 가 없으면 루트까지 올라가
+                      섹션 배경에 덮인다. Reveal 의 transform 은 reduced-motion 에서 none 이 되므로
+                      Reveal 에 기댈 수 없다. */}
+                  <span className="relative isolate inline-block">
                     <span
                       className={`intro-marker absolute inset-x-[-0.08em] bottom-[0.14em] top-[0.52em] -z-10 rounded-[0.1em] bg-[#d7ff5f] ${
                         isMarkerOn ? "intro-marker-on" : ""
@@ -1770,53 +1842,53 @@ export function IntroContent() {
           <section className="intro-grain relative overflow-hidden rounded-t-[2.5rem] bg-[#0A0B0D] px-6 pb-28 pt-24 text-white">
             <div className="pointer-events-none absolute -left-16 top-40 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.16),transparent_68%)] blur-2xl" />
             <Reveal>
-              <h2 className="relative break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
+              <h2 className="relative z-10 break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
                 신청부터 수령까지
                 <br />
                 여섯 단계.
               </h2>
-              <p className="relative mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-white/52">
+              <p className="relative z-10 mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-white/52">
                 지금 내 참여가 어느 단계인지,
                 <br />
                 참여 내역의 진행 바에서 항상 보여요.
               </p>
             </Reveal>
 
-            <ol className="relative mt-12">
+            {/* ol 의 직계 자식은 li 여야 목록으로 인식된다 — Reveal(div) 은 li 안에 둔다. */}
+            <ol className="relative z-10 mt-12">
               {introFlowSteps.map(({ body, label }, stepIndex) => (
-                <Reveal delay={stepIndex * 60} key={label}>
-                  <li className="relative grid grid-cols-[2.5rem_1fr] gap-4 pb-8">
-                    {stepIndex === introFlowSteps.length - 1 ? null : (
-                      <span className="absolute bottom-0 left-[1.25rem] top-10 w-px -translate-x-1/2 bg-gradient-to-b from-white/[0.14] to-white/[0.03]" />
-                    )}
-                    <span
-                      className={`flex h-10 w-10 items-center justify-center rounded-full text-[14px] font-semibold tabular-nums ${
-                        stepIndex === 0
-                          ? "bg-[#D7FF5F] text-[#0A0B0D] shadow-[0_0_28px_rgba(215,255,95,0.32)]"
-                          : "border border-white/[0.12] bg-white/[0.05] text-white/70"
-                      }`}
-                    >
-                      {stepIndex + 1}
-                    </span>
-                    <div className="pt-1.5">
-                      <p className="text-[20px] font-semibold tracking-[-0.04em]">
-                        {label}
-                      </p>
-                      <p className="mt-2 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-white/50">
-                        {body}
-                      </p>
+                <li className="relative" key={label}>
+                  <Reveal delay={stepIndex * 60}>
+                    <div className="relative grid grid-cols-[2.5rem_1fr] gap-4 pb-8">
+                      {stepIndex === introFlowSteps.length - 1 ? null : (
+                        <span className="absolute bottom-0 left-[1.25rem] top-10 w-px -translate-x-1/2 bg-gradient-to-b from-white/[0.14] to-white/[0.03]" />
+                      )}
+                      <span
+                        className={`flex h-10 w-10 items-center justify-center rounded-full text-[14px] font-semibold tabular-nums ${
+                          stepIndex === 0
+                            ? "bg-[#D7FF5F] text-[#0A0B0D] shadow-[0_0_28px_rgba(215,255,95,0.32)]"
+                            : "border border-white/[0.12] bg-white/[0.05] text-white/70"
+                        }`}
+                      >
+                        {stepIndex + 1}
+                      </span>
+                      <div className="pt-1.5">
+                        <p className="text-[20px] font-semibold tracking-[-0.04em]">
+                          {label}
+                        </p>
+                        <p className="mt-2 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-white/50">
+                          {body}
+                        </p>
+                      </div>
                     </div>
-                  </li>
-                </Reveal>
+                  </Reveal>
+                </li>
               ))}
             </ol>
           </section>
 
           <div className="relative -mt-8 rounded-t-[2.5rem] bg-[linear-gradient(180deg,#FFFFFF_0%,#F6F7F8_38%,#F6F7F8_70%,#FFFFFF_100%)]">
-            <FeatureStack
-              scrollContainerRef={scrollContainerRef}
-              scrollTop={scrollTop}
-            />
+            <FeatureStack scrollContainerRef={scrollContainerRef} />
           </div>
 
           <section className="relative bg-white px-6 pb-28 pt-24">
@@ -1904,17 +1976,17 @@ export function IntroContent() {
           <section className="intro-grain relative overflow-hidden rounded-t-[2.5rem] bg-[#0A0B0D] px-6 pb-16 pt-24 text-white">
             <div className="pointer-events-none absolute -right-20 top-10 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.2),transparent_66%)] blur-2xl" />
             <Reveal>
-              <h2 className="relative break-keep text-[40px] font-semibold leading-[1.16] tracking-[-0.05em]">
+              <h2 className="relative z-10 break-keep text-[40px] font-semibold leading-[1.16] tracking-[-0.05em]">
                 지금 열린
                 <br />
                 분철부터 확인해요.
               </h2>
-              <p className="relative mt-6 text-[16px] font-medium leading-[1.68] tracking-[-0.02em] text-white/52">
+              <p className="relative z-10 mt-6 text-[16px] font-medium leading-[1.68] tracking-[-0.02em] text-white/52">
                 원하는 멤버 자리가 남아 있는지 지금 바로 확인할 수 있어요.
               </p>
             </Reveal>
 
-            <Reveal className="relative mt-10" delay={100}>
+            <Reveal className="relative z-10 mt-10" delay={100}>
               <p className="text-[13px] font-semibold tracking-[-0.02em] text-white/40">
                 최근 열린 분철
               </p>
@@ -1948,7 +2020,7 @@ export function IntroContent() {
               </Link>
             </Reveal>
 
-            <Reveal className="relative mt-4" delay={180}>
+            <Reveal className="relative z-10 mt-4" delay={180}>
               {/* aria-label 을 주면 접근 이름이 통째로 덮여 가시 텍스트를 포함하지 않게 된다
                   (WCAG 2.5.3). 여기는 아이콘 전용이 아니라 문구가 보이므로 가시 텍스트를
                   그대로 이름으로 쓰고, 새 창 안내만 sr-only 로 덧붙인다. */}
