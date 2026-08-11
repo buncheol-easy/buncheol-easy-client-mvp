@@ -16,6 +16,7 @@ import {
   requestCachedNoticeInboxMessages,
   requestInboxMessages,
 } from "@/lib/auth-api";
+import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   getInitialAuthState,
@@ -369,9 +370,27 @@ export function BoardContent({
               ) : null}
             </>
           ) : (
-            <p className="content-reveal rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
-              {message || "아직 도착한 소식이 없어요."}
-            </p>
+            <div className="content-reveal rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center">
+              <p className="text-[14px] font-semibold text-black/40">
+                {message || "아직 도착한 소식이 없어요."}
+              </p>
+              {category === "alert" && !authState.isLoggedIn ? (
+                <button
+                  className="mt-4 h-11 rounded-full bg-black px-5 text-[14px] font-semibold text-white"
+                  onClick={() => {
+                    router.push(
+                      createLoginHref({
+                        cancelTo: "/board",
+                        returnTo: "/board",
+                      }),
+                    );
+                  }}
+                  type="button"
+                >
+                  로그인하기
+                </button>
+              ) : null}
+            </div>
           )}
 
           {message && displayedItems.length > 0 ? (
