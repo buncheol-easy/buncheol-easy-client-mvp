@@ -16,6 +16,7 @@ import {
   requestCachedNoticeInboxMessages,
   requestInboxMessages,
 } from "@/lib/auth-api";
+import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   getInitialAuthState,
@@ -65,6 +66,15 @@ function getInboxTypeFromFilter(category: BoardFilter) {
   }
 
   return undefined;
+}
+
+// 로그인 안내 문구·버튼 노출과 데이터 로드 스킵이 같은 판정을 쓰도록 한 곳에 둔다.
+function isAlertLoginRequired(category: BoardFilter, isLoggedIn: boolean) {
+  return category === "alert" && !isLoggedIn;
+}
+
+function isBoardFilter(value: string | null): value is BoardFilter {
+  return value === "all" || value === "notice" || value === "alert";
 }
 
 function mergePinnedItems(pinnedItems: BoardPost[], feedItems: BoardPost[]) {
@@ -120,6 +130,16 @@ export function BoardContent({
     () => skipEnterAnimation || takeShouldSkipBoardEnter(),
   );
   const [category, setCategory] = useState<BoardFilter>("all");
+
+  // 로그인 복귀(/board?tab=alert)·딥링크의 탭 지정을 마운트 후 반영한다.
+  // SSR 마크업과의 hydration mismatch 를 피하려고 초기 상태 대신 effect 에서 읽는다.
+  useEffect(() => {
+    const tabParam = new URLSearchParams(window.location.search).get("tab");
+
+    if (isBoardFilter(tabParam)) {
+      setCategory(tabParam);
+    }
+  }, []);
   const [feedItems, setFeedItems] = useState<BoardPost[]>([]);
   const [hasNext, setHasNext] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -136,7 +156,7 @@ export function BoardContent({
     let isActive = true;
 
     async function loadMessages() {
-      if (category === "alert" && !authState.isLoggedIn) {
+      if (isAlertLoginRequired(category, authState.isLoggedIn)) {
         setFeedItems([]);
         setPinnedItems([]);
         setHasNext(false);
@@ -369,9 +389,31 @@ export function BoardContent({
               ) : null}
             </>
           ) : (
-            <p className="content-reveal rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center text-[14px] font-semibold text-black/40">
-              {message || "아직 도착한 소식이 없어요."}
-            </p>
+            <div className="content-reveal rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center">
+              <p className="text-[14px] font-semibold text-black/40">
+                {message || "아직 도착한 소식이 없어요."}
+              </p>
+              {isAlertLoginRequired(category, authState.isLoggedIn) ? (
+                <button
+                  className="mt-4 h-11 rounded-full bg-black px-5 text-[14px] font-semibold text-white"
+                  onClick={() => {
+                    // 로그인 성공/취소 복귀 시 진입 애니메이션을 다시 재생하지 않는다.
+                    window.sessionStorage.setItem(BOARD_SKIP_ENTER_KEY, "true");
+                    // push 를 쓰면 로그인 화면의 replace 복귀와 겹쳐 /board 가 히스토리에
+                    // 연속 두 번 쌓여 뒤로가기가 한 번 먹통처럼 보인다.
+                    router.replace(
+                      createLoginHref({
+                        cancelTo: "/board?tab=alert",
+                        returnTo: "/board?tab=alert",
+                      }),
+                    );
+                  }}
+                  type="button"
+                >
+                  로그인하기
+                </button>
+              ) : null}
+            </div>
           )}
 
           {message && displayedItems.length > 0 ? (
