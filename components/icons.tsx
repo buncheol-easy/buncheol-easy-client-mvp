@@ -13,6 +13,7 @@ import {
   Plus,
   ReceiptText,
   Search,
+  Share2,
   Trash2,
   Truck,
   UserRound,
@@ -48,6 +49,7 @@ export const BackIcon = createIcon(ChevronLeft, "h-6 w-6");
 export const CloseIcon = createIcon(X, "h-4 w-4");
 export const CheckIcon = createIcon(Check, "h-3.5 w-3.5");
 export const EditIcon = createIcon(Pencil, "h-5 w-5");
+export const ShareIcon = createIcon(Share2, "h-5 w-5");
 export const TrashIcon = createIcon(Trash2, "h-5 w-5");
 export const BidIcon = createIcon(ReceiptText, "h-6 w-6");
 export const HomeIcon = createIcon(House, "h-6 w-6");

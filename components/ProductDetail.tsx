@@ -79,6 +79,7 @@ import {
   CloseIcon,
   EditIcon,
   HeartIcon,
+  ShareIcon,
   TrashIcon,
 } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
@@ -1536,6 +1537,9 @@ export function ProductDetail({
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
   const canDeleteProduct = product.isApiProduct && isHostedProduct;
+  // 임시 저장 분철(uploaded-)은 브라우저 로컬에만 있어 공유해도 열리지 않는다.
+  const canShareProduct = product.isApiProduct === true;
+  const shareProductId = product.buncheolId ?? product.id;
   // 단일 선택 정책: 분철당 참여 1건(멤버 1명). 상세 응답의 participatedByMe/내 참여 목록은
   // 활성(입금확인중·확정) 참여만 표시하므로, 취소·만료된 참여는 재참여를 막지 않는다. 서버도 동일하게 거부한다.
   const hasMyActiveParticipation = auctionOptions.some((option) =>
@@ -3295,6 +3299,41 @@ export function ProductDetail({
     }, 1800);
   }
 
+  async function handleShareProduct() {
+    // 진입 경로(?from=...)나 검색어가 링크에 섞이지 않도록 상세 canonical 경로만 공유한다.
+    // origin 은 현재 접속한 환경을 그대로 쓴다 — 스테이징에서 운영 링크가 나가지 않게 한다.
+    const shareUrl = `${window.location.origin}/products/${shareProductId}`;
+
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: product.title, url: shareUrl });
+        trackEvent("buncheol_shared", {
+          buncheol_id: shareProductId,
+          method: "web_share",
+        });
+
+        return;
+      } catch (error) {
+        // 공유 시트를 사용자가 그냥 닫은 경우는 실패가 아니라 취소다. 링크 복사로 넘기지 않는다.
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    // Web Share 미지원(데스크톱 브라우저 다수) 또는 공유 실패 시 링크 복사로 대체한다.
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      trackEvent("buncheol_shared", {
+        buncheol_id: shareProductId,
+        method: "clipboard",
+      });
+      showProductToast("분철 링크를 복사했어요.");
+    } catch {
+      showProductToast("링크 복사에 실패했어요.");
+    }
+  }
+
   function openBidHistory() {
     window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
     router.push("/profile/bids");
@@ -3347,6 +3386,16 @@ export function ProductDetail({
                 disabled={isDeletePending}
               >
                 <TrashIcon />
+              </button>
+            ) : null}
+            {canShareProduct ? (
+              <button
+                type="button"
+                className="product-detail-action motion-icon-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black"
+                onClick={() => void handleShareProduct()}
+                aria-label="분철 공유하기"
+              >
+                <ShareIcon />
               </button>
             ) : null}
             {!canEditProduct ? (
