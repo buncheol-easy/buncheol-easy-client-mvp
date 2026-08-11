@@ -18,6 +18,7 @@ const staticRoutes = [
   "/upload/notice",
   "/privacy",
   "/terms",
+  "/broker-notice",
   "/refund-policy",
   "/shipping-policy",
 ];

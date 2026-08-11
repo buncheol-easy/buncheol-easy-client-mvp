@@ -6,6 +6,7 @@ const policyLinks = [
   { href: "/intro", label: "서비스 소개" },
   { href: "/terms", label: "이용약관" },
   { href: "/privacy", label: "개인정보처리방침", strong: true },
+  { href: "/broker-notice", label: "통신판매중개자 고지" },
   { href: "https://pf.kakao.com/_LqxnGX", label: "고객센터", external: true },
 ];
 
@@ -133,10 +134,21 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
             : "mt-3.5 text-[10.5px] leading-5"
         }`}
       >
-        분철이지는 본 사이트에서 판매되는 분철 상품의 통신판매 당사자입니다.
-        <br />
-        상품·거래 정보, 청약철회·환불 등 거래에 관한 책임은 분철이지에
+        분철이지가 직접 개최하는 분철은 분철이지가 통신판매 당사자이며,
+        상품·거래 정보와 청약철회·환불 등 거래에 관한 책임은 분철이지에
         있습니다.
+        <br />
+        회원이 개최하는 분철은 분철이지가 통신판매중개자로서 거래 당사자가
+        아니며, 대금은 개최자 계좌로 직접 입금됩니다. 상품·거래에 관한 책임은
+        개최자에게 있습니다.
+        <br />
+        각 분철의 판매 주체와 책임은 해당 분철 화면에 표시되며, 자세한 내용은{" "}
+        <Link className="underline underline-offset-2" href="/broker-notice">
+          통신판매중개자 고지
+        </Link>
+        에서 확인할 수 있습니다.
+        <br />
+        구매안전서비스(KB에스크로)는 분철이지가 직접 개최하는 분철에 적용됩니다.
       </p>
       <p
         className={`text-[10px] font-medium tracking-[-0.02em] text-black/36 ${
