@@ -1,11 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
-import { whiteChromeViewport } from "@/lib/system-chrome";
-
-export const viewport = whiteChromeViewport;
 
 // 삭제됐거나 없는 분철(page.tsx 의 notFound())을 흰 화면 막다른 길 대신
 // 브랜딩된 안내와 홈 이동 경로로 받는다.
+// viewport 는 같은 세그먼트의 page.tsx 가 whiteChromeViewport 를 export 하고 있어
+// 여기서 다시 선언하지 않는다 (not-found 파일의 export 는 세그먼트 경계에서 무시됨).
 export default function ProductNotFound() {
   return (
     <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-white text-[#111111]">

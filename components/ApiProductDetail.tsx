@@ -314,6 +314,7 @@ export function ApiProductDetail({
           isHostedByMe,
         });
         setMessage("");
+        setHasLoadError(false);
 
         if (viewedBuncheolIdRef.current !== id) {
           viewedBuncheolIdRef.current = id;
@@ -332,11 +333,10 @@ export function ApiProductDetail({
         }
 
         setProduct(null);
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "분철 정보를 불러오지 못했어요.",
-        );
+        // HTTP/2 는 statusText 가 빈 문자열이라 메시지가 비거나, 백엔드 영문 원문이
+        // 그대로 올 수 있어 비어 있으면 한국어 기본 문구로 대체한다.
+        const rawMessage = error instanceof Error ? error.message.trim() : "";
+        setMessage(rawMessage || "분철 정보를 불러오지 못했어요.");
         setHasLoadError(true);
       });
 
