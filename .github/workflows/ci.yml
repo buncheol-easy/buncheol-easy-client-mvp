@@ -12,6 +12,9 @@ on:
   push:
     branches:
       - dev
+      # deploy-production.yml 이 push:main 으로 즉시 배포하므로, PR 없이 직접 푸시되는
+      # 핫픽스 경로에도 최소한 사후 신호는 남긴다.
+      - main
   pull_request:
     branches:
       - dev
@@ -64,5 +67,13 @@ jobs:
           # 두 경로 모두 조회 실패 폴백이 있어(app/sitemap.ts, app/page.tsx) 빌드는 통과하고,
           # 연결이 즉시 거절되므로 결정론적으로 끝난다 — sitemap 경로엔 타임아웃이 없어
           # staging 이 매달리면 timeout-minutes 까지 대기하는 flaky red 가 난다.
+          # ⚠️ 따라서 CI 빌드는 "API 미도달" 경로만 검증한다 — 실제 응답을 받아야 도는 코드
+          # (app/sitemap.ts 의 createdAt 파싱 등)는 배포 빌드에서 처음 실행된다. 그 빌드는
+          # 상한 없는 fetch 를 그대로 타므로 백엔드 지연이 곧 배포 실패다 (#102).
           NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:9
         run: npm run build
+
+      - name: Verify Dockerfile Node version matches .nvmrc
+        # .nvmrc 만 올리고 Dockerfile 이 뒤처지면 "CI 통과분이 배포 빌드에서 깨지는"
+        # 이 워크플로가 막으려던 상황이 그대로 재현된다. Docker 는 .nvmrc 를 못 읽는다.
+        run: grep -q "FROM node:$(cat .nvmrc)-alpine" Dockerfile
