@@ -111,9 +111,13 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <SystemChromeColorSync />
         </Suspense>
+        <QueryProvider>{children}</QueryProvider>
+        {/* 장식 패널이지만 X 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
+            라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
         <aside className="desktop-web-brand" aria-label="분철이지 웹 소개">
           {/* 로고 줄 안에 X 버튼을 넣어 패널 높이를 늘리지 않는다.
-              세로 여백이 빠듯해 아래 min-height 게이트에 걸리면 패널이 통째로 사라진다. */}
+              세로 여백이 빠듯해 아래 min-height 게이트에 걸리면 패널이 통째로 사라진다.
+              버튼은 헤더 우측 정렬이라 로고에 인접하지는 않는다(패널 우측 라인에 맞춘다). */}
           <div className="desktop-web-brand__header">
             <div className="desktop-web-brand__logo">
               {/* 데스크톱 전용 장식 로고 — priority 를 주면 모바일에서도 preload 되어 LCP 대역폭을 뺏는다. */}
@@ -132,7 +136,9 @@ export default function RootLayout({
               target="_blank"
               title={`X ${X_HANDLE}`}
             >
-              <XLogoIcon />
+              {/* 크기는 아이콘 props 로 넘긴다 — CSS 로 svg 를 덮으면 JSX 만 읽었을 때
+                  기본값(h-5 w-5)이 적용되는 것처럼 보인다. */}
+              <XLogoIcon className="h-[26px] w-[26px]" />
             </a>
           </div>
           <div>
@@ -177,7 +183,6 @@ export default function RootLayout({
             </div>
           </div>
         </aside>
-        <QueryProvider>{children}</QueryProvider>
         <TestAccountSwitcher />
         <JsonLd data={organizationJsonLd} />
       </body>

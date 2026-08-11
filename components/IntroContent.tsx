@@ -19,6 +19,7 @@ import {
   BidIcon,
   CheckIcon,
   CloseIcon,
+  ForwardIcon,
   HeartIcon,
   HomeIcon,
   PlusIcon,
@@ -1822,8 +1823,10 @@ export function IntroContent() {
             </Reveal>
 
             <Reveal className="mt-4" delay={200}>
+              {/* aria-label 을 주면 접근 이름이 통째로 덮여 가시 텍스트를 포함하지 않게 된다
+                  (WCAG 2.5.3). 여기는 아이콘 전용이 아니라 문구가 보이므로 가시 텍스트를
+                  그대로 이름으로 쓰고, 새 창 안내만 sr-only 로 덧붙인다. */}
               <a
-                aria-label={`분철이지 공식 X 계정 ${X_HANDLE} 새 창으로 열기`}
                 className="flex items-center gap-4 rounded-[1.5rem] border border-black/12 bg-white px-5 py-4 transition-colors hover:border-black/30 active:bg-black/[0.03]"
                 href={X_PROFILE_URL}
                 rel="noopener noreferrer"
@@ -1842,10 +1845,10 @@ export function IntroContent() {
                   <span className="mt-1.5 block text-[12px] font-semibold leading-none tracking-[-0.03em] text-black/38">
                     {X_HANDLE}
                   </span>
+                  <span className="sr-only">(새 창에서 열림)</span>
                 </span>
-                {/* 별도 화살표 아이콘이 없어 뒤로가기 셰브론을 뒤집어 쓴다. */}
-                <span aria-hidden="true" className="shrink-0 rotate-180 text-black/25">
-                  <BackIcon />
+                <span aria-hidden="true" className="shrink-0 text-black/25">
+                  <ForwardIcon />
                 </span>
               </a>
             </Reveal>

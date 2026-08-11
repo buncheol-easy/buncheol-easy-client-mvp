@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Heart,
   House,
@@ -46,6 +47,7 @@ function createIcon(Icon: LucideIcon, defaultClassName: string) {
 export const SearchIcon = createIcon(Search, "h-6 w-6");
 export const BellIcon = createIcon(Bell, "h-6 w-6");
 export const BackIcon = createIcon(ChevronLeft, "h-6 w-6");
+export const ForwardIcon = createIcon(ChevronRight, "h-6 w-6");
 export const CloseIcon = createIcon(X, "h-4 w-4");
 export const CheckIcon = createIcon(Check, "h-3.5 w-3.5");
 export const EditIcon = createIcon(Pencil, "h-5 w-5");
