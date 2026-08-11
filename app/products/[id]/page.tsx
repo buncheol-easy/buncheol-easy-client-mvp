@@ -1,9 +1,14 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { cache } from "react";
 import { ApiProductDetail } from "@/components/ApiProductDetail";
 import { JsonLd } from "@/components/JsonLd";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
-import { requestBuncheolDetail, toProductDetailItem } from "@/lib/auth-api";
+import {
+  ApiRequestError,
+  requestBuncheolDetail,
+  toProductDetailItem,
+} from "@/lib/auth-api";
 import type { ProductDetailItem } from "@/lib/mock-products";
 import { SITE_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
@@ -134,7 +139,13 @@ export default async function ProductDetailPage({
         },
       ],
     };
-  } catch {
+  } catch (error) {
+    // 백엔드가 404 를 내려준 분철은 soft 404(HTTP 200) 대신 실제 404 문서로 응답한다.
+    if (error instanceof ApiRequestError && error.status === 404) {
+      notFound();
+    }
+
+    // 그 외 실패(네트워크·서버 오류)는 클라이언트 재조회에 맡긴다.
     // generateMetadata 쪽에서 이미 같은 실패를 로그로 남긴다.
     breadcrumbJsonLd = null;
   }
