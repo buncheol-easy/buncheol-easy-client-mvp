@@ -15,7 +15,6 @@ const staticRoutes = [
   "",
   "/intro",
   "/board",
-  "/upload/notice",
   "/privacy",
   "/terms",
   "/refund-policy",

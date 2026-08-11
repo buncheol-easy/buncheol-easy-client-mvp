@@ -26,7 +26,6 @@ import {
   writeUploadedProduct,
 } from "@/lib/hosted-products-store";
 import {
-  BuncheolHostPermissionError,
   createBuncheol,
   requestBuncheolDetail,
   requestGroupMembers,
@@ -35,7 +34,9 @@ import {
   toProductDetailItem,
   updateBuncheol,
 } from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 
 // 카카오에서 복사한 주소는 스킴 없이 오는 경우가 흔하다("open.kakao.com/o/...") —
@@ -669,6 +670,10 @@ export function UploadProductForm({
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
+  // 가입 미완료(전화번호 미등록) 유저를 /upload 직접 진입에서도 보완 화면으로 보낸다(공용 가드,
+  // 홈 경유와 동일 동작). 개최 자격(연령대·상한)은 서버 게이트가 제출 시 판정한다.
+  useProfileCompletionGuard();
+
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -1602,10 +1607,11 @@ export function UploadProductForm({
       editingProduct?.id.startsWith("uploaded-"),
     );
 
-    if (
-      !isLocalDraftEdit &&
-      (!authState.isLoggedIn || !authState.accessToken)
-    ) {
+    // 진입 시 선차단 제거로 이 파일의 유일한 토큰 갱신 지점이 사라졌다 — 폼을 다 채운 뒤
+    // 만료 토큰으로 401 나지 않게 액션 시점에 갱신한다(레포 관례: HostedBuncheolManage 등).
+    const accessToken = isLocalDraftEdit ? null : await getFreshAccessToken();
+
+    if (!isLocalDraftEdit && !accessToken) {
       router.push(
         createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
       );
@@ -1626,7 +1632,6 @@ export function UploadProductForm({
     );
     const orderedPhotos = photos;
     const orderedPhotoUrls = orderedPhotos.map((photo) => photo.url);
-    const accessToken = authState.accessToken;
     const apiGroupId = Number(selectedGroup.id);
     const apiMembers = targetMembers.map((member) => ({
       price: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
@@ -1900,11 +1905,6 @@ export function UploadProductForm({
           return;
         }
       } catch (error) {
-        if (error instanceof BuncheolHostPermissionError) {
-          router.replace("/upload/notice");
-          return;
-        }
-
         setSubmitError(
           error instanceof Error ? error.message : "분철 저장에 실패했어요.",
         );
@@ -1972,6 +1972,12 @@ export function UploadProductForm({
         : "가격 정보 없음",
     };
   });
+
+  // 비로그인 직접 진입(딥링크·PWA) 시 로그인 리다이렉트(rAF 이후)가 돌기 전까지
+  // 조작 가능한 폼이 한 프레임 그려지는 것을 가린다.
+  if (!isEditMode && !authState.isLoggedIn) {
+    return null;
+  }
 
   if (isApiEditMode) {
     return (

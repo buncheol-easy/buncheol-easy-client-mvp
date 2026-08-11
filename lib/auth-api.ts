@@ -57,6 +57,7 @@ export type UserProfile = {
   phoneNumber: string;
   bankAccount: BankAccountInfo | null;
   // 백엔드 개최 권한 제한 반영 전 응답에는 없는 필드라 undefined를 허용한다.
+  // 서버 게이트 위임(client#85) 이후 FE 미사용 — 선차단 재도입 금지, 서버 계약 문서화용으로만 유지.
   canHost?: boolean;
 };
 
