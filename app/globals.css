@@ -228,7 +228,14 @@ body.is-pwa-standalone {
   display: none;
 }
 
-@media (min-width: 768px) and (hover: hover) {
+/*
+ * 넓은 화면에서는 앱을 폰 프레임 안에 담아 보여준다.
+ * 조건을 hover 로만 잠그면 아이패드·갤럭시탭처럼 마우스가 없는 태블릿이 빠져나가
+ * 모바일 레이아웃이 뷰포트 폭만큼 늘어난다. 그래서 "마우스가 있거나(짧게 줄인 데스크톱 창 포함),
+ * 세로가 충분한 기기"를 조건으로 쓴다. 세로 700px 하한은 가로 모드 폰(높이 ~500px 이하)을
+ * 걸러내려는 것으로, 그 화면에는 프레임이 아니라 원래 모바일 레이아웃이 맞다.
+ */
+@media (min-width: 768px) and ((hover: hover) or (min-height: 700px)) {
   html:has(body.desktop-web-shell > main.system-chrome-black),
   html:has(body.desktop-web-shell > main.system-chrome-white) {
     height: 100%;
@@ -280,7 +287,13 @@ body.is-pwa-standalone {
   }
 }
 
-@media (min-width: 1120px) and (hover: hover) {
+/*
+ * 브랜드 패널은 프레임 옆에 380px 이상을 확보할 수 있을 때만 붙인다.
+ * 1024px 기준은 아이패드 가로(1024~1194px)를 포함시키기 위한 것 — 그 폭에서
+ * 브랜드 최소 380px + gap + 프레임(세로에서 역산, 768px 높이 기준 약 342px) + 좌우 패딩이
+ * 900px 안쪽이라 겹치지 않는다.
+ */
+@media (min-width: 1024px) and ((hover: hover) or (min-height: 700px)) {
   body.desktop-web-shell:has(> main.system-chrome-black),
   body.desktop-web-shell:has(> main.system-chrome-white),
   body.desktop-web-shell.is-browser-tab:has(> main.system-chrome-black),
