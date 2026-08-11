@@ -437,6 +437,9 @@ export type MyParticipation = {
   paymentSentAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
+  // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
+  // 나중에 계좌를 다시 열어본 사용자가 다른 이름으로 송금할 위험이 있었다 (docs/53 Q-17).
+  refundHolder?: string | null;
   shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   shippingOptions?: BuncheolShippingOption[];
@@ -4334,6 +4337,11 @@ export async function requestMyParticipations(accessToken: string) {
           null,
         paymentSentAt:
           getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
+        // 서버는 refundHolder 로 내려주지만, 환불계좌 객체째 실려오는 응답도 대비한다.
+        refundHolder:
+          getOptionalStringValue(record, ["refundHolder"]) ??
+          getNestedBankAccountInfo(record, ["refundAccount"])?.holder ??
+          null,
         createdAt:
           getOptionalStringValue(record, [
             "createdAt",

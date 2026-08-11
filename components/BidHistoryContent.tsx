@@ -992,6 +992,8 @@ function getBidRecordFromParticipation(
     deliveryStatus: participation.deliveryStatus,
     flowType: participation.flowType ?? null,
     openChatUrl: participation.openChatUrl ?? null,
+    // 입금자명 = 참여 시 등록한 환불계좌 예금주 (docs/53 Q-17). 지금까지 타입에만 있고 채워진 적이 없었다.
+    payerName: participation.refundHolder ?? undefined,
     paymentSentAt: participation.paymentSentAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
@@ -3522,6 +3524,24 @@ export function BidHistoryContent({
                   계좌 복사
                 </button>
               </div>
+              {selectedPaymentBid?.payerName ? (
+                // 입금자명은 LEGACY 자동 입금확인(페이액션)의 매칭 키이고, C2C 에서는 개최자가 통장에서
+                // 찾는 유일한 단서다. 주문 직후 "입금 안내" 시트에만 있어서 나중에 이 시트로 계좌를 다시
+                // 확인한 사용자는 안내 없이 송금하게 됐다 (docs/53 Q-17). 문구는 상세 체크아웃과 동일하게 맞춘다.
+                <>
+                  <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                    입금자명{" "}
+                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
+                      {selectedPaymentBid.payerName}
+                    </span>
+                  </p>
+                  <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/45">
+                    {isSelectedPaymentC2C
+                      ? "이 이름으로 보내야 개최자가 입금을 확인할 수 있어요."
+                      : "이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로 보내면 확인이 늦어질 수 있어요."}
+                  </p>
+                </>
+              ) : null}
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                 {isSelectedPaymentC2C
                   ? "송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요."
