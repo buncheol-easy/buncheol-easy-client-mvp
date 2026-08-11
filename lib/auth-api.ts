@@ -3326,7 +3326,7 @@ function getBuncheolManagementParticipantFromRecord(
     memberName:
       getStringValue(record, ["memberName", "name", "label"]) ||
       fallback.memberName ||
-      "옵션",
+      "멤버",
     participantNickname,
     participationId,
     paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
@@ -3767,7 +3767,7 @@ export function toProductDetailItem(
             bidMinPrice: 0,
             currentBidAmount: 0,
             id: `${detail.id}-member`,
-            name: "옵션",
+            name: "멤버",
             participantCount: 0,
             topBidAmounts: [],
           },

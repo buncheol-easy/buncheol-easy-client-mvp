@@ -100,6 +100,10 @@ import {
 } from "@/lib/participation-payment-cache";
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { SlidingFilterChips, SlidingTabs } from "@/components/SlidingTabs";
+import {
+  ConfirmSheet,
+  type ConfirmSheetRequest,
+} from "@/components/ConfirmSheet";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -786,7 +790,7 @@ function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
 function getBidRecordOptionLabels(bid: BidRecord) {
   const label = bid.optionLabel.trim();
 
-  return [label || "옵션 확인 필요"];
+  return [label || "멤버 확인 필요"];
 }
 
 function findBidRecordById(records: BidRecord[], bidId: string | null) {
@@ -1153,7 +1157,7 @@ function getHostedProductFromBuncheol(
     id: buncheol.id,
     buncheolId: buncheol.id,
     title: buncheol.title,
-    member: `${buncheol.memberSlotCount}개 옵션`,
+    member: `멤버 ${buncheol.memberSlotCount}명`,
     optionCount: buncheol.memberSlotCount,
     targetMembers: buncheol.memberNames,
     uploadedAt: formatApiDateTime(buncheol.createdAt),
@@ -1324,6 +1328,9 @@ export function BidHistoryContent({
   >(null);
   const actionToastTimerRef = useRef<number | null>(null);
   const [actionToast, setActionToast] = useState("");
+  // 되돌리기 어려운 참여 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
+  const [confirmSheetRequest, setConfirmSheetRequest] =
+    useState<ConfirmSheetRequest | null>(null);
   const [historyMessage, setHistoryMessage] = useState("");
   const [hostedMessage, setHostedMessage] = useState("");
   const isBidRecordsLoading = authState.isLoggedIn && apiBidRecords === null;
@@ -2361,7 +2368,12 @@ export function BidHistoryContent({
   async function handleMarkPaymentSent(bid: BidRecord) {
     const accessToken = authState.accessToken;
 
-    if (!accessToken || pendingParticipationId) {
+    if (!accessToken) {
+      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    if (pendingParticipationId) {
       return;
     }
 
@@ -2431,18 +2443,31 @@ export function BidHistoryContent({
   }
 
   // C2C "보냈어요" 철회 — 오마킹 셀프 수정. 마킹과 대칭으로 같은 분철 일괄 처리한다.
-  async function handleRevertPaymentSent(bid: BidRecord) {
-    const accessToken = authState.accessToken;
-
-    if (!accessToken || pendingParticipationId) {
+  function requestRevertPaymentSent(bid: BidRecord) {
+    if (pendingParticipationId) {
       return;
     }
 
-    if (
-      !window.confirm(
-        "보냈어요 표시를 취소할까요? 입금 기한이 다시 적용돼요.",
-      )
-    ) {
+    setConfirmSheetRequest({
+      confirmLabel: "표시 취소",
+      description: "입금 기한이 다시 적용돼요.",
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runRevertPaymentSent(bid);
+      },
+      title: "보냈어요 표시를 취소할까요?",
+    });
+  }
+
+  async function runRevertPaymentSent(bid: BidRecord) {
+    const accessToken = authState.accessToken;
+
+    if (!accessToken) {
+      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    if (pendingParticipationId) {
       return;
     }
 
@@ -2503,18 +2528,35 @@ export function BidHistoryContent({
   }
 
   // C2C 자발 취소 — 참여(슬롯) 단위 취소 (docs/46 §4.7-A5: 다슬롯이어도 1건씩).
-  async function handleCancelParticipation(bid: BidRecord) {
-    const accessToken = authState.accessToken;
-
-    if (!accessToken || pendingParticipationId) {
+  function requestCancelParticipation(bid: BidRecord) {
+    if (pendingParticipationId) {
       return;
     }
 
-    const confirmMessage = isParticipationAppliedStatus(bid.participationStatus)
-      ? "신청을 취소할까요? 취소한 자리는 다른 사람이 선점할 수 있어요."
-      : "참여를 취소할까요? 이미 입금했다면 취소하지 말고 '보냈어요'를 눌러주세요.";
+    const isApplied = isParticipationAppliedStatus(bid.participationStatus);
 
-    if (!window.confirm(confirmMessage)) {
+    setConfirmSheetRequest({
+      confirmLabel: isApplied ? "신청 취소" : "참여 취소",
+      description: isApplied
+        ? "취소한 자리는 다른 사람이 선점할 수 있어요."
+        : "이미 입금했다면 취소하지 말고 '보냈어요'를 눌러주세요.",
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runCancelParticipation(bid);
+      },
+      title: isApplied ? "신청을 취소할까요?" : "참여를 취소할까요?",
+    });
+  }
+
+  async function runCancelParticipation(bid: BidRecord) {
+    const accessToken = authState.accessToken;
+
+    if (!accessToken) {
+      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+
+    if (pendingParticipationId) {
       return;
     }
 
@@ -2570,21 +2612,10 @@ export function BidHistoryContent({
     }, 1800);
   }
 
+  // 스크롤 복원 단일 이펙트 — 탭 전환 복원(우선)과 세션스토리지 복원(페이지 재진입)을
+  // 한 rAF 에서 처리한다. 과거엔 두 이펙트가 같은 조건에 반응해 등록 순서로 경합했고,
+  // ref 가드로 봉합돼 있었다.
   useLayoutEffect(() => {
-    // 탭 전환 복원이 예약돼 있으면 양보한다 — 아래 탭별 복원 effect와 같은
-    // 조건에 반응하므로, 이 가드가 없으면 두 rAF가 등록 순서로만 승부가 갈린다.
-    if (pendingTabScrollModeRef.current !== null) {
-      return;
-    }
-
-    const storedScrollTop = window.sessionStorage.getItem(
-      BID_HISTORY_SCROLL_TOP_KEY,
-    );
-
-    if (!storedScrollTop || !scrollContainerRef.current) {
-      return;
-    }
-
     if (mode === "joined" && isBidRecordsLoading) {
       return;
     }
@@ -2593,8 +2624,31 @@ export function BidHistoryContent({
       return;
     }
 
+    const pendingTabMode = pendingTabScrollModeRef.current;
+
+    // 다른 탭의 전환 복원이 예약된 상태면 이 렌더에서는 아무것도 하지 않는다.
+    if (pendingTabMode !== null && pendingTabMode !== mode) {
+      return;
+    }
+
     const restoreFrame = window.requestAnimationFrame(() => {
       if (!scrollContainerRef.current) {
+        pendingTabScrollModeRef.current = null;
+        return;
+      }
+
+      // 탭 전환 복원이 세션스토리지 복원보다 우선한다.
+      if (pendingTabMode === mode) {
+        scrollContainerRef.current.scrollTop = tabScrollTopRef.current[mode];
+        pendingTabScrollModeRef.current = null;
+        return;
+      }
+
+      const storedScrollTop = window.sessionStorage.getItem(
+        BID_HISTORY_SCROLL_TOP_KEY,
+      );
+
+      if (!storedScrollTop) {
         return;
       }
 
@@ -2615,39 +2669,6 @@ export function BidHistoryContent({
     records.length,
     hostedRecords.length,
     skipEnterAnimation,
-  ]);
-
-  // 탭 전환 직후, 목록이 그려진 다음 프레임에 기억해 둔 탭별 스크롤을 복원한다.
-  useLayoutEffect(() => {
-    if (pendingTabScrollModeRef.current !== mode) {
-      return;
-    }
-
-    if (mode === "joined" && isBidRecordsLoading) {
-      return;
-    }
-
-    if (mode === "hosted" && isHostedProductsLoading) {
-      return;
-    }
-
-    const restoreFrame = window.requestAnimationFrame(() => {
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = tabScrollTopRef.current[mode];
-      }
-
-      pendingTabScrollModeRef.current = null;
-    });
-
-    return () => {
-      window.cancelAnimationFrame(restoreFrame);
-    };
-  }, [
-    isBidRecordsLoading,
-    isHostedProductsLoading,
-    mode,
-    records.length,
-    hostedRecords.length,
   ]);
 
   return (
@@ -3005,7 +3026,7 @@ export function BidHistoryContent({
                             <button
                               className="shrink-0 rounded-full border border-black/[0.08] bg-white px-3 py-2 text-[13px] font-semibold text-black/55 disabled:text-black/25"
                               disabled={isActionPending}
-                              onClick={() => handleCancelParticipation(bid)}
+                              onClick={() => requestCancelParticipation(bid)}
                               type="button"
                             >
                               {isParticipationAppliedStatus(
@@ -3225,7 +3246,7 @@ export function BidHistoryContent({
                         </p>
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           <span className="rounded-full bg-[#E4F6A5] px-2.5 py-1 text-[12px] font-semibold text-black/70">
-                            옵션 {optionCount}개
+                            멤버 {optionCount}명
                           </span>
                           <span className="rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                             참여 {participantCount}명
@@ -3604,7 +3625,7 @@ export function BidHistoryContent({
               <button
                 className="mt-4 h-14 w-full rounded-full border border-black/10 bg-white text-[15px] font-semibold tracking-[-0.04em] text-black/55 disabled:text-black/25"
                 disabled={pendingParticipationId !== null}
-                onClick={() => handleRevertPaymentSent(selectedPaymentBid)}
+                onClick={() => requestRevertPaymentSent(selectedPaymentBid)}
                 type="button"
               >
                 {pendingParticipationId !== null
@@ -3624,6 +3645,11 @@ export function BidHistoryContent({
           </section>
         </div>
       ) : null}
+
+      <ConfirmSheet
+        onCancel={() => setConfirmSheetRequest(null)}
+        request={confirmSheetRequest}
+      />
 
       {actionToast ? (
         <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">

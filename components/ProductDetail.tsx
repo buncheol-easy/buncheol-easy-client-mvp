@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type PointerEvent,
 } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
@@ -23,8 +24,11 @@ import {
   requestShippingAddresses,
   requestUserProfile,
   toProductDetailItem,
+  updateBankAccount,
+  createShippingAddress,
   type BankAccountInfo,
   type BuncheolManagementOption,
+  type CvsStore,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -59,8 +63,16 @@ import {
   getDeliveryAddressDisplayAlias,
   getDeliveryAddressDisplayBranchName,
   getPrioritizedDeliveryAddresses,
+  maxDeliveryAddressCount,
+  stripLeadingConvenienceStoreLabel,
   type DeliveryAddress,
 } from "@/lib/mock-delivery-addresses";
+import {
+  accountNumberPattern,
+  bankAccountFieldMaxLength,
+  sanitizeAccountNumber,
+} from "@/lib/bank-account";
+import { writeSettlementAccountState } from "@/lib/settlement-account-store";
 import {
   BackIcon,
   CloseIcon,
@@ -180,6 +192,16 @@ const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
+
+// 접수처 검색 시트는 체크아웃에서 필요할 때만 로드한다 (카카오 지도 SDK 포함).
+const CvsStoreSearchSheet = dynamic(
+  () =>
+    import("@/components/CvsStoreSearchSheet").then(
+      (module) => module.CvsStoreSearchSheet,
+    ),
+  { ssr: false },
+);
+
 // 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
 const paymentWindowMs = 30 * 60 * 1000;
 // C2C 입금 창 — 성사 확정·추가 모집(즉시입금) 후 24시간 (docs/46 §7.1-3).
@@ -925,6 +947,26 @@ export function ProductDetail({
     useState(false);
   const [checkoutRefundAccount, setCheckoutRefundAccount] =
     useState<BankAccountInfo | null>(null);
+  // 체크아웃 이탈 없는 계좌 등록 시트 — 마이페이지 왕복(복원 로직 포함)을 대체한다.
+  const [isRefundAccountSheetOpen, setIsRefundAccountSheetOpen] =
+    useState(false);
+  const [refundAccountForm, setRefundAccountForm] = useState({
+    account: "",
+    bank: "",
+    holder: "",
+  });
+  const [refundAccountError, setRefundAccountError] = useState("");
+  const [isRefundAccountSaving, setIsRefundAccountSaving] = useState(false);
+  const [isRefundAccountSheetEntered, setIsRefundAccountSheetEntered] =
+    useState(false);
+  // 체크아웃 이탈 없는 배송지 추가 — 접수처 검색 시트에서 바로 등록한다.
+  const [isCvsStoreSearchOpen, setIsCvsStoreSearchOpen] = useState(false);
+  const [isCheckoutAddressCreatePending, setIsCheckoutAddressCreatePending] =
+    useState(false);
+  // setState 스냅샷 가드는 await 사이 재진입을 못 막는다 — ref 로 즉시 잠근다 (ConfirmSheet 와 동일 패턴).
+  const checkoutAddressCreateRef = useRef(false);
+  const productToastTimerRef = useRef<number | null>(null);
+  const [productToast, setProductToast] = useState("");
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
@@ -1114,6 +1156,16 @@ export function ProductDetail({
     product.shippingMethods,
     product.courier,
   );
+  // 접수처 검색 시트에 넘길 허용 브랜드 — 상품이 취급하지 않는 편의점 배송지를
+  // 등록해 결제 불가 루프에 빠지는 것 방지 (storeType "cu"/"gs25" → 브랜드 "CU"/"GS25").
+  const checkoutAllowedCvsBrands =
+    availableShippingStoreTypes.length > 0
+      ? availableShippingStoreTypes.map((storeType) =>
+          storeType === "cu" ? ("CU" as const) : ("GS25" as const),
+        )
+      : undefined;
+  const isAddressLimitReached =
+    deliveryAddressState.addresses.length >= maxDeliveryAddressCount;
   function getBidDeliveryAddressFromState(
     addressState: typeof deliveryAddressState,
   ) {
@@ -1173,6 +1225,202 @@ export function ProductDetail({
 
     writeDeliveryAddressState(nextAddressState);
     return nextAddressState;
+  }
+
+  function showProductToast(message: string) {
+    if (productToastTimerRef.current !== null) {
+      window.clearTimeout(productToastTimerRef.current);
+    }
+
+    setProductToast(message);
+    productToastTimerRef.current = window.setTimeout(() => {
+      setProductToast("");
+      productToastTimerRef.current = null;
+    }, 3200);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (productToastTimerRef.current !== null) {
+        window.clearTimeout(productToastTimerRef.current);
+      }
+    };
+  }, []);
+
+  // 계좌 시트 등장 트랜지션 — 다른 시트들의 rAF 2단계 진입 패턴과 동일.
+  useEffect(() => {
+    if (!isRefundAccountSheetOpen) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      setIsRefundAccountSheetEntered(true);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      setIsRefundAccountSheetEntered(false);
+    };
+  }, [isRefundAccountSheetOpen]);
+
+  // 체크아웃 안에서 환불계좌를 등록한다 — 저장 성공 시 진행 중이던 주문을 그대로 잇는다.
+  async function saveCheckoutRefundAccount() {
+    const bank = refundAccountForm.bank.trim();
+    const account = refundAccountForm.account.trim();
+    const holder = refundAccountForm.holder.trim();
+
+    if (!bank || !account || !holder) {
+      setRefundAccountError("은행·계좌번호·예금주를 모두 입력해 주세요.");
+      return;
+    }
+
+    if (!accountNumberPattern.test(account)) {
+      setRefundAccountError("하이픈(-)은 숫자 사이에만 넣을 수 있어요.");
+      return;
+    }
+
+    // maxLength 속성은 붙여넣기·IME 조합에서 우회될 수 있어 저장 시점에 재검증한다.
+    if (
+      bank.length > bankAccountFieldMaxLength ||
+      holder.length > bankAccountFieldMaxLength ||
+      account.replace(/\D/g, "").length > bankAccountFieldMaxLength
+    ) {
+      setRefundAccountError(
+        `은행·계좌번호·예금주는 ${bankAccountFieldMaxLength}자 이내로 입력해 주세요.`,
+      );
+      return;
+    }
+
+    setIsRefundAccountSaving(true);
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        setRefundAccountError("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await updateBankAccount(accessToken, { account, bank, holder });
+      setCheckoutRefundAccount({ account, bank, holder });
+      // 마이페이지 계좌 폼과 같은 공용 스토어를 갱신해 화면 간 표기가 어긋나지 않게 한다.
+      writeSettlementAccountState({
+        accountHolder: holder,
+        accountNumber: account,
+        bankName: bank,
+      });
+      setRefundAccountError("");
+      setIsRefundAccountSheetOpen(false);
+      showProductToast("환불계좌를 등록했어요. 이어서 주문해 주세요.");
+    } catch (error: unknown) {
+      setRefundAccountError(
+        error instanceof Error ? error.message : "계좌를 저장하지 못했어요.",
+      );
+    } finally {
+      setIsRefundAccountSaving(false);
+    }
+  }
+
+  // 접수처 선택 즉시 배송지를 등록하고 이번 체크아웃 배송지로 잡는다 — 페이지 이탈 없음.
+  async function handleCheckoutStoreSelected(store: CvsStore) {
+    if (checkoutAddressCreateRef.current) {
+      return;
+    }
+
+    checkoutAddressCreateRef.current = true;
+    setIsCvsStoreSearchOpen(false);
+
+    const storeType = store.brand === "CU" ? ("cu" as const) : ("gs25" as const);
+
+    // 시트가 브랜드를 제한하지만, 매핑 실패 등으로 새어 들어온 비취급 브랜드는 여기서 차단한다.
+    if (
+      availableShippingStoreTypes.length > 0 &&
+      !availableShippingStoreTypes.includes(storeType)
+    ) {
+      checkoutAddressCreateRef.current = false;
+      setCheckoutError(
+        `이 분철은 ${availableShippingStoreTypes
+          .map(getConvenienceStoreLabel)
+          .join("·")} 지점으로만 받을 수 있어요.`,
+      );
+      return;
+    }
+
+    if (isAddressLimitReached) {
+      checkoutAddressCreateRef.current = false;
+      setCheckoutError(
+        `배송지는 최대 ${maxDeliveryAddressCount}개까지 등록할 수 있어요. 배송지 관리에서 정리한 뒤 다시 시도해 주세요.`,
+      );
+      return;
+    }
+
+    const accessToken = await getFreshAccessToken();
+
+    if (!accessToken) {
+      checkoutAddressCreateRef.current = false;
+      setCheckoutError("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      return;
+    }
+    // 지점명에 브랜드 라벨이 이미 있으면 한 번만 붙인 형태로 저장한다 — 관리 화면과 동일 규칙
+    // (서버 storeType 판별이 지점명 문구에 의존할 수 있음).
+    const strippedStoreName =
+      stripLeadingConvenienceStoreLabel(storeType, store.name) || store.name;
+
+    setIsCheckoutAddressCreatePending(true);
+
+    try {
+      const previousAddressIds = new Set(
+        deliveryAddressState.addresses.map((address) => address.id),
+      );
+
+      await createShippingAddress(accessToken, {
+        branchName: `${getConvenienceStoreLabel(storeType)} ${strippedStoreName}`,
+        isDefault: !deliveryAddressState.defaultAddressIds[storeType],
+        storeCode: store.storeCode || undefined,
+        storeType,
+      });
+
+      const nextAddressState = await syncDeliveryAddressState(accessToken);
+      // 신규 id 우선, 서버가 동일 지점을 dedupe 했다면 storeCode 로 재탐색한다.
+      const addedAddress =
+        nextAddressState.addresses.find(
+          (address) => !previousAddressIds.has(address.id),
+        ) ??
+        (store.storeCode
+          ? nextAddressState.addresses.find(
+              (address) => address.storeCode === store.storeCode,
+            ) ?? null
+          : null);
+
+      if (addedAddress) {
+        setCheckoutDeliveryAddress(addedAddress);
+        setCheckoutError("");
+        showProductToast("배송지를 등록했어요. 이어서 주문해 주세요.");
+      } else {
+        setCheckoutError(
+          "배송지 등록 결과를 확인하지 못했어요. 목록에서 배송지를 선택해 주세요.",
+        );
+      }
+    } catch (error: unknown) {
+      let message =
+        error instanceof Error ? error.message : "배송지를 등록하지 못했어요.";
+
+      // 로컬 목록이 낡아 서버가 개수 제한으로 거부했는지 재동기화로 판정한다 — 관리 화면과 동일.
+      try {
+        const nextAddressState = await syncDeliveryAddressState(accessToken);
+
+        if (nextAddressState.addresses.length >= maxDeliveryAddressCount) {
+          message = `배송지는 최대 ${maxDeliveryAddressCount}개까지 등록할 수 있어요. 사용하지 않는 배송지를 삭제한 뒤 다시 시도해 주세요.`;
+        }
+      } catch {
+        // 재동기화 실패 시 원래 에러 메시지를 그대로 보여 준다.
+      }
+
+      setCheckoutError(message);
+    } finally {
+      checkoutAddressCreateRef.current = false;
+      setIsCheckoutAddressCreatePending(false);
+    }
   }
   const bidDeliveryAddress =
     getBidDeliveryAddressFromState(deliveryAddressState);
@@ -1370,54 +1618,6 @@ export function ProductDetail({
     return "지금은 구매할 수 없는 분철이에요";
   }
 
-  function getProductDetailReturnHref(
-    options: {
-      restoreCheckoutAddressSheet?: boolean;
-      restoreCheckoutConfirm?: boolean;
-    } = {},
-  ) {
-    const fallbackHref = `/products/${encodeURIComponent(buncheolId)}`;
-
-    if (typeof window === "undefined") {
-      return fallbackHref;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-
-    if (options.restoreCheckoutAddressSheet || options.restoreCheckoutConfirm) {
-      params.set("checkoutStep", "confirm");
-
-      if (options.restoreCheckoutAddressSheet) {
-        params.set("addressSheet", "1");
-      } else {
-        params.delete("addressSheet");
-      }
-
-      params.delete("checkoutOption");
-      getSelectedCheckoutOptionIds().forEach((optionId) => {
-        params.append("checkoutOption", optionId);
-      });
-
-      const checkoutAddressId =
-        checkoutDeliveryAddress?.id ?? bidDeliveryAddress?.id ?? null;
-
-      if (checkoutAddressId) {
-        params.set("checkoutAddress", checkoutAddressId);
-      } else {
-        params.delete("checkoutAddress");
-      }
-    }
-
-    const query = params.toString();
-    const currentHref = `${window.location.pathname}${query ? `?${query}` : ""}`;
-
-    return currentHref.startsWith("/products/") ? currentHref : fallbackHref;
-  }
-
-  function getSelectedCheckoutOptionIds() {
-    return getSelectedCheckoutReturnOptions().map((option) => option.id);
-  }
-
   function getSelectedCheckoutReturnOptions(): CheckoutAddressReturnOption[] {
     const currentReturnOptions = getCheckoutReturnOptionsForAmounts(bidAmounts);
 
@@ -1486,44 +1686,9 @@ export function ProductDetail({
     );
   }
 
-  function getAddressManagementHref(
-    openAdd = false,
-    options: { restoreCheckoutAddressSheet?: boolean } = {},
-  ) {
-    const params = new URLSearchParams({
-      returnTo: getProductDetailReturnHref(options),
-    });
-
-    if (openAdd) {
-      params.set("openAdd", "1");
-    }
-
-    return `/profile/addresses?${params.toString()}`;
-  }
-
-  function navigateToAddressManagement(
-    openAdd = false,
-    options: { restoreCheckoutAddressSheet?: boolean } = {},
-  ) {
-    if (options.restoreCheckoutAddressSheet) {
-      rememberCheckoutAddressReturnState(true);
-    }
-
-    router.push(getAddressManagementHref(openAdd, options));
-  }
-
-  // 계좌 등록 후 상품으로 돌아오면 진행 중이던 체크아웃을 복원한다.
-  function navigateToProfileForRefundAccount() {
-    rememberCheckoutAddressReturnState(false);
-
-    const params = new URLSearchParams({
-      openAccount: "1",
-      returnTo: getProductDetailReturnHref({ restoreCheckoutConfirm: true }),
-    });
-
-    router.push(`/profile?${params.toString()}`);
-  }
-
+  // NOTE: 아래 URL 쿼리(checkoutStep/addressSheet/checkoutOption/checkoutAddress) 복원
+  // 분기의 생산자(마이페이지·배송지 관리 왕복)는 이 PR 에서 제거됐다. 과거 공유된 링크
+  // 호환용으로 한시 유지하며, 후속 정리 대상이다.
   useEffect(() => {
     const paymentDueAt = checkoutPaymentSummary?.paymentDueAt;
     const paymentDueDate = parseCheckoutDateTime(paymentDueAt);
@@ -2105,11 +2270,8 @@ export function ProductDetail({
       const shippingAddressId = Number(nextBidDeliveryAddress?.id);
 
       if (!Number.isFinite(shippingAddressId)) {
-        window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToAddressManagement(true, {
-          restoreCheckoutAddressSheet: true,
-        });
+        void openCheckoutAddressSheet();
         return;
       }
 
@@ -2127,9 +2289,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToProfileForRefundAccount();
+        setRefundAccountError("");
+        setIsRefundAccountSheetOpen(true);
         return;
       }
 
@@ -2213,11 +2375,8 @@ export function ProductDetail({
       const shippingAddressId = Number(nextBidDeliveryAddress?.id);
 
       if (!Number.isFinite(shippingAddressId)) {
-        window.alert("구매하려면 배송지를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToAddressManagement(true, {
-          restoreCheckoutAddressSheet: true,
-        });
+        void openCheckoutAddressSheet();
         return;
       }
 
@@ -2235,9 +2394,9 @@ export function ProductDetail({
       }
 
       if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
-        window.alert("구매하려면 마이페이지에서 환불받을 계좌를 먼저 등록해 주세요.");
         setIsBidSubmitPending(false);
-        navigateToProfileForRefundAccount();
+        setRefundAccountError("");
+        setIsRefundAccountSheetOpen(true);
         return;
       }
 
@@ -2381,7 +2540,7 @@ export function ProductDetail({
 
         if (bankAccountKeys.size > 1) {
           throw new Error(
-            "선택한 옵션의 입금 계좌가 달라요. 참여 내역에서 각각 확인해 주세요.",
+            "선택한 멤버의 입금 계좌가 달라요. 참여 내역에서 각각 확인해 주세요.",
           );
         }
       } catch (error: unknown) {
@@ -3012,9 +3171,7 @@ export function ProductDetail({
       null;
 
     if (!selectedAddress) {
-      navigateToAddressManagement(true, {
-        restoreCheckoutAddressSheet: true,
-      });
+      setIsCvsStoreSearchOpen(true);
       return;
     }
 
@@ -3064,10 +3221,13 @@ export function ProductDetail({
     const nextEligibleDeliveryAddresses =
       getCheckoutEligibleDeliveryAddressesFromState(nextAddressState);
 
-    if (nextEligibleDeliveryAddresses.length === 0) {
-      navigateToAddressManagement(true, {
-        restoreCheckoutAddressSheet: true,
-      });
+    if (
+      nextEligibleDeliveryAddresses.length === 0 &&
+      nextAddressState.addresses.length < maxDeliveryAddressCount
+    ) {
+      // 배송지가 하나도 없으면 이탈 대신 접수처 검색 시트로 바로 등록한다.
+      // 상한(5개)까지 찼는데 전부 비취급 브랜드면 시트를 열어 관리 링크로 안내한다.
+      setIsCvsStoreSearchOpen(true);
       return;
     }
 
@@ -3586,7 +3746,7 @@ export function ProductDetail({
               type="button"
               className="absolute inset-0 cursor-default"
               onClick={closeSheet}
-              aria-label="구매 옵션 닫기"
+              aria-label="멤버 선택 닫기"
             />
             <section
               className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
@@ -3632,7 +3792,7 @@ export function ProductDetail({
                           ? isC2CProduct && !isC2CCollectingProduct
                             ? "신청 확인"
                             : "주문 확인"
-                          : "구매 옵션"}
+                          : "멤버 선택"}
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
                     {checkoutStep === "payment"
@@ -3745,7 +3905,7 @@ export function ProductDetail({
 
                   <div className="mt-5 flex items-center justify-between border-t border-black/10 pt-4">
                     <span className="text-[14px] font-medium text-black/45">
-                      구매 옵션 {activeBidCount}개
+                      선택 멤버 {activeBidCount}명
                     </span>
                     <span className="text-[22px] font-semibold tracking-[-0.05em]">
                       {formatPrice(totalBidAmount)}
@@ -3769,7 +3929,7 @@ export function ProductDetail({
                 <>
                   <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                      <p className="text-[12px] font-semibold text-black/40">선택 옵션</p>
+                      <p className="text-[12px] font-semibold text-black/40">선택 멤버</p>
                       <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                         {selectedCheckoutItems[0]?.option.label ?? "-"}
                         {selectedCheckoutItems.length > 1
@@ -3958,10 +4118,10 @@ export function ProductDetail({
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-[12px] font-semibold text-black/40">
-                            선택 옵션
+                            선택 멤버
                           </p>
                           <span className="text-[12px] font-semibold text-black/35">
-                            {checkoutPaymentSummary.items.length}개
+                            {checkoutPaymentSummary.items.length}명
                           </span>
                         </div>
                         <div className="mt-2 space-y-2">
@@ -4305,14 +4465,19 @@ export function ProductDetail({
 
                 <button
                   className="flex h-14 w-full items-center justify-center rounded-[0.95rem] border border-dashed border-black/15 bg-[#f7f7f7] text-[14px] font-semibold text-black/45"
+                  disabled={isCheckoutAddressCreatePending}
                   onClick={() =>
-                    navigateToAddressManagement(true, {
-                      restoreCheckoutAddressSheet: true,
-                    })
+                    isAddressLimitReached
+                      ? router.push("/profile/addresses")
+                      : setIsCvsStoreSearchOpen(true)
                   }
                   type="button"
                 >
-                  + 새 배송지 추가
+                  {isCheckoutAddressCreatePending
+                    ? "배송지 등록 중"
+                    : isAddressLimitReached
+                      ? `배송지가 가득 찼어요 (최대 ${maxDeliveryAddressCount}개) · 관리로 이동`
+                      : "+ 새 배송지 추가"}
                 </button>
               </div>
 
@@ -4324,6 +4489,144 @@ export function ProductDetail({
                 여기서 받을게요!
               </button>
             </section>
+          </div>
+        ) : null}
+
+        {isRefundAccountSheetOpen ? (
+          <div
+            className={`bid-sheet-backdrop fixed inset-0 z-50 flex items-end ${
+              isRefundAccountSheetEntered ? "bid-sheet-backdrop-active" : ""
+            }`}
+          >
+            <button
+              aria-label="계좌 등록 닫기"
+              className="absolute inset-0 cursor-default"
+              onClick={() => {
+                // 저장 요청이 나간 뒤 닫히면 성공 여부를 알 수 없다 — 저장 중엔 닫지 않는다.
+                if (!isRefundAccountSaving) {
+                  setIsRefundAccountSheetOpen(false);
+                }
+              }}
+              type="button"
+            />
+            <section
+              className={`bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+                isRefundAccountSheetEntered ? "bid-sheet-panel-active" : ""
+              }`}
+            >
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+              <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                환불계좌 등록
+              </h2>
+              <p className="mt-1 text-[13px] font-medium leading-5 text-black/45">
+                입금자명 확인과 환불에 쓰는 계좌예요. 등록하면 주문을 바로 이어갈
+                수 있어요.
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <label className="block">
+                  <span className="text-[12px] font-semibold text-black/45">
+                    은행
+                  </span>
+                  <input
+                    className="mt-1.5 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
+
+                      setRefundAccountForm((current) => ({
+                        ...current,
+                        bank: nextValue,
+                      }));
+                    }}
+                    maxLength={bankAccountFieldMaxLength}
+                    placeholder="국민은행"
+                    value={refundAccountForm.bank}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[12px] font-semibold text-black/45">
+                    계좌번호
+                  </span>
+                  <input
+                    className="mt-1.5 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    inputMode="tel"
+                    onChange={(event) => {
+                      const nextValue = sanitizeAccountNumber(
+                        event.currentTarget.value,
+                      );
+
+                      setRefundAccountForm((current) => ({
+                        ...current,
+                        account: nextValue,
+                      }));
+                    }}
+                    maxLength={bankAccountFieldMaxLength}
+                    placeholder="숫자 또는 하이픈 입력"
+                    value={refundAccountForm.account}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[12px] font-semibold text-black/45">
+                    예금주
+                  </span>
+                  <input
+                    className="mt-1.5 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
+
+                      setRefundAccountForm((current) => ({
+                        ...current,
+                        holder: nextValue,
+                      }));
+                    }}
+                    maxLength={bankAccountFieldMaxLength}
+                    placeholder="김분철"
+                    value={refundAccountForm.holder}
+                  />
+                </label>
+              </div>
+
+              {refundAccountError ? (
+                <p className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
+                  {refundAccountError}
+                </p>
+              ) : null}
+
+              <button
+                className="mt-4 h-[52px] w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
+                disabled={isRefundAccountSaving}
+                onClick={() => void saveCheckoutRefundAccount()}
+                type="button"
+              >
+                {isRefundAccountSaving ? "저장 중" : "계좌 등록하고 이어가기"}
+              </button>
+            </section>
+          </div>
+        ) : null}
+
+        {isCvsStoreSearchOpen ? (
+          // 시트 내부 z-40 이 배송지 선택 시트(z-50)에 가리지 않도록 z-[60] 스태킹
+          // 컨텍스트로 감싼다 — DOM 순서가 아닌 명시적 레이어로 위에 띄운다.
+          // ⚠️ 이 래퍼가 새 스태킹 컨텍스트라, 이 시트 위에 무언가를 띄우려면
+          // z-index 를 래퍼 기준으로 계산해야 한다.
+          <div className="relative z-[60]">
+            <CvsStoreSearchSheet
+              allowedBrands={checkoutAllowedCvsBrands}
+              onClose={() => setIsCvsStoreSearchOpen(false)}
+              onSelect={(store) => void handleCheckoutStoreSelected(store)}
+            />
+          </div>
+        ) : null}
+
+        {productToast ? (
+          <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[70] flex justify-center px-6">
+            <p
+              aria-live="polite"
+              className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+              role="status"
+            >
+              {productToast}
+            </p>
           </div>
         ) : null}
 

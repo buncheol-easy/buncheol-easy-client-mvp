@@ -107,6 +107,8 @@ const brandFilterTabs = [
 ] as const;
 
 type CvsStoreSearchSheetProps = {
+  // 상품이 취급하는 브랜드로 검색·선택을 제한한다 — 미지정이면 전체 브랜드.
+  allowedBrands?: CvsStoreBrand[];
   onClose: () => void;
   onSelect: (store: CvsStore) => void;
 };
@@ -115,12 +117,26 @@ type CvsStoreSearchSheetProps = {
 // 카카오 지도 마커로 지점을 고른 뒤 "이 지점으로 선택"으로 확정한다.
 // 시트 트랜지션은 FeedbackSheet 의 bid-sheet-backdrop/panel 컨벤션을 따른다.
 export function CvsStoreSearchSheet({
+  allowedBrands,
   onClose,
   onSelect,
 }: CvsStoreSearchSheetProps) {
+  // 허용 브랜드가 하나뿐이면 필터를 그 브랜드로 고정한다 — 다른 브랜드 지점을 등록해
+  // 상품 배송 옵션과 어긋나는 것을 원천 차단 (체크아웃 내 등록 경로).
+  const limitedBrand =
+    allowedBrands && allowedBrands.length === 1 ? allowedBrands[0] : null;
+  const visibleBrandFilterTabs = allowedBrands
+    ? brandFilterTabs.filter(
+        (tab) =>
+          tab.value === "all" ||
+          allowedBrands.includes(tab.value as CvsStoreBrand),
+      )
+    : brandFilterTabs;
   const [isEntered, setIsEntered] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [brandFilter, setBrandFilter] = useState<CvsStoreBrandFilter>("all");
+  const [brandFilter, setBrandFilter] = useState<CvsStoreBrandFilter>(
+    limitedBrand ?? "all",
+  );
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [stores, setStores] = useState<CvsStore[]>([]);
@@ -580,13 +596,19 @@ export function CvsStoreSearchSheet({
           ) : null}
         </div>
 
-        <div className="mt-2.5">
-          <SlidingFilterChips
-            onChange={(value: CvsStoreBrandFilter) => setBrandFilter(value)}
-            tabs={brandFilterTabs}
-            value={brandFilter}
-          />
-        </div>
+        {limitedBrand ? (
+          <p className="mt-2.5 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 text-[12px] font-semibold text-black/55 ring-1 ring-[#E4F6A5]/60">
+            이 분철은 {limitedBrand} 지점으로만 받을 수 있어요.
+          </p>
+        ) : (
+          <div className="mt-2.5">
+            <SlidingFilterChips
+              onChange={(value: CvsStoreBrandFilter) => setBrandFilter(value)}
+              tabs={visibleBrandFilterTabs}
+              value={brandFilter}
+            />
+          </div>
+        )}
 
         {mapNotice ? (
           <p className="mt-2 rounded-[0.85rem] bg-[#f7f7f7] px-4 py-3 text-[12.5px] font-medium text-black/45">
