@@ -15,6 +15,21 @@ const getBuncheolDetailCached = cache((id: string) =>
   requestBuncheolDetail(undefined, id),
 );
 
+// 분철 제목은 대부분 "…분철"로 끝나고 아티스트명을 이미 포함하는 경우가 많아,
+// 그대로 이어 붙이면 "프로미스나인 … 분철 분철"처럼 중복된다. 겹치는 조각은 생략한다.
+function formatBuncheolPageTitle(groupName: string, title: string) {
+  const trimmedTitle = title.trim();
+  const trimmedGroupName = groupName.trim();
+  const base = [
+    trimmedTitle.includes(trimmedGroupName) ? "" : trimmedGroupName,
+    trimmedTitle,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return base.endsWith("분철") ? base : `${base} 분철`;
+}
+
 export async function generateMetadata({
   params,
 }: ProductDetailPageProps): Promise<Metadata> {
@@ -27,10 +42,7 @@ export async function generateMetadata({
 
   try {
     const detail = await getBuncheolDetailCached(id);
-    const title = `${[detail.groupName, detail.title]
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .join(" ")} 분철`;
+    const title = formatBuncheolPageTitle(detail.groupName, detail.title);
     const trimmedDescription = detail.description?.trim() ?? "";
     const description =
       (trimmedDescription.length > 90
@@ -111,10 +123,7 @@ export default async function ProductDetailPage({
   try {
     const detail = await getBuncheolDetailCached(id);
     initialProduct = toProductDetailItem(detail);
-    const detailName = `${[detail.groupName, detail.title]
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .join(" ")} 분철`;
+    const detailName = formatBuncheolPageTitle(detail.groupName, detail.title);
 
     breadcrumbJsonLd = {
       "@context": "https://schema.org",
