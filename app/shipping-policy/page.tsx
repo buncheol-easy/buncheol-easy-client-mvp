@@ -15,8 +15,8 @@ export default function ShippingPolicyPage() {
   return (
     <PolicyPageContent
       title="배송 정책"
-      effectiveDate="2026.6.16"
-      description="분철 상품 수령과 배송 방식 기준을 정리한 초안입니다."
+      effectiveDate="2026.8.18 (시행 예정)"
+      description="분철 상품 수령과 배송 방식 기준을 정리한 초안입니다. 회원 개최(중개) 분철 관련 내용은 2026년 8월 18일 개정 약관 시행과 함께 적용되며, 시행일 전까지는 2026년 6월 16일자 기준이 적용됩니다."
       sections={[
         {
           title: "배송 방식",

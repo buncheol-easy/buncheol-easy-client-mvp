@@ -15,8 +15,8 @@ export default function RefundPolicyPage() {
   return (
     <PolicyPageContent
       title="취소/환불 정책"
-      effectiveDate="2026.7.23"
-      description="분철 참여 자동 취소와 청약철회·환불 처리 기준을 안내합니다."
+      effectiveDate="2026.8.18 (시행 예정)"
+      description="분철 참여 자동 취소와 청약철회·환불 처리 기준을 안내합니다. 회원 개최(중개) 분철 관련 내용은 2026년 8월 18일 개정 약관 시행과 함께 적용되며, 시행일 전까지는 2026년 7월 23일자 기준이 적용됩니다."
       sections={[
         {
           title: "참여 자동 취소",

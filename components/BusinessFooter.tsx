@@ -78,6 +78,14 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
         </button>
       </div>
 
+      {/* 구매안전서비스는 회사가 대금을 직접 수취하는 분철에만 적용된다.
+          인증마크가 전역 노출이라 C2C 거래에도 적용되는 것처럼 오인될 소지가
+          있어 마크 바로 아래에 적용 범위를 붙인다. */}
+      <p className="mt-1.5 text-[10px] font-medium leading-4 tracking-[-0.02em] text-black/40">
+        구매안전서비스(KB에스크로)는 분철이지가 직접 개최하는 분철에 적용되며,
+        대금이 개최자 계좌로 직접 입금되는 회원 개최 분철에는 적용되지 않습니다.
+      </p>
+
       <nav
         aria-label="정책 링크"
         className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${
@@ -127,29 +135,32 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
         </dl>
       </div>
 
-      <p
-        className={`border-l-2 border-black/18 pl-3 font-medium tracking-[-0.02em] text-black/50 ${
+      <div
+        className={`space-y-1.5 border-l-2 border-black/18 pl-3 font-medium tracking-[-0.02em] text-black/50 ${
           isCompact
             ? "mt-3 text-[10px] leading-4"
             : "mt-3.5 text-[10.5px] leading-5"
         }`}
       >
-        분철이지가 직접 개최하는 분철은 분철이지가 통신판매 당사자이며,
-        상품·거래 정보와 청약철회·환불 등 거래에 관한 책임은 분철이지에
-        있습니다.
-        <br />
-        회원이 개최하는 분철은 분철이지가 통신판매중개자로서 거래 당사자가
-        아니며, 대금은 개최자 계좌로 직접 입금됩니다. 상품·거래에 관한 책임은
-        개최자에게 있습니다.
-        <br />
-        각 분철의 판매 주체와 책임은 해당 분철 화면에 표시되며, 자세한 내용은{" "}
-        <Link className="underline underline-offset-2" href="/broker-notice">
-          통신판매중개자 고지
-        </Link>
-        에서 확인할 수 있습니다.
-        <br />
-        구매안전서비스(KB에스크로)는 분철이지가 직접 개최하는 분철에 적용됩니다.
-      </p>
+        <p>
+          분철이지가 직접 개최하는 분철은 분철이지가 통신판매 당사자이며,
+          상품·거래 정보와 청약철회·환불 등 거래에 관한 책임은 분철이지에
+          있습니다.
+        </p>
+        <p>
+          회원이 개최하는 분철은 분철이지가 통신판매중개자로서 거래 당사자가
+          아니며, 대금은 개최자 계좌로 직접 입금됩니다. 상품·거래에 관한 책임은
+          개최자에게 있습니다.
+        </p>
+        <p>
+          회원 개최 분철에는 그 사실이 해당 분철 화면에 표시되며, 표시가 없는
+          분철은 분철이지가 직접 개최하는 분철입니다. 자세한 내용은{" "}
+          <Link className="underline underline-offset-2" href="/broker-notice">
+            통신판매중개자 고지
+          </Link>
+          에서 확인할 수 있습니다.
+        </p>
+      </div>
       <p
         className={`text-[10px] font-medium tracking-[-0.02em] text-black/36 ${
           isCompact ? "mt-3" : "mt-3.5"
