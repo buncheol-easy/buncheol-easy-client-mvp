@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
+import { X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import {
   BackIcon,
@@ -18,11 +19,13 @@ import {
   BidIcon,
   CheckIcon,
   CloseIcon,
+  ForwardIcon,
   HeartIcon,
   HomeIcon,
   PlusIcon,
   ProfileIcon,
   SearchIcon,
+  XLogoIcon,
 } from "@/components/icons";
 
 type RevealProps = {
@@ -1817,6 +1820,34 @@ export function IntroContent() {
                   ))}
                 </div>
               </div>
+            </Reveal>
+
+            <Reveal className="mt-4" delay={200}>
+              {/* aria-label 을 주면 접근 이름이 통째로 덮여 가시 텍스트를 포함하지 않게 된다
+                  (WCAG 2.5.3). 여기는 아이콘 전용이 아니라 문구가 보이므로 가시 텍스트를
+                  그대로 이름으로 쓰고, 새 창 안내만 sr-only 로 덧붙인다. */}
+              <a
+                className="flex items-center gap-4 rounded-[1.5rem] border border-black/12 bg-white px-5 py-4 transition-colors hover:border-black/30 active:bg-black/[0.03]"
+                href={X_PROFILE_URL}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white">
+                  <XLogoIcon className="h-[18px] w-[18px]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[17px] font-semibold leading-none tracking-[-0.06em]">
+                    공식 X 계정 보러 가기
+                  </span>
+                  <span className="mt-2 block text-[12px] font-semibold leading-none tracking-[-0.03em] text-black/38">
+                    {X_HANDLE}
+                  </span>
+                  <span className="sr-only">(새 창에서 열림)</span>
+                </span>
+                <span aria-hidden="true" className="shrink-0 text-black/25">
+                  <ForwardIcon />
+                </span>
+              </a>
             </Reveal>
           </section>
 

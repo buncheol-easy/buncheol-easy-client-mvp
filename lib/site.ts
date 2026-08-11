@@ -3,3 +3,8 @@
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "") ??
   "https://buncheoleasy.com";
+
+// 공식 X 계정. 랜딩 팔로우 버튼·데스크톱 브랜드 패널·Organization sameAs 가
+// 같은 값을 쓰도록 한곳에서 관리한다.
+export const X_PROFILE_URL = "https://x.com/buncheoleasy";
+export const X_HANDLE = "@buncheoleasy";
