@@ -7,7 +7,8 @@
     "dev:local": "NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@next/third-parties": "^16.2.10",
