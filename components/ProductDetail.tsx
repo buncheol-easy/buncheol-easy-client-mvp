@@ -3473,11 +3473,11 @@ export function ProductDetail({
                     구매 기한
                   </p>
                   {/* deadlineTick(현재 시각) 기반 카운트다운은 서버 렌더 시각과 하이드레이션
-                      시각이 달라 텍스트가 어긋날 수밖에 없다. 마운트 후 첫 tick(1초 내)에
-                      바로 보정되므로 하이드레이션 불일치 경고만 억제한다. */}
+                      시각이 달라 텍스트가 어긋날 수밖에 없다. 마운트 직후 effect에서
+                      setDeadlineTick 으로 즉시 보정되므로 하이드레이션 불일치 경고만 억제한다. */}
                   <p
-                    suppressHydrationWarning
                     className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums"
+                    suppressHydrationWarning
                   >
                     {purchaseDeadlineDisplay}
                   </p>
@@ -3674,18 +3674,19 @@ export function ProductDetail({
                               type="button"
                               aria-label={`${blockChipLabel}, 내 참여 내역 보기`}
                               className={`relative pointer-events-auto after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipClassName}`}
-                              onClick={openBidHistory}
                               suppressHydrationWarning
+                              onClick={openBidHistory}
                             >
                               {blockChipLabel}
                               <span aria-hidden="true"> ›</span>
                             </button>
                           ) : (
                             // 입금 대기 칩의 남은시간(deadlineTick 파생)은 서버/클라 렌더
-                            // 시각 차이로 어긋날 수 있다 — 다음 tick에 보정되므로 경고만 억제.
+                            // 시각 차이로 어긋날 수 있다 — 마운트 직후 effect에서 즉시
+                            // 보정되므로 경고만 억제.
                             <span
-                              suppressHydrationWarning
                               className={memberStatusChipClassName}
+                              suppressHydrationWarning
                             >
                               {blockChipLabel}
                             </span>
@@ -3888,10 +3889,7 @@ export function ProductDetail({
                                     {option.label}
                                   </p>
                                 </div>
-                                <p
-                                  suppressHydrationWarning
-                                  className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45"
-                                >
+                                <p className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45">
                                   {displayedOverlayLabel ?? "구매 가능"}
                                 </p>
                               </div>
@@ -3919,10 +3917,7 @@ export function ProductDetail({
                           </div>
                           {overlayLabel ? (
                             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
-                              <span
-                                suppressHydrationWarning
-                                className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur"
-                              >
+                              <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
                                 {displayedOverlayLabel}
                               </span>
                             </div>
