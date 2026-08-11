@@ -76,11 +76,13 @@ type HomeBanner = {
   label: string;
 };
 
-// 폰 프레임(≈398px)은 1120px 이상에서만 걸린다(globals.css .desktop-web-shell).
-// 그 아래(특히 hover 미디어 조건이 안 걸리는 태블릿)는 실제 뷰포트 폭으로 요청해야
-// 업스케일 흐림이 없다. px-4 패딩만큼 빼서 정확한 폭을 준다.
-const HOME_BANNER_IMAGE_SIZES =
-  "(min-width: 1120px) 398px, calc(100vw - 2rem)";
+// 배너 폭은 어떤 뷰포트에서도 ≈398px 을 넘지 않는다. 프레임 조건과는 무관하다.
+// - 폰 프레임 안: 프레임(≈430px) − px-4 패딩
+// - 프레임 밖: 페이지 컨테이너 max-w-[430px](app/page.tsx) − px-4 패딩
+// 즉 뷰포트가 462px(430 + 2rem) 이상이면 항상 398px 고정이라 프레임 조건을 복제할 필요가 없다.
+// 이전 값은 1120px 미만에서 뷰포트 폭을 그대로 요청해, 폰 가로·태블릿에서 실제 폭의
+// 2배가 넘는 후보를 받았다 (첫 배너는 priority 라 LCP 대역폭에 그대로 얹힌다).
+const HOME_BANNER_IMAGE_SIZES = "(min-width: 462px) 398px, calc(100vw - 2rem)";
 
 // next.config.ts images.remotePatterns 와 같은 목록. API 가 이 밖의 호스트를
 // 내려주면 next/image 로더가 throw(개발)하거나 400(프로덕션)이 나므로,
