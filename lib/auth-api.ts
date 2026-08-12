@@ -427,6 +427,9 @@ export type BuncheolManagementDetail = {
   // C2C 일괄 입금 기한 — 성사 확정 시 산정 (docs/46 §4.1).
   paymentDueAt?: string | null;
   purchaseSite?: string;
+  // 취소된 참여(환불 계좌 확인용). participants 와 분리해 받는다 —
+  // 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
+  cancelledParticipants: BuncheolManagementParticipant[];
   status: BuncheolStatus;
   title: string;
   totalParticipationCount: number;
@@ -3668,6 +3671,26 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     });
 
   const participants = [...participantsById.values()];
+  // 취소분은 참여 수 집계에 쓰이는 participants 와 절대 합치지 않는다.
+  // participants 와 같은 규칙으로 participationId 중복을 접는다 — sourceRecords 가 둘일 때 같은 배열을 두 번 집을 수 있다.
+  const cancelledById = new Map<string, BuncheolManagementParticipant>();
+
+  sourceRecords
+    .flatMap((sourceRecord) =>
+      getNestedRecordListValue(sourceRecord, ["cancelledParticipants"]),
+    )
+    .map((participantRecord) =>
+      getBuncheolManagementParticipantFromRecord(participantRecord),
+    )
+    .filter(
+      (participant): participant is BuncheolManagementParticipant =>
+        participant !== null,
+    )
+    .forEach((participant) => {
+      cancelledById.set(participant.participationId, participant);
+    });
+
+  const cancelledParticipants = [...cancelledById.values()];
   const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
 
   return {
@@ -3688,6 +3711,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     options,
     participants,
     paymentDueAt: getOptionalStringValue(data, ["paymentDueAt"]) ?? null,
+    cancelledParticipants,
     purchaseSite: getOptionalStringValue(data, [
       "purchaseSite",
       "purchaseSource",
