@@ -42,6 +42,30 @@ export type UserProfileStatus = {
   isProfileComplete: boolean;
 };
 
+// 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
+export const hostingEligibilityReasons = [
+  // 가입 미완료(전화번호 미등록) — 서버 USR-018
+  "PHONE_REQUIRED",
+  // 연령대 미확인 — 카카오 재로그인 동의로 회복 가능 (서버 USR-032)
+  "AGE_UNVERIFIED",
+  // 미성년 확정 — 개최 불가 (서버 USR-033)
+  "NOT_ADULT",
+  // 활성 개최 수 상한 초과 — 서버 BCH-089
+  "LIMIT_EXCEEDED",
+  // 정산 계좌 미등록 — 서버 USR-025
+  "BANK_ACCOUNT_REQUIRED",
+] as const;
+
+// null 은 "사유를 모른다"는 뜻 — 서버가 사유를 추가해도 화면이 깨지지 않게 알 수 없는 값은 여기로 떨어뜨린다.
+export type HostingEligibilityReason =
+  | (typeof hostingEligibilityReasons)[number]
+  | null;
+
+export type HostingEligibility = {
+  eligible: boolean;
+  reason: HostingEligibilityReason;
+};
+
 export type BankAccountInfo = {
   account: string;
   bank: string;
@@ -1490,6 +1514,56 @@ export async function requestTokenReissue() {
   }
 
   return (await response.json()) as AccessTokenResponse;
+}
+
+// 개최 자격 사전 조회 (server: GET /v1/buncheols/hosting-eligibility). 부적격이어도 200 + 사유로 내려온다.
+export async function requestHostingEligibility(
+  accessToken: string,
+): Promise<HostingEligibility> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/hosting-eligibility`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      await parseErrorMessage(response),
+      response.status,
+    );
+  }
+
+  const data = getNestedData((await response.json()) as unknown);
+  const eligible = getBooleanValue(data, [
+    "eligible",
+    "isEligible",
+    "hostingEligible",
+  ]);
+
+  if (eligible === null) {
+    throw new Error("개최 자격을 확인할 수 없어요.");
+  }
+
+  return { eligible, reason: getHostingEligibilityReason(data) };
+}
+
+function getHostingEligibilityReason(data: unknown): HostingEligibilityReason {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const reason = getStringValue(data, ["reason", "reasonCode", "code"]);
+
+  return isHostingEligibilityReason(reason) ? reason : null;
+}
+
+function isHostingEligibilityReason(
+  value: string,
+): value is NonNullable<HostingEligibilityReason> {
+  return (hostingEligibilityReasons as readonly string[]).includes(value);
 }
 
 export async function requestUserProfileStatus(accessToken: string) {

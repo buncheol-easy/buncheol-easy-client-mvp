@@ -16,16 +16,12 @@ import {
 } from "@/lib/auth-api";
 import {
   authProfileSetupReturnHrefStorageKey,
-  clearAuthCookies,
-  clearAuthState,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
-import { clearDeliveryAddressState } from "@/lib/delivery-address-store";
 import { FEATURES } from "@/lib/feature-flags";
-import { clearHostedProducts } from "@/lib/hosted-products-store";
-import { clearSettlementAccountState } from "@/lib/settlement-account-store";
+import { clearUserSessionState } from "@/lib/user-session";
 
 type ProfileAccountContentProps = {
   onBack?: () => void;
@@ -101,11 +97,7 @@ function getProviderKind(provider: string | undefined) {
 }
 
 function clearSessionState() {
-  clearAuthCookies();
-  clearAuthState();
-  clearDeliveryAddressState();
-  clearHostedProducts();
-  clearSettlementAccountState();
+  clearUserSessionState();
 }
 
 function ProviderIconBadge({ provider }: { provider: string | undefined }) {

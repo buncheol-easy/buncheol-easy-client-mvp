@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { UploadProductForm } from "@/components/UploadProductForm";
+import { UploadEntry } from "@/components/UploadEntry";
 import { blackChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = blackChromeViewport;
@@ -25,7 +25,7 @@ export default async function UploadPage({ searchParams }: UploadPageProps) {
   const returnSource = getFirstSearchParam(from);
 
   return (
-    <UploadProductForm
+    <UploadEntry
       editProductId={getFirstSearchParam(edit)}
       returnSource={
         returnSource === "home" ||
