@@ -4,6 +4,7 @@ import { cache } from "react";
 import { ApiProductDetail } from "@/components/ApiProductDetail";
 import { JsonLd } from "@/components/JsonLd";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
+import { isGroupIdShape } from "@/lib/artist-browse";
 import {
   ApiRequestError,
   requestBuncheolDetail,
@@ -97,6 +98,7 @@ type ProductDetailPageProps = {
   }>;
   searchParams: Promise<{
     from?: string | string[];
+    groupId?: string | string[];
     hosted?: string | string[];
     q?: string | string[];
   }>;
@@ -111,10 +113,17 @@ export default async function ProductDetailPage({
   searchParams,
 }: ProductDetailPageProps) {
   const { id } = await params;
-  const { from, hosted, q } = await searchParams;
+  const { from, groupId, hosted, q } = await searchParams;
   const returnSource = getFirstSearchParam(from);
   const isHostedView = getFirstSearchParam(hosted) === "true";
   const returnQuery = getFirstSearchParam(q);
+  // 주소창에 그대로 노출되는 값이라 손으로 고친 링크가 들어온다. 형태를 여기서 걸러야
+  // 뒤로가기가 `/artists/abc` → 404 로 떨어지지 않고 홈 폴백으로 안전하게 흡수된다.
+  const rawReturnGroupId = getFirstSearchParam(groupId);
+  const returnGroupId =
+    rawReturnGroupId && isGroupIdShape(rawReturnGroupId)
+      ? rawReturnGroupId
+      : undefined;
 
   if (id.startsWith("uploaded-")) {
     return (
@@ -191,12 +200,14 @@ export default async function ProductDetailPage({
         initialNowMs={initialNowMs}
         initialProduct={initialProduct}
         isHostedView={isHostedView}
+        returnGroupId={returnSource === "artist" ? returnGroupId : undefined}
         returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
         returnSource={
           returnSource === "home" ||
           returnSource === "bids" ||
           returnSource === "favorites" ||
-          returnSource === "upload"
+          returnSource === "upload" ||
+          (returnSource === "artist" && returnGroupId)
             ? returnSource
             : undefined
         }

@@ -36,8 +36,9 @@ type ApiProductDetailProps = {
   // 서버 렌더 시각(ms) — 카운트다운 첫 렌더를 SSR HTML 과 결정적으로 일치시킨다.
   initialNowMs?: number;
   isHostedView?: boolean;
+  returnGroupId?: string;
   returnQuery?: string;
-  returnSource?: "home" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload" | "artist";
 };
 
 function isInactivePurchaseStatus(status: string | undefined) {
@@ -160,6 +161,7 @@ export function ApiProductDetail({
   initialProduct = null,
   initialNowMs,
   isHostedView = false,
+  returnGroupId,
   returnQuery,
   returnSource,
 }: ApiProductDetailProps) {
@@ -366,6 +368,7 @@ export function ApiProductDetail({
             returnSource || returnQuery !== undefined ? undefined : "/"
           }
           initialNowMs={initialNowMs}
+          initialReturnGroupId={returnGroupId}
           initialReturnQuery={returnQuery}
           initialReturnSource={returnSource}
           onExitingChange={setIsDetailExiting}

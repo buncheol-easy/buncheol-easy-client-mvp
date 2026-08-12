@@ -38,6 +38,13 @@ const proxiedImageHosts = new Set([
   "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
 ]);
 
+// 대비색은 이미지 픽셀만으로 정해지니 URL 당 한 번이면 된다. /artists 는 검색어 한 글자마다
+// 카드가 통째로 리마운트돼, 캐시가 없으면 getImageData(GPU→CPU 동기 읽기)가 매번 카드 수만큼 돈다.
+const CONTRAST_COLOR_FALLBACK = "#f1f1f1";
+// 실패(색을 못 구했거나 canvas 가 tainted)도 같이 캐시한다. 실패를 비워 두면 그 이미지만
+// 리마운트마다 getImageData 를 다시 돌아, 이 캐시가 없애려던 비용이 그대로 남는다.
+const contrastColorCache = new Map<string, string>();
+
 function getContrastingColor(image: HTMLImageElement) {
   const canvas = document.createElement("canvas");
   const size = 24;
@@ -113,29 +120,48 @@ function getFallbackInitials(value: string) {
 
 export function ArtistImage({
   imageUrl,
+  loading = "eager",
   name,
   roundedClassName = "rounded-[1.1rem]",
 }: {
   imageUrl: string;
+  // 기본 eager. 한 번에 수백 장이 깔리는 아티스트 그리드에서만 lazy 로 넘긴다.
+  loading?: "eager" | "lazy";
   name: string;
   roundedClassName?: string;
 }) {
-  const [backgroundColor, setBackgroundColor] = useState("#f1f1f1");
+  // 캐시가 있으면 첫 렌더부터 제 색으로 — 리마운트 때 회색 깜빡임이 없다.
+  const [backgroundColor, setBackgroundColor] = useState(
+    () => contrastColorCache.get(imageUrl) ?? CONTRAST_COLOR_FALLBACK,
+  );
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const displayImageUrl = getProxiedImageUrl(imageUrl);
   const didImageFail = failedImageUrl === imageUrl;
 
-  const applyContrastingColor = useCallback((image: HTMLImageElement) => {
-    try {
-      const color = getContrastingColor(image);
+  const applyContrastingColor = useCallback(
+    (image: HTMLImageElement) => {
+      const cachedColor = contrastColorCache.get(imageUrl);
 
-      if (color) {
-        setBackgroundColor(color);
+      if (cachedColor) {
+        setBackgroundColor(cachedColor);
+        return;
       }
-    } catch {
-      setBackgroundColor("#f1f1f1");
-    }
-  }, []);
+
+      try {
+        const color = getContrastingColor(image);
+
+        contrastColorCache.set(imageUrl, color || CONTRAST_COLOR_FALLBACK);
+
+        if (color) {
+          setBackgroundColor(color);
+        }
+      } catch {
+        contrastColorCache.set(imageUrl, CONTRAST_COLOR_FALLBACK);
+        setBackgroundColor(CONTRAST_COLOR_FALLBACK);
+      }
+    },
+    [imageUrl],
+  );
 
   // 서버 렌더 페이지(/artists/[groupId])에서는 하이드레이션 전에 이미지 로딩이 끝나 onLoad 가
   // 영영 발화하지 않는다. 그러면 배경이 초기값(#f1f1f1)에 멈춰 밝은 로고가 묻힌다.
@@ -179,6 +205,8 @@ export function ArtistImage({
         alt={name}
         className="relative h-full w-full object-contain p-2 [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.9))_drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]"
         crossOrigin="anonymous"
+        decoding="async"
+        loading={loading}
         onError={() => setFailedImageUrl(imageUrl)}
         onLoad={(event) => applyContrastingColor(event.currentTarget)}
         ref={handleImageRef}

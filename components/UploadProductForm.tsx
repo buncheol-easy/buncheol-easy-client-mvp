@@ -919,7 +919,9 @@ export function UploadProductForm({
               id: group.id,
               name: group.name,
               label: group.name,
-              aliases: [group.name],
+              // 서버 별칭을 그대로 실어야 한다. 아래 idolResults 가 rankGroupSearchResults 로 한 번 더
+              // 거르기 때문에, 여기서 버리면 별칭으로만 걸린 그룹이 무매치 처리돼 조용히 사라진다.
+              aliases: group.aliases ?? [],
               members: members.map((member) => ({
                 id: member.id,
                 imageUrl: member.imageUrl,
@@ -2791,7 +2793,8 @@ export function UploadProductForm({
                       onChange={(event) =>
                         setIdolQuery(event.currentTarget.value)
                       }
-                      placeholder="아이돌, 그룹, 멤버 검색"
+                      // 그룹명·별칭으로만 매칭한다. 멤버명은 0건이니 문구에 "멤버" 를 넣지 말 것.
+                      placeholder="어떤 그룹의 분철인가요?"
                       value={idolQuery}
                     />
                     <SearchIcon />

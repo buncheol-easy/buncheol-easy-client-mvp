@@ -31,6 +31,7 @@ import {
   type CvsStore,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
+import { PRODUCT_ARTIST_ENTRY_INDEX_KEY } from "@/lib/artist-browse";
 import {
   createLoginHref,
   getCurrentBrowserHref,
@@ -110,7 +111,8 @@ type ProductDetailProps = {
   // 서버 렌더 시각(ms). 카운트다운(deadlineTick 파생 텍스트·기한 판정)의 하이드레이션
   // 첫 렌더를 SSR HTML 과 결정적으로 일치시켜 hydration mismatch 를 막는다.
   initialNowMs?: number;
-  initialReturnSource?: "home" | "bids" | "favorites" | "upload";
+  initialReturnSource?: "home" | "bids" | "favorites" | "upload" | "artist";
+  initialReturnGroupId?: string;
   initialReturnQuery?: string;
   startEntered?: boolean;
   renderShell?: boolean;
@@ -127,7 +129,7 @@ type ProductReturnUnderlayProps = {
   isEntered: boolean;
   isExiting: boolean;
   returnQuery?: string;
-  returnSource?: "home" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload" | "artist";
 };
 
 export function ProductReturnUnderlay({
@@ -136,6 +138,9 @@ export function ProductReturnUnderlay({
   returnQuery,
   returnSource,
 }: ProductReturnUnderlayProps) {
+  // artist 분기는 일부러 없다. 아티스트 화면은 서버에서 받은 group·initialItems 로만 그릴 수
+  // 있어 클라이언트에서 언더레이로 재현할 수 없다. 드래그 중 셸 배경만 보이는 건 감수한 트레이드오프이지
+  // 빠뜨린 게 아니다 — 여기에 홈을 깔면 복귀처가 아닌 화면이 밑에 비친다.
   const shouldRenderHomeUnderlay =
     returnSource === "home" ||
     returnSource === "upload" ||
@@ -194,6 +199,7 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
+const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
@@ -350,6 +356,7 @@ type ProductHistoryState = {
   idx?: unknown;
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
+  [PRODUCT_ARTIST_ENTRY_STATE_KEY]?: unknown;
 };
 
 function OptionAvatar({
@@ -393,6 +400,10 @@ function hasBidHistoryEntryState() {
 
 function hasFavoritesEntryState() {
   return getHistoryState()?.[PRODUCT_FAVORITES_ENTRY_STATE_KEY] === true;
+}
+
+function hasArtistEntryState() {
+  return getHistoryState()?.[PRODUCT_ARTIST_ENTRY_STATE_KEY] === true;
 }
 
 function priceToNumber(price: string) {
@@ -905,6 +916,7 @@ export function ProductDetail({
   product,
   initialNowMs,
   initialReturnSource,
+  initialReturnGroupId,
   initialReturnQuery,
   startEntered = false,
   renderShell = true,
@@ -940,6 +952,7 @@ export function ProductDetail({
   const productImagePointerStartXRef = useRef<number | null>(null);
   const wasProductImageDraggedRef = useRef(false);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
+  const [returnGroupId] = useState<string | undefined>(initialReturnGroupId);
   const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -2730,8 +2743,25 @@ export function ProductDetail({
       return;
     }
 
+    if (initialReturnSource === "artist" && returnGroupId) {
+      // back 이면 히스토리 왕복이 안 생기고 라우터 캐시를 그대로 쓴다. 스크롤·선택 멤버는
+      // back 이 살려주는 게 아니라 ArtistBrowseContent 가 sessionStorage 로 되돌린다
+      // (그 화면은 어느 쪽으로 돌아가든 다시 마운트된다).
+      //
+      // `?from=artist&groupId=` 는 주소창에 노출돼 공유될 수 있어, "앞에 뭔가 있다"(index > 0)만
+      // 보면 남의 링크를 눌러 들어온 세션에서 엉뚱한 화면으로 되돌아간다. bids·favorites 와 같은
+      // 엔트리 마커로 "직전 엔트리가 정말 그 목록인가" 까지 확인한다.
+      if (hasArtistEntryState()) {
+        router.back();
+        return;
+      }
+
+      router.replace(`/artists/${encodeURIComponent(returnGroupId)}`);
+      return;
+    }
+
     router.replace("/");
-  }, [backHref, initialReturnSource, returnQuery, router]);
+  }, [backHref, initialReturnSource, returnGroupId, returnQuery, router]);
 
   useEffect(() => {
     const enterAnimationFrame = window.requestAnimationFrame(() => {
@@ -2756,8 +2786,12 @@ export function ProductDetail({
     const expectedFavoritesEntryIndex = window.sessionStorage.getItem(
       PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
     );
+    const expectedArtistEntryIndex = window.sessionStorage.getItem(
+      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
+    );
     window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
     window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
+    window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
 
     if (
       initialReturnSource === "bids" &&
@@ -2787,6 +2821,19 @@ export function ProductDetail({
       );
     }
 
+    if (
+      initialReturnSource === "artist" &&
+      historyIndex !== null &&
+      expectedArtistEntryIndex === String(historyIndex)
+    ) {
+      window.history.replaceState(
+        {
+          ...(getHistoryState() ?? {}),
+          [PRODUCT_ARTIST_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
   }, [initialReturnSource]);
 
   useEffect(() => {

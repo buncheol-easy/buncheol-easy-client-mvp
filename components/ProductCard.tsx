@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
 import {
+  getArtistRestoreIndexKey,
+  getArtistScrollTopKey,
+  getArtistSelectedMemberKey,
+  isGroupIdShape,
+  PRODUCT_ARTIST_ENTRY_INDEX_KEY,
+} from "@/lib/artist-browse";
+import {
   addBuncheolBookmark,
   removeBuncheolBookmark,
 } from "@/lib/auth-api";
@@ -323,6 +330,43 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     );
   }
 
+  function rememberArtistProductEntry() {
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
+      String(historyIndex + 1),
+    );
+  }
+
+  // 스크롤과 멤버 필터는 한 쌍이다. 스크롤만 저장하면 복귀 시 "전체" 목록 위에 멤버 목록의
+  // 오프셋이 얹혀, 있지도 않은 위치로 튄다. 히스토리 인덱스까지 같이 저장해야 복원 쪽이
+  // "돌아온 마운트" 와 "새로 연 마운트" 를 가릴 수 있다.
+  function rememberArtistListState(
+    scrollContainer: HTMLElement,
+    groupId: string,
+  ) {
+    const historyIndex = getHistoryIndex();
+
+    window.sessionStorage.setItem(
+      getArtistScrollTopKey(groupId),
+      String(scrollContainer.scrollTop),
+    );
+    window.sessionStorage.setItem(
+      getArtistSelectedMemberKey(groupId),
+      scrollContainer.dataset.artistMemberId ?? "",
+    );
+    window.sessionStorage.setItem(
+      getArtistRestoreIndexKey(groupId),
+      historyIndex === null ? "" : String(historyIndex),
+    );
+  }
+
   function rememberProductListScrollPosition(
     event: React.MouseEvent<HTMLAnchorElement>,
     storageKey: string,
@@ -417,6 +461,30 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       rememberProductListScrollPosition(event, HOME_SCROLL_TOP_KEY);
       router.push(`/products/${productId}?from=home`);
       return;
+    }
+
+    // 그룹마다 경로가 달라 from 만으로는 복귀처를 못 정한다. 이 표기가 빠지면 상세의
+    // 뒤로가기 버튼이 어느 분기에도 안 걸려 홈으로 떨어진다(스와이프는 멀쩡해 눈치채기 어렵다).
+    if (pathname.startsWith("/artists/") && isPlainPrimaryClick(event)) {
+      const scrollContainer = event.currentTarget.closest<HTMLElement>(
+        "[data-product-scroll-container]",
+      );
+      // 서버가 준 group.id 를 우선한다. 주소창 조각은 표기가 달라도(`/artists/007`, 트레일링
+      // 슬래시) 그대로 실려, 복원 키가 어긋나고 isGroupIdShape 도 통과하지 못해 이번에 고친
+      // "뒤로가기가 홈으로" 가 그대로 재발한다. 형태가 어긋나면 아예 표기를 싣지 않는다.
+      const groupId =
+        scrollContainer?.dataset.artistGroupId ||
+        pathname.slice("/artists/".length);
+
+      if (scrollContainer && isGroupIdShape(groupId)) {
+        event.preventDefault();
+        rememberArtistListState(scrollContainer, groupId);
+        rememberArtistProductEntry();
+        router.push(
+          `/products/${productId}?from=artist&groupId=${encodeURIComponent(groupId)}`,
+        );
+        return;
+      }
     }
 
     if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
