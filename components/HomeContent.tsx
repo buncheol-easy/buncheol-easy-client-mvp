@@ -22,6 +22,7 @@ import {
   BidIcon,
   ClipboardListIcon,
   CloseIcon,
+  PlusIcon,
   SearchIcon,
 } from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
@@ -36,7 +37,6 @@ import {
   requestBanners,
   requestBuncheols,
   requestFavoriteGroups,
-  requestPopularGroups,
   toProductCardItem,
   type ApiBanner,
 } from "@/lib/auth-api";
@@ -360,9 +360,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
   const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
-  const [apiPopularGroups, setApiPopularGroups] = useState<
-    ArtistRailItem[] | null
-  >(null);
   const [groupMessage, setGroupMessage] = useState("");
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -419,11 +416,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldRevealListings] = useState(() => listingsQuery.isPending);
 
   const isListingLoading = listingsQuery.data === undefined;
-  // 레일에 실제로 쓰이는 소스만 기다린다. 최애 조회 effect 는 favoriteArtists 가 꺼져 있으면
-  // 아예 실행되지 않아 apiGroups 가 계속 null 이므로, 그걸 기다리면 스켈레톤에서 벗어나지 못한다.
+  // 최애 조회 effect 는 favoriteArtists 가 꺼져 있거나 비로그인이면 실행되지 않아 apiGroups 가
+  // 계속 null 이다. 그 상태를 기다리면 스켈레톤에서 벗어나지 못하므로 노출 조건과 함께 판정한다.
   const isGroupLoading =
-    (FEATURES.favoriteArtists && apiGroups === null) ||
-    (FEATURES.artistBrowse && apiPopularGroups === null);
+    FEATURES.favoriteArtists && authState.isLoggedIn && apiGroups === null;
   const banners =
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
@@ -436,26 +432,16 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         : "분철 목록을 불러오지 못했어요."
       : "";
   const favoriteGroups = apiGroups ?? [];
-  const popularGroups = apiPopularGroups ?? [];
-  // 최애를 앞에 두고 인기 그룹을 이어 붙인다. 최애만 남기면 등록한 순간 새 그룹을 발견할 길이
-  // 막히고, 인기만 쓰면 내 최애가 뒤로 밀린다.
-  const railGroups = FEATURES.favoriteArtists
-    ? [
-        ...favoriteGroups,
-        ...popularGroups.filter(
-          (group) =>
-            !favoriteGroups.some((favorite) => favorite.id === group.id),
-        ),
-      ]
-    : popularGroups;
-  const isArtistRailVisible = FEATURES.artistBrowse || FEATURES.favoriteArtists;
+  // 레일은 내가 등록한 최애만 보여준다. 관심 없는 그룹 로고로 채우면 소음이 되고,
+  // 새 그룹 탐색은 레일 앞의 "최애 추가"(→ /artists) 가 담당한다.
+  const railGroups = favoriteGroups.filter((group) => group.favorited !== false);
+  // 최애는 로그인 사용자에게만 존재하므로 비로그인에는 레일 자체를 노출하지 않는다.
+  const isArtistRailVisible = FEATURES.favoriteArtists && authState.isLoggedIn;
   // 최애 섹션은 로그인 + 최애 등록이 전제다. 최애가 0개면 섹션을 아예 숨겨(레일의 "최애 추가"가
   // 유도 자리를 대신한다), 최애는 있는데 분철만 없을 때 안내 문구를 보여준다.
-  // 최애 해제 시 레일에서 항목을 빼지 않고 favorited 만 내리므로(되돌리기 쉽게), 섹션 노출은
-  // 실제로 최애인 항목 수로 판정한다. 그러지 않으면 전부 해제해도 섹션이 남는다.
-  const favoritedGroupCount = favoriteGroups.filter(
-    (group) => group.favorited !== false,
-  ).length;
+  // 최애 해제 시 레일에서 항목을 빼지 않고 favorited 만 내리므로(되돌리기 쉽게), 개수 판정은
+  // 실제로 최애인 항목만 센다. 그러지 않으면 전부 해제해도 섹션이 남는다.
+  const favoritedGroupCount = railGroups.length;
   const isFavoriteSectionVisible =
     FEATURES.favoriteArtists && authState.isLoggedIn && favoritedGroupCount > 0;
   const favoriteListings = favoriteListingsQuery.data ?? [];
@@ -744,32 +730,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     };
   }, [authState.accessToken, authState.isLoggedIn]);
 
-  // 인기 그룹은 공개 API 라 비로그인에서도 레일을 채울 수 있다. 로그인 상태와 무관하므로
-  // 최애 조회와 분리해 한 번만 부른다.
-  useEffect(() => {
-    if (!FEATURES.artistBrowse) {
-      return;
-    }
-
-    let isActive = true;
-
-    requestPopularGroups({ fallbackToAllGroups: false })
-      .then((groups) => {
-        if (isActive) {
-          setApiPopularGroups(groups.map(toArtistRailItem));
-        }
-      })
-      .catch(() => {
-        if (isActive) {
-          setApiPopularGroups([]);
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
   function openArtistPage(item: ArtistRailItem) {
     if (scrollContainerRef.current) {
       window.sessionStorage.setItem(
@@ -995,20 +955,34 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               {isGroupLoading ? (
                 <HomeArtistRailSkeleton />
               ) : railGroups.length > 0 ? (
-              <ArtistRail
-                items={railGroups}
-                leadingItem={
-                  FEATURES.favoriteArtists
-                    ? { label: "최애 추가", icon: "plus" }
-                    : undefined
-                }
-                onFavoriteToggle={
-                  FEATURES.favoriteArtists ? handleFavoriteGroupToggle : undefined
-                }
-                onItemClick={openArtistPage}
-                onLeadingClick={() => openGroupSearch()}
-              />
-              ) : null}
+                <ArtistRail
+                  items={railGroups}
+                  leadingItem={{ label: "최애 추가", icon: "plus" }}
+                  onFavoriteToggle={handleFavoriteGroupToggle}
+                  onItemClick={openArtistPage}
+                  onLeadingClick={() => openGroupSearch()}
+                />
+              ) : (
+                /* 최애가 없으면 레일을 비워 두는 대신 등록 진입점만 남긴다.
+                   그냥 감추면 최애 기능이 있다는 것 자체를 알 수 없다. */
+                <button
+                  className="motion-card flex w-full items-center gap-3 rounded-[1.1rem] bg-[#f7f7f7] px-4 py-4 text-left"
+                  onClick={() => openGroupSearch()}
+                  type="button"
+                >
+                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/8 bg-white text-black/55 shadow-[0_6px_18px_rgba(0,0,0,0.06)]">
+                    <PlusIcon />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-semibold tracking-[-0.04em]">
+                      최애 아티스트를 등록해보세요
+                    </span>
+                    <span className="mt-0.5 block text-[12.5px] font-medium text-black/45">
+                      등록하면 최애 분철을 홈에서 먼저 볼 수 있어요.
+                    </span>
+                  </span>
+                </button>
+              )}
               </div>
 
               {groupMessage ? (

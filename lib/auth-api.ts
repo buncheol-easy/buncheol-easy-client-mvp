@@ -5428,16 +5428,7 @@ export async function requestGroups(keyword = ""): Promise<ApiGroup[]> {
     .filter((group): group is ApiGroup => group !== null);
 }
 
-/**
- * 최근 분철 개설 수 기준 인기 그룹. 서버가 빈 배열을 주면 기본적으로 전체 그룹으로 폴백한다
- * (검색 화면의 "인기 아티스트" 목록이 비어 보이지 않게 하기 위한 기존 동작).
- *
- * 홈 아티스트 레일처럼 **분철이 있는 그룹만** 보여야 하는 곳은 `fallbackToAllGroups: false` 로 끈다 —
- * 폴백이 걸리면 분철이 하나도 없는 그룹 수백 개가 알파벳순으로 노출된다.
- */
-export async function requestPopularGroups(
-  { fallbackToAllGroups }: { fallbackToAllGroups?: boolean } = {},
-): Promise<ApiGroup[]> {
+export async function requestPopularGroups(): Promise<ApiGroup[]> {
   const response = await fetch(`${getVersionedApiBaseUrl()}/groups/popular`, {
     credentials: "omit",
     method: "GET",
@@ -5452,11 +5443,7 @@ export async function requestPopularGroups(
     .map(getApiGroupFromRecord)
     .filter((group): group is ApiGroup => group !== null);
 
-  if (groups.length > 0 || fallbackToAllGroups === false) {
-    return groups;
-  }
-
-  return requestGroups("");
+  return groups.length > 0 ? groups : requestGroups("");
 }
 
 export async function requestGroupsByMemberKeyword(
