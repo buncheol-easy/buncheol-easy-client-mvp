@@ -1053,13 +1053,13 @@ const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress
                 <p className="text-[11px] font-medium text-black/35">
                   입금 대기
                 </p>
-                <p className="mt-1 text-[15px] font-semibold">1명</p>
+                <p className="mt-1 text-[15px] font-semibold">0명</p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
                   보냈어요
                 </p>
-                <p className="mt-1 text-[15px] font-semibold">1명</p>
+                <p className="mt-1 text-[15px] font-semibold">0명</p>
               </div>
             </div>
           </div>
@@ -1074,11 +1074,13 @@ const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress
               기한 8월 14일 17시
             </span>
           </div>
+          {/* 부분 확정 버튼은 미입금이 0일 때만 뜬다(HostedBuncheolManage). 목업이 그 조건을
+              어기면 "미입금이 남아도 누를 수 있는 버튼"으로 잘못 배우게 되므로 집계를 맞춘다. */}
           <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-            입금 확인 4명 · 입금 대기 1명 · 보냈어요 1명
+            입금 확인 6명 · 입금 대기 0명 · 보냈어요 0명
           </p>
           <div className="intro-confirm-pulse mt-3 flex h-12 items-center justify-center rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F]">
-            입금 수집 종료 · 진행 확정
+            입금한 6명으로 진행 확정
           </div>
         </section>
 
@@ -1087,9 +1089,9 @@ const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress
             <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
               참여자 관리
             </h2>
+            {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다. */}
             <p className="mt-1 text-[13px] font-medium text-black/40">
-              입금자명과 통장 내역을 대조해 입금을 확인해요. 내역이 없으면
-              반려로 재확인을 요청할 수 있어요.
+              {"참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조하고, 입금이 확인되지 않으면 '입금 못 찾음'으로 재확인을 요청할 수 있어요."}
             </p>
           </div>
 
