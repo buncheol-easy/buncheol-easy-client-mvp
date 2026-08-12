@@ -253,6 +253,11 @@ export type InboxMessagesParams = {
 };
 
 export type ApiGroup = {
+  /**
+   * 그룹의 대체 표기(한글/영문 표기·팬덤 축약어). 서버는 이름뿐 아니라 별칭으로도 매칭해 내려주므로,
+   * `rankGroupSearchResults` 가 이 값을 함께 봐야 별칭으로 걸린 그룹을 랭킹에서 탈락시키지 않는다.
+   */
+  aliases?: string[];
   favorited?: boolean;
   id: string;
   imageUrl?: string;
@@ -761,6 +766,23 @@ function getOptionalStringValue(body: Record<string, unknown>, keys: string[]) {
   const value = getStringValue(body, keys).trim();
 
   return value.length > 0 ? value : undefined;
+}
+
+function getStringArrayValue(body: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = body[key];
+
+    if (!Array.isArray(value)) {
+      continue;
+    }
+
+    return value
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 const participationDeliveryIdKeys = [
@@ -5324,6 +5346,7 @@ function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null
   return {
     id,
     name,
+    aliases: getStringArrayValue(groupRecord, ["aliases", "alias"]),
     favorited:
       getBooleanValue(record, [
         "favorited",
