@@ -440,6 +440,9 @@ export function HostedBuncheolManage({
   ).length;
   // 부분 확정은 미입금 활성 참여(입금 대기·보냈어요)가 0일 때만 가능하다 (docs/46 §4.7-E1).
   const c2cUnpaidActiveCount = c2cAwaitingCount + c2cPaymentSentCount;
+  // 서버 CAS(confirmIfAllCollected)와 같은 조건 — 이때만 부분 확정 버튼을 노출한다 (docs/56 H-12).
+  const canFinalizeCollected =
+    c2cUnpaidActiveCount === 0 && c2cConfirmedCount > 0;
   // 서버가 참여자를 최상위 participants 로만 내려주는 응답 대비 — 옵션 중첩분과 머지한다.
   const c2cParticipantsByOptionId = getParticipantsByOptionId(
     activeC2CParticipants,
@@ -642,12 +645,13 @@ export function HostedBuncheolManage({
 
     setConfirmSheetRequest({
       confirmLabel: "진행 확정",
-      description: "입금 확인된 참여만으로 진행돼요.",
+      description:
+        "입금하지 않은 참여는 빠지고, 입금이 확인된 참여만으로 분철을 진행해요. 확정 후에는 참여를 더 받을 수 없어요.",
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runFinalizeCollected();
       },
-      title: "입금 확인을 마치고 진행을 확정할까요?",
+      title: `입금한 ${c2cConfirmedCount}명으로 진행할까요?`,
     });
   }
 
@@ -830,16 +834,24 @@ export function HostedBuncheolManage({
     }
   }
 
+  // ⚠️ 높이는 100dvh 가 아니라 h-full 이어야 한다. 이 화면은 HostedBuncheolManageExperience 의
+  // .product-page-panel(absolute inset-0) 안에서 렌더되는데, 데스크톱에서는 바깥 셸이 앱을 폰
+  // 프레임에 담아 그 높이를 min(840px, 100dvh - clamp(96px,12vh,148px), …) 로 줄인다
+  // (app/globals.css 의 desktop-web-shell 블록). 100dvh 를 쓰면 패널보다 내부가 커져
+  // ① 참여자 리스트 끝이 프레임 밖으로 잘려 스크롤해도 못 보고(docs/56 H-01)
+  // ② 패널 자체가 스크롤 가능해져, 데스크톱에서 fixed → absolute 로 바뀌는 확인 시트가
+  //    스크롤된 패널 원점 기준으로 화면 밖에 그려진다(docs/56 H-10).
+  // 모바일에서는 100dvh 와 패널 높이가 같아 두 증상 모두 나타나지 않았다.
   if (!detail) {
     return (
-      <main className="system-chrome-white system-chrome-bottom-white flex h-[100dvh] items-center justify-center bg-white px-6 text-center">
+      <main className="system-chrome-white system-chrome-bottom-white flex h-full items-center justify-center bg-white px-6 text-center">
         <p className="text-[15px] font-semibold text-black/45">{message}</p>
       </main>
     );
   }
 
   return (
-    <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] bg-white">
+    <main className="system-chrome-white system-chrome-bottom-white h-full bg-white">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <header className="shrink-0 px-5 pb-3 pt-4">
           <div className="flex items-center gap-3">
@@ -1037,30 +1049,38 @@ export function HostedBuncheolManage({
                 입금 확인 {c2cConfirmedCount}명 · 입금 대기 {c2cAwaitingCount}명
                 · 보냈어요 {c2cPaymentSentCount}명
               </p>
-              <button
-                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
-                disabled={
-                  c2cUnpaidActiveCount > 0 ||
-                  c2cConfirmedCount === 0 ||
-                  pendingC2CAction !== null
-                }
-                onClick={requestFinalizeCollected}
-                type="button"
-              >
-                {pendingC2CAction === "finalize-collected"
-                  ? "확정하는 중"
-                  : "입금 확인 마치고 진행 확정"}
-              </button>
-              {c2cUnpaidActiveCount > 0 ? (
+              {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를
+                  통과한다. 전원 입금이면 입금확인 경로에서 자동으로 CONFIRMED 가 되므로, 이 버튼이 실제로
+                  필요한 것은 "입금 안 한 참여가 취소·기한만료로 정리된" 경우뿐이다. 누를 수 없는 동안에도
+                  계속 보여서 개최자가 용도를 되묻게 됐으므로(docs/56 H-12) 조건이 맞을 때만 노출한다. */}
+              {canFinalizeCollected ? (
+                <>
+                  <button
+                    className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
+                    disabled={pendingC2CAction !== null}
+                    onClick={requestFinalizeCollected}
+                    type="button"
+                  >
+                    {pendingC2CAction === "finalize-collected"
+                      ? "확정하는 중"
+                      : `입금 안 한 참여 빼고 ${c2cConfirmedCount}명으로 진행`}
+                  </button>
+                  <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                    입금하지 않은 참여는 모두 정리됐어요. 확정하면 입금한{" "}
+                    {c2cConfirmedCount}명으로 분철을 진행해요.
+                  </p>
+                </>
+              ) : c2cUnpaidActiveCount > 0 ? (
                 <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                  입금을 확인하거나, 기한이 지나 자동 취소되면 종료할 수 있어요.
+                  입금을 확인하거나, 기한이 지나 자동 취소되면 입금한 사람만으로
+                  진행을 확정할 수 있어요.
                 </p>
-              ) : c2cConfirmedCount === 0 ? (
+              ) : (
                 <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
                   입금 확인된 참여가 아직 없어요. 최소 1명을 확인해야 진행을
                   확정할 수 있어요.
                 </p>
-              ) : null}
+              )}
             </section>
           ) : null}
 
@@ -1071,7 +1091,7 @@ export function HostedBuncheolManage({
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/40">
                 {isC2C
-                  ? "입금자명과 통장 내역을 대조해 입금을 확인해요. 내역이 없으면 반려로 재확인을 요청할 수 있어요."
+                  ? "참여자가 '보냈어요'를 누르면 여기에 표시돼요. 입금자명으로 통장 내역을 대조하고, 입금이 확인되지 않으면 '입금 못 찾음'으로 재확인을 요청할 수 있어요."
                   : "멤버마다 입금 확인 → 운송장 등록 순서로 처리해요."}
               </p>
             </div>

@@ -1077,8 +1077,10 @@ const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress
           <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
             입금 확인 4명 · 입금 대기 1명 · 보냈어요 1명
           </p>
+          {/* 소개용 정지 목업이라 실제 화면의 노출 조건(미입금 0 + 확정 1건 이상)까지는 따르지
+              않는다. 라벨만 HostedBuncheolManage 의 부분 확정 버튼과 맞춘다 (docs/56 H-12). */}
           <div className="intro-confirm-pulse mt-3 flex h-12 items-center justify-center rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F]">
-            입금 수집 종료 · 진행 확정
+            입금 안 한 참여 빼고 진행
           </div>
         </section>
 
@@ -1087,9 +1089,9 @@ const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress
             <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
               참여자 관리
             </h2>
+            {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다. */}
             <p className="mt-1 text-[13px] font-medium text-black/40">
-              입금자명과 통장 내역을 대조해 입금을 확인해요. 내역이 없으면
-              반려로 재확인을 요청할 수 있어요.
+              {"참여자가 '보냈어요'를 누르면 여기에 표시돼요. 입금자명으로 통장 내역을 대조하고, 입금이 확인되지 않으면 '입금 못 찾음'으로 재확인을 요청할 수 있어요."}
             </p>
           </div>
 
