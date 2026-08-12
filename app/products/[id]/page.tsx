@@ -4,6 +4,7 @@ import { cache } from "react";
 import { ApiProductDetail } from "@/components/ApiProductDetail";
 import { JsonLd } from "@/components/JsonLd";
 import { UploadedProductDetail } from "@/components/UploadedProductDetail";
+import { isGroupIdShape } from "@/lib/artist-browse";
 import {
   ApiRequestError,
   requestBuncheolDetail,
@@ -116,7 +117,13 @@ export default async function ProductDetailPage({
   const returnSource = getFirstSearchParam(from);
   const isHostedView = getFirstSearchParam(hosted) === "true";
   const returnQuery = getFirstSearchParam(q);
-  const returnGroupId = getFirstSearchParam(groupId);
+  // 주소창에 그대로 노출되는 값이라 손으로 고친 링크가 들어온다. 형태를 여기서 걸러야
+  // 뒤로가기가 `/artists/abc` → 404 로 떨어지지 않고 홈 폴백으로 안전하게 흡수된다.
+  const rawReturnGroupId = getFirstSearchParam(groupId);
+  const returnGroupId =
+    rawReturnGroupId && isGroupIdShape(rawReturnGroupId)
+      ? rawReturnGroupId
+      : undefined;
 
   if (id.startsWith("uploaded-")) {
     return (

@@ -444,63 +444,63 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           /* 0건일 때도 그리드를 유지한다. 빈 상태와 삼항으로 가르면 0건 ↔ N건을 오갈 때마다
              카드 전부가 remount 되고 content-reveal 이 재생된다. */
           <>
-          <div className="content-reveal grid grid-cols-2 gap-3">
-            {visibleGroups.map((group) => {
-              const isPending = pendingGroupId === group.id;
-              const isFavoriteLimitReached =
-                favoriteCount >= FAVORITE_GROUP_LIMIT && !group.favorited;
+            <div className="content-reveal grid grid-cols-2 gap-3">
+              {visibleGroups.map((group) => {
+                const isPending = pendingGroupId === group.id;
+                const isFavoriteLimitReached =
+                  favoriteCount >= FAVORITE_GROUP_LIMIT && !group.favorited;
 
-              return (
-                <article
-                  className="artist-card rounded-[1.2rem] border border-black/10 bg-white p-4"
-                  key={group.id}
-                >
-                  <div className="flex justify-center">
-                    <ArtistAvatar group={group} loading="lazy" />
-                  </div>
-                  <div
-                    className={`-mx-1 mt-4 flex min-h-[3rem] items-center gap-1.5 rounded-[1rem] py-1 pl-3 pr-1 ${
-                      group.favorited ? "bg-[#f6f6f6]" : "bg-white"
-                    }`}
+                return (
+                  <article
+                    className="artist-card rounded-[1.2rem] border border-black/10 bg-white p-4"
+                    key={group.id}
                   >
-                    {/* break-keep 만 두면 공백 없는 긴 이름("BABYMONSTER")이 어디서도 안 끊겨
-                        하트 밑으로 잘린다. 이름 자리는 76~111px 뿐이라 한 줄로는 애초에 못 담는다. */}
-                    <h2 className="line-clamp-2 min-w-0 flex-1 break-keep wrap-anywhere text-[16px] font-semibold leading-tight tracking-[-0.04em]">
-                      {group.name}
-                    </h2>
-                    <button
-                      aria-label={group.favorited ? "최애 해제" : "최애 추가"}
-                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold transition-transform active:scale-95 ${
-                        group.favorited
-                          ? "bg-like/10 text-like ring-1 ring-like/25"
-                          : "border border-black/10 bg-white text-black/45"
-                      } ${
-                        isFavoriteLimitReached
-                          ? "bg-[#f4f4f4] text-black/25 shadow-none"
-                          : ""
+                    <div className="flex justify-center">
+                      <ArtistAvatar group={group} loading="lazy" />
+                    </div>
+                    <div
+                      className={`-mx-1 mt-4 flex min-h-[3rem] items-center gap-1.5 rounded-[1rem] py-1 pl-3 pr-1 ${
+                        group.favorited ? "bg-[#f6f6f6]" : "bg-white"
                       }`}
-                      /* 한도에 걸린 하트도 눌리게 둔다 — 비활성이면 왜 안 되는지 알릴 방법이 없다. */
-                      disabled={isPending}
-                      onClick={() => handleFavoriteToggle(group)}
-                      type="button"
                     >
-                      <HeartIcon
-                        className="h-[18px] w-[18px]"
-                        filled={group.favorited}
-                      />
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-          {visibleGroups.length === 0 ? (
-            <div className="rounded-[1.2rem] bg-[#f7f7f7] px-4 py-8 text-center">
-              <p className="text-[15px] font-semibold text-black/45">
-                검색 결과가 없어요.
-              </p>
+                      {/* break-keep 만 두면 공백 없는 긴 이름("BABYMONSTER")이 어디서도 안 끊겨
+                          하트 밑으로 잘린다. 이름 자리는 76~111px 뿐이라 한 줄로는 애초에 못 담는다. */}
+                      <h2 className="line-clamp-2 min-w-0 flex-1 break-keep wrap-anywhere text-[16px] font-semibold leading-tight tracking-[-0.04em]">
+                        {group.name}
+                      </h2>
+                      <button
+                        aria-label={group.favorited ? "최애 해제" : "최애 추가"}
+                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold transition-transform active:scale-95 ${
+                          group.favorited
+                            ? "bg-like/10 text-like ring-1 ring-like/25"
+                            : "border border-black/10 bg-white text-black/45"
+                        } ${
+                          isFavoriteLimitReached
+                            ? "bg-[#f4f4f4] text-black/25 shadow-none"
+                            : ""
+                        }`}
+                        /* 한도에 걸린 하트도 눌리게 둔다 — 비활성이면 왜 안 되는지 알릴 방법이 없다. */
+                        disabled={isPending}
+                        onClick={() => handleFavoriteToggle(group)}
+                        type="button"
+                      >
+                        <HeartIcon
+                          className="h-[18px] w-[18px]"
+                          filled={group.favorited}
+                        />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-          ) : null}
+            {visibleGroups.length === 0 ? (
+              <div className="rounded-[1.2rem] bg-[#f7f7f7] px-4 py-8 text-center">
+                <p className="text-[15px] font-semibold text-black/45">
+                  검색 결과가 없어요.
+                </p>
+              </div>
+            ) : null}
           </>
         )}
         <div className="-mx-4 -mb-6 mt-auto pt-6">

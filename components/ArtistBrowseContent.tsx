@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { BackIcon, CheckIcon } from "@/components/icons";
+import { BackIcon, CheckIcon, UsersRoundIcon } from "@/components/icons";
+import {
+  getArtistScrollTopKey,
+  getArtistSelectedMemberKey,
+} from "@/lib/artist-browse";
 import { getHistoryIndex } from "@/lib/history-index";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
@@ -26,12 +30,11 @@ type ArtistBrowseContentProps = {
   initialItems: ProductCardItem[];
 };
 
-// 스크롤 저장/복원은 아직 없다. ProductCard 의 목록 복귀 계약(`?from=...`)에 이 화면이 연결되지 않아
-// 저장해도 읽는 쪽이 없었고, 배선만 남기면 동작하는 것처럼 보여 더 위험하다.
 // 서버 렌더 초기 목록과 같은 크기로 맞춰, 멤버 선택 전후 목록 길이 기준이 어긋나지 않게 한다.
 const ARTIST_PAGE_SIZE = 30;
 
 // 5열 × 2행 - "전체" 칸 = 멤버 9명. 전체 그룹의 97%가 9명 이하라 대부분 접힘 없이 다 보인다.
+// 바꾸면 아래 `grid-cols-5` 도 같이 고칠 것 — Tailwind 가 리터럴을 요구해 상수를 못 끼운다.
 const MEMBER_GRID_COLUMNS = 5;
 const MEMBER_GRID_COLLAPSED_ROWS = 2;
 const COLLAPSED_MEMBER_LIMIT = MEMBER_GRID_COLUMNS * MEMBER_GRID_COLLAPSED_ROWS - 1;
@@ -79,13 +82,53 @@ function MemberFace({
   );
 }
 
+/**
+ * 접힌 그리드는 앞에서부터 자르되, 선택된 멤버가 잘려 나가면 마지막 칸을 그 멤버에게 내준다.
+ * 그냥 자르면 목록은 그 멤버로 걸러져 있는데 그리드엔 선택 표시가 없고 "전체" 도 꺼진 상태가 돼,
+ * 보이는 UI 와 실제 필터가 어긋난다(더보기 → 뒷줄 멤버 선택 → 접기로 재현된다).
+ */
+function getVisibleMembers(
+  members: ApiGroupDetail["members"],
+  isCollapsed: boolean,
+  selectedMemberId: string | null,
+) {
+  if (!isCollapsed) {
+    return members;
+  }
+
+  const collapsedMembers = members.slice(0, COLLAPSED_MEMBER_LIMIT);
+
+  if (
+    selectedMemberId === null ||
+    collapsedMembers.some((member) => member.id === selectedMemberId)
+  ) {
+    return collapsedMembers;
+  }
+
+  const selectedMember = members.find(
+    (member) => member.id === selectedMemberId,
+  );
+
+  if (!selectedMember) {
+    return collapsedMembers;
+  }
+
+  return [
+    ...collapsedMembers.slice(0, COLLAPSED_MEMBER_LIMIT - 1),
+    selectedMember,
+  ];
+}
+
 export function ArtistBrowseContent({
   group,
   initialItems,
 }: ArtistBrowseContentProps) {
   const router = useRouter();
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isMemberListExpanded, setIsMemberListExpanded] = useState(false);
+  const [didRestoreSelectedMember, setDidRestoreSelectedMember] =
+    useState(false);
 
   const hiddenMemberCount = Math.max(
     group.members.length - COLLAPSED_MEMBER_LIMIT,
@@ -93,10 +136,11 @@ export function ArtistBrowseContent({
   );
   const isMemberListCollapsible =
     hiddenMemberCount >= MIN_HIDDEN_MEMBERS_TO_COLLAPSE;
-  const visibleMembers =
-    isMemberListCollapsible && !isMemberListExpanded
-      ? group.members.slice(0, COLLAPSED_MEMBER_LIMIT)
-      : group.members;
+  const visibleMembers = getVisibleMembers(
+    group.members,
+    isMemberListCollapsible && !isMemberListExpanded,
+    selectedMemberId,
+  );
 
   // 멤버 칩은 서버가 내려준 첫 페이지를 클라이언트에서 거르는 대신 재조회한다.
   // 초기 목록에는 size 상한이 걸려 있어, 해당 멤버 분철이 첫 페이지 밖에 있으면
@@ -129,6 +173,59 @@ export function ArtistBrowseContent({
         ? memberListingsQuery.error.message
         : "분철을 불러오지 못했어요."
       : "";
+
+  // 상세에서 돌아오면 이 화면은 통째로 다시 마운트된다(App Router 는 클라이언트 상태를 안 들고 있고,
+  // 스크롤러도 문서가 아니라 아래 div 라 브라우저 복원이 안 걸린다). 그래서 홈·최애·검색과 같은
+  // 방식으로 sessionStorage 에 직접 저장/복원한다.
+  //
+  // 복원을 useState 초기값으로 읽으면 서버가 그린 "전체" 목록과 첫 클라 렌더가 어긋나
+  // hydration mismatch 가 난다. 하이드레이션 이후에, 다만 페인트 전에 되돌린다 —
+  // rAF 로 미루면 "전체" 목록이 한 프레임 비쳤다가 바뀐다. (HomeContent 스크롤 복원과 같은 이유)
+  useLayoutEffect(() => {
+    const selectedMemberKey = getArtistSelectedMemberKey(group.id);
+    const storedMemberId = window.sessionStorage.getItem(selectedMemberKey);
+    window.sessionStorage.removeItem(selectedMemberKey);
+
+    /* eslint-disable react-hooks/set-state-in-effect -- 페인트 전 동기 상태 확정이 목적 */
+    if (
+      storedMemberId &&
+      group.members.some((member) => member.id === storedMemberId)
+    ) {
+      setSelectedMemberId(storedMemberId);
+    }
+
+    setDidRestoreSelectedMember(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [group.id, group.members]);
+
+  useLayoutEffect(() => {
+    // 멤버 복원 판정 전이거나 그 멤버 목록이 아직 안 왔으면, 지금 복원해 봐야 짧은 화면에
+    // 잘린 오프셋만 남는다. 목록이 자리를 잡은 뒤 한 번만 되돌린다.
+    if (!didRestoreSelectedMember || isLoading) {
+      return;
+    }
+
+    const scrollTopKey = getArtistScrollTopKey(group.id);
+    const storedScrollTop = window.sessionStorage.getItem(scrollTopKey);
+
+    if (!storedScrollTop || !scrollContainerRef.current) {
+      return;
+    }
+
+    window.sessionStorage.removeItem(scrollTopKey);
+
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (!scrollContainerRef.current) {
+        return;
+      }
+
+      scrollContainerRef.current.scrollTop = Number(storedScrollTop);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(restoreFrame);
+    };
+  }, [didRestoreSelectedMember, group.id, isLoading, items.length]);
 
   function handleBack() {
     // 레포 컨벤션(PolicyPageContent·BoardExperience)과 동일 — 앱 내부에서 들어왔으면 되돌아가고,
@@ -164,8 +261,13 @@ export function ArtistBrowseContent({
         </h1>
       </header>
 
+      {/* ProductCard 가 카드 클릭 시점에 이 컨테이너의 scrollTop 과 현재 멤버 필터를 저장한다.
+          data-artist-member-id 가 빠지면 스크롤만 복원돼 "전체" 목록 위에 다른 목록의 오프셋이 얹힌다. */}
       <div
         className="min-h-0 flex-1 overflow-y-auto"
+        data-artist-member-id={selectedMemberId ?? ""}
+        data-product-scroll-container="artist"
+        ref={scrollContainerRef}
       >
         <section className="flex items-center gap-4 px-4 pb-5 pt-5">
           <span
@@ -217,10 +319,12 @@ export function ArtistBrowseContent({
                         : "bg-white text-black/55 ring-1 ring-black/10"
                     }`}
                   >
-                    전체
+                    {/* 원 안까지 "전체" 를 쓰면 바로 밑 캡션과 같은 글자가 두 번 보인다.
+                        캡션은 멤버 칸과 줄을 맞춰야 해 남기고, 원 안만 아이콘으로 가른다. */}
+                    <UsersRoundIcon className="h-[18px] w-[18px]" />
                   </span>
                   <span
-                    className={`break-keep wrap-anywhere text-center text-[11.5px] leading-tight tracking-[-0.04em] ${
+                    className={`line-clamp-2 break-keep wrap-anywhere text-center text-[11.5px] leading-tight tracking-[-0.04em] ${
                       selectedMemberId === null
                         ? "font-bold text-black"
                         : "font-semibold text-black/50"
@@ -259,15 +363,19 @@ export function ArtistBrowseContent({
                             toneSeed={member.id}
                           />
                         </span>
-                        {/* 라임은 링으로 쓰면 패널과 1.06:1 이라 사라진다 — 면(배지)으로만 쓴다. */}
+                        {/* 라임은 링으로 쓰면 패널과 1.06:1 이라 사라진다 — 면(배지)으로만 쓴다.
+                            체크는 currentColor 를 상속하므로, 상위 텍스트 색이 바뀌어도 라임 위에서
+                            읽히도록 ArtistRail 선택 배지처럼 text-black 을 명시한다. */}
                         {isSelected ? (
-                          <span className="absolute -bottom-0.5 -right-0.5 inline-flex h-[19px] w-[19px] items-center justify-center rounded-full bg-brand-accent ring-2 ring-[#f7f7f7]">
+                          <span className="absolute -bottom-0.5 -right-0.5 inline-flex h-[19px] w-[19px] items-center justify-center rounded-full bg-brand-accent text-black ring-2 ring-[#f7f7f7]">
                             <CheckIcon className="h-[11px] w-[11px]" />
                           </span>
                         ) : null}
                       </span>
+                      {/* 줄 수를 안 막으면 wrap-anywhere 로 3~4줄이 되는 이름 하나가 그 행 전체
+                          높이를 밀어 올린다. 2줄에서 자르면 행 높이가 고정된다. */}
                       <span
-                        className={`break-keep wrap-anywhere text-center text-[11.5px] leading-tight tracking-[-0.04em] ${
+                        className={`line-clamp-2 break-keep wrap-anywhere text-center text-[11.5px] leading-tight tracking-[-0.04em] ${
                           isSelected
                             ? "font-bold text-black"
                             : "font-semibold text-black/50"

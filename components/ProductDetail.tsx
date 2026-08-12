@@ -195,6 +195,8 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
+const PRODUCT_ARTIST_ENTRY_INDEX_KEY = "product-artist-entry-index";
+const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
@@ -351,6 +353,7 @@ type ProductHistoryState = {
   idx?: unknown;
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
+  [PRODUCT_ARTIST_ENTRY_STATE_KEY]?: unknown;
 };
 
 function OptionAvatar({
@@ -394,6 +397,10 @@ function hasBidHistoryEntryState() {
 
 function hasFavoritesEntryState() {
   return getHistoryState()?.[PRODUCT_FAVORITES_ENTRY_STATE_KEY] === true;
+}
+
+function hasArtistEntryState() {
+  return getHistoryState()?.[PRODUCT_ARTIST_ENTRY_STATE_KEY] === true;
 }
 
 function priceToNumber(price: string) {
@@ -2734,10 +2741,14 @@ export function ProductDetail({
     }
 
     if (initialReturnSource === "artist" && returnGroupId) {
-      // back 이어야 스크롤 위치와 선택한 멤버 칩이 살아난다. replace 는 "전체" 탭에서 다시 시작한다.
-      const historyIndex = getHistoryIndex();
-
-      if (historyIndex !== null && historyIndex > 0) {
+      // back 이면 히스토리 왕복이 안 생기고 라우터 캐시를 그대로 쓴다. 스크롤·선택 멤버는
+      // back 이 살려주는 게 아니라 ArtistBrowseContent 가 sessionStorage 로 되돌린다
+      // (그 화면은 어느 쪽으로 돌아가든 다시 마운트된다).
+      //
+      // `?from=artist&groupId=` 는 주소창에 노출돼 공유될 수 있어, "앞에 뭔가 있다"(index > 0)만
+      // 보면 남의 링크를 눌러 들어온 세션에서 엉뚱한 화면으로 되돌아간다. bids·favorites 와 같은
+      // 엔트리 마커로 "직전 엔트리가 정말 그 목록인가" 까지 확인한다.
+      if (hasArtistEntryState()) {
         router.back();
         return;
       }
@@ -2772,8 +2783,12 @@ export function ProductDetail({
     const expectedFavoritesEntryIndex = window.sessionStorage.getItem(
       PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
     );
+    const expectedArtistEntryIndex = window.sessionStorage.getItem(
+      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
+    );
     window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
     window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
+    window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
 
     if (
       initialReturnSource === "bids" &&
@@ -2803,6 +2818,19 @@ export function ProductDetail({
       );
     }
 
+    if (
+      initialReturnSource === "artist" &&
+      historyIndex !== null &&
+      expectedArtistEntryIndex === String(historyIndex)
+    ) {
+      window.history.replaceState(
+        {
+          ...(getHistoryState() ?? {}),
+          [PRODUCT_ARTIST_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
   }, [initialReturnSource]);
 
   useEffect(() => {

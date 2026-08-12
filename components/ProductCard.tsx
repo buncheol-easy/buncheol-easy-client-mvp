@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
 import {
+  getArtistScrollTopKey,
+  getArtistSelectedMemberKey,
+} from "@/lib/artist-browse";
+import {
   addBuncheolBookmark,
   removeBuncheolBookmark,
 } from "@/lib/auth-api";
@@ -25,6 +29,7 @@ import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import { homeListingsQueryKey } from "@/lib/query-keys";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
+const PRODUCT_ARTIST_ENTRY_INDEX_KEY = "product-artist-entry-index";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 const SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX = "search-result-scroll-top";
@@ -323,6 +328,44 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     );
   }
 
+  function rememberArtistProductEntry() {
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
+      String(historyIndex + 1),
+    );
+  }
+
+  // 스크롤과 멤버 필터는 한 쌍이다. 스크롤만 저장하면 복귀 시 "전체" 목록 위에 멤버 목록의
+  // 오프셋이 얹혀, 있지도 않은 위치로 튄다.
+  function rememberArtistListState(
+    event: React.MouseEvent<HTMLAnchorElement>,
+    groupId: string,
+  ) {
+    const scrollContainer = event.currentTarget.closest<HTMLElement>(
+      "[data-product-scroll-container]",
+    );
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      getArtistScrollTopKey(groupId),
+      String(scrollContainer.scrollTop),
+    );
+    window.sessionStorage.setItem(
+      getArtistSelectedMemberKey(groupId),
+      scrollContainer.dataset.artistMemberId ?? "",
+    );
+  }
+
   function rememberProductListScrollPosition(
     event: React.MouseEvent<HTMLAnchorElement>,
     storageKey: string,
@@ -426,6 +469,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
 
       if (groupId) {
         event.preventDefault();
+        rememberArtistListState(event, groupId);
+        rememberArtistProductEntry();
         router.push(
           `/products/${productId}?from=artist&groupId=${encodeURIComponent(groupId)}`,
         );

@@ -40,6 +40,9 @@ const proxiedImageHosts = new Set([
 
 // 대비색은 이미지 픽셀만으로 정해지니 URL 당 한 번이면 된다. /artists 는 검색어 한 글자마다
 // 카드가 통째로 리마운트돼, 캐시가 없으면 getImageData(GPU→CPU 동기 읽기)가 매번 카드 수만큼 돈다.
+const CONTRAST_COLOR_FALLBACK = "#f1f1f1";
+// 실패(색을 못 구했거나 canvas 가 tainted)도 같이 캐시한다. 실패를 비워 두면 그 이미지만
+// 리마운트마다 getImageData 를 다시 돌아, 이 캐시가 없애려던 비용이 그대로 남는다.
 const contrastColorCache = new Map<string, string>();
 
 function getContrastingColor(image: HTMLImageElement) {
@@ -129,7 +132,7 @@ export function ArtistImage({
 }) {
   // 캐시가 있으면 첫 렌더부터 제 색으로 — 리마운트 때 회색 깜빡임이 없다.
   const [backgroundColor, setBackgroundColor] = useState(
-    () => contrastColorCache.get(imageUrl) ?? "#f1f1f1",
+    () => contrastColorCache.get(imageUrl) ?? CONTRAST_COLOR_FALLBACK,
   );
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const displayImageUrl = getProxiedImageUrl(imageUrl);
@@ -147,12 +150,14 @@ export function ArtistImage({
       try {
         const color = getContrastingColor(image);
 
+        contrastColorCache.set(imageUrl, color || CONTRAST_COLOR_FALLBACK);
+
         if (color) {
-          contrastColorCache.set(imageUrl, color);
           setBackgroundColor(color);
         }
       } catch {
-        setBackgroundColor("#f1f1f1");
+        contrastColorCache.set(imageUrl, CONTRAST_COLOR_FALLBACK);
+        setBackgroundColor(CONTRAST_COLOR_FALLBACK);
       }
     },
     [imageUrl],

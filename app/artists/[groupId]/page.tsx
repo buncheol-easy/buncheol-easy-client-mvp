@@ -4,6 +4,7 @@ import { cache } from "react";
 import { ArtistBrowseContent } from "@/components/ArtistBrowseContent";
 import { JsonLd } from "@/components/JsonLd";
 import type { ProductCardItem } from "@/components/ProductCard";
+import { isGroupIdShape } from "@/lib/artist-browse";
 import {
   ApiRequestError,
   requestBuncheols,
@@ -21,12 +22,6 @@ export const viewport = whiteChromeViewport;
 export const revalidate = 600;
 
 const ARTIST_PAGE_SIZE = 30;
-
-// 그룹 id 는 숫자다. `/artists/abc` 같은 오링크는 서버가 400(타입 미스매치)을 내려주므로,
-// 그대로 두면 500 으로 새어 나간다. 조회 전에 걸러 404 로 응답한다.
-function isGroupIdShape(groupId: string) {
-  return /^[0-9]+$/.test(groupId);
-}
 
 // generateMetadata 와 페이지 본문(JSON-LD·초기 목록)이 같은 요청 안에서 조회를 공유한다.
 const getGroupDetailCached = cache((groupId: string) =>
