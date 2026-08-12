@@ -143,7 +143,7 @@ export function ArtistBrowseContent({
           <section className="px-4 pb-5">
             <div className="rounded-[1.1rem] bg-[#f7f7f7] px-4 py-4">
               <p className="text-[12px] font-semibold tracking-[-0.03em] text-black/45">
-                멤버로 좁혀보기
+                멤버별 분철 보기
               </p>
               {/* 멤버가 많으면 칩이 가로로 넘친다. 오른쪽 페이드로 더 있다는 걸 알린다. */}
               <div className="relative mt-3">

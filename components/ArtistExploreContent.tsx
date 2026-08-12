@@ -267,7 +267,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     // 서버도 막지만(GRP-005), 왕복 없이 즉시 이유를 알려준다. 화면 상태는 그대로 두고 토스트로만 알린다.
     if (nextFavorited && favoriteCount >= FAVORITE_GROUP_LIMIT) {
       showToast(
-        `최애는 최대 ${FAVORITE_GROUP_LIMIT}개까지예요. 하나 비우고 담아주세요.`,
+        `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`,
       );
       return;
     }

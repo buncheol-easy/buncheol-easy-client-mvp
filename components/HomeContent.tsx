@@ -790,7 +790,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     // 레일에는 개수 표시가 없어 한도 초과를 눌러보고서야 알게 된다. 서버 왕복 전에 막고 이유를 알린다.
     if (nextFavorited && favoritedGroupCount >= FAVORITE_GROUP_LIMIT) {
       setGroupMessage(
-        `최애 그룹은 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록할 수 있어요.`,
+        `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`,
       );
       return;
     }
