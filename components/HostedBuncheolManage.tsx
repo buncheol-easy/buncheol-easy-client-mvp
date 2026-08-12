@@ -1092,9 +1092,9 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
-          {/* 취소된 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다.
-              C2C 는 대금이 개최자 계좌로 직접 들어간 직거래라 환불 주체가 개최자다 (취소 알림톡이 그렇게 안내한다). */}
-          {cancelledParticipants.length > 0 ? (
+          {/* 취소된 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
+              LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다. */}
+          {isC2C && cancelledParticipants.length > 0 ? (
             <section className="mt-6 rounded-[1.05rem] border border-black/10 bg-[#f7f7f7] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 취소된 참여 {cancelledParticipants.length}건
@@ -1109,12 +1109,17 @@ export function HostedBuncheolManage({
                     key={participant.participationId}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <p className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                        {participant.participantNickname}
-                        <span className="ml-1 font-medium text-black/40">
-                          {participant.memberName}
-                        </span>
-                      </p>
+                      <div className="min-w-0">
+                        <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {participant.participantNickname}
+                        </p>
+                        {/* 파서 최종 폴백이 리터럴 "멤버" 라 그대로 찍으면 의미 없는 줄이 된다. */}
+                        {participant.memberName && participant.memberName !== "멤버" ? (
+                          <p className="mt-0.5 truncate text-[12px] font-medium text-black/40">
+                            {participant.memberName}
+                          </p>
+                        ) : null}
+                      </div>
                       <p className="shrink-0 text-[14px] font-semibold tabular-nums">
                         {formatWonAmount(participant.amount)}
                       </p>

@@ -1605,9 +1605,7 @@ export function ProductDetail({
   // 자동 확정되지 않고 개최자가 성사 확정을 눌러야 진행되므로(docs/46 §4.1), 최소 인원 기준 진행 바와
   // "인원을 채우면 진행이 확정돼요" 문구를 그대로 쓰면 거짓 안내가 된다. C2C 는 전체 슬롯 대비 신청 현황으로 보여준다.
   const participationDenominator = isC2CProduct
-    ? auctionOptions.length > 0
-      ? auctionOptions.length
-      : null
+    ? auctionOptions.length || null
     : minHeadcount;
   const participationTargetCount =
     participationDenominator ?? auctionOptions.length;
@@ -1623,12 +1621,14 @@ export function ProductDetail({
   const remainingHeadcount =
     isConfirmedProduct
       ? 0
-      : !isC2CProduct && minHeadcount !== null
+      : minHeadcount !== null
       ? Math.max(0, minHeadcount - currentParticipationCount)
       : null;
   const participationStatusCaption = isConfirmedProduct
     ? "마감된 분철이에요. 아래 멤버에서 입금 대기/구매 완료 기록을 확인해요."
-    : isC2CProduct
+    : isCancelledProduct
+      ? "취소된 분철이에요."
+      : isC2CProduct
       ? isC2CCollectingProduct
         ? "개최자가 성사를 확정했어요. 참여자 입금이 모두 확인되면 진행이 확정돼요."
         : "신청이 모이면 개최자가 성사 여부를 확정해요. 확정되면 입금 안내를 보내드려요."

@@ -413,6 +413,9 @@ export type BuncheolManagementOption = {
 };
 
 export type BuncheolManagementDetail = {
+  // 취소된 참여(환불 계좌 확인용). participants 와 분리해 받는다 —
+  // 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
+  cancelledParticipants: BuncheolManagementParticipant[];
   confirmedCount?: number;
   deadline: string;
   // 분철 flow_type — 없으면 LEGACY 취급 (getFlowType).
@@ -427,9 +430,6 @@ export type BuncheolManagementDetail = {
   // C2C 일괄 입금 기한 — 성사 확정 시 산정 (docs/46 §4.1).
   paymentDueAt?: string | null;
   purchaseSite?: string;
-  // 취소된 참여(환불 계좌 확인용). participants 와 분리해 받는다 —
-  // 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
-  cancelledParticipants: BuncheolManagementParticipant[];
   status: BuncheolStatus;
   title: string;
   totalParticipationCount: number;
@@ -3677,6 +3677,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
 
   sourceRecords
     .flatMap((sourceRecord) =>
+      // 서버가 새로 정의한 필드라 구 응답 alias 가 없다 — participants 계열과 달리 단일 키만 본다.
       getNestedRecordListValue(sourceRecord, ["cancelledParticipants"]),
     )
     .map((participantRecord) =>
@@ -3694,6 +3695,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
   const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
 
   return {
+    cancelledParticipants,
     confirmedCount: getNumberValue(data, ["confirmedCount"]) ?? undefined,
     deadline:
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||
@@ -3711,7 +3713,6 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     options,
     participants,
     paymentDueAt: getOptionalStringValue(data, ["paymentDueAt"]) ?? null,
-    cancelledParticipants,
     purchaseSite: getOptionalStringValue(data, [
       "purchaseSite",
       "purchaseSource",
