@@ -37,7 +37,6 @@ import {
   subscribeAdminAuthState,
   writeAdminAccessToken,
 } from "@/lib/admin-auth-store";
-import { writeAuthState } from "@/lib/auth-store";
 import { FEATURES } from "@/lib/feature-flags";
 import { AdminShippingFeePaybackSection } from "@/components/AdminShippingFeePaybackSection";
 
@@ -754,29 +753,19 @@ function AdminImpersonationPanel({ accessToken }: { accessToken: string }) {
     }
   }
 
-  function handleApplyAndOpen() {
-    if (!issued) {
-      return;
-    }
+  // 재현은 이 브라우저에 주입하지 않고 시크릿 창에서 연다 — 세션(쿠키·localStorage)이 분리돼야
+  // 관리자 본인 계정으로의 자동 재발급·본인 데이터 노출·다른 탭 전환 같은 사고가 원천 차단된다.
+  // 로그인 콜백은 URL 프래그먼트(#accessToken)로 세션을 주입한다(OAuth 흐름과 동일, 서버로 전송 안 됨).
+  const impersonationLink = issued
+    ? `${typeof window === "undefined" ? "" : window.location.origin}/login/callback#accessToken=${issued.accessToken}`
+    : "";
 
-    // 이 브라우저의 유저 세션(auth-store)을 대상 유저로 덮어쓰고 새 탭에서 서비스를 연다.
-    // 관리자 세션(admin-auth-store)과는 분리돼 있어 이 대시보드 로그인에는 영향이 없다.
-    // writeAuthTokens 대신 저수준 writeAuthState 를 쓴다 — analytics identify 를 건너뛰어
-    // 재현(impersonation) 중 발생한 이벤트가 대상 유저에게 귀속되지 않게 한다.
-    writeAuthState({ accessToken: issued.accessToken, isLoggedIn: true });
-    window.open("/", "_blank", "noopener");
-  }
-
-  async function handleCopy() {
-    if (!issued) {
-      return;
-    }
-
+  async function copyText(text: string, label: string) {
     try {
-      await navigator.clipboard.writeText(issued.accessToken);
-      setMessage("토큰을 복사했어요.");
+      await navigator.clipboard.writeText(text);
+      setMessage(`${label}을(를) 복사했어요.`);
     } catch {
-      setMessage("복사에 실패했어요. 토큰을 직접 선택해 복사해 주세요.");
+      setMessage("복사에 실패했어요. 직접 선택해 복사해 주세요.");
     }
   }
 
@@ -827,28 +816,31 @@ function AdminImpersonationPanel({ accessToken }: { accessToken: string }) {
 
       {issued ? (
         <div className="mt-3 grid gap-2 rounded-[1rem] bg-[#f7f8f2] p-3">
-          <p className="text-[12px] font-semibold text-black/45">
-            이 브라우저의 유저 세션이 대상 유저로 바뀝니다. 조회 위주로 사용하고, 쓰기 액션은 실제 유저 데이터에 반영돼요.
+          <p className="text-[12px] font-semibold leading-5 text-black/45">
+            <b className="text-black/60">시크릿 창</b>(⌘⇧N / Ctrl+Shift+N)을 열고 아래 링크를 붙여넣어 여세요.
+            시크릿 창은 세션이 분리돼 관리자 본인 계정·배송지·계좌와 섞이지 않아요. 재현은 창을 닫으면 끝나고,
+            토큰은 {Math.floor(issued.expiresInSeconds / 60)}분 뒤 만료돼요.
+            <b className="text-[#c0392b]"> 쓰기 액션은 실제 유저 데이터에 반영</b>되니 조회 위주로 사용하세요.
           </p>
           <textarea
-            className="min-h-[4.5rem] resize-y rounded-[0.85rem] border border-black/10 bg-white px-3 py-2 text-[12px] font-mono leading-5 outline-none"
+            className="min-h-[4.5rem] resize-y rounded-[0.85rem] border border-black/10 bg-white px-3 py-2 font-mono text-[12px] leading-5 outline-none"
             readOnly
-            value={issued.accessToken}
+            value={impersonationLink}
           />
           <div className="flex flex-wrap gap-2">
             <button
               className="h-10 rounded-full bg-black px-4 text-[13px] font-semibold text-white"
-              onClick={handleApplyAndOpen}
+              onClick={() => void copyText(impersonationLink, "재현 링크")}
               type="button"
             >
-              이 유저로 새 탭에서 열기
+              재현 링크 복사
             </button>
             <button
               className="h-10 rounded-full border border-black/10 px-4 text-[13px] font-semibold text-black/55"
-              onClick={() => void handleCopy()}
+              onClick={() => void copyText(issued.accessToken, "토큰")}
               type="button"
             >
-              토큰 복사
+              토큰만 복사
             </button>
           </div>
         </div>
