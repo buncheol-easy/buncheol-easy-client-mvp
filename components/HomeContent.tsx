@@ -797,8 +797,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       </div>
 
       <div
-        // 우하단 도움말 버튼이 목록 마지막 카드를 덮지 않도록 하단 여백을 확보한다 (docs/53 Q-21).
-        className={`scroll-reactive-content scroll-reactive-content--home min-h-0 flex-1 overflow-y-auto pb-24 ${
+        className={`scroll-reactive-content scroll-reactive-content--home min-h-0 flex-1 overflow-y-auto ${
           shouldSkipEnterAnimation ? "" : "tab-content-enter"
         }`}
         data-product-scroll-container="home"
@@ -927,7 +926,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           </div>
         </section>
 
-        <div className="mt-auto pt-8">
+        {/* 우하단 도움말 버튼(bottom-5 + h-12 = 68px)이 스크롤 맨 아래에서 푸터를 덮는다.
+            스크롤 컨테이너에 여백을 주면 푸터가 바닥에서 떠 보이므로 푸터 아래에만 확보한다 (docs/53 Q-21). */}
+        <div className="mt-auto pb-20 pt-8">
           <BusinessFooter />
         </div>
         </div>

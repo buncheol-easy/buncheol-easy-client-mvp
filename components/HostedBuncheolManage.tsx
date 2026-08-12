@@ -1188,11 +1188,13 @@ export function HostedBuncheolManage({
                                     </p>
                                     {/* 다슬롯은 배송비가 묶음 첫 슬롯에만 붙어 같은 사람의 두 참여 금액이 달라진다.
                                         합계만 보여주면 개최자가 통장 금액과 왜 다른지 설명할 수 없다 (docs/53 Q-22). */}
-                                    {typeof participant.shippingFee === "number" ? (
+                                    {/* 배송비 0원은 다슬롯 묶음뿐 아니라 무료 배송 개최에서도 나온다.
+                                        0원에 "다른 참여에 부과돼요"를 붙이면 없는 참여를 가리키므로,
+                                        실제로 부과된 건에서만 내역을 쪼개 보여준다 (docs/53 Q-22). */}
+                                    {typeof participant.shippingFee === "number" &&
+                                    participant.shippingFee > 0 ? (
                                       <p className="mt-0.5 text-[11px] font-medium text-black/30">
-                                        {participant.shippingFee > 0
-                                          ? `상품 ${formatWonAmount(participant.amount - participant.shippingFee)} + 배송비 ${formatWonAmount(participant.shippingFee)}`
-                                          : "배송비는 같은 분철의 다른 참여에 1회만 부과돼요"}
+                                        {`상품 ${formatWonAmount(Math.max(participant.amount - participant.shippingFee, 0))} + 배송비 ${formatWonAmount(participant.shippingFee)}`}
                                       </p>
                                     ) : null}
                                   </div>
@@ -1378,14 +1380,17 @@ export function HostedBuncheolManage({
                 const paymentAmount = getWinnerBidAmount(option);
                 const hasOrder = Boolean(option.winner);
                 // 통장 대조용 이름 — 예금주 우선, 없으면 닉네임 (C2C 참여자 목록과 같은 규칙, docs/53 Q-18).
+                // ⚠️ participationId 가 일치하는 참여만 쓴다. LEGACY 는 슬롯당 참여가 여러 건이라
+                // participants[0] 은 낙찰자라는 보장이 없고, 그걸 폴백으로 쓰면 제3자의 실명 예금주가
+                // "입금자명"에 찍힌다 — 대조를 틀리게 만들 뿐 아니라 실명 노출이다.
+                // holder 는 빈 문자열일 수 있어 ?? 가 아니라 || 로 폴백한다.
                 const optionDepositorName =
                   option.participants?.find(
                     (participant) =>
                       participant.participationId ===
                       option.winner?.participationId,
-                  )?.refundAccount?.holder ??
-                  option.participants?.[0]?.refundAccount?.holder ??
-                  option.winner?.depositorName ??
+                  )?.refundAccount?.holder ||
+                  option.winner?.depositorName ||
                   null;
                 const isTrackingRegistered = Boolean(
                   option.winner?.trackingNumber || deliveryState.isShipped,

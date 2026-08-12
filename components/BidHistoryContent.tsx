@@ -1165,18 +1165,6 @@ async function getBidRecordWithShippingData(
   return mergedBidRecord;
 }
 
-// 서버는 개최 시각 역순 한 줄 정렬만 하므로 취소된 분철이 진행 중인 분철 사이에 섞인다.
-// 취소 계열만 아래로 내리고 그 안에서는 서버 순서(최신 개최순)를 그대로 둔다 — 안정 정렬이라
-// 같은 그룹 안의 상대 순서는 바뀌지 않는다 (docs/53 Q-19).
-function sortHostedBuncheols(buncheols: MyHostedBuncheol[]) {
-  return [...buncheols].sort((a, b) => {
-    const aClosed = isBuncheolCancelledStatus(a.status) ? 1 : 0;
-    const bClosed = isBuncheolCancelledStatus(b.status) ? 1 : 0;
-
-    return aClosed - bClosed;
-  });
-}
-
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
 ): ProductDetailItem {
@@ -1670,9 +1658,7 @@ export function BidHistoryContent({
           return;
         }
 
-        setApiHostedProducts(
-          sortHostedBuncheols(buncheols).map(getHostedProductFromBuncheol),
-        );
+        setApiHostedProducts(buncheols.map(getHostedProductFromBuncheol));
         setHostedMessage("");
       })
       .catch((error: unknown) => {
@@ -1941,11 +1927,22 @@ export function BidHistoryContent({
 
         return true;
       })
-      .sort(
-        (left, right) =>
+      // 취소된 분철을 아래로 내린 뒤 마감일 역순 (docs/53 Q-19). 정렬 기준이 두 곳으로 나뉘면
+      // 뒤에 도는 쪽이 앞의 그룹핑을 덮어쓰므로 이 비교자 하나로 합친다.
+      .sort((left, right) => {
+        const cancelledDiff =
+          (isBuncheolCancelledStatus(left.status) ? 1 : 0) -
+          (isBuncheolCancelledStatus(right.status) ? 1 : 0);
+
+        if (cancelledDiff !== 0) {
+          return cancelledDiff;
+        }
+
+        return (
           parseHistoryDeadline(right.deadline).getTime() -
-          parseHistoryDeadline(left.deadline).getTime(),
-      );
+          parseHistoryDeadline(left.deadline).getTime()
+        );
+      });
   }, [
     apiHostedProducts,
     authState.isLoggedIn,
