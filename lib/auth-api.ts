@@ -253,6 +253,11 @@ export type InboxMessagesParams = {
 };
 
 export type ApiGroup = {
+  /**
+   * 그룹의 대체 표기(한글/영문 표기·팬덤 축약어). 서버는 이름뿐 아니라 별칭으로도 매칭해 내려주므로,
+   * `rankGroupSearchResults` 가 이 값을 함께 봐야 별칭으로 걸린 그룹을 랭킹에서 탈락시키지 않는다.
+   */
+  aliases?: string[];
   favorited?: boolean;
   id: string;
   imageUrl?: string;
@@ -267,6 +272,10 @@ export type ApiGroupMember = {
 
 export type ApiGroupWithMembers = ApiGroup & {
   members: ApiGroupMember[];
+};
+
+export type ApiGroupDetail = ApiGroupWithMembers & {
+  recruitingBuncheolCount: number;
 };
 
 export type RecentSearchKeyword = {
@@ -757,6 +766,23 @@ function getOptionalStringValue(body: Record<string, unknown>, keys: string[]) {
   const value = getStringValue(body, keys).trim();
 
   return value.length > 0 ? value : undefined;
+}
+
+function getStringArrayValue(body: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = body[key];
+
+    if (!Array.isArray(value)) {
+      continue;
+    }
+
+    return value
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 const participationDeliveryIdKeys = [
@@ -3816,6 +3842,7 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     minHeadcount: summary.minHeadcount,
     targetMembers: summary.memberNames,
     uploadedAt: formatKoreaDateTime(summary.createdAt),
+    createdAt: summary.createdAt,
     era: summary.groupName,
     price: undefined,
     deadline: formatKoreaDateTime(summary.deadline),
@@ -5319,6 +5346,7 @@ function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null
   return {
     id,
     name,
+    aliases: getStringArrayValue(groupRecord, ["aliases", "alias"]),
     favorited:
       getBooleanValue(record, [
         "favorited",
@@ -5512,6 +5540,12 @@ export async function requestFavoriteGroups(
     .map((group) => ({ ...group, favorited: true }));
 }
 
+// 최애 등록이 409 로 실패하는 경우는 두 가지이고 처리가 정반대다.
+//   GRP-003 이미 등록됨 → 원하는 상태가 이미 만족됐으니 성공으로 접는다 (UI 는 등록됨으로 수렴).
+//   GRP-005 5개 한도 초과 → 등록되지 않았으므로 롤백하고 사용자에게 이유를 보여줘야 한다.
+// 둘을 구분하지 않으면 한도 초과인데 하트가 켜졌다가 새로고침하면 풀린다.
+const FAVORITE_GROUP_ALREADY_EXISTS_CODE = "GRP-003";
+
 export async function addFavoriteGroup(accessToken: string, groupId: string) {
   const response = await fetch(
     `${getVersionedApiBaseUrl()}/groups/${groupId}/favorite`,
@@ -5523,7 +5557,20 @@ export async function addFavoriteGroup(accessToken: string, groupId: string) {
   );
 
   if (response.status === 409) {
-    return { alreadyExists: true };
+    const errorBody = await readJsonBody(response);
+    const code = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["code"])
+      : undefined;
+
+    if (code === FAVORITE_GROUP_ALREADY_EXISTS_CODE) {
+      return { alreadyExists: true };
+    }
+
+    const detail = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["message", "detail", "title"])
+      : undefined;
+
+    throw new Error(detail ?? "최애 그룹을 등록하지 못했어요.");
   }
 
   if (!response.ok) {
@@ -5549,6 +5596,47 @@ export async function removeFavoriteGroup(
   if (!response.ok && response.status !== 404) {
     throw new Error(await parseErrorMessage(response));
   }
+}
+
+/**
+ * 그룹 단위 브라우즈(아티스트) 화면용 상세. 그룹 본문 + 전 멤버 + 모집중 분철 수를 한 번에 받는다.
+ * 상태 코드를 구분해야 하는 호출 측을 위해 `ApiRequestError` 를 그대로 던진다 —
+ * `/artists/[groupId]` 는 404(없는 그룹)와 400(id 형태 불일치)을 모두 `notFound()` 로 접는다.
+ * 서버 선배포 전이거나 롤백되면 이 엔드포인트가 404 라 아티스트 페이지 전체가 404 가 된다(폴백 없음).
+ */
+export async function requestGroupDetail(
+  groupId: string,
+): Promise<ApiGroupDetail> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/groups/${encodeURIComponent(groupId)}`,
+    {
+      credentials: "omit",
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+
+  const body = await readJsonBody(response);
+  const record = isRecord(getNestedData(body)) ? getNestedData(body) : body;
+
+  if (!isRecord(record)) {
+    throw new ApiRequestError("그룹 정보를 불러오지 못했어요.", response.status);
+  }
+
+  const group = getApiGroupWithMembersFromRecord(record);
+
+  if (!group) {
+    throw new ApiRequestError("그룹 정보를 불러오지 못했어요.", response.status);
+  }
+
+  return {
+    ...group,
+    recruitingBuncheolCount:
+      getNumberValue(record, ["recruitingBuncheolCount"]) ?? 0,
+  };
 }
 
 export async function requestGroupMembers(groupId: string) {

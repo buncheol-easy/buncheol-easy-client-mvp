@@ -3,6 +3,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -26,6 +27,7 @@ import {
 } from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
+import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import {
@@ -49,12 +51,19 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import {
+  isBuncheolPaymentCollectingStatus,
+  isBuncheolPurchasableStatus,
+} from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import {
   bannersQueryKey,
   homeListingsQueryKey,
 } from "@/lib/query-keys";
-import { toArtistRailItem } from "@/lib/group-presenters";
+import {
+  normalizeGroupSearchText,
+  toArtistRailItem,
+} from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
@@ -65,6 +74,11 @@ const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
+// 서버 UserFavoriteGroupService.MAX_FAVORITE_GROUP_COUNT 와 같은 값.
+const FAVORITE_GROUP_LIMIT = 5;
+const FAVORITE_LIMIT_MESSAGE = `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`;
+// /artists 의 한도 토스트와 같은 수명. 같은 문구가 화면마다 다르게 사라지면 안 된다.
+const FAVORITE_LIMIT_MESSAGE_DURATION_MS = 2400;
 // "상세 봤다가 바로 뒤로" 동선은 재요청 없이 캐시를 재사용하는 신선 창(멘토 권고).
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
@@ -388,19 +402,79 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldRevealListings] = useState(() => listingsQuery.isPending);
 
   const isListingLoading = listingsQuery.data === undefined;
-  const isGroupLoading = apiGroups === null;
+  // 최애 조회 effect 는 favoriteArtists 가 꺼져 있거나 비로그인이면 실행되지 않아 apiGroups 가
+  // 계속 null 이다. 그 상태를 기다리면 스켈레톤에서 벗어나지 못하므로 노출 조건과 함께 판정한다.
+  const isGroupLoading =
+    FEATURES.favoriteArtists && authState.isLoggedIn && apiGroups === null;
   const banners =
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
       : HOME_BANNERS;
-  const listings = listingsQuery.data ?? [];
+  const listingsData = listingsQuery.data;
+  const listings = useMemo(() => listingsData ?? [], [listingsData]);
   const listingMessage =
     listingsQuery.isError && listings.length === 0
       ? listingsQuery.error instanceof Error
         ? listingsQuery.error.message
         : "분철 목록을 불러오지 못했어요."
       : "";
-  const favoriteGroups = apiGroups ?? [];
+  // 레일은 조회된 최애 목록을 그대로 유지한다 — 해제해도 항목을 빼지 않고 빈 하트로만 바꾼다.
+  // 그 자리에서 오탭을 되돌릴 수 있어야 하기 때문이다 (빼버리면 /artists 까지 가야 복구된다).
+  const railGroups = useMemo(() => apiGroups ?? [], [apiGroups]);
+  // 최애는 로그인 사용자에게만 존재하므로 비로그인에는 레일 자체를 노출하지 않는다.
+  const isArtistRailVisible = FEATURES.favoriteArtists && authState.isLoggedIn;
+  // 레일에 남겨 둔 해제분은 빼고 "실제로 최애인" 것만 센다. 레일 길이로 판정하면 전부 해제해도
+  // 목록이 계속 좁혀지고, 한도 검사도 해제분까지 세어 헐거워진다.
+  const favoritedGroups = useMemo(
+    () => railGroups.filter((group) => group.favorited !== false),
+    [railGroups],
+  );
+  const favoritedGroupCount = favoritedGroups.length;
+  // 한도 안내만 스스로 사라진다. 조회·변경 실패 문구는 사용자가 상황을 인지해야 하므로 남긴다.
+  useEffect(() => {
+    if (groupMessage !== FAVORITE_LIMIT_MESSAGE) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setGroupMessage(""),
+      FAVORITE_LIMIT_MESSAGE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [groupMessage]);
+  // 최애를 등록했으면 그 그룹 분철만, 아니면 전체를 보여준다.
+  const favoriteGroupNames = useMemo(
+    () =>
+      new Set(
+        favoritedGroups.map((group) => normalizeGroupSearchText(group.name)),
+      ),
+    [favoritedGroups],
+  );
+  const visibleListings = useMemo(() => {
+    const scoped =
+      favoriteGroupNames.size > 0
+        ? listings.filter((item) =>
+            favoriteGroupNames.has(normalizeGroupSearchText(item.era ?? "")),
+          )
+        : listings;
+
+    // 진행중이 항상 마감분보다 앞. 같은 묶음 안에서는 최신 개최순.
+    // 진행중 판정은 카드 배지와 같은 상태 기준을 쓴다 — deadline 이 지났는데 마감 스케줄러가
+    // 아직 안 돈 분철은 잠깐 진행중으로 남지만, 배지 표시와 어긋나지 않는 편이 낫다.
+    const isOngoing = (item: ProductCardItem) =>
+      isBuncheolPurchasableStatus(item.status) ||
+      isBuncheolPaymentCollectingStatus(item.status);
+    const openedAt = (item: ProductCardItem) => {
+      const parsed = item.createdAt ? Date.parse(item.createdAt) : Number.NaN;
+
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    return [...scoped].sort((left, right) => {
+      const ongoingDiff = Number(isOngoing(right)) - Number(isOngoing(left));
+
+      return ongoingDiff !== 0 ? ongoingDiff : openedAt(right) - openedAt(left);
+    });
+  }, [favoriteGroupNames, listings]);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -611,8 +685,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     }
 
     let isActive = true;
+    // 조회 결과가 도착했는지 표시. 초기화는 다음 프레임에 실행되는데, 응답이 그보다 먼저 오면
+    // 이미 채운 목록을 null 로 덮어써 레일이 스켈레톤에서 영영 벗어나지 못한다.
+    let hasSettled = false;
     const resetFrame = window.requestAnimationFrame(() => {
-      if (!isActive) {
+      if (!isActive || hasSettled) {
         return;
       }
 
@@ -626,6 +703,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
+        hasSettled = true;
         setApiGroups([]);
         setGroupMessage("");
       });
@@ -653,6 +731,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
+        hasSettled = true;
         setApiGroups(groups.map(toArtistRailItem));
         setGroupMessage("");
       })
@@ -662,6 +741,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         }
 
         const message = error instanceof Error ? error.message : "";
+
+        hasSettled = true;
 
         if (message.includes("401") || message.includes("Unauthorized")) {
           clearAuthState();
@@ -683,6 +764,36 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       window.cancelAnimationFrame(resetFrame);
     };
   }, [authState.accessToken, authState.isLoggedIn]);
+
+  function openArtistPage(item: ArtistRailItem) {
+    if (scrollContainerRef.current) {
+      window.sessionStorage.setItem(
+        HOME_SCROLL_TOP_KEY,
+        String(scrollContainerRef.current.scrollTop),
+      );
+    }
+
+    const groupId = item.apiId;
+
+    // 멤버 아이템이거나 apiId 가 없으면 그룹 페이지를 만들 수 없다 — 기존 검색 경로로 떨어뜨린다.
+    if (item.type === "member" || !groupId) {
+      openGroupSearch(item.name);
+      return;
+    }
+
+    router.push(`/artists/${encodeURIComponent(groupId)}`);
+  }
+
+  function openHosting() {
+    if (scrollContainerRef.current) {
+      window.sessionStorage.setItem(
+        HOME_SCROLL_TOP_KEY,
+        String(scrollContainerRef.current.scrollTop),
+      );
+    }
+
+    router.push("/upload");
+  }
 
   function openGroupSearch(groupName?: string) {
     if (!groupName && scrollContainerRef.current) {
@@ -722,6 +833,13 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     const favoriteGroupId = item.apiId ?? item.id;
     const nextFavorited = item.favorited !== true;
+
+    // 레일에는 개수 표시가 없어 한도 초과를 눌러보고서야 알게 된다. 서버 왕복 전에 막고 이유를 알린다.
+    if (nextFavorited && favoritedGroupCount >= FAVORITE_GROUP_LIMIT) {
+      setGroupMessage(FAVORITE_LIMIT_MESSAGE);
+      return;
+    }
+
     setApiGroups((current) =>
       current?.map((group) =>
         group.id === item.id ? { ...group, favorited: nextFavorited } : group,
@@ -730,6 +848,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     try {
       if (nextFavorited) {
+        // 이미 등록돼 있었다면(다른 탭에서 등록 등) 원하는 상태가 이미 만족된 것이라 그대로 둔다.
         await addFavoriteGroup(accessToken, favoriteGroupId);
       } else {
         await removeFavoriteGroup(accessToken, favoriteGroupId);
@@ -872,19 +991,20 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         </section>
 
         <section className="px-4">
-          {FEATURES.favoriteArtists ? (
+          {isArtistRailVisible ? (
             <>
               <div className="mb-6">
+              {/* 최애가 없어도 레일 구성은 그대로 두고 아이템만 비운다 — 등록 전후로 홈 레이아웃이 바뀌지 않게. */}
               {isGroupLoading ? (
                 <HomeArtistRailSkeleton />
               ) : (
-              <ArtistRail
-                items={favoriteGroups}
-                leadingItem={{ label: "최애 추가", icon: "plus" }}
-                onFavoriteToggle={handleFavoriteGroupToggle}
-                onItemClick={(item) => openGroupSearch(item.name)}
-                onLeadingClick={() => openGroupSearch()}
-              />
+                <ArtistRail
+                  items={railGroups}
+                  leadingItem={{ label: "최애 추가", icon: "plus" }}
+                  onFavoriteToggle={handleFavoriteGroupToggle}
+                  onItemClick={openArtistPage}
+                  onLeadingClick={() => openGroupSearch()}
+                />
               )}
               </div>
 
@@ -900,9 +1020,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
           <div
             className={
-              FEATURES.favoriteArtists
-                ? "border-t border-black/10 pt-5"
-                : "pt-2"
+              isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
             }
           >
             {listingMessage ? (
@@ -918,10 +1036,32 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 count={3}
                 variant="wide"
               />
+            ) : visibleListings.length === 0 && favoriteGroupNames.size > 0 ? (
+              /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
+                 내 최애 것만 없는 건지 구분해 알린다. */
+                <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
+                  <p className="text-[15px] font-semibold tracking-[-0.05em]">
+                    최애 아티스트 그룹의 분철이 아직 없어요
+                  </p>
+                  {/* 카오모지는 장식이라 스크린리더가 괄호·기호를 읽지 않도록 숨긴다. */}
+                  <p
+                      aria-hidden="true"
+                      className="mt-2 text-[14px] leading-none text-black/50"
+                  >
+                    {"(´•̥ ᵔ •̥`)"}
+                  </p>
+                  <button
+                      className="motion-card mt-4 inline-flex h-11 items-center rounded-full bg-[#DDE7B8] px-5 text-[14px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
+                      onClick={openHosting}
+                      type="button"
+                  >
+                    분철 직접 개최하기
+                  </button>
+                </div>
             ) : (
-              <div className={shouldRevealListings ? "content-reveal" : ""}>
-                <ProductGrid items={listings} variant="wide" />
-              </div>
+                <div className={shouldRevealListings ? "content-reveal" : ""}>
+                  <ProductGrid items={visibleListings} variant="wide"/>
+                </div>
             )}
           </div>
         </section>
