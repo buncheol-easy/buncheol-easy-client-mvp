@@ -17,10 +17,12 @@ type ProfilePageProps = {
   }>;
 };
 
+// 계좌 저장 후 돌아갈 화면. 오픈 리다이렉트를 막으려 목적지를 화이트리스트로 제한한다
+// (참여 흐름의 분철 상세 + 개최 자격 안내에서 온 /upload — docs/53 Q-07).
 function getSafeReturnHref(returnTo: string | string[] | undefined) {
   const returnTarget = Array.isArray(returnTo) ? returnTo[0] : returnTo;
 
-  if (returnTarget?.startsWith("/products/")) {
+  if (returnTarget?.startsWith("/products/") || returnTarget === "/upload") {
     return returnTarget;
   }
 

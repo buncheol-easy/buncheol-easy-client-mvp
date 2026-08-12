@@ -27,13 +27,12 @@ import {
 import { createLoginHref } from "@/lib/auth-navigation";
 import {
   authProfileSetupReturnHrefStorageKey,
-  clearAuthCookies,
-  clearAuthState,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { clearUserSessionState as clearUserSession } from "@/lib/user-session";
 import {
   isUserProfileComplete,
   requestLogout,
@@ -42,7 +41,6 @@ import {
   updateBankAccount,
   type UserProfile,
 } from "@/lib/auth-api";
-import { clearHostedProducts } from "@/lib/hosted-products-store";
 import {
   clearSettlementAccountState,
   getInitialSettlementAccountState,
@@ -667,11 +665,7 @@ export function ProfileContent({
 
   function clearUserSessionState() {
     invalidateAddressSyncRequests();
-    clearAuthCookies();
-    clearAuthState();
-    clearDeliveryAddressState();
-    clearHostedProducts();
-    clearSettlementAccountState();
+    clearUserSession();
     setIsEditingSettlementAccount(false);
     setUserProfile(null);
     setSettlementAccountForm(getEmptySettlementAccountState());

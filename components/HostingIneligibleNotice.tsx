@@ -9,11 +9,10 @@ import { requestLogout, type HostingEligibilityReason } from "@/lib/auth-api";
 import { createLoginHref } from "@/lib/auth-navigation";
 import {
   authProfileSetupReturnHrefStorageKey,
-  clearAuthCookies,
-  clearAuthState,
   readAuthState,
 } from "@/lib/auth-store";
 import { getHistoryIndex } from "@/lib/history-index";
+import { clearUserSessionState } from "@/lib/user-session";
 
 type HostingIneligibleNoticeProps = {
   // 서버가 모르는 사유를 내리면 null 로 떨어진다 — variant 에 따라 "차단됐다"와 "요건 안내"로 갈린다.
@@ -143,7 +142,8 @@ function getNoticeCopy(
       ],
       primaryAction: {
         label: "정산 계좌 등록하기",
-        href: "/profile?openAccount=1",
+        // 저장 후 개최 화면으로 돌아온다 — PHONE_REQUIRED 의 복귀 규약과 맞춘다.
+        href: "/profile?openAccount=1&returnTo=%2Fupload",
       },
     };
   }
@@ -253,8 +253,9 @@ export function HostingIneligibleNotice({
     } catch {
       // 서버 로그아웃 실패는 무시한다 — 로컬 세션만 정리해도 재로그인 흐름은 성립한다.
     } finally {
-      clearAuthCookies();
-      clearAuthState();
+      // 토큰만 지우면 정산 계좌·배송지 같은 계정 스코프 캐시가 남아, 다른 카카오 계정으로 갈아탔을 때
+      // 이전 사용자 정보가 화면에 보인다 — 연령대 미동의 계정은 계정 전환이 잦은 경로다.
+      clearUserSessionState();
       router.replace(createLoginHref({ cancelTo: "/", returnTo: "/upload" }));
     }
   }
