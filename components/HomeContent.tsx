@@ -73,6 +73,8 @@ const FAVORITE_GROUP_LIMIT = 5;
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
 const HOME_BANNERS_STALE_MS = 15 * 60 * 1000;
+// 최애 분철은 전체 목록에도 다시 나오므로 홈에서는 앞부분만 미리보기로 보여준다.
+const HOME_FAVORITE_LISTINGS_SIZE = 4;
 type HomeBanner = {
   href: string;
   imageAlt: string;
@@ -266,7 +268,7 @@ async function loadFavoriteListings() {
 
   const items = await requestBuncheols(accessToken, {
     onlyFavoriteGroups: true,
-    size: 20,
+    size: HOME_FAVORITE_LISTINGS_SIZE,
   });
 
   return items.map(toProductCardItem).map(mergeCachedProductImage);
@@ -979,22 +981,24 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             <div className="mb-6 border-t border-black/10 pt-5">
               <div className="mb-4 flex items-end justify-between">
                 <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                  내 최애 분철
+                  최애 아티스트 분철
                 </h2>
-                {isFavoriteListingLoading ? null : (
-                  <span className="text-[13px] font-medium text-black/45">
-                    {favoriteListings.length}개
-                  </span>
-                )}
               </div>
 
               {isFavoriteListingLoading ? (
                 <ProductGridSkeleton
                   ariaLabel="최애 분철을 불러오는 중"
                   count={2}
+                  variant="wide"
                 />
               ) : favoriteListings.length > 0 ? (
-                <ProductGrid items={favoriteListings} keyPrefix="favorite" />
+                /* 카드 형태는 아래 전체 목록과 같은 wide 로 맞춘다 — 같은 홈 안에서 목록마다
+                   레이아웃이 달라지면 다른 종류의 콘텐츠처럼 보인다. */
+                <ProductGrid
+                  items={favoriteListings}
+                  keyPrefix="favorite"
+                  variant="wide"
+                />
               ) : (
                 <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-7 text-center">
                   <p className="text-[15px] font-semibold tracking-[-0.05em]">
