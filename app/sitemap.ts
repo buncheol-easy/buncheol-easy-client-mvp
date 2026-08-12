@@ -9,6 +9,11 @@ export const revalidate = 3600;
 const SITEMAP_PAGE_SIZE = 100;
 const SITEMAP_MAX_ITEMS = 20 * SITEMAP_PAGE_SIZE;
 
+// 취소된 분철은 상세가 정상 구매 흐름을 안내하지 못하므로 색인 후보에서 뺀다.
+// (DELETED 는 requestAllBuncheols 가 이미 걸러 주고, 마감 분철은 아티스트별
+// 롱테일 축적을 위해 의도적으로 유지한다 — 루트 docs/41 2026-08-12 결정)
+const EXCLUDED_SITEMAP_STATUSES = new Set<string>(["CANCELLED", "CANCELED"]);
+
 // /search·/artists 는 feature flag off 로 홈으로 307 리다이렉트되므로 제외한다.
 // 로그인 전용 경로(/favorites·/profile·/upload 등)는 noindex 라 제외한다.
 const staticRoutes = [
@@ -40,7 +45,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       );
     }
 
-    productEntries = buncheols.map((item) => {
+    const indexableBuncheols = buncheols.filter(
+      (item) => !EXCLUDED_SITEMAP_STATUSES.has(item.status),
+    );
+
+    productEntries = indexableBuncheols.map((item) => {
       // API 가 updatedAt 을 내려주지 않아 createdAt 만 사용한다.
       // 파싱 불가한 날짜가 하나라도 섞이면 사이트맵 직렬화 전체가 깨지므로 반드시 걸러낸다.
       const lastModified = item.createdAt ? new Date(item.createdAt) : null;
