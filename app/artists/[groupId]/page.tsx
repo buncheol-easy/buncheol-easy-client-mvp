@@ -65,7 +65,10 @@ export async function generateMetadata({
         title,
         description,
         url: `/artists/${groupId}`,
-        images: [group.imageUrl ?? "/brand/logo-black.png"],
+        // 그룹 로고는 og 에 쓰지 않는다. 두 가지가 겹친다 — imageUrl 은 getProxiedGroupImageUrl 을 거친
+        // `/api/group-image?...` 상대경로라 robots.txt 의 `/api` disallow 에 걸리고(app/robots.ts),
+        // 원본 S3 를 직접 가리켜도 파일이 SVG 라 카카오톡·X 미리보기에서 렌더되지 않는다.
+        images: ["/brand/logo-black.png"],
       },
     };
   } catch (error) {

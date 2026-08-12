@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, HeartIcon, PlusIcon } from "@/components/icons";
 
 export type ArtistRailItem = {
@@ -125,7 +125,7 @@ export function ArtistImage({
   const displayImageUrl = getProxiedImageUrl(imageUrl);
   const didImageFail = failedImageUrl === imageUrl;
 
-  function applyContrastingColor(image: HTMLImageElement) {
+  const applyContrastingColor = useCallback((image: HTMLImageElement) => {
     try {
       const color = getContrastingColor(image);
 
@@ -135,16 +135,23 @@ export function ArtistImage({
     } catch {
       setBackgroundColor("#f1f1f1");
     }
-  }
+  }, []);
 
   // 서버 렌더 페이지(/artists/[groupId])에서는 하이드레이션 전에 이미지 로딩이 끝나 onLoad 가
   // 영영 발화하지 않는다. 그러면 배경이 초기값(#f1f1f1)에 멈춰 밝은 로고가 묻힌다.
   // ref 콜백으로 마운트 시점에 이미 완료된 이미지를 직접 처리한다.
-  function handleImageRef(image: HTMLImageElement | null) {
-    if (image?.complete && image.naturalWidth > 0) {
-      applyContrastingColor(image);
-    }
-  }
+  //
+  // useCallback 으로 identity 를 고정해야 한다 — 콜백 ref 는 identity 가 바뀌면 React 가 렌더마다
+  // ref(null) → ref(node) 를 다시 호출하고, 그때마다 drawImage + getImageData 가 커밋 단계에서
+  // 동기로 돈다. 홈 레일은 헤더 토글·배너 도트 전환마다 리렌더돼 그 비용이 계속 붙는다.
+  const handleImageRef = useCallback(
+    (image: HTMLImageElement | null) => {
+      if (image?.complete && image.naturalWidth > 0) {
+        applyContrastingColor(image);
+      }
+    },
+    [applyContrastingColor],
+  );
 
   if (didImageFail) {
     return (

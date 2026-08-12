@@ -98,12 +98,23 @@ export function rankGroupSearchResults<T extends SearchableGroup>(
     return groups.slice(0, limit);
   }
 
-  const exactMatch = groups.find((group) =>
-    getSearchValues(group).some((value) => value === normalizedQuery),
+  // 정확일치는 전부 돌려준다. 예전엔 첫 1건만 반환했는데, getSearchValues 에 별칭이 들어오면서
+  // 서로 다른 그룹이 같은 별칭을 가질 수 있게 됐다(서버 UNIQUE 가 (group_id, search_alias) 라
+  // 그룹 간 중복을 허용한다). 1건만 반환하면 나머지가 배열 순서에 따라 조용히 사라진다.
+  const nameExactMatches = groups.filter(
+    (group) => normalizeGroupSearchText(group.name) === normalizedQuery,
   );
+  // 이름 정확일치가 별칭 정확일치보다 항상 우선한다 — "IU" 를 친 사람이 찾는 건 별칭이 IU 인
+  // 다른 그룹이 아니라 이름이 IU 인 그룹이다.
+  const exactMatches =
+    nameExactMatches.length > 0
+      ? nameExactMatches
+      : groups.filter((group) =>
+          getSearchValues(group).some((value) => value === normalizedQuery),
+        );
 
-  if (exactMatch) {
-    return [exactMatch];
+  if (exactMatches.length > 0) {
+    return exactMatches.slice(0, limit);
   }
 
   return groups

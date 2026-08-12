@@ -5600,8 +5600,9 @@ export async function removeFavoriteGroup(
 
 /**
  * 그룹 단위 브라우즈(아티스트) 화면용 상세. 그룹 본문 + 전 멤버 + 모집중 분철 수를 한 번에 받는다.
- * 서버가 아직 이 엔드포인트를 배포하지 않았을 수 있으므로(세트 배포 전), 404 는 호출 측이
- * 기존 `/groups/{id}/members` 로 폴백할 수 있게 ApiRequestError 로 그대로 던진다.
+ * 상태 코드를 구분해야 하는 호출 측을 위해 `ApiRequestError` 를 그대로 던진다 —
+ * `/artists/[groupId]` 는 404(없는 그룹)와 400(id 형태 불일치)을 모두 `notFound()` 로 접는다.
+ * 서버 선배포 전이거나 롤백되면 이 엔드포인트가 404 라 아티스트 페이지 전체가 404 가 된다(폴백 없음).
  */
 export async function requestGroupDetail(
   groupId: string,

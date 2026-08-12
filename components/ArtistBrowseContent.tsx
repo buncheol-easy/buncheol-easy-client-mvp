@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon } from "@/components/icons";
+import { getHistoryIndex } from "@/lib/history-index";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
@@ -25,7 +26,8 @@ type ArtistBrowseContentProps = {
   initialItems: ProductCardItem[];
 };
 
-const ARTIST_SCROLL_TOP_KEY_PREFIX = "artist-scroll-top";
+// 스크롤 저장/복원은 아직 없다. ProductCard 의 목록 복귀 계약(`?from=...`)에 이 화면이 연결되지 않아
+// 저장해도 읽는 쪽이 없었고, 배선만 남기면 동작하는 것처럼 보여 더 위험하다.
 // 서버 렌더 초기 목록과 같은 크기로 맞춰, 멤버 선택 전후 목록 길이 기준이 어긋나지 않게 한다.
 const ARTIST_PAGE_SIZE = 30;
 
@@ -34,7 +36,6 @@ export function ArtistBrowseContent({
   initialItems,
 }: ArtistBrowseContentProps) {
   const router = useRouter();
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
   // 멤버 칩은 서버가 내려준 첫 페이지를 클라이언트에서 거르는 대신 재조회한다.
@@ -69,20 +70,18 @@ export function ArtistBrowseContent({
         : "분철을 불러오지 못했어요."
       : "";
 
-  function rememberScrollPosition() {
-    if (!scrollContainerRef.current) {
+  function handleBack() {
+    // 레포 컨벤션(PolicyPageContent·BoardExperience)과 동일 — 앱 내부에서 들어왔으면 되돌아가고,
+    // SEO 유입 같은 직접 진입만 홈으로 보낸다. push 로 홈을 쌓으면 기기 뒤로가기가 다시 이 페이지로
+    // 돌아오는 왕복이 생긴다.
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex !== null && historyIndex > 0) {
+      router.back();
       return;
     }
 
-    window.sessionStorage.setItem(
-      `${ARTIST_SCROLL_TOP_KEY_PREFIX}:${group.id}`,
-      String(scrollContainerRef.current.scrollTop),
-    );
-  }
-
-  function handleBack() {
-    rememberScrollPosition();
-    router.push("/");
+    router.replace("/");
   }
 
   const selectedMemberName = selectedMemberId
@@ -107,8 +106,6 @@ export function ArtistBrowseContent({
 
       <div
         className="min-h-0 flex-1 overflow-y-auto"
-        data-product-scroll-container="artist"
-        ref={scrollContainerRef}
       >
         <section className="flex items-center gap-4 px-4 pb-5 pt-5">
           <span
@@ -200,6 +197,10 @@ export function ArtistBrowseContent({
 
           {isLoading ? (
             <ProductGridSkeleton ariaLabel="분철을 불러오는 중" variant="wide" />
+          ) : message ? (
+            /* 조회 실패는 위 문구로만 알린다. "분철이 아직 없어요" 를 같이 띄우면 실패를
+               0건으로 잘못 읽게 된다. */
+            null
           ) : items.length > 0 ? (
             /* 카드 형태는 홈 목록과 같은 wide 로 맞춘다. */
             <ProductGrid

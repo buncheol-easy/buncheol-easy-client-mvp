@@ -76,6 +76,9 @@ const SCROLL_EDGE_GUARD = 16;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
 // 서버 UserFavoriteGroupService.MAX_FAVORITE_GROUP_COUNT 와 같은 값.
 const FAVORITE_GROUP_LIMIT = 5;
+const FAVORITE_LIMIT_MESSAGE = `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`;
+// /artists 의 한도 토스트와 같은 수명. 같은 문구가 화면마다 다르게 사라지면 안 된다.
+const FAVORITE_LIMIT_MESSAGE_DURATION_MS = 2400;
 // "상세 봤다가 바로 뒤로" 동선은 재요청 없이 캐시를 재사용하는 신선 창(멘토 권고).
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
@@ -415,22 +418,36 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         ? listingsQuery.error.message
         : "분철 목록을 불러오지 못했어요."
       : "";
-  const favoriteGroups = apiGroups ?? [];
-  // 레일은 내가 등록한 최애만 보여준다. 관심 없는 그룹 로고로 채우면 소음이 되고,
-  // 새 그룹 탐색은 레일 앞의 "최애 추가"(→ /artists) 가 담당한다.
-  const railGroups = favoriteGroups.filter((group) => group.favorited !== false);
+  // 레일은 조회된 최애 목록을 그대로 유지한다 — 해제해도 항목을 빼지 않고 빈 하트로만 바꾼다.
+  // 그 자리에서 오탭을 되돌릴 수 있어야 하기 때문이다 (빼버리면 /artists 까지 가야 복구된다).
+  const railGroups = useMemo(() => apiGroups ?? [], [apiGroups]);
   // 최애는 로그인 사용자에게만 존재하므로 비로그인에는 레일 자체를 노출하지 않는다.
   const isArtistRailVisible = FEATURES.favoriteArtists && authState.isLoggedIn;
-  // 최애 섹션은 로그인 + 최애 등록이 전제다. 최애가 0개면 섹션을 아예 숨겨(레일의 "최애 추가"가
-  // 유도 자리를 대신한다), 최애는 있는데 분철만 없을 때 안내 문구를 보여준다.
-  // 최애 해제 시 레일에서 항목을 빼지 않고 favorited 만 내리므로(되돌리기 쉽게), 개수 판정은
-  // 실제로 최애인 항목만 센다. 그러지 않으면 전부 해제해도 섹션이 남는다.
-  const favoritedGroupCount = railGroups.length;
+  // 레일에 남겨 둔 해제분은 빼고 "실제로 최애인" 것만 센다. 레일 길이로 판정하면 전부 해제해도
+  // 목록이 계속 좁혀지고, 한도 검사도 해제분까지 세어 헐거워진다.
+  const favoritedGroups = useMemo(
+    () => railGroups.filter((group) => group.favorited !== false),
+    [railGroups],
+  );
+  const favoritedGroupCount = favoritedGroups.length;
+  // 한도 안내만 스스로 사라진다. 조회·변경 실패 문구는 사용자가 상황을 인지해야 하므로 남긴다.
+  useEffect(() => {
+    if (groupMessage !== FAVORITE_LIMIT_MESSAGE) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setGroupMessage(""),
+      FAVORITE_LIMIT_MESSAGE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [groupMessage]);
   // 최애를 등록했으면 그 그룹 분철만, 아니면 전체를 보여준다.
   const favoriteGroupNames = useMemo(
     () =>
-      new Set(railGroups.map((group) => normalizeGroupSearchText(group.name))),
-    [railGroups],
+      new Set(
+        favoritedGroups.map((group) => normalizeGroupSearchText(group.name)),
+      ),
+    [favoritedGroups],
   );
   const visibleListings = useMemo(() => {
     const scoped =
@@ -819,9 +836,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     // 레일에는 개수 표시가 없어 한도 초과를 눌러보고서야 알게 된다. 서버 왕복 전에 막고 이유를 알린다.
     if (nextFavorited && favoritedGroupCount >= FAVORITE_GROUP_LIMIT) {
-      setGroupMessage(
-        `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`,
-      );
+      setGroupMessage(FAVORITE_LIMIT_MESSAGE);
       return;
     }
 

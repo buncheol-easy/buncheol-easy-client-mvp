@@ -11,8 +11,9 @@ export const revalidate = 3600;
 const SITEMAP_PAGE_SIZE = 100;
 const SITEMAP_MAX_ITEMS = 20 * SITEMAP_PAGE_SIZE;
 
-// /search·/artists(그룹 선택 화면) 는 feature flag off 로 홈으로 307 리다이렉트되므로 제외한다.
-// /artists/[groupId] 는 artistBrowse 플래그로 따로 열려 있어 아래에서 동적으로 추가한다.
+// /search 는 feature flag off 로 홈으로 307 리다이렉트되므로 제외한다.
+// /artists(그룹 선택 화면) 는 favoriteArtists 가 켜지며 열렸지만, 색인 가치가 있는 건 그룹별
+// 랜딩인 /artists/[groupId] 라 목록 화면은 계속 제외하고 아래에서 그룹 경로만 동적으로 추가한다.
 // 로그인 전용 경로(/favorites·/profile·/upload 등)는 noindex 라 제외한다.
 const staticRoutes = [
   "",

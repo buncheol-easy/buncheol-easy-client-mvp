@@ -15,8 +15,4 @@ export function artistMemberListingsQueryKey(
   return [...buncheolsQueryKey, "artist", groupId, memberId] as const;
 }
 
-// 홈 "내 최애 분철" 섹션. 최애 구성이 바뀌면 무효화되도록 accessToken 대신 로그인 여부만 키에 담고,
-// 최애 토글 시 호출 측이 명시적으로 invalidate 한다.
-export const favoriteListingsQueryKey = [...buncheolsQueryKey, "favorites"] as const;
-
 export const bannersQueryKey = ["banners"] as const;
