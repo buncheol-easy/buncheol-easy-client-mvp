@@ -52,6 +52,41 @@ jobs:
         id: meta
         run: echo "tag=staging-sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate build-args (staging 은 트래킹 OFF 가 정상)
+        # staging 은 prod 와 정책이 반대다 — 트래킹 키가 "비어 있는 것"이 의도된 상태.
+        # staging·prod 가 같은 PostHog 프로젝트·같은 GA 속성을 쓰기 때문에 staging 을 켜두면
+        # QA 클릭이 prod 퍼널에 섞인다(2026-08-12 확인). 검증이 필요할 때만 일시 등록하고
+        # 끝나면 지운다 — 지우는 걸 잊으면 아래 경고가 잡아준다.
+        env:
+          API_BASE_URL: ${{ vars.STAGING_NEXT_PUBLIC_API_BASE_URL }}
+          PH_KEY: ${{ vars.STAGING_NEXT_PUBLIC_POSTHOG_KEY }}
+          GA_ID: ${{ vars.STAGING_NEXT_PUBLIC_GA_ID }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+
+          for pair in "API_BASE_URL=$API_BASE_URL" "PH_KEY=$PH_KEY" "GA_ID=$GA_ID"; do
+            case "${pair#*=}" in
+              *...*) fail "플레이스홀더가 등록돼 있다: ${pair%%=*}" ;;
+            esac
+          done
+
+          [ -n "$API_BASE_URL" ] || fail "STAGING_NEXT_PUBLIC_API_BASE_URL 미등록"
+          case "$API_BASE_URL" in https://*) ;; *) fail "API_BASE_URL 형식 이상: $API_BASE_URL" ;; esac
+
+          # 값이 있을 때만 형식을 본다. 켜져 있다는 사실 자체를 경고로 남긴다
+          if [ -n "$PH_KEY" ]; then
+            echo "::warning::staging PostHog 가 켜져 있다 — prod 퍼널 오염. 검증 끝났으면 변수를 삭제할 것"
+            case "$PH_KEY" in phc_*) ;; *) fail "POSTHOG_KEY 형식 이상" ;; esac
+            [ "${#PH_KEY}" -ge 44 ] || fail "POSTHOG_KEY 길이 이상 (len=${#PH_KEY})"
+          fi
+          if [ -n "$GA_ID" ]; then
+            echo "::warning::staging GA 가 켜져 있다 — prod 와 같은 속성이라 데이터가 섞인다"
+            case "$GA_ID" in G-*) ;; *) fail "GA_ID 형식 이상" ;; esac
+          fi
+
+          # 값 자체는 찍지 않는다 — ON/OFF 만
+          echo "build-args 검증 통과 (PostHog=$([ -n "$PH_KEY" ] && echo ON || echo OFF) / GA=$([ -n "$GA_ID" ] && echo ON || echo OFF))"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -84,6 +119,53 @@ jobs:
           # npm 의존성 레이어 재사용 — 2회차부터 빌드가 크게 준다
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke-test baked bundle (변수 ↔ 번들 일치 확인)
+        # 양방향 검사다. 켜기로 했으면 박혀 있어야 하고, 끄기로 했으면 없어야 한다.
+        # "끈 줄 알았는데 실은 켜져 있는" 상태(= prod 퍼널 오염)를 잡는 게 staging 쪽 목적.
+        env:
+          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ steps.meta.outputs.tag }}
+          PH_KEY: ${{ vars.STAGING_NEXT_PUBLIC_POSTHOG_KEY }}
+          GA_ID: ${{ vars.STAGING_NEXT_PUBLIC_GA_ID }}
+        run: |
+          set -e
+          fail() { echo "::error::$1"; docker logs bce-smoke 2>&1 | tail -30 || true; exit 1; }
+
+          docker pull "$IMAGE"
+          docker run -d --name bce-smoke -p 3000:3000 "$IMAGE"
+
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:3000 && break
+            [ "$i" = 30 ] && fail "컨테이너가 30초 안에 응답하지 않음"
+            sleep 1
+          done
+
+          html=$(curl -fsS http://127.0.0.1:3000)
+
+          ph_found=0
+          for c in $(echo "$html" | grep -o '/_next/static/[^"]*\.js' | sort -u); do
+            curl -fsS "http://127.0.0.1:3000$c" | grep -q 'phc_[A-Za-z0-9]\{40,\}' && { ph_found=1; break; }
+          done
+          # 느슨한 'G-[A-Z0-9]+' 대신 gtag 스크립트 URL 로 매칭 (오탐 방지)
+          ga_found=0
+          echo "$html" | grep -q 'googletagmanager\.com/gtag/js?id=G-' && ga_found=1
+
+          if [ -n "$PH_KEY" ]; then
+            [ "$ph_found" = 1 ] || fail "POSTHOG_KEY 를 등록했는데 번들에 토큰이 없다"
+          else
+            [ "$ph_found" = 0 ] || fail "POSTHOG_KEY 는 비었는데 번들에 토큰이 박혀 있다 — prod 퍼널이 오염된다"
+          fi
+          if [ -n "$GA_ID" ]; then
+            [ "$ga_found" = 1 ] || fail "GA_ID 를 등록했는데 HTML 에 태그가 없다"
+          else
+            [ "$ga_found" = 0 ] || fail "GA_ID 는 비었는데 HTML 에 태그가 박혀 있다"
+          fi
+
+          echo "번들 검증 통과 (PostHog=${ph_found} / GA=${ga_found}, 변수 설정과 일치)"
+
+      - name: Clean up smoke container
+        if: always()
+        run: docker rm -f bce-smoke 2>/dev/null || true
 
   deploy:
     needs: build
