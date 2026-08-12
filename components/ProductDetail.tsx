@@ -2009,6 +2009,10 @@ export function ProductDetail({
     };
 
     void restoreAddressSheet();
+    // TODO(#99): hasMyActiveParticipation 이 deps 에서 빠져 있다. 추가하면 주소 시트 복원
+    // 타이밍이 바뀌어 회귀 가능성이 있어(참여 상태 변경마다 복원이 재실행됨) 수동 QA 와 함께
+    // 별도 PR 에서 처리한다. 그때까지 신규 warning 유입을 막기 위해 이 지점만 억제한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     auctionOptions,
     authState.isLoggedIn,
