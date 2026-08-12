@@ -390,6 +390,8 @@ export function HostedBuncheolManage({
       isParticipationConfirmedStatus(option.winner?.paymentStatus),
     ).length ??
     0;
+  // 취소분은 서버가 participants 와 분리해 내려준다 — 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
+  const cancelledParticipants = detail?.cancelledParticipants ?? [];
   const minHeadcount = detail?.minHeadcount ?? 0;
   const confirmedProgressLabel = minHeadcount
     ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
@@ -1087,6 +1089,55 @@ export function HostedBuncheolManage({
                   확정할 수 있어요.
                 </p>
               )}
+            </section>
+          ) : null}
+
+          {/* 취소된 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
+              LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다. */}
+          {isC2C && cancelledParticipants.length > 0 ? (
+            <section className="mt-6 rounded-[1.05rem] border border-black/10 bg-[#f7f7f7] px-4 py-4">
+              <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                취소된 참여 {cancelledParticipants.length}건
+              </p>
+              <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
+                환불이 필요한 건은 아래 계좌로 보내주세요.
+              </p>
+              <div className="mt-3 space-y-2">
+                {cancelledParticipants.map((participant) => (
+                  <div
+                    className="rounded-[0.85rem] bg-white px-3 py-3"
+                    key={participant.participationId}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {participant.participantNickname}
+                        </p>
+                        {/* 파서 최종 폴백이 리터럴 "멤버" 라 그대로 찍으면 의미 없는 줄이 된다. */}
+                        {participant.memberName && participant.memberName !== "멤버" ? (
+                          <p className="mt-0.5 truncate text-[12px] font-medium text-black/40">
+                            {participant.memberName}
+                          </p>
+                        ) : null}
+                      </div>
+                      <p className="shrink-0 text-[14px] font-semibold tabular-nums">
+                        {formatWonAmount(participant.amount)}
+                      </p>
+                    </div>
+                    {participant.refundAccount ? (
+                      <p className="mt-1 break-all text-[13px] font-medium text-black/60">
+                        {participant.refundAccount.bank}{" "}
+                        {participant.refundAccount.account} (예금주:{" "}
+                        {participant.refundAccount.holder})
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-[13px] font-medium text-black/35">
+                        환불 계좌가 등록되어 있지 않아요.
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </section>
           ) : null}
 

@@ -413,6 +413,9 @@ export type BuncheolManagementOption = {
 };
 
 export type BuncheolManagementDetail = {
+  // 취소된 참여(환불 계좌 확인용). participants 와 분리해 받는다 —
+  // 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
+  cancelledParticipants: BuncheolManagementParticipant[];
   confirmedCount?: number;
   deadline: string;
   // 분철 flow_type — 없으면 LEGACY 취급 (getFlowType).
@@ -3668,9 +3671,31 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     });
 
   const participants = [...participantsById.values()];
+  // 취소분은 참여 수 집계에 쓰이는 participants 와 절대 합치지 않는다.
+  // participants 와 같은 규칙으로 participationId 중복을 접는다 — sourceRecords 가 둘일 때 같은 배열을 두 번 집을 수 있다.
+  const cancelledById = new Map<string, BuncheolManagementParticipant>();
+
+  sourceRecords
+    .flatMap((sourceRecord) =>
+      // 서버가 새로 정의한 필드라 구 응답 alias 가 없다 — participants 계열과 달리 단일 키만 본다.
+      getNestedRecordListValue(sourceRecord, ["cancelledParticipants"]),
+    )
+    .map((participantRecord) =>
+      getBuncheolManagementParticipantFromRecord(participantRecord),
+    )
+    .filter(
+      (participant): participant is BuncheolManagementParticipant =>
+        participant !== null,
+    )
+    .forEach((participant) => {
+      cancelledById.set(participant.participationId, participant);
+    });
+
+  const cancelledParticipants = [...cancelledById.values()];
   const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
 
   return {
+    cancelledParticipants,
     confirmedCount: getNumberValue(data, ["confirmedCount"]) ?? undefined,
     deadline:
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||

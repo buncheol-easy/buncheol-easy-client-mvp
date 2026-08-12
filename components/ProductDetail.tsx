@@ -1601,7 +1601,14 @@ export function ProductDetail({
     typeof product.minHeadcount === "number" && product.minHeadcount > 0
       ? product.minHeadcount
       : null;
-  const participationTargetCount = minHeadcount ?? auctionOptions.length;
+  // 최소 진행 인원은 LEGACY 마감 판정(입금확인 인원 ≥ minHeadcount)에만 쓰인다. C2C 는 인원이 차도
+  // 자동 확정되지 않고 개최자가 성사 확정을 눌러야 진행되므로(docs/46 §4.1), 최소 인원 기준 진행 바와
+  // "인원을 채우면 진행이 확정돼요" 문구를 그대로 쓰면 거짓 안내가 된다. C2C 는 전체 슬롯 대비 신청 현황으로 보여준다.
+  const participationDenominator = isC2CProduct
+    ? auctionOptions.length || null
+    : minHeadcount;
+  const participationTargetCount =
+    participationDenominator ?? auctionOptions.length;
   const participationProgressRatio =
     isConfirmedProduct
       ? 1
@@ -1617,6 +1624,19 @@ export function ProductDetail({
       : minHeadcount !== null
       ? Math.max(0, minHeadcount - currentParticipationCount)
       : null;
+  const participationStatusCaption = isConfirmedProduct
+    ? "마감된 분철이에요. 아래 멤버에서 입금 대기/구매 완료 기록을 확인해요."
+    : isCancelledProduct
+      ? "취소된 분철이에요."
+      : isC2CProduct
+      ? isC2CCollectingProduct
+        ? "개최자가 성사를 확정했어요. 참여자 입금이 모두 확인되면 진행이 확정돼요."
+        : "신청이 모이면 개최자가 성사 여부를 확정해요. 확정되면 입금 안내를 보내드려요."
+      : remainingHeadcount === null
+        ? "개최자가 정한 진행 기준을 확인하고 있어요."
+        : remainingHeadcount > 0
+          ? `분철 진행 최소 인원까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요. 인원을 채우면 진행이 확정돼요.`
+          : "분철 진행 최소 인원을 채웠어요.";
 
   function getBidUnavailableMessage() {
     if (isHostedProduct) {
@@ -3581,8 +3601,8 @@ export function ProductDetail({
                       ) : (
                         <>
                           현재 {currentParticipationCount.toLocaleString("ko-KR")}
-                          {minHeadcount !== null
-                            ? `/${minHeadcount.toLocaleString("ko-KR")}`
+                          {participationDenominator !== null
+                            ? `/${participationDenominator.toLocaleString("ko-KR")}`
                             : ""}
                           명
                         </>
@@ -3597,13 +3617,7 @@ export function ProductDetail({
                   />
                 </div>
                 <p className="mt-2 text-[12px] font-semibold text-black/40">
-                  {isConfirmedProduct
-                    ? "마감된 분철이에요. 아래 멤버에서 입금 대기/구매 완료 기록을 확인해요."
-                    : remainingHeadcount === null
-                    ? "개최자가 정한 진행 기준을 확인하고 있어요."
-                    : remainingHeadcount > 0
-                      ? `분철 진행 최소 인원까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요. 인원을 채우면 진행이 확정돼요.`
-                      : "분철 진행 최소 인원을 채웠어요."}
+                  {participationStatusCaption}
                 </p>
               </div>
             </div>
