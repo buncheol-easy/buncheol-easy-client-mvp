@@ -668,8 +668,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     }
 
     let isActive = true;
+    // 조회 결과가 도착했는지 표시. 초기화는 다음 프레임에 실행되는데, 응답이 그보다 먼저 오면
+    // 이미 채운 목록을 null 로 덮어써 레일이 스켈레톤에서 영영 벗어나지 못한다.
+    let hasSettled = false;
     const resetFrame = window.requestAnimationFrame(() => {
-      if (!isActive) {
+      if (!isActive || hasSettled) {
         return;
       }
 
@@ -683,6 +686,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
+        hasSettled = true;
         setApiGroups([]);
         setGroupMessage("");
       });
@@ -710,6 +714,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           return;
         }
 
+        hasSettled = true;
         setApiGroups(groups.map(toArtistRailItem));
         setGroupMessage("");
       })
@@ -719,6 +724,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         }
 
         const message = error instanceof Error ? error.message : "";
+
+        hasSettled = true;
 
         if (message.includes("401") || message.includes("Unauthorized")) {
           clearAuthState();
@@ -758,6 +765,17 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     }
 
     router.push(`/artists/${encodeURIComponent(groupId)}`);
+  }
+
+  function openHosting() {
+    if (scrollContainerRef.current) {
+      window.sessionStorage.setItem(
+        HOME_SCROLL_TOP_KEY,
+        String(scrollContainerRef.current.scrollTop),
+      );
+    }
+
+    router.push("/upload");
   }
 
   function openGroupSearch(groupName?: string) {
@@ -1008,17 +1026,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                  내 최애 것만 없는 건지 구분해 알린다. */
               <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
                 <p className="text-[15px] font-semibold tracking-[-0.05em]">
-                  최애 아티스트 분철이 아직 없어요
-                </p>
-                <p className="mt-2 text-[13px] font-medium leading-relaxed text-black/45">
-                  최애를 더 담으면 그만큼 더 볼 수 있어요.
+                  최애 아티스트 그룹의 분철이 아직 없어요
                 </p>
                 <button
-                  className="mt-4 inline-flex h-11 items-center rounded-full bg-black px-5 text-[14px] font-semibold tracking-[-0.04em] text-white"
-                  onClick={() => openGroupSearch()}
+                  className="motion-card mt-4 inline-flex h-11 items-center rounded-full bg-[#DDE7B8] px-5 text-[14px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
+                  onClick={openHosting}
                   type="button"
                 >
-                  최애 추가하기
+                  분철 직접 개최하기
                 </button>
               </div>
             ) : (
