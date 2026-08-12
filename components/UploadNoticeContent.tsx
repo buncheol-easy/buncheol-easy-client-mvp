@@ -7,9 +7,9 @@ import { BackIcon } from "@/components/icons";
 import { getHistoryIndex } from "@/lib/history-index";
 
 // 안내 문구는 확정 전 임시 카피입니다. 내용 확정 시 아래 상수만 교체하세요.
-const noticeHeadline = "분철 개최는 운영진이 함께 진행해요";
+const noticeHeadline = "이제 직접 분철을 열 수 있어요";
 const noticeDescription =
-  "믿을 수 있는 거래를 위해 지금은 분철이지 운영진이 확인한 분철만 개최되고 있어요.";
+  "만 19세 이상이고 연락처를 등록했다면 바로 개최할 수 있어요.";
 const noticeItems = [
   {
     title: "분철 참여는 그대로",

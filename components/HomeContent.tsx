@@ -797,7 +797,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       </div>
 
       <div
-        className={`scroll-reactive-content scroll-reactive-content--home min-h-0 flex-1 overflow-y-auto ${
+        // 우하단 도움말 버튼이 목록 마지막 카드를 덮지 않도록 하단 여백을 확보한다 (docs/53 Q-21).
+        className={`scroll-reactive-content scroll-reactive-content--home min-h-0 flex-1 overflow-y-auto pb-24 ${
           shouldSkipEnterAnimation ? "" : "tab-content-enter"
         }`}
         data-product-scroll-container="home"
