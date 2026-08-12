@@ -60,11 +60,15 @@ jobs:
         env:
           API_BASE_URL: ${{ vars.STAGING_NEXT_PUBLIC_API_BASE_URL }}
           PH_KEY: ${{ vars.STAGING_NEXT_PUBLIC_POSTHOG_KEY }}
+          PH_HOST: ${{ vars.STAGING_NEXT_PUBLIC_POSTHOG_HOST }}
           GA_ID: ${{ vars.STAGING_NEXT_PUBLIC_GA_ID }}
+          KAKAO_KEY: ${{ vars.STAGING_NEXT_PUBLIC_KAKAO_MAP_APP_KEY }}
         run: |
           fail() { echo "::error::$1"; exit 1; }
 
-          for pair in "API_BASE_URL=$API_BASE_URL" "PH_KEY=$PH_KEY" "GA_ID=$GA_ID"; do
+          # build-arg 로 넘기는 값은 전부 플레이스홀더 검사를 통과해야 한다 — 하나라도 빠지면
+          # 그 변수만 무방비가 된다(리뷰 지적: PH_HOST·KAKAO_KEY 누락)
+          for pair in "API_BASE_URL=$API_BASE_URL" "PH_KEY=$PH_KEY" "PH_HOST=$PH_HOST" "GA_ID=$GA_ID" "KAKAO_KEY=$KAKAO_KEY"; do
             case "${pair#*=}" in
               *...*) fail "플레이스홀더가 등록돼 있다: ${pair%%=*}" ;;
             esac
@@ -72,6 +76,11 @@ jobs:
 
           [ -n "$API_BASE_URL" ] || fail "STAGING_NEXT_PUBLIC_API_BASE_URL 미등록"
           case "$API_BASE_URL" in https://*) ;; *) fail "API_BASE_URL 형식 이상: $API_BASE_URL" ;; esac
+
+          # 호스트는 키 없이는 아무것도 켜지 않지만, 값이 있으면 형식은 맞아야 한다
+          if [ -n "$PH_HOST" ]; then
+            case "$PH_HOST" in https://*) ;; *) fail "POSTHOG_HOST 형식 이상" ;; esac
+          fi
 
           # 값이 있을 때만 형식을 본다. 켜져 있다는 사실 자체를 경고로 남긴다
           if [ -n "$PH_KEY" ]; then
@@ -123,49 +132,52 @@ jobs:
       - name: Smoke-test baked bundle (변수 ↔ 번들 일치 확인)
         # 양방향 검사다. 켜기로 했으면 박혀 있어야 하고, 끄기로 했으면 없어야 한다.
         # "끈 줄 알았는데 실은 켜져 있는" 상태(= prod 퍼널 오염)를 잡는 게 staging 쪽 목적.
+        # 검사 방식(컨테이너 기동 대신 .next grep)의 근거는 prod 워크플로 같은 스텝 주석 참고.
         env:
           IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ steps.meta.outputs.tag }}
           PH_KEY: ${{ vars.STAGING_NEXT_PUBLIC_POSTHOG_KEY }}
           GA_ID: ${{ vars.STAGING_NEXT_PUBLIC_GA_ID }}
         run: |
           set -e
-          fail() { echo "::error::$1"; docker logs bce-smoke 2>&1 | tail -30 || true; exit 1; }
+          fail() { echo "::error::$1"; exit 1; }
 
           docker pull "$IMAGE"
-          docker run -d --name bce-smoke -p 3000:3000 "$IMAGE"
+          docker create --name bce-smoke-fs "$IMAGE" > /dev/null
+          docker cp bce-smoke-fs:/app/.next "$RUNNER_TEMP/next"
+          docker rm -f bce-smoke-fs > /dev/null
 
-          for i in $(seq 1 30); do
-            curl -fsS -o /dev/null http://127.0.0.1:3000 && break
-            [ "$i" = 30 ] && fail "컨테이너가 30초 안에 응답하지 않음"
-            sleep 1
-          done
-
-          html=$(curl -fsS http://127.0.0.1:3000)
-
-          ph_found=0
-          for c in $(echo "$html" | grep -o '/_next/static/[^"]*\.js' | sort -u); do
-            curl -fsS "http://127.0.0.1:3000$c" | grep -q 'phc_[A-Za-z0-9]\{40,\}' && { ph_found=1; break; }
-          done
-          # 느슨한 'G-[A-Z0-9]+' 대신 gtag 스크립트 URL 로 매칭 (오탐 방지)
-          ga_found=0
-          echo "$html" | grep -q 'googletagmanager\.com/gtag/js?id=G-' && ga_found=1
+          static="$RUNNER_TEMP/next/static"
+          server="$RUNNER_TEMP/next/server"
+          if [ ! -d "$static" ] || [ ! -d "$server" ]; then
+            fail ".next/static·server 를 찾을 수 없다 — 빌드 산출물 구조가 바뀌었다. 이 스텝을 갱신할 것"
+          fi
 
           if [ -n "$PH_KEY" ]; then
-            [ "$ph_found" = 1 ] || fail "POSTHOG_KEY 를 등록했는데 번들에 토큰이 없다"
+            if ! grep -raqF "$PH_KEY" "$static"; then
+              fail "POSTHOG_KEY 를 등록했는데 클라이언트 번들에 없다"
+            fi
           else
-            [ "$ph_found" = 0 ] || fail "POSTHOG_KEY 는 비었는데 번들에 토큰이 박혀 있다 — prod 퍼널이 오염된다"
+            # 비교할 값이 없으니 PostHog 키 접두사 자체를 앵커로 쓴다.
+            # 'phc_' 는 PostHog 프로젝트 키 전용 접두사라 프레임워크 코드와 겹치지 않고,
+            # 7/31 처럼 플레이스홀더가 박힌 경우까지 같이 잡힌다.
+            if grep -raq 'phc_' "$static"; then
+              fail "POSTHOG_KEY 는 비었는데 번들에 phc_ 토큰이 박혀 있다 — prod 퍼널이 오염된다"
+            fi
           fi
+
           if [ -n "$GA_ID" ]; then
-            [ "$ga_found" = 1 ] || fail "GA_ID 를 등록했는데 HTML 에 태그가 없다"
+            if ! grep -raqF "$GA_ID" "$server"; then
+              fail "GA_ID 를 등록했는데 서버 번들에 없다"
+            fi
           else
-            [ "$ga_found" = 0 ] || fail "GA_ID 는 비었는데 HTML 에 태그가 박혀 있다"
+            # GA 는 '꺼진 것'을 번들에서 단정할 앵커가 없다: @next/third-parties 모듈이
+            # import 만으로 'googletagmanager' literal 을 싣고, 렌더 여부와 무관하게 남는다.
+            # 'G-[A-Z0-9]+' shape 는 프레임워크 코드 오탐 위험이 있어 쓰지 않는다.
+            # 설정 쪽은 위 Validate 스텝의 경고가 담당한다.
+            echo "::notice::GA_ID 미등록 — 번들 단정은 생략(앵커 없음), 설정 검사는 Validate 스텝이 담당"
           fi
 
-          echo "번들 검증 통과 (PostHog=${ph_found} / GA=${ga_found}, 변수 설정과 일치)"
-
-      - name: Clean up smoke container
-        if: always()
-        run: docker rm -f bce-smoke 2>/dev/null || true
+          echo "번들 검증 통과 (변수 설정과 일치)"
 
   deploy:
     needs: build

@@ -64,7 +64,7 @@ jobs:
 
           # 플레이스홀더 탐지 — docs/38 §4-3 의 복붙용 명령어에 들어 있던 'phc_...' 가
           # 그대로 등록됐던 실패(staging, 7/31)를 값 형식과 무관하게 잡는다
-          for pair in "API_BASE_URL=$API_BASE_URL" "PH_KEY=$PH_KEY" "PH_HOST=$PH_HOST" "GA_ID=$GA_ID"; do
+          for pair in "API_BASE_URL=$API_BASE_URL" "PH_KEY=$PH_KEY" "PH_HOST=$PH_HOST" "GA_ID=$GA_ID" "KAKAO_KEY=$KAKAO_KEY"; do
             case "${pair#*=}" in
               *...*) fail "플레이스홀더가 등록돼 있다: ${pair%%=*}" ;;
             esac
@@ -107,10 +107,8 @@ jobs:
         with:
           context: .
           push: true
-          # ⚠️ 이 자리에 "PROD_ 트래킹 키는 Part G 전까지 미등록 = 의도된 비활성" 이라는 주석이
-          # 있었으나 사실과 달랐다 — 키는 7/28 부터 prod 박스에 있었고, off-box 전환에서
-          # 옮기지 않아 8/1~8/12 prod 트래킹이 죽어 있었다(루트 docs/38 §4-3-A).
-          # 2026-08-12 PROD_ 3키 등록 완료. 값 누락은 위 Validate 스텝이 빌드에서 차단한다.
+          # PROD_ 트래킹 3키는 필수 — 누락은 위 Validate 스텝이 빌드에서 차단한다.
+          # 경위는 루트 docs/38 §4-3-A.
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=${{ vars.PROD_NEXT_PUBLIC_API_BASE_URL }}
             NEXT_PUBLIC_GA_ID=${{ vars.PROD_NEXT_PUBLIC_GA_ID }}
@@ -127,51 +125,52 @@ jobs:
       - name: Smoke-test baked bundle (트래킹·API URL 실물 확인)
         # 위 Validate 는 "변수를 등록했나"만 본다. Dockerfile ARG 누락·build-args 오타·
         # 캐시가 옛 ENV 를 물고 오는 경우는 입력이 멀쩡해도 번들이 빈다 — 그건 여기서만 잡힌다.
-        # 박스가 아니라 러너에서 검사하는 이유: 실패해도 deploy 잡이 아예 안 돌아 prod 무접촉
-        # (컨테이너 교체 후 실패하면 신버전이 뜬 채 별칭만 안 옮겨간 어정쩡한 상태가 된다).
+        #
+        # 이미지를 띄워 HTTP 로 훑지 않고 .next 를 꺼내 grep 한다. HTTP 방식은 "/ 가 어떤 청크를
+        # 로드하나"에 의존해서, 앱 리팩터로 literal 이 다른 청크로 옮겨가면 배포가 막히면서
+        # 엉뚱한 원인("staging 폴백")을 가리킨다 — 틀린 진단이 붙은 차단이 제일 나쁘다(리뷰 지적).
+        # 파일시스템 검사는 그 결합이 없고, 컨테이너 기동·백엔드 도달성과도 무관하며 더 빠르다.
+        # 러너에서 검사하므로 실패해도 deploy 잡이 아예 안 돌아 prod 는 무접촉이다.
         env:
           IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ steps.meta.outputs.tag }}
           API_BASE_URL: ${{ vars.PROD_NEXT_PUBLIC_API_BASE_URL }}
+          PH_KEY: ${{ vars.PROD_NEXT_PUBLIC_POSTHOG_KEY }}
+          GA_ID: ${{ vars.PROD_NEXT_PUBLIC_GA_ID }}
         run: |
           set -e
-          fail() { echo "::error::$1"; docker logs bce-smoke 2>&1 | tail -30 || true; exit 1; }
+          fail() { echo "::error::$1"; exit 1; }
 
           docker pull "$IMAGE"
-          docker run -d --name bce-smoke -p 3000:3000 "$IMAGE"
+          docker create --name bce-smoke-fs "$IMAGE" > /dev/null
+          docker cp bce-smoke-fs:/app/.next "$RUNNER_TEMP/next"
+          docker rm -f bce-smoke-fs > /dev/null
 
-          for i in $(seq 1 30); do
-            curl -fsS -o /dev/null http://127.0.0.1:3000 && break
-            [ "$i" = 30 ] && fail "컨테이너가 30초 안에 응답하지 않음"
-            sleep 1
-          done
+          static="$RUNNER_TEMP/next/static"
+          server="$RUNNER_TEMP/next/server"
+          # 구조가 바뀌면 "트래킹이 죽었다"가 아니라 "검사 방식이 낡았다"고 말해야 한다
+          if [ ! -d "$static" ] || [ ! -d "$server" ]; then
+            fail ".next/static·server 를 찾을 수 없다 — 빌드 산출물 구조가 바뀌었다. 이 스텝을 갱신할 것"
+          fi
 
-          html=$(curl -fsS http://127.0.0.1:3000)
+          # 값의 '모양'이 아니라 등록한 값 그대로를 찾는다 — 엉뚱한 GA 속성이나 다른 프로젝트의
+          # PostHog 키가 들어가도 통과하던 구멍을 막는다(리뷰 지적). 전부 브라우저에 노출되는
+          # 공개값이라 에러 메시지·로그 노출 문제는 없다.
+          if ! grep -raqF "$PH_KEY" "$static"; then
+            fail "PostHog 토큰이 클라이언트 번들에 없다 — 트래킹이 죽은 이미지다"
+          fi
+          # 소스의 defaultApiBaseUrl 폴백이 staging 도메인이라, prod 도메인 문자열의 존재가
+          # 곧 "env 가 실제로 주입됐다"는 증거다
+          if ! grep -raqF "$API_BASE_URL" "$static"; then
+            fail "prod API base URL 이 클라이언트 번들에 없다 — staging 백엔드로 폴백한 이미지다"
+          fi
+          # GA 는 root layout(서버 컴포넌트)에서 렌더돼 서버 청크에 박힌다.
+          # ⚠️ 프리렌더 HTML(.next/server/app/*.html)에는 gtag 스크립트가 들어가지 않는다(실측 확인)
+          # — HTML 로 검사하려 들지 말 것.
+          if ! grep -raqF "$GA_ID" "$server"; then
+            fail "GA ID 가 서버 번들에 없다 — GA 태그가 렌더되지 않는다"
+          fi
 
-          # GA: @next/third-parties 가 gtag 스크립트 태그를 HTML 에 직접 박는다.
-          # 느슨한 'G-[A-Z0-9]+' 대신 스크립트 URL 로 매칭 — 무관한 문자열이 우연히 걸려
-          # 배포가 통과/실패하는 일을 막는다
-          echo "$html" | grep -q 'googletagmanager\.com/gtag/js?id=G-' \
-            || fail "GA 태그가 HTML 에 없다 — GA_ID 가 번들에 안 박혔다"
-
-          # PostHog·API URL: JS 청크를 훑는다. 청크 파일명은 빌드마다 바뀌므로 HTML 에서 뽑아 쓴다
-          ph_found=0
-          api_found=0
-          for c in $(echo "$html" | grep -o '/_next/static/[^"]*\.js' | sort -u); do
-            body=$(curl -fsS "http://127.0.0.1:3000$c") || continue
-            echo "$body" | grep -q 'phc_[A-Za-z0-9]\{40,\}' && ph_found=1
-            echo "$body" | grep -qF "$API_BASE_URL" && api_found=1
-          done
-
-          [ "$ph_found" = 1 ] || fail "PostHog 토큰이 번들에 없다 — 트래킹이 죽은 이미지다"
-          # 소스의 defaultApiBaseUrl 폴백은 staging 도메인이라, prod 도메인 문자열의 존재가
-          # 곧 "env 가 실제로 주입됐다"는 증거가 된다
-          [ "$api_found" = 1 ] || fail "prod API base URL 이 번들에 없다 — staging 백엔드로 폴백한 이미지다"
-
-          echo "번들 검증 통과: GA·PostHog·API URL 모두 베이크됨"
-
-      - name: Clean up smoke container
-        if: always()
-        run: docker rm -f bce-smoke 2>/dev/null || true
+          echo "번들 검증 통과: PostHog·API URL(static) · GA(server) 모두 등록값 그대로 베이크됨"
 
   deploy:
     needs: build
