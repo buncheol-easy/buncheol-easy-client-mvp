@@ -4296,14 +4296,22 @@ export function ProductDetail({
                             </p>
                           </>
                         ) : null}
+                        {/* 중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 이 안내
+                            문장에 흡수했다. 약관 제9조(app/terms)와 /broker-notice 가
+                            "분철 상세 화면 및 참여·입금 화면에 표시된다"고 공표하고 있어
+                            입금 화면에서 고지를 없앨 수 없다. 사용자 지적(docs/56 H-06)의
+                            실체는 반복되는 문단 수이므로 블록만 줄인다. */}
                         <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                           {isC2CProduct
                             ? "송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."
-                            : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}
+                            : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}{" "}
+                          {isC2CProduct ? (
+                            <span className="font-semibold text-black/60">
+                              분철이지는 통신판매중개자이며, 대금은 개최자
+                              계좌로 직접 입금돼요.
+                            </span>
+                          ) : null}
                         </p>
-                        {/* 중개자 고지(전상법 §20①)는 계약 체결 화면인 confirm 스텝과
-                            분철 상세 본문에 남아 있다. 결제 정보 단계에서는 같은 문구가
-                            반복돼 안내가 묻힌다는 지적으로 제거했다(docs/56 H-06). */}
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                             <p className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]">
@@ -4423,12 +4431,19 @@ export function ProductDetail({
                       </p>
                     </div>
 
+                    {/* 여기서도 고지를 별도 문단이 아니라 안내 문장에 흡수한다.
+                        원래 문단은 isC2CProduct 로 감싸여 있지 않아 회사 개최 분철에도
+                        노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
                       개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
-                      있어요.
+                      있어요.{" "}
+                      {isC2CProduct ? (
+                        <span className="font-semibold text-black/60">
+                          분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
+                          직접 입금돼요.
+                        </span>
+                      ) : null}
                     </p>
-                    {/* 중개자 고지는 신청 직전 화면(confirm 스텝)에서 이미 노출된다.
-                        신청 완료 안내에서 다시 반복하지 않는다(docs/56 H-06). */}
                   </div>
 
                   <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
