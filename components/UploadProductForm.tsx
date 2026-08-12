@@ -99,7 +99,9 @@ type UploadProductFormProps = {
 
 const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
-const maxTitleLength = 200;
+// 제목 길이 상한(docs/56 H-02): 200자는 어느 화면에서도 전부 볼 수 없어 64자로 축소.
+// 서버 검증(@Size)도 같은 값으로 맞춘다 — FE 가 더 엄격해야 서버 400 이 나지 않는다.
+const maxTitleLength = 64;
 const maxDescriptionLength = 700;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
@@ -755,6 +757,12 @@ export function UploadProductForm({
 
     if (!title.trim()) {
       return "상품명을 입력해 주세요.";
+    }
+
+    // input 의 maxLength 는 타이핑만 막고, 서버에서 불러온 기존 제목에는 적용되지 않는다.
+    // 상한을 넘긴 제목을 수정 저장하면 서버 검증에서 400 이 나므로 제출 자체를 막는다.
+    if (title.trim().length > maxTitleLength) {
+      return `상품명은 ${maxTitleLength}자까지 입력할 수 있어요.`;
     }
 
     if (isApiEditMode) {
