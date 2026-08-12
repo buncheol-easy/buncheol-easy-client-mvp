@@ -473,10 +473,10 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               <button
                 type="button"
                 aria-label={isLiked ? "찜 해제" : "찜하기"}
-                className={`motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
+                className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
                   isLiked
-                    ? "bg-[#DDE7B8] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
-                    : "bg-white/95 text-black/45"
+                    ? "heart-on-image heart-on-image--active text-like"
+                    : "heart-on-image text-white"
                 } disabled:opacity-60`}
                 disabled={isBookmarkPending}
                 onClick={handleBookmarkClick}
@@ -593,10 +593,10 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           <button
             type="button"
             aria-label={isLiked ? "찜 해제" : "찜하기"}
-            className={`motion-icon-button absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
+            className={`absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full ${
               isLiked
-                ? "bg-[#DDE7B8] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
-                : "bg-white/95 text-black/45"
+                ? "heart-on-image heart-on-image--active text-like"
+                : "heart-on-image text-white"
             } disabled:opacity-60`}
             disabled={isBookmarkPending}
             onClick={handleBookmarkClick}

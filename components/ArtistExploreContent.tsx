@@ -344,7 +344,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           }`}
         >
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-like/10 text-like">
               <HeartIcon className="h-3.5 w-3.5" filled />
             </span>
             <div className="min-w-0 flex-1">
@@ -432,8 +432,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
                       aria-label={group.favorited ? "최애 해제" : "최애 추가"}
                       className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold transition-transform active:scale-95 ${
                         group.favorited
-                          ? "bg-black text-white shadow-[0_6px_16px_rgba(0,0,0,0.08)]"
-                          : "border border-black/10 bg-white text-black"
+                          ? "bg-like/10 text-like ring-1 ring-like/25"
+                          : "border border-black/10 bg-white text-black/45"
                       } ${
                         isFavoriteLimitReached
                           ? "bg-[#f4f4f4] text-black/25 shadow-none"

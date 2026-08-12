@@ -278,10 +278,10 @@ export function ArtistRail({
           </button>
           {onFavoriteToggle && item.type !== "member" ? (
             <button
-              className={`motion-icon-button absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.12)] ${
+              className={`absolute right-0.5 top-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full ${
                 item.favorited === true
-                  ? "bg-[#DDE7B8] text-black"
-                  : "bg-white/90 text-black"
+                  ? "heart-on-image heart-on-image--active text-like"
+                  : "heart-on-image text-white"
               }`}
               onClick={() => onFavoriteToggle(item)}
               type="button"
