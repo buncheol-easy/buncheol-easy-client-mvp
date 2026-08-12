@@ -121,7 +121,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
 
   const favoriteGroups = groups.filter((group) => group.favorited);
   const favoriteCount = favoriteGroups.length;
-  const isFavoriteRailVisible = favoriteCount >= FAVORITE_GROUP_LIMIT;
+  // 등록한 최애는 한도에 도달했을 때만이 아니라 항상 상단에 모아 보여준다 — 아티스트가 많아
+  // 그리드를 훑어서는 내가 누구를 담았는지 확인하기 어렵다.
+  const isFavoriteRailVisible = favoriteCount > 0;
+  const isFavoriteLimitReachedRail = favoriteCount >= FAVORITE_GROUP_LIMIT;
   const visibleGroups = useMemo(() => {
     const trimmedQuery = query.trim();
     const shouldPinFavorites = !shouldPreserveExploreOrder;
@@ -349,10 +352,12 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold tracking-[-0.03em]">
-                내 최애가 가득 찼어요.
+                나의 최애 {favoriteCount}
               </p>
               <p className="mt-0.5 text-[12px] font-semibold text-black/45">
-                하나 비우면 지금 보고 있는 아티스트를 담을 수 있어요.
+                {isFavoriteLimitReachedRail
+                  ? "가득 찼어요. 하나 비우면 지금 보고 있는 아티스트를 담을 수 있어요."
+                  : `최대 ${FAVORITE_GROUP_LIMIT}개까지 담을 수 있어요.`}
               </p>
             </div>
           </div>
