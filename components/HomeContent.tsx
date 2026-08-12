@@ -22,7 +22,6 @@ import {
   BidIcon,
   ClipboardListIcon,
   CloseIcon,
-  PlusIcon,
   SearchIcon,
 } from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
@@ -952,9 +951,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           {isArtistRailVisible ? (
             <>
               <div className="mb-6">
+              {/* 최애가 없어도 레일 구성은 그대로 두고 아이템만 비운다 — 등록 전후로 홈 레이아웃이 바뀌지 않게. */}
               {isGroupLoading ? (
                 <HomeArtistRailSkeleton />
-              ) : railGroups.length > 0 ? (
+              ) : (
                 <ArtistRail
                   items={railGroups}
                   leadingItem={{ label: "최애 추가", icon: "plus" }}
@@ -962,26 +962,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   onItemClick={openArtistPage}
                   onLeadingClick={() => openGroupSearch()}
                 />
-              ) : (
-                /* 최애가 없으면 레일을 비워 두는 대신 등록 진입점만 남긴다.
-                   그냥 감추면 최애 기능이 있다는 것 자체를 알 수 없다. */
-                <button
-                  className="motion-card flex w-full items-center gap-3 rounded-[1.1rem] bg-[#f7f7f7] px-4 py-4 text-left"
-                  onClick={() => openGroupSearch()}
-                  type="button"
-                >
-                  <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/8 bg-white text-black/55 shadow-[0_6px_18px_rgba(0,0,0,0.06)]">
-                    <PlusIcon />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-semibold tracking-[-0.04em]">
-                      최애 아티스트를 등록해보세요
-                    </span>
-                    <span className="mt-0.5 block text-[12.5px] font-medium text-black/45">
-                      등록하면 최애 분철을 홈에서 먼저 볼 수 있어요.
-                    </span>
-                  </span>
-                </button>
               )}
               </div>
 
