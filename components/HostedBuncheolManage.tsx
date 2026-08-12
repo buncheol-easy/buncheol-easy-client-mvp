@@ -647,7 +647,7 @@ export function HostedBuncheolManage({
         setConfirmSheetRequest(null);
         void runFinalizeCollected();
       },
-      title: "입금 수집을 종료하고 진행을 확정할까요?",
+      title: "입금 확인을 마치고 진행을 확정할까요?",
     });
   }
 
@@ -727,7 +727,8 @@ export function HostedBuncheolManage({
 
     setConfirmSheetRequest({
       confirmLabel: "표시 해제",
-      description: `${depositorName}님의 입금 기한이 24시간 연장되고 입금 재확인 알림톡이 발송돼요.`,
+      // 개최자가 반려를 "취소"로 오해하는 걸 막는다 — 실제로는 참여가 유지된 채 기한만 늘어난다 (docs/54 1-7).
+      description: `취소가 아니에요. ${depositorName}님에게 재확인을 요청하고 기한이 24시간 연장돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runRejectPaymentSent(participant);
@@ -851,12 +852,10 @@ export function HostedBuncheolManage({
               <BackIcon />
             </button>
             <div className="min-w-0 flex-1 text-right">
+              {/* 제목은 아래 검정 카드로 내렸다 — 헤더에서 truncate 로 잘리는 대신 두 줄까지 펼쳐진다 (docs/54 1-2 시안 A). */}
               <p className="text-[12px] font-semibold text-black/35">
-                공동구매 운영
+                분철 개최 관리
               </p>
-              <h1 className="truncate text-[22px] font-semibold tracking-[-0.06em]">
-                {detail.title}
-              </h1>
             </div>
           </div>
         </header>
@@ -872,14 +871,14 @@ export function HostedBuncheolManage({
             <div className="bg-black px-4 py-4 text-white">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
-                    Group Buy
-                  </p>
-                  <p className="mt-1 truncate text-[20px] font-semibold tracking-[-0.06em]">
-                    {detail.purchaseSite || "구매처 미입력"}
-                  </p>
-                  <p className="mt-1 text-[13px] font-semibold text-white/55">
+                  {/* 제목이 이 화면의 주인공 — 두 줄까지 보여주고, 그룹·구매처는 아래 메타 한 줄로 내린다. */}
+                  <h1 className="line-clamp-2 text-[19px] font-semibold leading-[1.32] tracking-[-0.05em]">
+                    {detail.title}
+                  </h1>
+                  <p className="mt-2 truncate text-[12px] font-semibold text-white/55">
                     {detail.groupName}
+                    <span className="px-1.5 text-white/30">·</span>
+                    {detail.purchaseSite || "구매처 미입력"}
                   </p>
                 </div>
                 <span
@@ -1050,12 +1049,11 @@ export function HostedBuncheolManage({
               >
                 {pendingC2CAction === "finalize-collected"
                   ? "확정하는 중"
-                  : "입금 수집 종료 · 진행 확정"}
+                  : "입금 확인 마치고 진행 확정"}
               </button>
               {c2cUnpaidActiveCount > 0 ? (
                 <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                  입금 대기·보냈어요 참여를 확인하거나 반려로 정리하면 종료할 수
-                  있어요. 기한이 지나면 미입금 신청은 자동 취소돼요.
+                  입금을 확인하거나, 기한이 지나 자동 취소되면 종료할 수 있어요.
                 </p>
               ) : c2cConfirmedCount === 0 ? (
                 <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
@@ -1074,7 +1072,7 @@ export function HostedBuncheolManage({
               <p className="mt-1 text-[13px] font-medium text-black/40">
                 {isC2C
                   ? "입금자명과 통장 내역을 대조해 입금을 확인해요. 내역이 없으면 반려로 재확인을 요청할 수 있어요."
-                  : "공동구매 멤버별로 입금 확인과 운송장 등록을 이어서 처리해요."}
+                  : "멤버마다 입금 확인 → 운송장 등록 순서로 처리해요."}
               </p>
             </div>
 
@@ -1188,6 +1186,17 @@ export function HostedBuncheolManage({
                                       {formatWonAmount(participant.amount)}
                                       {rowTimeInfo}
                                     </p>
+                                    {/* 다슬롯은 배송비가 묶음 첫 슬롯에만 붙어 같은 사람의 두 참여 금액이 달라진다.
+                                        합계만 보여주면 개최자가 통장 금액과 왜 다른지 설명할 수 없다 (docs/53 Q-22). */}
+                                    {/* 배송비 0원은 다슬롯 묶음뿐 아니라 무료 배송 개최에서도 나온다.
+                                        0원에 "다른 참여에 부과돼요"를 붙이면 없는 참여를 가리키므로,
+                                        실제로 부과된 건에서만 내역을 쪼개 보여준다 (docs/53 Q-22). */}
+                                    {typeof participant.shippingFee === "number" &&
+                                    participant.shippingFee > 0 ? (
+                                      <p className="mt-0.5 text-[11px] font-medium text-black/30">
+                                        {`상품 ${formatWonAmount(Math.max(participant.amount - participant.shippingFee, 0))} + 배송비 ${formatWonAmount(participant.shippingFee)}`}
+                                      </p>
+                                    ) : null}
                                   </div>
                                   <span
                                     className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
@@ -1370,6 +1379,19 @@ export function HostedBuncheolManage({
                 const optionPurchaseAmount = getHighestBidAmount(option);
                 const paymentAmount = getWinnerBidAmount(option);
                 const hasOrder = Boolean(option.winner);
+                // 통장 대조용 이름 — 예금주 우선, 없으면 닉네임 (C2C 참여자 목록과 같은 규칙, docs/53 Q-18).
+                // ⚠️ participationId 가 일치하는 참여만 쓴다. LEGACY 는 슬롯당 참여가 여러 건이라
+                // participants[0] 은 낙찰자라는 보장이 없고, 그걸 폴백으로 쓰면 제3자의 실명 예금주가
+                // "입금자명"에 찍힌다 — 대조를 틀리게 만들 뿐 아니라 실명 노출이다.
+                // holder 는 빈 문자열일 수 있어 ?? 가 아니라 || 로 폴백한다.
+                const optionDepositorName =
+                  option.participants?.find(
+                    (participant) =>
+                      participant.participationId ===
+                      option.winner?.participationId,
+                  )?.refundAccount?.holder ||
+                  option.winner?.depositorName ||
+                  null;
                 const isTrackingRegistered = Boolean(
                   option.winner?.trackingNumber || deliveryState.isShipped,
                 );
@@ -1483,6 +1505,14 @@ export function HostedBuncheolManage({
                                         주문자
                                       </span>
                                       {option.winner?.depositorName ?? "-"}
+                                    </p>
+                                    {/* 통장에 찍히는 건 예금주명이라, 닉네임(주문자)만으로는 대조가 안 된다 (docs/53 Q-18).
+                                        C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}
+                                    <p className="text-[13px] font-semibold text-black/55">
+                                      <span className="mr-2 text-black/35">
+                                        입금자명
+                                      </span>
+                                      {optionDepositorName ?? "-"}
                                     </p>
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">

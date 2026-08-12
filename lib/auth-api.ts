@@ -351,7 +351,10 @@ export type BuncheolManagementDelivery = {
 };
 
 export type BuncheolManagementParticipant = {
+  // amount 는 배송비를 포함한 입금 총액, shippingFee 는 그중 배송비.
+  // 다슬롯은 배송비가 묶음 첫 슬롯에만 붙어 같은 사람의 두 참여 금액이 달라진다 (docs/53 Q-22).
   amount: number;
+  shippingFee?: number | null;
   buncheolMemberId?: string;
   confirmedAt?: string | null;
   delivery?: BuncheolManagementDelivery | null;
@@ -435,6 +438,9 @@ export type MyParticipation = {
   paymentDueAt?: string | null;
   // C2C "보냈어요" 마킹 시각 — 마킹 안 했으면 null.
   paymentSentAt?: string | null;
+  // 개최자가 "입금 못 찾음"으로 되돌린 시각. 서버가 입금 대기 구간에서만 값을 채워 주므로
+  // 값이 있으면 곧 "재확인이 필요한 상태"다 (docs/53 Q-03).
+  paymentRejectedAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
   // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
@@ -3314,6 +3320,7 @@ function getBuncheolManagementParticipantFromRecord(
         "bidAmount",
         "price",
       ]) ?? 0,
+    shippingFee: getOptionalNumberValue(record, ["shippingFee", "deliveryFee"]),
     buncheolMemberId:
       getOptionalStringValue(record, [
         "buncheolMemberId",
@@ -4346,6 +4353,8 @@ export async function requestMyParticipations(accessToken: string) {
           null,
         paymentSentAt:
           getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
+        paymentRejectedAt:
+          getOptionalStringValue(record, ["paymentRejectedAt"]) ?? null,
         // 서버는 refundHolder 로 내려주지만, 환불계좌 객체째 실려오는 응답도 대비한다.
         // ⚠️ getNestedBankAccountInfo 를 쓰면 안 된다 — 키에서 못 찾을 때 최상위 record 를 스캔하고,
         // 그 후보 키에 hostAccountHolder·sellerAccountHolder 가 있어 개최자 예금주를 입금자명으로

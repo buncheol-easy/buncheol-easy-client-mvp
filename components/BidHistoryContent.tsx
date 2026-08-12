@@ -432,6 +432,7 @@ type BidRecord = {
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
+  paymentRejectedAt?: string | null;
   createdAt?: string | null;
   participationStatus?: string;
   cancelReason?: string | null;
@@ -862,13 +863,22 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   }
 
   if (isBidRecordPaymentReady(bid, now)) {
-    return `입금 기한까지 ${formatPaymentRemainingTime(
+    const remaining = formatPaymentRemainingTime(
       bid.deadline,
       now,
       bid.paymentDueAt,
       bid.createdAt,
       isC2C,
-    )}`;
+    );
+
+    // 개최자가 "입금 못 찾음"으로 되돌린 경우. 서버가 입금 대기 구간에서만 값을 채우고 재마킹 시
+    // 지우므로, 값이 있으면 지금이 재확인 구간이다. "반려"라고 쓰면 취소로 오해해 문의가 몰린다
+    // (docs/53 Q-03, docs/54 2-1).
+    if (isC2C && bid.paymentRejectedAt) {
+      return `입금이 확인되지 않았어요 · 다시 확인해 주세요. 기한까지 ${remaining}`;
+    }
+
+    return `입금 기한까지 ${remaining}`;
   }
 
   return isBidRecordClosed(bid, now)
@@ -1000,6 +1010,7 @@ function getBidRecordFromParticipation(
     // depositorName 은 참여자 닉네임을 담을 수 있어, 예금주가 아닌 이름이 입금자명으로 표시된다.
     refundHolder: participation.refundHolder ?? null,
     paymentSentAt: participation.paymentSentAt ?? null,
+    paymentRejectedAt: participation.paymentRejectedAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
       cachedPayment?.paymentAmount ??
@@ -1916,11 +1927,22 @@ export function BidHistoryContent({
 
         return true;
       })
-      .sort(
-        (left, right) =>
+      // 취소된 분철을 아래로 내린 뒤 마감일 역순 (docs/53 Q-19). 정렬 기준이 두 곳으로 나뉘면
+      // 뒤에 도는 쪽이 앞의 그룹핑을 덮어쓰므로 이 비교자 하나로 합친다.
+      .sort((left, right) => {
+        const cancelledDiff =
+          (isBuncheolCancelledStatus(left.status) ? 1 : 0) -
+          (isBuncheolCancelledStatus(right.status) ? 1 : 0);
+
+        if (cancelledDiff !== 0) {
+          return cancelledDiff;
+        }
+
+        return (
           parseHistoryDeadline(right.deadline).getTime() -
-          parseHistoryDeadline(left.deadline).getTime(),
-      );
+          parseHistoryDeadline(left.deadline).getTime()
+        );
+      });
   }, [
     apiHostedProducts,
     authState.isLoggedIn,
@@ -2732,7 +2754,11 @@ export function BidHistoryContent({
       </div>
 
       <main
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        // 도움말 버튼(absolute bottom-5, h-12)이 스크롤 맨 아래에서 마지막 카드를 덮었다.
+        // 버튼이 뜨는 모드에서만 하단 여백을 버튼 높이(48px)+오프셋(20px) 이상으로 넓힌다 (docs/53 Q-21).
+        className={`min-h-0 flex-1 overflow-y-auto px-4 ${
+          mode === "joined" ? "pb-24" : "pb-6"
+        }`}
         ref={scrollContainerRef}
       >
         {/* 필터 칩 전환은 모션 없이 즉시 반영 — key 는 참여↔개최 전환에만 걸어 재생한다. */}
