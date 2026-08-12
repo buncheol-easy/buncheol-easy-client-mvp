@@ -199,9 +199,14 @@ export function ArtistBrowseContent({
           ) : null}
 
           {isLoading ? (
-            <ProductGridSkeleton ariaLabel="분철을 불러오는 중" />
+            <ProductGridSkeleton ariaLabel="분철을 불러오는 중" variant="wide" />
           ) : items.length > 0 ? (
-            <ProductGrid items={items} keyPrefix={`artist-${group.id}`} />
+            /* 카드 형태는 홈 목록과 같은 wide 로 맞춘다. */
+            <ProductGrid
+              items={items}
+              keyPrefix={`artist-${group.id}`}
+              variant="wide"
+            />
           ) : (
             <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-10 text-center">
               <p className="text-[15px] font-semibold tracking-[-0.05em]">

@@ -39,6 +39,8 @@ export type ProductCardItem = {
   optionCount?: number;
   targetMembers?: string[];
   uploadedAt?: string;
+  // 정렬용 원본 개최 시각. uploadedAt 은 표시용 포맷 문자열이라 비교에 쓸 수 없다.
+  createdAt?: string;
   era: string;
   price?: string;
   deadline: string;

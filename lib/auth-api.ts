@@ -3820,6 +3820,7 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     minHeadcount: summary.minHeadcount,
     targetMembers: summary.memberNames,
     uploadedAt: formatKoreaDateTime(summary.createdAt),
+    createdAt: summary.createdAt,
     era: summary.groupName,
     price: undefined,
     deadline: formatKoreaDateTime(summary.deadline),

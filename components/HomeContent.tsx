@@ -3,6 +3,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -26,6 +27,7 @@ import {
 } from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
+import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import {
@@ -34,7 +36,6 @@ import {
   removeFavoriteGroup,
   requestAllBuncheols,
   requestBanners,
-  requestBuncheols,
   requestFavoriteGroups,
   toProductCardItem,
   type ApiBanner,
@@ -50,13 +51,19 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import {
+  isBuncheolPaymentCollectingStatus,
+  isBuncheolPurchasableStatus,
+} from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import {
   bannersQueryKey,
-  favoriteListingsQueryKey,
   homeListingsQueryKey,
 } from "@/lib/query-keys";
-import { toArtistRailItem } from "@/lib/group-presenters";
+import {
+  normalizeGroupSearchText,
+  toArtistRailItem,
+} from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
@@ -73,8 +80,6 @@ const FAVORITE_GROUP_LIMIT = 5;
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
 const HOME_BANNERS_STALE_MS = 15 * 60 * 1000;
-// 최애 분철은 전체 목록에도 다시 나오므로 홈에서는 앞부분만 미리보기로 보여준다.
-const HOME_FAVORITE_LISTINGS_SIZE = 4;
 type HomeBanner = {
   href: string;
   imageAlt: string;
@@ -257,23 +262,6 @@ function readStoredBannerSlide(): StoredBannerSlide | null {
   }
 }
 
-// 홈 "내 최애 분철" 섹션용. 서버가 최애 그룹 필터를 적용하므로 클라에서 그룹을 알 필요가 없다.
-// 최애가 0개이거나 비로그인이면 서버가 빈 목록을 준다.
-async function loadFavoriteListings() {
-  const accessToken = await getFreshAccessToken();
-
-  if (!accessToken) {
-    return [];
-  }
-
-  const items = await requestBuncheols(accessToken, {
-    onlyFavoriteGroups: true,
-    size: HOME_FAVORITE_LISTINGS_SIZE,
-  });
-
-  return items.map(toProductCardItem).map(mergeCachedProductImage);
-}
-
 async function loadHomeListings(loggedIn: boolean) {
   let accessToken: string | null = null;
 
@@ -378,12 +366,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     // 로그인 상태가 바뀌어 키가 갈릴 때 이전 목록을 유지해 스켈레톤 재노출을 막는다.
     placeholderData: keepPreviousData,
   });
-  const favoriteListingsQuery = useQuery({
-    enabled: FEATURES.favoriteArtists && authState.isLoggedIn,
-    queryKey: favoriteListingsQueryKey,
-    queryFn: loadFavoriteListings,
-    staleTime: HOME_LISTINGS_STALE_MS,
-  });
   const queryClient = useQueryClient();
   const bannersQuery = useQuery({
     queryKey: bannersQueryKey,
@@ -425,7 +407,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
       : HOME_BANNERS;
-  const listings = listingsQuery.data ?? [];
+  const listingsData = listingsQuery.data;
+  const listings = useMemo(() => listingsData ?? [], [listingsData]);
   const listingMessage =
     listingsQuery.isError && listings.length === 0
       ? listingsQuery.error instanceof Error
@@ -443,11 +426,38 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 최애 해제 시 레일에서 항목을 빼지 않고 favorited 만 내리므로(되돌리기 쉽게), 개수 판정은
   // 실제로 최애인 항목만 센다. 그러지 않으면 전부 해제해도 섹션이 남는다.
   const favoritedGroupCount = railGroups.length;
-  const isFavoriteSectionVisible =
-    FEATURES.favoriteArtists && authState.isLoggedIn && favoritedGroupCount > 0;
-  const favoriteListings = favoriteListingsQuery.data ?? [];
-  const isFavoriteListingLoading =
-    isFavoriteSectionVisible && favoriteListingsQuery.isPending;
+  // 최애를 등록했으면 그 그룹 분철만, 아니면 전체를 보여준다.
+  const favoriteGroupNames = useMemo(
+    () =>
+      new Set(railGroups.map((group) => normalizeGroupSearchText(group.name))),
+    [railGroups],
+  );
+  const visibleListings = useMemo(() => {
+    const scoped =
+      favoriteGroupNames.size > 0
+        ? listings.filter((item) =>
+            favoriteGroupNames.has(normalizeGroupSearchText(item.era ?? "")),
+          )
+        : listings;
+
+    // 진행중이 항상 마감분보다 앞. 같은 묶음 안에서는 최신 개최순.
+    // 진행중 판정은 카드 배지와 같은 상태 기준을 쓴다 — deadline 이 지났는데 마감 스케줄러가
+    // 아직 안 돈 분철은 잠깐 진행중으로 남지만, 배지 표시와 어긋나지 않는 편이 낫다.
+    const isOngoing = (item: ProductCardItem) =>
+      isBuncheolPurchasableStatus(item.status) ||
+      isBuncheolPaymentCollectingStatus(item.status);
+    const openedAt = (item: ProductCardItem) => {
+      const parsed = item.createdAt ? Date.parse(item.createdAt) : Number.NaN;
+
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    return [...scoped].sort((left, right) => {
+      const ongoingDiff = Number(isOngoing(right)) - Number(isOngoing(left));
+
+      return ongoingDiff !== 0 ? ongoingDiff : openedAt(right) - openedAt(left);
+    });
+  }, [favoriteGroupNames, listings]);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -811,8 +821,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         await removeFavoriteGroup(accessToken, favoriteGroupId);
       }
       setGroupMessage("");
-      // 최애 구성이 바뀌면 "내 최애 분철" 결과도 달라진다.
-      queryClient.invalidateQueries({ queryKey: favoriteListingsQueryKey });
     } catch (error) {
       setApiGroups((current) =>
         current?.map((group) =>
@@ -977,48 +985,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             </>
           ) : null}
 
-          {isFavoriteSectionVisible ? (
-            <div className="mb-6 border-t border-black/10 pt-5">
-              <div className="mb-4 flex items-end justify-between">
-                <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                  최애 아티스트 분철
-                </h2>
-              </div>
-
-              {isFavoriteListingLoading ? (
-                <ProductGridSkeleton
-                  ariaLabel="최애 분철을 불러오는 중"
-                  count={2}
-                  variant="wide"
-                />
-              ) : favoriteListings.length > 0 ? (
-                /* 카드 형태는 아래 전체 목록과 같은 wide 로 맞춘다 — 같은 홈 안에서 목록마다
-                   레이아웃이 달라지면 다른 종류의 콘텐츠처럼 보인다. */
-                <ProductGrid
-                  items={favoriteListings}
-                  keyPrefix="favorite"
-                  variant="wide"
-                />
-              ) : (
-                <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-7 text-center">
-                  <p className="text-[15px] font-semibold tracking-[-0.05em]">
-                    최애 그룹 분철이 아직 없어요
-                  </p>
-                  <p className="mt-2 text-[13px] font-medium leading-relaxed text-black/45">
-                    지금은 다른 그룹 분철만 열려 있어요.
-                    <br />
-                    아래에서 전체 분철을 둘러보세요.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : null}
-
           <div
             className={
-              isArtistRailVisible && !isFavoriteSectionVisible
-                ? "border-t border-black/10 pt-5"
-                : "pt-2"
+              isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
             }
           >
             {listingMessage ? (
@@ -1034,9 +1003,27 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 count={3}
                 variant="wide"
               />
+            ) : visibleListings.length === 0 && favoriteGroupNames.size > 0 ? (
+              /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
+                 내 최애 것만 없는 건지 구분해 알린다. */
+              <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
+                <p className="text-[15px] font-semibold tracking-[-0.05em]">
+                  최애 아티스트 분철이 아직 없어요
+                </p>
+                <p className="mt-2 text-[13px] font-medium leading-relaxed text-black/45">
+                  최애를 더 담으면 그만큼 더 볼 수 있어요.
+                </p>
+                <button
+                  className="mt-4 inline-flex h-11 items-center rounded-full bg-black px-5 text-[14px] font-semibold tracking-[-0.04em] text-white"
+                  onClick={() => openGroupSearch()}
+                  type="button"
+                >
+                  최애 추가하기
+                </button>
+              </div>
             ) : (
               <div className={shouldRevealListings ? "content-reveal" : ""}>
-                <ProductGrid items={listings} variant="wide" />
+                <ProductGrid items={visibleListings} variant="wide" />
               </div>
             )}
           </div>
