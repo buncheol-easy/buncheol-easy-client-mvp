@@ -4303,8 +4303,14 @@ export function ProductDetail({
                             실체는 반복되는 문단 수이므로 블록만 줄인다. */}
                         <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                           {isC2CProduct
-                            ? "송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요. 분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접 입금돼요."
-                            : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}
+                            ? "송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."
+                            : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}{" "}
+                          {isC2CProduct ? (
+                            <span className="font-semibold text-black/60">
+                              분철이지는 통신판매중개자이며, 대금은 개최자
+                              계좌로 직접 입금돼요.
+                            </span>
+                          ) : null}
                         </p>
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
@@ -4429,9 +4435,14 @@ export function ProductDetail({
                         원래 문단은 isC2CProduct 로 감싸여 있지 않아 회사 개최 분철에도
                         노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
-                      {isC2CProduct
-                        ? "개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수 있어요. 분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접 입금돼요."
-                        : "개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수 있어요."}
+                      개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
+                      있어요.{" "}
+                      {isC2CProduct ? (
+                        <span className="font-semibold text-black/60">
+                          분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
+                          직접 입금돼요.
+                        </span>
+                      ) : null}
                     </p>
                   </div>
 
