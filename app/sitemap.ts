@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { requestAllBuncheols } from "@/lib/auth-api";
+import { isBuncheolCancelledStatus } from "@/lib/buncheol-states";
 import { SITE_URL } from "@/lib/site";
 
 // 분철 목록이 수시로 열리고 닫히므로 1시간마다 재생성한다.
@@ -40,7 +41,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       );
     }
 
-    productEntries = buncheols.map((item) => {
+    // 취소 계열(미성사 CANCELLED + 개최자 취소 HOST_CANCELLED)은 상세가 정상 구매
+    // 흐름을 안내하지 못하거나 404 라 색인 후보에서 뺀다. 마감 분철은 아티스트별
+    // 롱테일 축적을 위해 의도적으로 유지한다 (루트 docs/41 2026-08-12 결정).
+    const indexableBuncheols = buncheols.filter(
+      (item) => !isBuncheolCancelledStatus(item.status),
+    );
+
+    productEntries = indexableBuncheols.map((item) => {
       // API 가 updatedAt 을 내려주지 않아 createdAt 만 사용한다.
       // 파싱 불가한 날짜가 하나라도 섞이면 사이트맵 직렬화 전체가 깨지므로 반드시 걸러낸다.
       const lastModified = item.createdAt ? new Date(item.createdAt) : null;
