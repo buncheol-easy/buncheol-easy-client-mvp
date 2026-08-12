@@ -16,8 +16,12 @@ import {
 import { getHistoryIndex } from "@/lib/history-index";
 
 type HostingIneligibleNoticeProps = {
-  // null = 사유 없는 공용 안내(개최 자격 요건 안내). 서버가 모르는 사유를 내려도 여기로 떨어진다.
+  // 서버가 모르는 사유를 내리면 null 로 떨어진다 — variant 에 따라 "차단됐다"와 "요건 안내"로 갈린다.
   reason: HostingEligibilityReason;
+  // blocked = 개최가 실제로 막힌 화면(기본), requirements = 자격 요건을 알리는 안내 페이지(/upload/notice).
+  // 사유를 모를 때 요건 안내 카피를 그대로 쓰면 "이제 직접 열 수 있어요 → 개최하러 가기" 가 떠서
+  // 방금 막힌 사용자에게 거짓 안내 + 제자리 도는 CTA 가 된다.
+  variant?: "blocked" | "requirements";
 };
 
 type NoticeCopy = {
@@ -29,7 +33,8 @@ type NoticeCopy = {
   // 가입 정보 입력은 완료 후 개최 화면으로 돌아오도록 복귀 주소를 먼저 남겨야 한다.
   primaryAction:
     | { label: string; href: string }
-    | { label: string; kind: "relogin" | "profile-setup" };
+    // note = 버튼을 누르면 벌어지는 일의 예고(세션이 풀리는 등).
+    | { label: string; kind: "relogin" | "profile-setup"; note?: string };
 };
 
 const contactEmail = "teameasy024@gmail.com";
@@ -38,12 +43,17 @@ const hostingRequirementItems = [
   {
     title: "성인 회원만 개최할 수 있어요",
     description:
-      "참여자 돈이 개최자 계좌로 바로 가는 직거래라, 카카오 연령대 정보로 성인 여부를 확인해요. 연령대 구간이 20대 이상이어야 확인돼요.",
+      "참여자 돈이 개최자 계좌로 바로 가는 직거래라, 카카오 연령대 정보로 성인 여부를 확인해요. 카카오는 연령대를 구간으로만 알려주는데 15~19세가 한 구간이라 성인인 만 19세를 가려낼 수 없어서, 20대 이상 구간부터 확인돼요.",
   },
   {
     title: "연락처가 필요해요",
     description:
       "참여자와 문제가 생겼을 때 연락이 닿아야 해서 가입 정보(전화번호)를 먼저 채워 주세요.",
+  },
+  {
+    title: "정산 계좌가 필요해요",
+    description:
+      "참여자가 입금할 계좌라, 마이페이지에서 정산 계좌를 등록해야 개최할 수 있어요.",
   },
   {
     title: "동시에 5개까지 열 수 있어요",
@@ -52,7 +62,10 @@ const hostingRequirementItems = [
   },
 ];
 
-function getNoticeCopy(reason: HostingEligibilityReason): NoticeCopy {
+function getNoticeCopy(
+  reason: HostingEligibilityReason,
+  variant: "blocked" | "requirements",
+): NoticeCopy {
   if (reason === "PHONE_REQUIRED") {
     return {
       headline: "가입 정보를 먼저 채워 주세요",
@@ -78,13 +91,13 @@ function getNoticeCopy(reason: HostingEligibilityReason): NoticeCopy {
     return {
       headline: "카카오 연령대 확인이 필요해요",
       description:
-        "개최는 성인 회원만 가능해서 연령대 정보를 확인해야 해요. 카카오 로그인에서 '연령대' 제공에 동의하면 바로 열려요.",
+        "개최는 성인 회원만 가능해서 연령대 정보를 확인해야 해요. 카카오 로그인에서 '연령대' 제공에 동의하면 열려요.",
       sectionTitle: "이렇게 하면 돼요",
       items: [
         {
-          title: "어떻게 하면 되나요",
+          title: "카카오 로그인을 다시 해주세요",
           description:
-            "아래 버튼으로 카카오 로그인을 다시 하면 연령대 동의 창이 떠요. 동의하면 개최 화면이 열려요.",
+            "아래 버튼을 누르면 지금 로그인이 풀리고 카카오 로그인 화면으로 이동해요. 연령대 제공에 동의하면 개최 화면이 열려요.",
         },
         {
           title: "카카오에 생년월일이 없다면",
@@ -92,12 +105,46 @@ function getNoticeCopy(reason: HostingEligibilityReason): NoticeCopy {
             "동의 과정에서 카카오가 정보 입력을 안내해요. 입력을 마친 뒤 다시 로그인하면 확인돼요.",
         },
         {
+          title: "그래도 열리지 않으면",
+          description:
+            "동의 창이 뜨지 않고 그대로 돌아온다면 아래 메일로 알려주세요. 계정 확인 후 도와드릴게요.",
+        },
+        {
           title: "동의하지 않아도 참여는 그대로",
           description:
             "연령대 정보는 개최 자격 확인에만 쓰고, 분철 참여에는 필요하지 않아요.",
         },
       ],
-      primaryAction: { label: "카카오로 다시 로그인하기", kind: "relogin" },
+      primaryAction: {
+        label: "카카오로 다시 로그인하기",
+        kind: "relogin",
+        note: "누르면 지금 로그인이 풀려요.",
+      },
+    };
+  }
+
+  if (reason === "BANK_ACCOUNT_REQUIRED") {
+    return {
+      headline: "정산 계좌를 먼저 등록해 주세요",
+      description:
+        "참여자가 입금할 계좌라 개최 전에 등록이 필요해요. 등록한 계좌는 입금 안내 화면에 그대로 보여요.",
+      sectionTitle: "이렇게 하면 돼요",
+      items: [
+        {
+          title: "어디서 등록하나요",
+          description:
+            "마이페이지 > 정산 계좌에서 은행·계좌번호·예금주를 등록하면 바로 개최할 수 있어요.",
+        },
+        {
+          title: "예금주명이 중요해요",
+          description:
+            "참여자가 입금할 때 대조하는 이름이라, 실제 통장의 예금주와 같게 적어 주세요.",
+        },
+      ],
+      primaryAction: {
+        label: "정산 계좌 등록하기",
+        href: "/profile?openAccount=1",
+      },
     };
   }
 
@@ -141,26 +188,40 @@ function getNoticeCopy(reason: HostingEligibilityReason): NoticeCopy {
             "관리되지 않는 분철이 쌓이면 참여자가 기다리기만 하게 돼서 개수를 제한하고 있어요.",
         },
       ],
-      primaryAction: { label: "개최한 분철 보기", href: "/profile/bids" },
+      // /profile/bids 는 "참여한 분철" 탭으로 열리고 탭을 지정할 쿼리가 없어, 라벨을 화면 그대로 맞춘다.
+      primaryAction: { label: "참여·개최 기록 보기", href: "/profile/bids" },
     };
   }
 
   // 사유 없는 공용 안내 — 개최 자격 요건 자체를 알린다 (docs/54 3-1·3-2 확정 문구).
+  if (variant === "requirements") {
+    return {
+      headline: "이제 직접 분철을 열 수 있어요",
+      description: "성인이고 연락처·정산 계좌를 등록했다면 바로 개최할 수 있어요.",
+      sectionTitle: "개최 자격 조건",
+      items: hostingRequirementItems,
+      primaryAction: { label: "분철 개최하러 가기", href: "/upload" },
+    };
+  }
+
+  // 차단인데 사유를 모르는 경우(서버가 사유를 추가했거나 응답이 어긋남). 요건만 알리고 개최로 되돌려보내지 않는다.
   return {
-    headline: "이제 직접 분철을 열 수 있어요",
-    description: "성인이고 연락처를 등록했다면 바로 개최할 수 있어요.",
+    headline: "지금은 분철을 개최할 수 없어요",
+    description:
+      "개최 자격을 확인했는데 조건 하나가 아직 맞지 않아요. 아래 조건을 확인하고, 계속 막히면 메일로 알려주세요.",
     sectionTitle: "개최 자격 조건",
     items: hostingRequirementItems,
-    primaryAction: { label: "분철 개최하러 가기", href: "/upload" },
+    primaryAction: { label: "진행 중인 분철 둘러보기", href: "/" },
   };
 }
 
 export function HostingIneligibleNotice({
   reason,
+  variant = "blocked",
 }: HostingIneligibleNoticeProps) {
   const router = useRouter();
   const [isRelogging, setIsRelogging] = useState(false);
-  const copy = getNoticeCopy(reason);
+  const copy = getNoticeCopy(reason, variant);
   // 좁힌 타입이 콜백 안에서도 유지되도록 지역 상수로 뽑는다.
   const primaryAction = copy.primaryAction;
 
@@ -316,12 +377,19 @@ export function HostingIneligibleNotice({
                     {isRelogging ? "이동 중..." : primaryAction.label}
                   </button>
                 )}
-                <Link
-                  className="flex h-14 w-full items-center justify-center rounded-full border border-black/15 text-[16px] font-semibold tracking-[-0.04em] text-black/70"
-                  href="/"
-                >
-                  홈으로 가기
-                </Link>
+                {"kind" in primaryAction && primaryAction.note ? (
+                  <p className="break-keep text-center text-[13px] font-medium leading-5 tracking-[-0.03em] text-black/45">
+                    {primaryAction.note}
+                  </p>
+                ) : null}
+                {"href" in primaryAction && primaryAction.href === "/" ? null : (
+                  <Link
+                    className="flex h-14 w-full items-center justify-center rounded-full border border-black/15 text-[16px] font-semibold tracking-[-0.04em] text-black/70"
+                    href="/"
+                  >
+                    진행 중인 분철 둘러보기
+                  </Link>
+                )}
               </div>
             </div>
           </div>

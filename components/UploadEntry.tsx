@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { BottomNavigator } from "@/components/BottomNavigator";
 import { HostingIneligibleNotice } from "@/components/HostingIneligibleNotice";
 import { UploadProductForm } from "@/components/UploadProductForm";
 import {
@@ -98,31 +99,40 @@ export function UploadEntry({ editProductId, returnSource }: UploadEntryProps) {
 }
 
 // 자격 조회 중 화면 — 폼이 잠깐 보였다 안내로 바뀌는 깜빡임을 막는다.
+// 헤더는 결과 화면과 같은 `upload-header` 계열 클래스를 그대로 쓴다 — 설치형 PWA 전용 규칙(globals.css)이
+// 클래스 기준이라, 빼면 조회 중 작은 헤더 → 결과 화면 큰 헤더로 점프해 오히려 깜빡임이 생긴다.
 function UploadGateCheckingScreen() {
   return (
-    <main
-      aria-busy="true"
-      className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]"
-    >
+    <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
-        <header className="shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-          <div className="flex h-10 items-center justify-end">
-            <div className="translate-y-0.5 text-right">
-              <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                Upload
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
+          <div className="absolute inset-0 flex flex-col bg-white">
+            <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
+              <div className="upload-header__inner flex h-10 items-center justify-end">
+                <div className="upload-header__copy translate-y-0.5 text-right">
+                  <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
+                    Upload
+                  </p>
+                  <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
+                    분철 개최
+                  </h1>
+                </div>
+              </div>
+            </header>
+
+            <div className="flex min-h-0 flex-1 items-center justify-center px-4">
+              <p
+                aria-label="개최 자격을 확인하고 있어요"
+                className="text-[14px] font-semibold tracking-[-0.04em] text-black/35"
+                role="status"
+              >
+                개최 자격을 확인하고 있어요...
               </p>
-              <h1 className="mt-1 text-[20px] leading-none tracking-[-0.05em]">
-                분철 개최
-              </h1>
             </div>
           </div>
-        </header>
-
-        <div className="flex min-h-0 flex-1 items-center justify-center px-4">
-          <p className="text-[14px] font-semibold tracking-[-0.04em] text-black/35">
-            개최 자격을 확인하고 있어요...
-          </p>
         </div>
+
+        <BottomNavigator activeLabel="Upload" />
       </div>
     </main>
   );

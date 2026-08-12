@@ -17,5 +17,5 @@ export const metadata = {
 };
 
 export default function UploadNoticePage() {
-  return <HostingIneligibleNotice reason={null} />;
+  return <HostingIneligibleNotice reason={null} variant="requirements" />;
 }

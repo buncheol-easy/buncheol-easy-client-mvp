@@ -52,10 +52,14 @@ export const hostingEligibilityReasons = [
   "NOT_ADULT",
   // 활성 개최 수 상한 초과 — 서버 BCH-089
   "LIMIT_EXCEEDED",
+  // 정산 계좌 미등록 — 서버 USR-025
+  "BANK_ACCOUNT_REQUIRED",
 ] as const;
 
+// null 은 "사유를 모른다"는 뜻 — 서버가 사유를 추가해도 화면이 깨지지 않게 알 수 없는 값은 여기로 떨어뜨린다.
 export type HostingEligibilityReason =
-  (typeof hostingEligibilityReasons)[number] | null;
+  | (typeof hostingEligibilityReasons)[number]
+  | null;
 
 export type HostingEligibility = {
   eligible: boolean;
@@ -740,7 +744,10 @@ function getDeepStringValue(
   return "";
 }
 
-function getOptionalNumberValue(body: Record<string, unknown>, keys: string[]) {
+function getOptionalNumberValue(
+  body: Record<string, unknown>,
+  keys: string[],
+) {
   const value = getNumberValue(body, keys);
 
   return value === null ? undefined : value;
@@ -1159,7 +1166,8 @@ function getParticipationPaymentDetailFromBody(
     ]),
     participationId,
     paymentAmount:
-      getNumberValue(data, ["totalAmount", "paymentAmount", "amount"]) ?? null,
+      getNumberValue(data, ["totalAmount", "paymentAmount", "amount"]) ??
+      null,
     paymentDueAt:
       getOptionalStringValue(data, [
         "paymentDueAt",
@@ -1171,7 +1179,8 @@ function getParticipationPaymentDetailFromBody(
         "paymentStatus",
         "participationStatus",
         "status",
-      ]) ?? "",
+      ]) ??
+      "",
     shippingAddress: shippingAddressRecord
       ? getUserShippingAddress(shippingAddressRecord)
       : null,
@@ -1395,8 +1404,13 @@ function getUserShippingAddress(body: unknown): UserShippingAddress | null {
     storeType,
     alias: getOptionalStringValue(data, ["alias", "label", "memo"]),
     branchName,
-    address: getStringValue(data, ["address", "roadAddress", "jibunAddress"]),
-    storeCode: getOptionalStringValue(data, ["storeCode", "code"]) ?? undefined,
+    address: getStringValue(data, [
+      "address",
+      "roadAddress",
+      "jibunAddress",
+    ]),
+    storeCode:
+      getOptionalStringValue(data, ["storeCode", "code"]) ?? undefined,
     isDefault: getBooleanValue(data, ["isDefault", "default"]) ?? undefined,
   };
 }
@@ -1490,19 +1504,13 @@ export async function requestLogout(accessToken: string) {
 }
 
 export async function requestTokenReissue() {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/auth/reissue-token`,
-    {
-      credentials: "include",
-      method: "POST",
-    },
-  );
+  const response = await fetch(`${getVersionedApiBaseUrl()}/auth/reissue-token`, {
+    credentials: "include",
+    method: "POST",
+  });
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   return (await response.json()) as AccessTokenResponse;
@@ -1529,7 +1537,11 @@ export async function requestHostingEligibility(
   }
 
   const data = getNestedData((await response.json()) as unknown);
-  const eligible = getBooleanValue(data, ["eligible"]);
+  const eligible = getBooleanValue(data, [
+    "eligible",
+    "isEligible",
+    "hostingEligible",
+  ]);
 
   if (eligible === null) {
     throw new Error("개최 자격을 확인할 수 없어요.");
@@ -1543,12 +1555,9 @@ function getHostingEligibilityReason(data: unknown): HostingEligibilityReason {
     return null;
   }
 
-  const reason = data.reason;
+  const reason = getStringValue(data, ["reason", "reasonCode", "code"]);
 
-  // 모르는 사유는 null 로 떨어뜨린다 — 서버가 사유를 추가해도 화면이 깨지지 않고 공용 안내로 안내된다.
-  return typeof reason === "string" && isHostingEligibilityReason(reason)
-    ? reason
-    : null;
+  return isHostingEligibilityReason(reason) ? reason : null;
 }
 
 function isHostingEligibilityReason(
@@ -1699,7 +1708,9 @@ export async function requestShippingAddresses(accessToken: string) {
 
   return getShippingAddressList(body)
     .map(getUserShippingAddress)
-    .filter((address): address is UserShippingAddress => address !== null);
+    .filter(
+      (address): address is UserShippingAddress => address !== null,
+    );
 }
 
 export async function createShippingAddress(
@@ -1755,10 +1766,7 @@ export async function deleteShippingAddress(
   );
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 }
 
@@ -1824,11 +1832,7 @@ function getCvsStore(body: unknown): CvsStore | null {
     storeCode: getStringValue(body, ["storeCode", "code"]),
     name,
     tel: getStringValue(body, ["tel", "storeTel", "phoneNumber"]).trim(),
-    address: getStringValue(body, [
-      "address",
-      "roadAddress",
-      "storeAddress",
-    ]).trim(),
+    address: getStringValue(body, ["address", "roadAddress", "storeAddress"]).trim(),
     postNo: getStringValue(body, ["postNo", "postCode", "zipCode"]).trim(),
     latitude: getNumberValue(body, ["latitude", "lat", "mapY"]),
     longitude: getNumberValue(body, ["longitude", "lng", "mapX"]),
@@ -2259,14 +2263,15 @@ function getBuncheolSummaryFromRecord(
       getBooleanValue(record, ["isHostedByMe", "hostedByMe", "owner"]) ??
       undefined,
     deadline:
-      getOptionalStringValue(record, ["deadline", "buncheolDeadline"]) ?? "",
+      getOptionalStringValue(record, ["deadline", "buncheolDeadline"]) ??
+      "",
     thumbnailUrl: imageUrls[0],
     memberNames:
       memberNames.length > 0
         ? memberNames
         : singleMemberName
-          ? [singleMemberName]
-          : [],
+        ? [singleMemberName]
+        : [],
     availableMemberNames,
     activeParticipationCount: getOptionalNumberValue(record, [
       "activeParticipationCount",
@@ -2274,9 +2279,11 @@ function getBuncheolSummaryFromRecord(
       "participationCount",
     ]),
     bookmarkId: getOptionalStringValue(record, ["bookmarkId"]),
-    bookmarked:
-      getBooleanValue(record, ["bookmarked", "isBookmarked", "liked"]) ??
-      undefined,
+    bookmarked: getBooleanValue(record, [
+      "bookmarked",
+      "isBookmarked",
+      "liked",
+    ]) ?? undefined,
     createdAt: getOptionalStringValue(record, ["createdAt", "uploadedAt"]),
     memberSlotCount: getOptionalNumberValue(record, [
       "memberSlotCount",
@@ -2337,7 +2344,8 @@ function getShippingFeePaybackFromRecord(
     rejectReason:
       getOptionalStringValue(value, ["rejectReason", "paybackRejectReason"]) ??
       null,
-    amount: getOptionalNumberValue(value, ["amount", "paybackAmount"]) ?? null,
+    amount:
+      getOptionalNumberValue(value, ["amount", "paybackAmount"]) ?? null,
     refundAccount: getNestedBankAccountInfo(value, ["refundAccount"]),
   };
 }
@@ -2372,18 +2380,18 @@ function getBuncheolMemberPurchaseStateFromRecord(
 
     return Boolean(
       status ||
-      getOptionalStringValue(candidate, ["paymentConfirmedAt"]) ||
-      getOptionalStringValue(candidate, [
-        "paymentDueAt",
-        "paymentDeadline",
-        "dueAt",
-      ]) ||
-      getOptionalStringValue(candidate, [
-        "participationId",
-        "winnerParticipationId",
-        "paymentParticipationId",
-        "id",
-      ]),
+        getOptionalStringValue(candidate, ["paymentConfirmedAt"]) ||
+        getOptionalStringValue(candidate, [
+          "paymentDueAt",
+          "paymentDeadline",
+          "dueAt",
+        ]) ||
+        getOptionalStringValue(candidate, [
+          "participationId",
+          "winnerParticipationId",
+          "paymentParticipationId",
+          "id",
+        ]),
     );
   });
   const recordSaleStatus = getOptionalStringValue(record, [
@@ -2395,22 +2403,20 @@ function getBuncheolMemberPurchaseStateFromRecord(
     recordSaleStatus === "SOLD" || recordSaleStatus === "AWAITING_PAYMENT";
   const hasDirectPaymentState = Boolean(
     hasOccupiedSaleStatus ||
-    getOptionalStringValue(record, [
-      "paymentStatus",
-      "participationStatus",
-      "paymentConfirmedAt",
-      "paymentDueAt",
-      "paymentDeadline",
-      "dueAt",
-      "participationId",
-      "winnerParticipationId",
-      "paymentParticipationId",
-    ]),
+      getOptionalStringValue(record, [
+        "paymentStatus",
+        "participationStatus",
+        "paymentConfirmedAt",
+        "paymentDueAt",
+        "paymentDeadline",
+        "dueAt",
+        "participationId",
+        "winnerParticipationId",
+        "paymentParticipationId",
+      ]),
   );
   const source =
-    nestedCandidates[0] ??
-    participantCandidate ??
-    (hasDirectPaymentState ? record : null);
+    nestedCandidates[0] ?? participantCandidate ?? (hasDirectPaymentState ? record : null);
 
   if (!source) {
     return {};
@@ -2517,7 +2523,7 @@ function getBuncheolMemberFromRecord(
   return {
     available: saleStatus
       ? saleStatus.toUpperCase() === "AVAILABLE"
-      : (getBooleanValue(record, ["available", "isAvailable"]) ?? undefined),
+      : getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
     id,
     name,
     bidMinPrice,
@@ -2725,7 +2731,10 @@ function getMyParticipationBidsFromRecord(
         "memberSlotId",
         "optionId",
       ]);
-      const participationId = getStringValue(record, ["participationId", "id"]);
+      const participationId = getStringValue(record, [
+        "participationId",
+        "id",
+      ]);
       const bidAmount = getNumberValue(record, ["bidAmount", "amount"]);
       // 활성 참여만 "내 참여"로 취급한다 — 서버가 비활성(취소·만료) 참여를 목록에 포함하게 되더라도
       // 취소된 참여가 재참여를 막지 않도록 memberIds 쪽과 동일하게 필터한다.
@@ -2744,16 +2753,14 @@ function getMyParticipationBidsFromRecord(
           bidAmount,
           participationId,
           rank:
-            getOptionalNumberValue(record, ["rank", "closedRank"]) ?? undefined,
+            getOptionalNumberValue(record, ["rank", "closedRank"]) ??
+            undefined,
         });
       }
 
       return bids;
     },
-    new Map<
-      string,
-      { bidAmount: number; participationId: string; rank?: number }
-    >(),
+    new Map<string, { bidAmount: number; participationId: string; rank?: number }>(),
   );
 }
 
@@ -2842,7 +2849,9 @@ function getBuncheolDetailFromBody(body: unknown) {
     "deliveryMethods",
   ])
     .map(getBuncheolShippingOptionFromRecord)
-    .filter((option): option is BuncheolShippingOption => option !== null);
+    .filter(
+      (option): option is BuncheolShippingOption => option !== null,
+    );
   const shippingFeeRecord = [
     data.shippingFees,
     data.shippingFee,
@@ -3041,39 +3050,36 @@ function getBuncheolManagementWinnerFromRecord(
       "shippingAddressSnapshotId",
       "addressSnapshotId",
     ]),
-    shippingMethod:
-      getOptionalStringValue(record, [
-        "shippingMethod",
-        "storeType",
-        "deliveryMethod",
-      ]) ??
-      (shippingAddressRecord
-        ? getOptionalStringValue(shippingAddressRecord, [
-            "shippingMethod",
-            "storeType",
-            "deliveryMethod",
-          ])
-        : undefined),
-    storeName:
-      getOptionalStringValue(record, [
-        "storeName",
-        "branchName",
-        "shippingAddressName",
-      ]) ??
-      (shippingAddressRecord
-        ? getOptionalStringValue(shippingAddressRecord, [
-            "storeName",
-            "branchName",
-            "shippingAddressName",
-            "name",
-          ])
-        : undefined),
+    shippingMethod: getOptionalStringValue(record, [
+      "shippingMethod",
+      "storeType",
+      "deliveryMethod",
+    ]) ?? (shippingAddressRecord
+      ? getOptionalStringValue(shippingAddressRecord, [
+          "shippingMethod",
+          "storeType",
+          "deliveryMethod",
+        ])
+      : undefined),
+    storeName: getOptionalStringValue(record, [
+      "storeName",
+      "branchName",
+      "shippingAddressName",
+    ]) ?? (shippingAddressRecord
+      ? getOptionalStringValue(shippingAddressRecord, [
+          "storeName",
+          "branchName",
+          "shippingAddressName",
+          "name",
+        ])
+      : undefined),
     trackingNumber:
       getOptionalStringValue(record, [
         "trackingNumber",
         "invoiceNumber",
         "waybillNumber",
-      ]) ?? null,
+      ]) ??
+      null,
   };
 }
 
@@ -3377,9 +3383,7 @@ function getBuncheolManagementParticipantFromRecord(
       "nickname",
       "userNickname",
       "depositorName",
-    ]) ||
-    refundAccount?.holder ||
-    `참여 ${participationId}`;
+    ]) || refundAccount?.holder || `참여 ${participationId}`;
 
   return {
     amount:
@@ -3405,11 +3409,8 @@ function getBuncheolManagementParticipantFromRecord(
       ]) ?? null,
     delivery: getBuncheolManagementDeliveryFromRecord(record),
     dueAt:
-      getOptionalStringValue(record, [
-        "dueAt",
-        "paymentDueAt",
-        "paymentDeadline",
-      ]) ?? null,
+      getOptionalStringValue(record, ["dueAt", "paymentDueAt", "paymentDeadline"]) ??
+      null,
     memberName:
       getStringValue(record, ["memberName", "name", "label"]) ||
       fallback.memberName ||
@@ -3480,8 +3481,7 @@ function getBuncheolManagementOptionFromRecord(
     ? getBuncheolManagementWinnerFromRecord(winnerRecord)
     : null;
   const fallbackWinnerFields = getBuncheolManagementWinnerFromRecord(record);
-  const optionMemberName =
-    memberName || `Option ${memberId ?? buncheolMemberId}`;
+  const optionMemberName = memberName || `Option ${memberId ?? buncheolMemberId}`;
   const participants = getNestedRecordListValue(record, [
     "participants",
     "participations",
@@ -3502,17 +3502,16 @@ function getBuncheolManagementOptionFromRecord(
 
   return {
     buncheolMemberId,
-    currentHighestBid:
-      getOptionalNumberValue(record, [
-        "currentHighestBid",
-        "currentHighestBidAmount",
-        "highestBidAmount",
-        "currentBidAmount",
-        "baseAmount",
-        "basePrice",
-        "fixedPrice",
-        "price",
-      ]) ?? null,
+    currentHighestBid: getOptionalNumberValue(record, [
+      "currentHighestBid",
+      "currentHighestBidAmount",
+      "highestBidAmount",
+      "currentBidAmount",
+      "baseAmount",
+      "basePrice",
+      "fixedPrice",
+      "price",
+    ]) ?? null,
     memberId,
     memberImage:
       getOptionalStringValue(record, [
@@ -3549,10 +3548,8 @@ function getBuncheolManagementOptionFromRecord(
           paymentConfirmedAt:
             winner.paymentConfirmedAt ??
             fallbackWinnerFields.paymentConfirmedAt,
-          paymentDueAt:
-            winner.paymentDueAt ?? fallbackWinnerFields.paymentDueAt,
-          paymentStatus:
-            winner.paymentStatus ?? fallbackWinnerFields.paymentStatus,
+          paymentDueAt: winner.paymentDueAt ?? fallbackWinnerFields.paymentDueAt,
+          paymentStatus: winner.paymentStatus ?? fallbackWinnerFields.paymentStatus,
           receiverNickname:
             winner.receiverNickname ?? fallbackWinnerFields.receiverNickname,
           receiverPhoneNumber:
@@ -3602,7 +3599,8 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     return null;
   }
 
-  const sourceRecords = data === responseData ? [data] : [data, responseData];
+  const sourceRecords =
+    data === responseData ? [data] : [data, responseData];
   const directParticipants = sourceRecords
     .flatMap((sourceRecord) =>
       getNestedRecordListValue(sourceRecord, [
@@ -3633,15 +3631,15 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
       ]),
     )
     .map(getBuncheolManagementOptionFromRecord)
-    .filter((option): option is BuncheolManagementOption => option !== null);
+    .filter(
+      (option): option is BuncheolManagementOption => option !== null,
+    );
   const participantsById = new Map<string, BuncheolManagementParticipant>();
 
-  [
-    ...directParticipants,
-    ...options.flatMap((option) => option.participants ?? []),
-  ].forEach((participant) => {
-    participantsById.set(participant.participationId, participant);
-  });
+  [...directParticipants, ...options.flatMap((option) => option.participants ?? [])]
+    .forEach((participant) => {
+      participantsById.set(participant.participationId, participant);
+    });
 
   const participants = [...participantsById.values()];
   const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
@@ -3757,10 +3755,7 @@ function getToneFromId(id: string) {
     "from-zinc-950 via-zinc-700 to-stone-300",
     "from-neutral-300 via-zinc-100 to-zinc-500",
   ];
-  const hash = [...id].reduce(
-    (sum, character) => sum + character.charCodeAt(0),
-    0,
-  );
+  const hash = [...id].reduce((sum, character) => sum + character.charCodeAt(0), 0);
 
   return tones[hash % tones.length];
 }
@@ -3833,11 +3828,14 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     status: summary.status,
     tone: getToneFromId(summary.id),
     isShippingFeePaybackEvent:
-      FEATURES.shippingFeePayback && summary.shippingFeePaybackTarget === true,
+      FEATURES.shippingFeePayback &&
+      summary.shippingFeePaybackTarget === true,
   };
 }
 
-export function toProductDetailItem(detail: BuncheolDetail): ProductDetailItem {
+export function toProductDetailItem(
+  detail: BuncheolDetail,
+): ProductDetailItem {
   const fallbackMembers: BuncheolMember[] =
     detail.members.length > 0
       ? detail.members
@@ -3899,7 +3897,8 @@ export function toProductDetailItem(detail: BuncheolDetail): ProductDetailItem {
     buncheolId: detail.id,
     courier: shippingMethods[0]?.name ?? "배송 방법 확인 필요",
     description:
-      detail.description?.trim() || "판매자가 상품 설명을 작성하지 않았습니다.",
+      detail.description?.trim() ||
+      "판매자가 상품 설명을 작성하지 않았습니다.",
     flowType: detail.flowType ?? null,
     openChatUrl: detail.openChatUrl ?? null,
     // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 images(등록 순)를 그대로 쓴다.
@@ -3918,11 +3917,14 @@ export function toProductDetailItem(detail: BuncheolDetail): ProductDetailItem {
   };
 }
 
+
 export async function requestBuncheols(
   accessToken?: string,
   params: BuncheolListParams = {},
 ) {
-  const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(params)}`;
+  const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
+    params,
+  )}`;
   let response = await fetch(url, {
     credentials: "omit",
     headers: getAuthHeaders(accessToken),
@@ -4033,10 +4035,7 @@ export async function requestBuncheolDetail(
 
   if (!response.ok) {
     // 삭제·비공개(404)를 서버 렌더링에서 구분할 수 있도록 status 를 보존해 던진다.
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   const detail = getBuncheolDetailFromBody(await readJsonBody(response));
@@ -4163,7 +4162,10 @@ export async function updateBuncheol(
   }
 }
 
-export async function deleteBuncheol(accessToken: string, buncheolId: string) {
+export async function deleteBuncheol(
+  accessToken: string,
+  buncheolId: string,
+) {
   const response = await fetch(
     `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}`,
     {
@@ -4206,10 +4208,7 @@ export async function participateBuncheol(
   );
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   const data = getNestedData(await readJsonBody(response));
@@ -4258,11 +4257,8 @@ export async function participateBuncheol(
       "bankAccount",
     ]),
     paymentAmount:
-      getOptionalNumberValue(data, [
-        "totalAmount",
-        "paymentAmount",
-        "amount",
-      ]) ?? null,
+      getOptionalNumberValue(data, ["totalAmount", "paymentAmount", "amount"]) ??
+      null,
     paymentDueAt:
       getOptionalStringValue(data, [
         "paymentDueAt",
@@ -4279,14 +4275,11 @@ export async function participateBuncheol(
 }
 
 export async function requestMyParticipations(accessToken: string) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/me`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "GET",
-    },
-  );
+  const response = await fetch(`${getVersionedApiBaseUrl()}/participations/me`, {
+    credentials: "include",
+    headers: getAuthHeaders(accessToken),
+    method: "GET",
+  });
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
@@ -4307,14 +4300,16 @@ export async function requestMyParticipations(accessToken: string) {
           record.refundBankAccount ??
           record.refundBankAccountInfo,
       );
-      const shippingAddressRecord =
-        getParticipationShippingAddressRecord(record);
+      const shippingAddressRecord = getParticipationShippingAddressRecord(record);
       const shippingAddress = shippingAddressRecord
         ? getUserShippingAddress(shippingAddressRecord)
         : null;
       const delivery = getParticipationDeliveryRecord(record);
       const lookupRecords = [record, delivery];
-      const participationId = getStringValue(record, ["participationId", "id"]);
+      const participationId = getStringValue(record, [
+        "participationId",
+        "id",
+      ]);
       const buncheolId =
         getStringValue(record, ["buncheolId"]) ||
         (buncheol ? getStringValue(buncheol, ["buncheolId", "id"]) : "");
@@ -4325,10 +4320,13 @@ export async function requestMyParticipations(accessToken: string) {
 
       return {
         bidAmount:
-          getNumberValue(record, ["bidAmount", "amount", "paymentAmount"]) ?? 0,
+          getNumberValue(record, ["bidAmount", "amount", "paymentAmount"]) ??
+          0,
         buncheolDeadline:
-          getStringValue(record, ["buncheolDeadline", "deadline"]) ||
-          (buncheol ? getStringValue(buncheol, ["deadline"]) : ""),
+          getStringValue(record, [
+            "buncheolDeadline",
+            "deadline",
+          ]) || (buncheol ? getStringValue(buncheol, ["deadline"]) : ""),
         buncheolId,
         buncheolMemberId:
           getOptionalStringValue(record, [
@@ -4364,11 +4362,13 @@ export async function requestMyParticipations(accessToken: string) {
           (buncheol ? getOptionalStringValue(buncheol, ["status"]) : null) ??
           "RECRUITING",
         buncheolTitle:
-          getStringValue(record, ["buncheolTitle", "title"]) ||
-          (buncheol ? getStringValue(buncheol, ["title"]) : ""),
-        cancelReason: getOptionalStringValue(record, ["cancelReason"]) ?? null,
-        closedRank:
-          getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
+          getStringValue(record, [
+            "buncheolTitle",
+            "title",
+          ]) || (buncheol ? getStringValue(buncheol, ["title"]) : ""),
+        cancelReason:
+          getOptionalStringValue(record, ["cancelReason"]) ?? null,
+        closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(
             lookupRecords,
@@ -4400,8 +4400,10 @@ export async function requestMyParticipations(accessToken: string) {
             : ""),
         participationId,
         participationStatus:
-          getOptionalStringValue(record, ["participationStatus", "status"]) ??
-          "AWAITING_PAYMENT",
+          getOptionalStringValue(record, [
+            "participationStatus",
+            "status",
+          ]) ?? "AWAITING_PAYMENT",
         payback: getShippingFeePaybackFromRecord(record.payback),
         paymentAmount:
           getOptionalNumberValue(record, ["paymentAmount", "totalAmount"]) ??
@@ -4411,7 +4413,8 @@ export async function requestMyParticipations(accessToken: string) {
             "paymentDueAt",
             "paymentDeadline",
             "dueAt",
-          ]) ?? null,
+          ]) ??
+          null,
         flowType:
           getOptionalStringValue(record, ["flowType"]) ??
           (buncheol ? getOptionalStringValue(buncheol, ["flowType"]) : null) ??
@@ -4570,7 +4573,9 @@ export async function requestMyHostedBuncheols(accessToken: string) {
           0,
       };
     })
-    .filter((buncheol): buncheol is MyHostedBuncheol => buncheol !== null);
+    .filter(
+      (buncheol): buncheol is MyHostedBuncheol => buncheol !== null,
+    );
 
   return buncheols.filter(
     (buncheol) => !isBuncheolDeletedStatus(buncheol.status),
@@ -4765,10 +4770,10 @@ export async function confirmBuncheolRecruitment(
 
   return {
     awaitingCount: isRecord(data)
-      ? (getOptionalNumberValue(data, ["awaitingCount"]) ?? null)
+      ? getOptionalNumberValue(data, ["awaitingCount"]) ?? null
       : null,
     paymentDueAt: isRecord(data)
-      ? (getOptionalStringValue(data, ["paymentDueAt"]) ?? null)
+      ? getOptionalStringValue(data, ["paymentDueAt"]) ?? null
       : null,
   };
 }
@@ -4890,10 +4895,7 @@ export async function requestShippingFeePayback(
   );
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 }
 
@@ -4914,10 +4916,7 @@ export async function submitFeedback(
   });
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 }
 
@@ -4966,7 +4965,12 @@ export async function requestCreateNotice(
 ): Promise<CreateNoticeResponse> {
   const formData = new FormData();
   appendJsonFormPart(formData, request);
-  appendNamedFileFormPart(formData, "image", files.image, "notice-image.jpg");
+  appendNamedFileFormPart(
+    formData,
+    "image",
+    files.image,
+    "notice-image.jpg",
+  );
   appendNamedFileFormPart(
     formData,
     "bannerImage",
@@ -4982,10 +4986,7 @@ export async function requestCreateNotice(
   });
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   const location = response.headers.get("location");
@@ -5022,12 +5023,17 @@ export async function requestBanners(): Promise<ApiBanner[]> {
       noticeId: getStringValue(record, ["noticeId", "id"]),
     }))
     .filter(
-      (banner) => Boolean(banner.noticeId) && Boolean(banner.bannerImageUrl),
+      (banner) =>
+        Boolean(banner.noticeId) && Boolean(banner.bannerImageUrl),
     );
 
   // 새로고침 후에도 첫 페인트부터 실제 배너를 그릴 수 있도록 localStorage 에 남긴다
   // (홈에서 readCachedBanners 로 읽어 폴백 배너 → API 배너 교체 깜빡임을 막는다).
-  writeBrowserApiCache(publicBannerCacheKey, banners, publicBannerCacheTtlMs);
+  writeBrowserApiCache(
+    publicBannerCacheKey,
+    banners,
+    publicBannerCacheTtlMs,
+  );
 
   return banners;
 }
@@ -5053,7 +5059,9 @@ export function readCachedNoticeInboxMessages(
 ) {
   const cacheKey = getPublicNoticeListCacheKey(params);
 
-  return cacheKey ? readBrowserApiCache<InboxMessagesResponse>(cacheKey) : null;
+  return cacheKey
+    ? readBrowserApiCache<InboxMessagesResponse>(cacheKey)
+    : null;
 }
 
 export async function requestCachedNoticeInboxMessages(
@@ -5290,9 +5298,7 @@ export async function requestInboxMessageDetail(
   return message;
 }
 
-function getApiGroupFromRecord(
-  record: Record<string, unknown>,
-): ApiGroup | null {
+function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null {
   const nestedGroup = getNestedData(record.group);
   const groupRecord = isRecord(nestedGroup) ? nestedGroup : record;
   const id = getStringValue(groupRecord, ["id", "groupId"]);
@@ -5629,10 +5635,7 @@ export type AdminBulkResult = {
 
 async function parseAdminResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   return (await response.json()) as T;
@@ -5662,12 +5665,9 @@ function getAdminDeliveryFromRecord(
         ? value.receiverPhoneNumber
         : undefined,
     shippingMethod:
-      typeof value.shippingMethod === "string"
-        ? value.shippingMethod
-        : undefined,
+      typeof value.shippingMethod === "string" ? value.shippingMethod : undefined,
     status: typeof value.status === "string" ? value.status : undefined,
-    storeName:
-      typeof value.storeName === "string" ? value.storeName : undefined,
+    storeName: typeof value.storeName === "string" ? value.storeName : undefined,
     trackingNumber:
       typeof value.trackingNumber === "string" ? value.trackingNumber : null,
   };
@@ -5706,9 +5706,7 @@ function getAdminRefundAccountFromRecord(
   };
 }
 
-function getAdminPaymentRecordItem(
-  value: unknown,
-): AdminPaymentRecordItem | null {
+function getAdminPaymentRecordItem(value: unknown): AdminPaymentRecordItem | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -6074,10 +6072,7 @@ export async function requestAdminShippingFeePaybackAction(
   );
 
   if (!response.ok) {
-    throw new ApiRequestError(
-      await parseErrorMessage(response),
-      response.status,
-    );
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 }
 
