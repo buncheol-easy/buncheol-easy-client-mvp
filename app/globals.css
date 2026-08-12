@@ -1874,3 +1874,26 @@ body.is-pwa-standalone .bid-sheet-panel {
 .heart-on-image--active {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
+
+
+/* 아티스트 목록의 일시 안내 토스트 — 잠깐 떴다 스스로 사라진다. */
+.artist-toast {
+  animation: artist-toast-in 180ms var(--motion-snap) both;
+}
+
+@keyframes artist-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artist-toast {
+    animation: none;
+  }
+}

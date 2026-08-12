@@ -44,6 +44,7 @@ type ArtistExploreContentProps = {
 };
 
 const FAVORITE_GROUP_LIMIT = 5;
+const TOAST_DURATION_MS = 2400;
 
 function getFavoriteId(group: ArtistGroup) {
   return group.id;
@@ -118,13 +119,23 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   const [shouldPreserveExploreOrder, setShouldPreserveExploreOrder] =
     useState(false);
   const pendingGroupIdsRef = useRef(new Set<string>());
+  // 한도 초과처럼 화면을 바꿀 필요 없는 안내는 잠깐 떴다 사라지는 토스트로 알린다.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const favoriteGroups = groups.filter((group) => group.favorited);
   const favoriteCount = favoriteGroups.length;
   // 등록한 최애는 한도에 도달했을 때만이 아니라 항상 상단에 모아 보여준다 — 아티스트가 많아
   // 그리드를 훑어서는 내가 누구를 담았는지 확인하기 어렵다.
   const isFavoriteRailVisible = favoriteCount > 0;
-  const isFavoriteLimitReachedRail = favoriteCount >= FAVORITE_GROUP_LIMIT;
   const visibleGroups = useMemo(() => {
     const trimmedQuery = query.trim();
     const shouldPinFavorites = !shouldPreserveExploreOrder;
@@ -253,9 +264,11 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
       return;
     }
 
-    // 서버도 막지만(GRP-005), 왕복 없이 즉시 이유를 알려준다.
+    // 서버도 막지만(GRP-005), 왕복 없이 즉시 이유를 알려준다. 화면 상태는 그대로 두고 토스트로만 알린다.
     if (nextFavorited && favoriteCount >= FAVORITE_GROUP_LIMIT) {
-      setMessage(`최애 그룹은 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록할 수 있어요.`);
+      showToast(
+        `최애는 최대 ${FAVORITE_GROUP_LIMIT}개까지예요. 하나 비우고 담아주세요.`,
+      );
       return;
     }
 
@@ -301,8 +314,20 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     }
   }
 
+  function showToast(text: string) {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+
+    setToast(text);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, TOAST_DURATION_MS);
+  }
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-white">
+    <div className="relative flex min-h-0 flex-1 flex-col bg-white">
       <header className="shrink-0 border-b border-black/10 bg-white px-4 pb-4 pt-3">
         <div className="flex h-11 items-center gap-2">
           <button
@@ -352,12 +377,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold tracking-[-0.03em]">
-                나의 최애 {favoriteCount}
+                나의 최애
               </p>
               <p className="mt-0.5 text-[12px] font-semibold text-black/45">
-                {isFavoriteLimitReachedRail
-                  ? "가득 찼어요. 하나 비우면 지금 보고 있는 아티스트를 담을 수 있어요."
-                  : `최대 ${FAVORITE_GROUP_LIMIT}개까지 담을 수 있어요.`}
+                최대 {FAVORITE_GROUP_LIMIT}개까지 담을 수 있어요.
               </p>
             </div>
           </div>
@@ -444,7 +467,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
                           ? "bg-[#f4f4f4] text-black/25 shadow-none"
                           : ""
                       }`}
-                      disabled={isPending || isFavoriteLimitReached}
+                      /* 한도에 걸린 하트도 눌리게 둔다 — 비활성이면 왜 안 되는지 알릴 방법이 없다. */
+                      disabled={isPending}
                       onClick={() => handleFavoriteToggle(group)}
                       type="button"
                     >
@@ -470,6 +494,18 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
         </div>
         </div>
       </div>
+
+      {toast ? (
+        <div
+          aria-live="polite"
+          className="artist-toast pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center px-6"
+          role="status"
+        >
+          <p className="max-w-full rounded-full bg-black/85 px-4 py-2.5 text-center text-[13px] font-semibold tracking-[-0.03em] text-white shadow-[0_10px_28px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+            {toast}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
