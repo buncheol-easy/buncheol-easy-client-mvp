@@ -546,6 +546,20 @@ function getBidRecordCancellationKind(bid: BidRecord) {
   return "PAYMENT_TIMEOUT";
 }
 
+// 참여 내역 목록에서 감출 참여 (docs/56 H-05). 자발 취소(본인 귀책)만 감춘다 —
+// 분철 취소·입금 기한 만료는 사용자 귀책이 아니고, 알림톡을 못 본 사용자에게는 유일한 흔적이다.
+// 사유를 알 수 없는 취소는 getBidRecordCancellationKind 가 PAYMENT_TIMEOUT 으로 떨어뜨리므로
+// 자동으로 남는 쪽이 된다.
+// 입금 흔적(보냈어요 마킹·확인 완료·paidAt)이 있으면 사유가 USER_CANCELLED 여도 남긴다 —
+// 서버가 참여자 요청에 의한 CS 취소를 같은 사유로 기록하면 환불을 추적할 유일한 근거가 사라진다.
+function isHiddenCancelledBidRecord(bid: BidRecord) {
+  return (
+    getBidRecordCancellationKind(bid) === "USER_CANCELLED" &&
+    !isBidRecordPaymentConfirmed(bid) &&
+    !isParticipationPaymentSentStatus(bid.participationStatus)
+  );
+}
+
 type BuncheolChipTone =
   | "dday"
   | "urgent"
@@ -1367,9 +1381,11 @@ export function BidHistoryContent({
     paymentBidRecords,
     paybackSheetBidId,
   );
-  // 리스트 상단 집계 배너용 — 필터와 무관하게 전체 참여에서 신청/재신청 가능한 건을 센다.
-  const actionablePaybackRecords = paymentBidRecords.filter((bid) =>
-    isPaybackRequestable(bid),
+  // 리스트 상단 집계 배너용 — 칩 필터와 무관하게 전체 참여에서 신청/재신청 가능한 건을 센다.
+  // 다만 목록에서 감춘 자발 취소 건은 제외한다 — 배너가 카드 없는 참여를 세고, 눌렀을 때
+  // 숨겨진 참여의 환급 시트가 열리는 어긋남을 막는다 (docs/56 H-05).
+  const actionablePaybackRecords = paymentBidRecords.filter(
+    (bid) => isPaybackRequestable(bid) && !isHiddenCancelledBidRecord(bid),
   );
   // 입금 대기(기한 압박 구간)는 15초 주기로 빠르게 갱신한다.
   const hasUrgentPaymentPolling = paymentBidRecords.some((bid) =>
@@ -1877,10 +1893,7 @@ export function BidHistoryContent({
 
     const filteredRecords = sourceRecords
       .filter((bid) => {
-        // 자발 취소(본인 귀책)만 목록에서 감춘다 (docs/56 H-05). 분철 취소·입금 기한 만료는
-        // 사용자 귀책이 아니고, 알림톡을 못 본 사용자에게는 유일한 흔적이라 남긴다.
-        // 사유를 알 수 없는 취소는 PAYMENT_TIMEOUT 으로 떨어지므로 자동으로 남는 쪽이 된다.
-        if (getBidRecordCancellationKind(bid) === "USER_CANCELLED") {
+        if (isHiddenCancelledBidRecord(bid)) {
           return false;
         }
 
@@ -3581,17 +3594,17 @@ export function BidHistoryContent({
                   </p>
                 </>
               ) : null}
+              {/*
+                중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 안내 문장에 흡수했다 (docs/56 H-06).
+                고지 자체를 뺄 수는 없다 — 약관 제9조와 /broker-notice 가 "분철 상세 화면 및 참여·입금
+                화면에 표시된다"고 공표하고 있고, 신청(APPLIED) 후 알림톡을 받고 오는 경로에서는
+                사용자가 개최자 계좌를 보는 화면이 이 시트뿐이다.
+              */}
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                 {isSelectedPaymentC2C
-                  ? "송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요."
+                  ? "송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. 분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접 입금돼요."
                   : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요."}
               </p>
-              {/*
-                중개자 고지(전상법 §20①)는 계약 체결 화면(분철 상세 참여 시트)·분철 상세 본문·
-                푸터·/broker-notice 에 유지하고, 결제 정보 시트의 중복 고지는 뺐다 (docs/56 H-06).
-                이 시트에서도 "대금은 개최자 계좌로 직접" 이라는 사실은 계좌 표시와 위 안내 문구로
-                그대로 전달된다.
-              */}
               {selectedPaymentOpenChatHref ? (
                 <a
                   className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/55 underline underline-offset-2"
