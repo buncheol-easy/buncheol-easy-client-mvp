@@ -419,6 +419,20 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       return;
     }
 
+    // 그룹마다 경로가 달라 from 만으로는 복귀처를 못 정한다. 이 표기가 빠지면 상세의
+    // 뒤로가기 버튼이 어느 분기에도 안 걸려 홈으로 떨어진다(스와이프는 멀쩡해 눈치채기 어렵다).
+    if (pathname.startsWith("/artists/") && isPlainPrimaryClick(event)) {
+      const groupId = pathname.slice("/artists/".length);
+
+      if (groupId) {
+        event.preventDefault();
+        router.push(
+          `/products/${productId}?from=artist&groupId=${encodeURIComponent(groupId)}`,
+        );
+        return;
+      }
+    }
+
     if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
       event.preventDefault();
       rememberProductListScrollPosition(event, FAVORITES_SCROLL_TOP_KEY);

@@ -110,7 +110,8 @@ type ProductDetailProps = {
   // 서버 렌더 시각(ms). 카운트다운(deadlineTick 파생 텍스트·기한 판정)의 하이드레이션
   // 첫 렌더를 SSR HTML 과 결정적으로 일치시켜 hydration mismatch 를 막는다.
   initialNowMs?: number;
-  initialReturnSource?: "home" | "bids" | "favorites" | "upload";
+  initialReturnSource?: "home" | "bids" | "favorites" | "upload" | "artist";
+  initialReturnGroupId?: string;
   initialReturnQuery?: string;
   startEntered?: boolean;
   renderShell?: boolean;
@@ -127,7 +128,7 @@ type ProductReturnUnderlayProps = {
   isEntered: boolean;
   isExiting: boolean;
   returnQuery?: string;
-  returnSource?: "home" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload" | "artist";
 };
 
 export function ProductReturnUnderlay({
@@ -905,6 +906,7 @@ export function ProductDetail({
   product,
   initialNowMs,
   initialReturnSource,
+  initialReturnGroupId,
   initialReturnQuery,
   startEntered = false,
   renderShell = true,
@@ -940,6 +942,7 @@ export function ProductDetail({
   const productImagePointerStartXRef = useRef<number | null>(null);
   const wasProductImageDraggedRef = useRef(false);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
+  const [returnGroupId] = useState<string | undefined>(initialReturnGroupId);
   const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -2730,8 +2733,21 @@ export function ProductDetail({
       return;
     }
 
+    if (initialReturnSource === "artist" && returnGroupId) {
+      // back 이어야 스크롤 위치와 선택한 멤버 칩이 살아난다. replace 는 "전체" 탭에서 다시 시작한다.
+      const historyIndex = getHistoryIndex();
+
+      if (historyIndex !== null && historyIndex > 0) {
+        router.back();
+        return;
+      }
+
+      router.replace(`/artists/${encodeURIComponent(returnGroupId)}`);
+      return;
+    }
+
     router.replace("/");
-  }, [backHref, initialReturnSource, returnQuery, router]);
+  }, [backHref, initialReturnSource, returnGroupId, returnQuery, router]);
 
   useEffect(() => {
     const enterAnimationFrame = window.requestAnimationFrame(() => {

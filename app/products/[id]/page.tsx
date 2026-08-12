@@ -97,6 +97,7 @@ type ProductDetailPageProps = {
   }>;
   searchParams: Promise<{
     from?: string | string[];
+    groupId?: string | string[];
     hosted?: string | string[];
     q?: string | string[];
   }>;
@@ -111,10 +112,11 @@ export default async function ProductDetailPage({
   searchParams,
 }: ProductDetailPageProps) {
   const { id } = await params;
-  const { from, hosted, q } = await searchParams;
+  const { from, groupId, hosted, q } = await searchParams;
   const returnSource = getFirstSearchParam(from);
   const isHostedView = getFirstSearchParam(hosted) === "true";
   const returnQuery = getFirstSearchParam(q);
+  const returnGroupId = getFirstSearchParam(groupId);
 
   if (id.startsWith("uploaded-")) {
     return (
@@ -191,12 +193,14 @@ export default async function ProductDetailPage({
         initialNowMs={initialNowMs}
         initialProduct={initialProduct}
         isHostedView={isHostedView}
+        returnGroupId={returnSource === "artist" ? returnGroupId : undefined}
         returnQuery={returnSource === "search" ? returnQuery ?? "" : undefined}
         returnSource={
           returnSource === "home" ||
           returnSource === "bids" ||
           returnSource === "favorites" ||
-          returnSource === "upload"
+          returnSource === "upload" ||
+          (returnSource === "artist" && returnGroupId)
             ? returnSource
             : undefined
         }
