@@ -16,3 +16,15 @@ export function artistMemberListingsQueryKey(
 }
 
 export const bannersQueryKey = ["banners"] as const;
+
+// 아이돌 그룹 계열. 홈 레일과 /artists 가 같은 데이터를 보므로 캐시를 공유해야 한다 —
+// 화면마다 따로 받으면 이동할 때마다 스켈레톤과 미필터 목록이 한 번씩 그려졌다 갈린다.
+export const groupsQueryKey = ["groups"] as const;
+
+// 그룹 마스터 목록(전체). 키워드 없는 전량 조회만 캐시한다.
+export const allGroupsQueryKey = [...groupsQueryKey, "all"] as const;
+
+export function favoriteGroupsQueryKey(loggedIn: boolean) {
+  // 최애는 사용자별 데이터라 로그아웃 상태의 빈 목록과 키를 분리한다.
+  return [...groupsQueryKey, "favorites", loggedIn] as const;
+}
