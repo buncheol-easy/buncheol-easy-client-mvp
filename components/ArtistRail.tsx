@@ -125,6 +125,27 @@ export function ArtistImage({
   const displayImageUrl = getProxiedImageUrl(imageUrl);
   const didImageFail = failedImageUrl === imageUrl;
 
+  function applyContrastingColor(image: HTMLImageElement) {
+    try {
+      const color = getContrastingColor(image);
+
+      if (color) {
+        setBackgroundColor(color);
+      }
+    } catch {
+      setBackgroundColor("#f1f1f1");
+    }
+  }
+
+  // 서버 렌더 페이지(/artists/[groupId])에서는 하이드레이션 전에 이미지 로딩이 끝나 onLoad 가
+  // 영영 발화하지 않는다. 그러면 배경이 초기값(#f1f1f1)에 멈춰 밝은 로고가 묻힌다.
+  // ref 콜백으로 마운트 시점에 이미 완료된 이미지를 직접 처리한다.
+  function handleImageRef(image: HTMLImageElement | null) {
+    if (image?.complete && image.naturalWidth > 0) {
+      applyContrastingColor(image);
+    }
+  }
+
   if (didImageFail) {
     return (
       <>
@@ -152,17 +173,8 @@ export function ArtistImage({
         className="relative h-full w-full object-contain p-2 [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.9))_drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]"
         crossOrigin="anonymous"
         onError={() => setFailedImageUrl(imageUrl)}
-        onLoad={(event) => {
-          try {
-            const color = getContrastingColor(event.currentTarget);
-
-            if (color) {
-              setBackgroundColor(color);
-            }
-          } catch {
-            setBackgroundColor("#f1f1f1");
-          }
-        }}
+        onLoad={(event) => applyContrastingColor(event.currentTarget)}
+        ref={handleImageRef}
         src={displayImageUrl}
       />
     </>

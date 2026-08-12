@@ -35,6 +35,7 @@ import {
   requestAllBuncheols,
   requestBanners,
   requestFavoriteGroups,
+  requestPopularGroups,
   toProductCardItem,
   type ApiBanner,
 } from "@/lib/auth-api";
@@ -338,6 +339,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
   const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
+  const [apiPopularGroups, setApiPopularGroups] = useState<
+    ArtistRailItem[] | null
+  >(null);
   const [groupMessage, setGroupMessage] = useState("");
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -388,7 +392,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldRevealListings] = useState(() => listingsQuery.isPending);
 
   const isListingLoading = listingsQuery.data === undefined;
-  const isGroupLoading = apiGroups === null;
+  // 레일에 실제로 쓰이는 소스만 기다린다. 최애 조회 effect 는 favoriteArtists 가 꺼져 있으면
+  // 아예 실행되지 않아 apiGroups 가 계속 null 이므로, 그걸 기다리면 스켈레톤에서 벗어나지 못한다.
+  const isGroupLoading =
+    (FEATURES.favoriteArtists && apiGroups === null) ||
+    (FEATURES.artistBrowse && apiPopularGroups === null);
   const banners =
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
@@ -401,6 +409,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         : "분철 목록을 불러오지 못했어요."
       : "";
   const favoriteGroups = apiGroups ?? [];
+  const popularGroups = apiPopularGroups ?? [];
+  // 최애는 로그인 사용자만 있고 favoriteArtists 플래그에 묶여 있다. 아이돌 브라우즈는
+  // 비로그인에서도 동작해야 하므로 최애가 없으면 인기 그룹으로 레일을 채운다.
+  const railGroups =
+    FEATURES.favoriteArtists && favoriteGroups.length > 0
+      ? favoriteGroups
+      : popularGroups;
+  const isArtistRailVisible = FEATURES.artistBrowse || FEATURES.favoriteArtists;
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -684,6 +700,51 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     };
   }, [authState.accessToken, authState.isLoggedIn]);
 
+  // 인기 그룹은 공개 API 라 비로그인에서도 레일을 채울 수 있다. 로그인 상태와 무관하므로
+  // 최애 조회와 분리해 한 번만 부른다.
+  useEffect(() => {
+    if (!FEATURES.artistBrowse) {
+      return;
+    }
+
+    let isActive = true;
+
+    requestPopularGroups()
+      .then((groups) => {
+        if (isActive) {
+          setApiPopularGroups(groups.map(toArtistRailItem));
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setApiPopularGroups([]);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  function openArtistPage(item: ArtistRailItem) {
+    if (scrollContainerRef.current) {
+      window.sessionStorage.setItem(
+        HOME_SCROLL_TOP_KEY,
+        String(scrollContainerRef.current.scrollTop),
+      );
+    }
+
+    const groupId = item.apiId;
+
+    // 멤버 아이템이거나 apiId 가 없으면 그룹 페이지를 만들 수 없다 — 기존 검색 경로로 떨어뜨린다.
+    if (item.type === "member" || !groupId) {
+      openGroupSearch(item.name);
+      return;
+    }
+
+    router.push(`/artists/${encodeURIComponent(groupId)}`);
+  }
+
   function openGroupSearch(groupName?: string) {
     if (!groupName && scrollContainerRef.current) {
       window.sessionStorage.setItem(
@@ -872,20 +933,26 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         </section>
 
         <section className="px-4">
-          {FEATURES.favoriteArtists ? (
+          {isArtistRailVisible ? (
             <>
               <div className="mb-6">
               {isGroupLoading ? (
                 <HomeArtistRailSkeleton />
-              ) : (
+              ) : railGroups.length > 0 ? (
               <ArtistRail
-                items={favoriteGroups}
-                leadingItem={{ label: "최애 추가", icon: "plus" }}
-                onFavoriteToggle={handleFavoriteGroupToggle}
-                onItemClick={(item) => openGroupSearch(item.name)}
+                items={railGroups}
+                leadingItem={
+                  FEATURES.favoriteArtists
+                    ? { label: "최애 추가", icon: "plus" }
+                    : undefined
+                }
+                onFavoriteToggle={
+                  FEATURES.favoriteArtists ? handleFavoriteGroupToggle : undefined
+                }
+                onItemClick={openArtistPage}
                 onLeadingClick={() => openGroupSearch()}
               />
-              )}
+              ) : null}
               </div>
 
               {groupMessage ? (
@@ -900,9 +967,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
           <div
             className={
-              FEATURES.favoriteArtists
-                ? "border-t border-black/10 pt-5"
-                : "pt-2"
+              isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
             }
           >
             {listingMessage ? (

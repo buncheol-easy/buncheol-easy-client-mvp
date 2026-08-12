@@ -269,6 +269,10 @@ export type ApiGroupWithMembers = ApiGroup & {
   members: ApiGroupMember[];
 };
 
+export type ApiGroupDetail = ApiGroupWithMembers & {
+  recruitingBuncheolCount: number;
+};
+
 export type RecentSearchKeyword = {
   id: string;
   keyword: string;
@@ -5549,6 +5553,46 @@ export async function removeFavoriteGroup(
   if (!response.ok && response.status !== 404) {
     throw new Error(await parseErrorMessage(response));
   }
+}
+
+/**
+ * 그룹 단위 브라우즈(아티스트) 화면용 상세. 그룹 본문 + 전 멤버 + 모집중 분철 수를 한 번에 받는다.
+ * 서버가 아직 이 엔드포인트를 배포하지 않았을 수 있으므로(세트 배포 전), 404 는 호출 측이
+ * 기존 `/groups/{id}/members` 로 폴백할 수 있게 ApiRequestError 로 그대로 던진다.
+ */
+export async function requestGroupDetail(
+  groupId: string,
+): Promise<ApiGroupDetail> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/groups/${encodeURIComponent(groupId)}`,
+    {
+      credentials: "omit",
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+
+  const body = await readJsonBody(response);
+  const record = isRecord(getNestedData(body)) ? getNestedData(body) : body;
+
+  if (!isRecord(record)) {
+    throw new ApiRequestError("그룹 정보를 불러오지 못했어요.", response.status);
+  }
+
+  const group = getApiGroupWithMembersFromRecord(record);
+
+  if (!group) {
+    throw new ApiRequestError("그룹 정보를 불러오지 못했어요.", response.status);
+  }
+
+  return {
+    ...group,
+    recruitingBuncheolCount:
+      getNumberValue(record, ["recruitingBuncheolCount"]) ?? 0,
+  };
 }
 
 export async function requestGroupMembers(groupId: string) {

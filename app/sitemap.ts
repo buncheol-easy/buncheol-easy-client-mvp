@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
-import { requestAllBuncheols } from "@/lib/auth-api";
+import { requestAllBuncheols, requestGroups } from "@/lib/auth-api";
 import { isBuncheolCancelledStatus } from "@/lib/buncheol-states";
+import { FEATURES } from "@/lib/feature-flags";
 import { SITE_URL } from "@/lib/site";
 
 // 분철 목록이 수시로 열리고 닫히므로 1시간마다 재생성한다.
@@ -10,7 +11,8 @@ export const revalidate = 3600;
 const SITEMAP_PAGE_SIZE = 100;
 const SITEMAP_MAX_ITEMS = 20 * SITEMAP_PAGE_SIZE;
 
-// /search·/artists 는 feature flag off 로 홈으로 307 리다이렉트되므로 제외한다.
+// /search·/artists(그룹 선택 화면) 는 feature flag off 로 홈으로 307 리다이렉트되므로 제외한다.
+// /artists/[groupId] 는 artistBrowse 플래그로 따로 열려 있어 아래에서 동적으로 추가한다.
 // 로그인 전용 경로(/favorites·/profile·/upload 등)는 noindex 라 제외한다.
 const staticRoutes = [
   "",
@@ -27,6 +29,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
     url: `${SITE_URL}${route}`,
   }));
+
+  let artistEntries: MetadataRoute.Sitemap = [];
+
+  if (FEATURES.artistBrowse) {
+    try {
+      const groups = await requestGroups();
+      artistEntries = groups.map((group) => ({
+        url: `${SITE_URL}/artists/${group.id}`,
+      }));
+    } catch (error) {
+      // 그룹 조회 실패 시 아티스트 경로만 빠진다 — 분철 상세는 그대로 색인된다.
+      console.warn("[sitemap] 그룹 목록 조회 실패 — 아티스트 경로를 제외합니다.", error);
+    }
+  }
 
   let productEntries: MetadataRoute.Sitemap = [];
 
@@ -66,5 +82,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.warn("[sitemap] 분철 목록 조회 실패 — 정적 경로만 포함합니다.", error);
   }
 
-  return [...staticEntries, ...productEntries];
+  return [...staticEntries, ...artistEntries, ...productEntries];
 }

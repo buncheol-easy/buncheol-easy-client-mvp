@@ -7,4 +7,12 @@ export function homeListingsQueryKey(loggedIn: boolean) {
   return [...buncheolsQueryKey, "list", loggedIn] as const;
 }
 
+// 아티스트 페이지의 멤버 필터 결과. 그룹 전체(멤버 미선택)는 서버 렌더 결과를 쓰므로 키가 없다.
+export function artistMemberListingsQueryKey(
+  groupId: string,
+  memberId: string,
+) {
+  return [...buncheolsQueryKey, "artist", groupId, memberId] as const;
+}
+
 export const bannersQueryKey = ["banners"] as const;
