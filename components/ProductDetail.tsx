@@ -78,6 +78,7 @@ import {
   BackIcon,
   CloseIcon,
   EditIcon,
+  ForwardIcon,
   HeartIcon,
   ShareIcon,
   TrashIcon,
@@ -575,9 +576,13 @@ const MEMBER_STATUS_CHIP_LABELS = {
 } as const;
 
 // 멤버 슬롯 오버레이 칩 공통 스타일 — 버튼/스팬 분기가 같은 모양을 유지하도록 한 곳에 둔다.
-// max-w+truncate 는 좁은 뷰포트·글꼴 확대에서 긴 라벨이 잘릴 때 말줄임으로 처리하기 위함.
-const memberStatusChipClassName =
-  "max-w-[calc(100%-2rem)] truncate rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur";
+// max-w 는 좁은 뷰포트·글꼴 확대에서 칩이 슬롯을 넘지 않게 하기 위함.
+// truncate(= overflow:hidden) 는 base 에서 분리했다. 버튼 분기는 ::after 로 탭 영역을
+// 칩 밖까지 넓히는데, 버튼 자신에 overflow:hidden 이 걸리면 그 영역이 통째로 잘린다.
+// 버튼 분기의 말줄임은 내부 라벨 span 이 담당한다.
+const memberStatusChipBaseClassName =
+  "max-w-[calc(100%-2rem)] rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur";
+const memberStatusChipClassName = `${memberStatusChipBaseClassName} truncate`;
 
 // 서버 participatedByMe(상세 응답) 또는 이 세션에서 방금 참여한 로컬 상태로 "내 참여"를 판별한다.
 function isOptionParticipatedByMe(option: ProductOption, myBid?: number) {
@@ -3542,7 +3547,9 @@ export function ProductDetail({
               {targetTags.join(" ")}
             </p>
 
-            <h1 className="mt-4 line-clamp-2 text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
+            {/* 제목 전문 노출은 이 화면(분철 상세)에서만 한다(docs/56 H-03).
+                목록·카드·개최 관리는 기존 truncate/line-clamp 를 유지한다. */}
+            <h1 className="mt-4 break-keep break-words text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
               {product.title}
             </h1>
             <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
@@ -3752,11 +3759,15 @@ export function ProductDetail({
                             <button
                               type="button"
                               aria-label={`${blockChipLabel}, 내 참여 내역 보기`}
-                              className={`relative pointer-events-auto after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipClassName}`}
+                              className={`relative pointer-events-auto inline-flex items-center gap-0.5 after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipBaseClassName}`}
                               onClick={openBidHistory}
                             >
-                              {blockChipLabel}
-                              <span aria-hidden="true"> ›</span>
+                              {/* 텍스트 › 는 칩 글자보다 작게 보여 눌러도 되는지 안 읽혔다(docs/56 H-04).
+                                  라벨은 계속 말줄임하고, 화살표만 아이콘으로 키워 고정한다. */}
+                              <span className="min-w-0 truncate">
+                                {blockChipLabel}
+                              </span>
+                              <ForwardIcon className="h-4 w-4 shrink-0" />
                             </button>
                           ) : (
                             <span className={memberStatusChipClassName}>
@@ -4290,12 +4301,9 @@ export function ProductDetail({
                             ? "송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."
                             : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}
                         </p>
-                        {isC2CProduct ? (
-                          <p className="mt-1 text-[11px] font-medium leading-4 text-black/35">
-                            분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
-                            직접 입금됩니다.
-                          </p>
-                        ) : null}
+                        {/* 중개자 고지(전상법 §20①)는 계약 체결 화면인 confirm 스텝과
+                            분철 상세 본문에 남아 있다. 결제 정보 단계에서는 같은 문구가
+                            반복돼 안내가 묻힌다는 지적으로 제거했다(docs/56 H-06). */}
                         {checkoutCopyToast ? (
                           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
                             <p className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]">
@@ -4419,10 +4427,8 @@ export function ProductDetail({
                       개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
                       있어요.
                     </p>
-                    <p className="px-1 text-[11px] font-medium leading-4 text-black/35">
-                      분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
-                      입금됩니다.
-                    </p>
+                    {/* 중개자 고지는 신청 직전 화면(confirm 스텝)에서 이미 노출된다.
+                        신청 완료 안내에서 다시 반복하지 않는다(docs/56 H-06). */}
                   </div>
 
                   <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
