@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -71,9 +72,11 @@ function sortFavoriteGroupsFirst(groups: ArtistGroup[]) {
 
 function ArtistAvatar({
   group,
+  loading,
   variant = "card",
 }: {
   group: ArtistGroup;
+  loading?: "eager" | "lazy";
   variant?: "card" | "chip";
 }) {
   const isChip = variant === "chip";
@@ -88,6 +91,7 @@ function ArtistAvatar({
       {group.imageUrl ? (
         <ArtistImage
           imageUrl={group.imageUrl}
+          loading={loading}
           name={group.name}
           roundedClassName={roundedClassName}
         />
@@ -136,8 +140,11 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   // 등록한 최애는 한도에 도달했을 때만이 아니라 항상 상단에 모아 보여준다 — 아티스트가 많아
   // 그리드를 훑어서는 내가 누구를 담았는지 확인하기 어렵다.
   const isFavoriteRailVisible = favoriteCount > 0;
+  // 검색어 한 글자에 카드가 그룹 수(수백 개)만큼 갈린다. 입력과 같은 렌더에 묶으면 타이핑이 밀린다.
+  // 랭킹 자체는 0.1ms 라 병목이 아니다 — 비용은 전부 카드 렌더 쪽이니 여기 최적화하지 말 것.
+  const deferredQuery = useDeferredValue(query);
   const visibleGroups = useMemo(() => {
-    const trimmedQuery = query.trim();
+    const trimmedQuery = deferredQuery.trim();
     const shouldPinFavorites = !shouldPreserveExploreOrder;
 
     if (!trimmedQuery) {
@@ -149,7 +156,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     return shouldPinFavorites
       ? sortFavoriteGroupsFirst(rankedGroups)
       : rankedGroups;
-  }, [groups, query, shouldPreserveExploreOrder]);
+  }, [groups, deferredQuery, shouldPreserveExploreOrder]);
 
   useEffect(() => {
     let isActive = true;
@@ -433,7 +440,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
               />
             ))}
           </div>
-        ) : visibleGroups.length > 0 ? (
+        ) : (
+          /* 0건일 때도 그리드를 유지한다. 빈 상태와 삼항으로 가르면 0건 ↔ N건을 오갈 때마다
+             카드 전부가 remount 되고 content-reveal 이 재생된다. */
+          <>
           <div className="content-reveal grid grid-cols-2 gap-3">
             {visibleGroups.map((group) => {
               const isPending = pendingGroupId === group.id;
@@ -442,18 +452,20 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
 
               return (
                 <article
-                  className="rounded-[1.2rem] border border-black/10 bg-white p-4"
+                  className="artist-card rounded-[1.2rem] border border-black/10 bg-white p-4"
                   key={group.id}
                 >
                   <div className="flex justify-center">
-                    <ArtistAvatar group={group} />
+                    <ArtistAvatar group={group} loading="lazy" />
                   </div>
                   <div
                     className={`-mx-1 mt-4 flex min-h-[3rem] items-center gap-1.5 rounded-[1rem] py-1 pl-3 pr-1 ${
                       group.favorited ? "bg-[#f6f6f6]" : "bg-white"
                     }`}
                   >
-                    <h2 className="line-clamp-2 min-w-0 flex-1 break-keep text-[16px] font-semibold leading-tight tracking-[-0.04em]">
+                    {/* break-keep 만 두면 공백 없는 긴 이름("BABYMONSTER")이 어디서도 안 끊겨
+                        하트 밑으로 잘린다. 이름 자리는 76~111px 뿐이라 한 줄로는 애초에 못 담는다. */}
+                    <h2 className="line-clamp-2 min-w-0 flex-1 break-keep wrap-anywhere text-[16px] font-semibold leading-tight tracking-[-0.04em]">
                       {group.name}
                     </h2>
                     <button
@@ -482,12 +494,14 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
               );
             })}
           </div>
-        ) : (
-          <div className="rounded-[1.2rem] bg-[#f7f7f7] px-4 py-8 text-center">
-            <p className="text-[15px] font-semibold text-black/45">
-              검색 결과가 없어요.
-            </p>
-          </div>
+          {visibleGroups.length === 0 ? (
+            <div className="rounded-[1.2rem] bg-[#f7f7f7] px-4 py-8 text-center">
+              <p className="text-[15px] font-semibold text-black/45">
+                검색 결과가 없어요.
+              </p>
+            </div>
+          ) : null}
+          </>
         )}
         <div className="-mx-4 -mb-6 mt-auto pt-6">
           <BusinessFooter />
