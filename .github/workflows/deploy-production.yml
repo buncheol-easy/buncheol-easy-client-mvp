@@ -74,6 +74,11 @@ jobs:
           # prod 사용자가 staging 백엔드를 때린다 — 무증상이라 필수 검사 대상
           [ -n "$API_BASE_URL" ] || fail "PROD_NEXT_PUBLIC_API_BASE_URL 미등록 — prod 가 staging 백엔드로 폴백한다"
           case "$API_BASE_URL" in https://*) ;; *) fail "API_BASE_URL 형식 이상: $API_BASE_URL" ;; esac
+          # legacy IP 는 lib/auth-api.ts 가 defaultApiBaseUrl(staging) 로 되돌린다. 번들에는 리터럴이
+          # 박혀 스모크를 통과하므로("리터럴 존재 = 주입 증거" 논리의 유일한 반례) 입력에서 막는다
+          case "$API_BASE_URL" in
+            http://13.124.248.60*|https://13.124.248.60*) fail "legacy IP 는 코드가 staging 으로 폴백시킨다 — 실제 도메인을 쓸 것" ;;
+          esac
 
           [ -n "$PH_KEY" ] || fail "PROD_NEXT_PUBLIC_POSTHOG_KEY 미등록 — 트래킹이 죽은 채 배포된다"
           case "$PH_KEY" in phc_*) ;; *) fail "POSTHOG_KEY 형식 이상 (phc_ 접두사 아님)" ;; esac
@@ -135,6 +140,7 @@ jobs:
           IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ steps.meta.outputs.tag }}
           API_BASE_URL: ${{ vars.PROD_NEXT_PUBLIC_API_BASE_URL }}
           PH_KEY: ${{ vars.PROD_NEXT_PUBLIC_POSTHOG_KEY }}
+          PH_HOST: ${{ vars.PROD_NEXT_PUBLIC_POSTHOG_HOST }}
           GA_ID: ${{ vars.PROD_NEXT_PUBLIC_GA_ID }}
         run: |
           set -e
@@ -142,35 +148,43 @@ jobs:
 
           docker pull "$IMAGE"
           docker create --name bce-smoke-fs "$IMAGE" > /dev/null
-          docker cp bce-smoke-fs:/app/.next "$RUNNER_TEMP/next"
-          docker rm -f bce-smoke-fs > /dev/null
 
-          static="$RUNNER_TEMP/next/static"
-          server="$RUNNER_TEMP/next/server"
-          # 구조가 바뀌면 "트래킹이 죽었다"가 아니라 "검사 방식이 낡았다"고 말해야 한다
-          if [ ! -d "$static" ] || [ ! -d "$server" ]; then
-            fail ".next/static·server 를 찾을 수 없다 — 빌드 산출물 구조가 바뀌었다. 이 스텝을 갱신할 것"
-          fi
+          # 검사에 쓰는 두 디렉터리만 꺼낸다 — .next 통째로는 빌드 캐시까지 딸려온다.
+          # 구조가 바뀌면 cp 가 즉시 실패하므로, "트래킹이 죽었다"가 아니라
+          # "검사 방식이 낡았다"고 말하게 한다
+          static="$RUNNER_TEMP/next-static"
+          server="$RUNNER_TEMP/next-server"
+          docker cp bce-smoke-fs:/app/.next/static "$static" \
+            || fail ".next/static 을 꺼낼 수 없다 — 빌드 산출물 구조가 바뀌었다. 이 스텝을 갱신할 것"
+          docker cp bce-smoke-fs:/app/.next/server "$server" \
+            || fail ".next/server 를 꺼낼 수 없다 — 빌드 산출물 구조가 바뀌었다. 이 스텝을 갱신할 것"
+          docker rm -f bce-smoke-fs > /dev/null
 
           # 값의 '모양'이 아니라 등록한 값 그대로를 찾는다 — 엉뚱한 GA 속성이나 다른 프로젝트의
           # PostHog 키가 들어가도 통과하던 구멍을 막는다(리뷰 지적). 전부 브라우저에 노출되는
           # 공개값이라 에러 메시지·로그 노출 문제는 없다.
-          if ! grep -raqF "$PH_KEY" "$static"; then
+          # -e: 값이 '-' 로 시작해도 옵션으로 해석되지 않게 고정
+          if ! grep -raqF -e "$PH_KEY" "$static"; then
             fail "PostHog 토큰이 클라이언트 번들에 없다 — 트래킹이 죽은 이미지다"
           fi
+          # api_host 도 2단 검사 대상 — instrumentation-client.ts 의 '??' 는 빈 문자열을
+          # 폴백시키지 않으므로, HOST 가 비면 api_host: "" 로 조용히 죽는다
+          if ! grep -raqF -e "$PH_HOST" "$static"; then
+            fail "PostHog api_host 가 클라이언트 번들에 없다"
+          fi
           # 소스의 defaultApiBaseUrl 폴백이 staging 도메인이라, prod 도메인 문자열의 존재가
-          # 곧 "env 가 실제로 주입됐다"는 증거다
-          if ! grep -raqF "$API_BASE_URL" "$static"; then
+          # 곧 "env 가 실제로 주입됐다"는 증거다(legacy IP 예외는 Validate 에서 차단)
+          if ! grep -raqF -e "$API_BASE_URL" "$static"; then
             fail "prod API base URL 이 클라이언트 번들에 없다 — staging 백엔드로 폴백한 이미지다"
           fi
           # GA 는 root layout(서버 컴포넌트)에서 렌더돼 서버 청크에 박힌다.
           # ⚠️ 프리렌더 HTML(.next/server/app/*.html)에는 gtag 스크립트가 들어가지 않는다(실측 확인)
           # — HTML 로 검사하려 들지 말 것.
-          if ! grep -raqF "$GA_ID" "$server"; then
+          if ! grep -raqF -e "$GA_ID" "$server"; then
             fail "GA ID 가 서버 번들에 없다 — GA 태그가 렌더되지 않는다"
           fi
 
-          echo "번들 검증 통과: PostHog·API URL(static) · GA(server) 모두 등록값 그대로 베이크됨"
+          echo "번들 검증 통과: PostHog 키·호스트·API URL(static) · GA(server) 모두 등록값 그대로 베이크됨"
 
   deploy:
     needs: build
