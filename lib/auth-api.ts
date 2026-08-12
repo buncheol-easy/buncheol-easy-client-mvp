@@ -6017,6 +6017,47 @@ export async function requestAdminPaymentConfirmation(
   return getAdminBulkResult(body);
 }
 
+export type AdminImpersonationToken = {
+  targetUserId: string;
+  accessToken: string;
+  expiresInSeconds: number;
+};
+
+// 관리자가 문의 재현용으로 대상 유저의 짧은 수명 유저 토큰(ROLE_USER)을 발급받는다.
+// 반환 토큰은 유저 auth-store 에 넣으면 그 유저 세션이 재현된다. 사유(reason)는 서버 감사 로그에 남는다.
+export async function requestAdminImpersonationToken(
+  accessToken: string,
+  userId: string,
+  reason: string,
+): Promise<AdminImpersonationToken> {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/users/${userId}/impersonation-token`,
+    {
+      body: JSON.stringify({ reason }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+    "재현용 토큰 발급이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const body = await parseAdminResponse<{
+    targetUserId?: unknown;
+    accessToken?: unknown;
+    expiresInSeconds?: unknown;
+  }>(response);
+
+  if (typeof body.accessToken !== "string") {
+    throw new Error("재현용 토큰을 확인할 수 없어요.");
+  }
+
+  return {
+    accessToken: body.accessToken,
+    expiresInSeconds:
+      typeof body.expiresInSeconds === "number" ? body.expiresInSeconds : 0,
+    targetUserId: getOptionalIdString(body.targetUserId) ?? userId,
+  };
+}
+
 export async function requestAdminTrackingRegistration(
   accessToken: string,
   deliveryIds: string[],
