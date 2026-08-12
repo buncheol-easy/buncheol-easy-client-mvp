@@ -439,7 +439,8 @@ export type MyParticipation = {
   hostBankAccount?: BankAccountInfo | null;
   // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
   // 나중에 계좌를 다시 열어본 사용자가 다른 이름으로 송금할 위험이 있었다 (docs/53 Q-17).
-  refundHolder?: string | null;
+  // 이름은 개최자 화면(HostedBuncheolManage)·ParticipationPaymentDetail 과 같은 용어를 쓴다.
+  depositorName?: string | null;
   shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   shippingOptions?: BuncheolShippingOption[];
@@ -4210,6 +4211,12 @@ export async function requestMyParticipations(accessToken: string) {
       const buncheolMember = isRecord(buncheolMemberRecord)
         ? buncheolMemberRecord
         : null;
+      // alias 폭은 인접 파서(getBuncheolManagementParticipantFromRecord·프로필 파서)와 맞춘다.
+      const refundAccountRecord = getNestedData(
+        record.refundAccount ??
+          record.refundBankAccount ??
+          record.refundBankAccountInfo,
+      );
       const shippingAddressRecord = getParticipationShippingAddressRecord(record);
       const shippingAddress = shippingAddressRecord
         ? getUserShippingAddress(shippingAddressRecord)
@@ -4338,9 +4345,22 @@ export async function requestMyParticipations(accessToken: string) {
         paymentSentAt:
           getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
         // 서버는 refundHolder 로 내려주지만, 환불계좌 객체째 실려오는 응답도 대비한다.
-        refundHolder:
-          getOptionalStringValue(record, ["refundHolder"]) ??
-          getNestedBankAccountInfo(record, ["refundAccount"])?.holder ??
+        // ⚠️ getNestedBankAccountInfo 를 쓰면 안 된다 — 키에서 못 찾을 때 최상위 record 를 스캔하고,
+        // 그 후보 키에 hostAccountHolder·sellerAccountHolder 가 있어 개최자 예금주를 입금자명으로
+        // 집어올 수 있다. 입금자명이 어긋나면 자동 입금확인·개최자 대조가 실패해, 값이 없어 안 보이는
+        // 것보다 나쁘다. 환불계좌 객체 안에서만 좁게 읽는다.
+        depositorName:
+          getOptionalStringValue(record, [
+            "refundHolder",
+            "refundAccountHolder",
+          ]) ??
+          (isRecord(refundAccountRecord)
+            ? getOptionalStringValue(refundAccountRecord, [
+                "holder",
+                "holderName",
+                "accountHolder",
+              ])
+            : undefined) ??
           null,
         createdAt:
           getOptionalStringValue(record, [

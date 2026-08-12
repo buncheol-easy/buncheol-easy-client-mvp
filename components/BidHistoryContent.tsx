@@ -428,7 +428,7 @@ type BidRecord = {
   tone: string;
   buncheolStatus?: string;
   openChatUrl?: string | null;
-  payerName?: string;
+  depositorName?: string | null;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
@@ -993,7 +993,9 @@ function getBidRecordFromParticipation(
     flowType: participation.flowType ?? null,
     openChatUrl: participation.openChatUrl ?? null,
     // 입금자명 = 참여 시 등록한 환불계좌 예금주 (docs/53 Q-17). 지금까지 타입에만 있고 채워진 적이 없었다.
-    payerName: participation.refundHolder ?? undefined,
+    // ⚠️ paymentDetail 쪽 depositorName 을 fallback 으로 끌어오지 말 것 — 그 파서의 후보 키에
+    // participantNickname 이 있어 예금주가 아닌 닉네임이 입금자명으로 표시될 수 있다.
+    depositorName: participation.depositorName ?? null,
     paymentSentAt: participation.paymentSentAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
@@ -3524,7 +3526,7 @@ export function BidHistoryContent({
                   계좌 복사
                 </button>
               </div>
-              {selectedPaymentBid?.payerName ? (
+              {selectedPaymentBid.depositorName ? (
                 // 입금자명은 LEGACY 자동 입금확인(페이액션)의 매칭 키이고, C2C 에서는 개최자가 통장에서
                 // 찾는 유일한 단서다. 주문 직후 "입금 안내" 시트에만 있어서 나중에 이 시트로 계좌를 다시
                 // 확인한 사용자는 안내 없이 송금하게 됐다 (docs/53 Q-17). 문구는 상세 체크아웃과 동일하게 맞춘다.
@@ -3532,7 +3534,7 @@ export function BidHistoryContent({
                   <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                     입금자명{" "}
                     <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
-                      {selectedPaymentBid.payerName}
+                      {selectedPaymentBid.depositorName}
                     </span>
                   </p>
                   <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/45">
