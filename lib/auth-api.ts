@@ -5529,6 +5529,12 @@ export async function requestFavoriteGroups(
     .map((group) => ({ ...group, favorited: true }));
 }
 
+// 최애 등록이 409 로 실패하는 경우는 두 가지이고 처리가 정반대다.
+//   GRP-003 이미 등록됨 → 원하는 상태가 이미 만족됐으니 성공으로 접는다 (UI 는 등록됨으로 수렴).
+//   GRP-005 5개 한도 초과 → 등록되지 않았으므로 롤백하고 사용자에게 이유를 보여줘야 한다.
+// 둘을 구분하지 않으면 한도 초과인데 하트가 켜졌다가 새로고침하면 풀린다.
+const FAVORITE_GROUP_ALREADY_EXISTS_CODE = "GRP-003";
+
 export async function addFavoriteGroup(accessToken: string, groupId: string) {
   const response = await fetch(
     `${getVersionedApiBaseUrl()}/groups/${groupId}/favorite`,
@@ -5540,7 +5546,20 @@ export async function addFavoriteGroup(accessToken: string, groupId: string) {
   );
 
   if (response.status === 409) {
-    return { alreadyExists: true };
+    const errorBody = await readJsonBody(response);
+    const code = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["code"])
+      : undefined;
+
+    if (code === FAVORITE_GROUP_ALREADY_EXISTS_CODE) {
+      return { alreadyExists: true };
+    }
+
+    const detail = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["message", "detail", "title"])
+      : undefined;
+
+    throw new Error(detail ?? "최애 그룹을 등록하지 못했어요.");
   }
 
   if (!response.ok) {

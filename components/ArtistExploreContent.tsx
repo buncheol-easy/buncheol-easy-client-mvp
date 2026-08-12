@@ -250,6 +250,12 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
       return;
     }
 
+    // 서버도 막지만(GRP-005), 왕복 없이 즉시 이유를 알려준다.
+    if (nextFavorited && favoriteCount >= FAVORITE_GROUP_LIMIT) {
+      setMessage(`최애 그룹은 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록할 수 있어요.`);
+      return;
+    }
+
     pendingGroupIdsRef.current.add(group.id);
     setPendingGroupId(group.id);
     setShouldPreserveExploreOrder(true);

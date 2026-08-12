@@ -68,6 +68,8 @@ const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
+// 서버 UserFavoriteGroupService.MAX_FAVORITE_GROUP_COUNT 와 같은 값.
+const FAVORITE_GROUP_LIMIT = 5;
 // "상세 봤다가 바로 뒤로" 동선은 재요청 없이 캐시를 재사용하는 신선 창(멘토 권고).
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
@@ -825,6 +827,15 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     const favoriteGroupId = item.apiId ?? item.id;
     const nextFavorited = item.favorited !== true;
+
+    // 레일에는 개수 표시가 없어 한도 초과를 눌러보고서야 알게 된다. 서버 왕복 전에 막고 이유를 알린다.
+    if (nextFavorited && favoritedGroupCount >= FAVORITE_GROUP_LIMIT) {
+      setGroupMessage(
+        `최애 그룹은 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록할 수 있어요.`,
+      );
+      return;
+    }
+
     setApiGroups((current) =>
       current?.map((group) =>
         group.id === item.id ? { ...group, favorited: nextFavorited } : group,
@@ -833,6 +844,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     try {
       if (nextFavorited) {
+        // 이미 등록돼 있었다면(다른 탭에서 등록 등) 원하는 상태가 이미 만족된 것이라 그대로 둔다.
         await addFavoriteGroup(accessToken, favoriteGroupId);
       } else {
         await removeFavoriteGroup(accessToken, favoriteGroupId);
