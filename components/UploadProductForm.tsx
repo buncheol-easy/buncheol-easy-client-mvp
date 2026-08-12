@@ -750,6 +750,9 @@ export function UploadProductForm({
   const canDecreaseMinHeadcount = !isApiEditMode && selectedMinHeadcount > 1;
   const canIncreaseMinHeadcount =
     !isApiEditMode && selectedMinHeadcount < targetMembers.length;
+  // maxLength 로 막히지 않는 경로(기존 제목 불러오기)로 상한을 넘길 수 있어,
+  // 카운터에서 초과 상태를 색으로 구분한다.
+  const isTitleOverLimit = title.trim().length > maxTitleLength;
   const submitBlockReason = (() => {
     if (photos.length === 0) {
       return "사진을 1장 이상 올려 주세요.";
@@ -761,7 +764,7 @@ export function UploadProductForm({
 
     // input 의 maxLength 는 타이핑만 막고, 서버에서 불러온 기존 제목에는 적용되지 않는다.
     // 상한을 넘긴 제목을 수정 저장하면 서버 검증에서 400 이 나므로 제출 자체를 막는다.
-    if (title.trim().length > maxTitleLength) {
+    if (isTitleOverLimit) {
       return `상품명은 ${maxTitleLength}자까지 입력할 수 있어요.`;
     }
 
@@ -2184,7 +2187,11 @@ export function UploadProductForm({
                           placeholder="분철 제목"
                           value={title}
                         />
-                        <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                        <span
+                          className={`mt-1.5 block text-right text-[12px] font-semibold ${
+                            isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
+                          }`}
+                        >
                           {title.length}/{maxTitleLength}자
                         </span>
                       </label>
@@ -2319,6 +2326,14 @@ export function UploadProductForm({
                       >
                         수정 완료
                       </button>
+                      {/* 수정 모드에도 제출 차단 사유를 노출한다. 제목 길이 가드는
+                          서버에서 불러온 기존 제목을 겨냥하므로, 사유가 없으면
+                          개최자는 버튼이 왜 죽었는지 알 수 없다. */}
+                      {!canSubmit && submitBlockReason ? (
+                        <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/45">
+                          {submitBlockReason}
+                        </p>
+                      ) : null}
                     </section>
                   </>
                 )}
@@ -2514,7 +2529,11 @@ export function UploadProductForm({
                 placeholder="예: LOVE DIVE 원영 미공포 분철"
                 value={title}
               />
-              <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+              <span
+                className={`mt-1.5 block text-right text-[12px] font-semibold ${
+                  isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
+                }`}
+              >
                 {title.length}/{maxTitleLength}자
               </span>
             </label>

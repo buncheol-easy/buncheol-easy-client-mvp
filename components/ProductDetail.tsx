@@ -576,9 +576,13 @@ const MEMBER_STATUS_CHIP_LABELS = {
 } as const;
 
 // 멤버 슬롯 오버레이 칩 공통 스타일 — 버튼/스팬 분기가 같은 모양을 유지하도록 한 곳에 둔다.
-// max-w+truncate 는 좁은 뷰포트·글꼴 확대에서 긴 라벨이 잘릴 때 말줄임으로 처리하기 위함.
-const memberStatusChipClassName =
-  "max-w-[calc(100%-2rem)] truncate rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur";
+// max-w 는 좁은 뷰포트·글꼴 확대에서 칩이 슬롯을 넘지 않게 하기 위함.
+// truncate(= overflow:hidden) 는 base 에서 분리했다. 버튼 분기는 ::after 로 탭 영역을
+// 칩 밖까지 넓히는데, 버튼 자신에 overflow:hidden 이 걸리면 그 영역이 통째로 잘린다.
+// 버튼 분기의 말줄임은 내부 라벨 span 이 담당한다.
+const memberStatusChipBaseClassName =
+  "max-w-[calc(100%-2rem)] rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur";
+const memberStatusChipClassName = `${memberStatusChipBaseClassName} truncate`;
 
 // 서버 participatedByMe(상세 응답) 또는 이 세션에서 방금 참여한 로컬 상태로 "내 참여"를 판별한다.
 function isOptionParticipatedByMe(option: ProductOption, myBid?: number) {
@@ -3545,7 +3549,7 @@ export function ProductDetail({
 
             {/* 제목 전문 노출은 이 화면(분철 상세)에서만 한다(docs/56 H-03).
                 목록·카드·개최 관리는 기존 truncate/line-clamp 를 유지한다. */}
-            <h1 className="mt-4 break-words text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
+            <h1 className="mt-4 break-keep break-words text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
               {product.title}
             </h1>
             <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
@@ -3755,7 +3759,7 @@ export function ProductDetail({
                             <button
                               type="button"
                               aria-label={`${blockChipLabel}, 내 참여 내역 보기`}
-                              className={`relative pointer-events-auto inline-flex items-center gap-0.5 after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipClassName}`}
+                              className={`relative pointer-events-auto inline-flex items-center gap-0.5 after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipBaseClassName}`}
                               onClick={openBidHistory}
                             >
                               {/* 텍스트 › 는 칩 글자보다 작게 보여 눌러도 되는지 안 읽혔다(docs/56 H-04).
@@ -3763,7 +3767,7 @@ export function ProductDetail({
                               <span className="min-w-0 truncate">
                                 {blockChipLabel}
                               </span>
-                              <ForwardIcon className="h-[1.15rem] w-[1.15rem] shrink-0" />
+                              <ForwardIcon className="h-4 w-4 shrink-0" />
                             </button>
                           ) : (
                             <span className={memberStatusChipClassName}>
