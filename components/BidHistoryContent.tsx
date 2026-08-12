@@ -1877,6 +1877,13 @@ export function BidHistoryContent({
 
     const filteredRecords = sourceRecords
       .filter((bid) => {
+        // 자발 취소(본인 귀책)만 목록에서 감춘다 (docs/56 H-05). 분철 취소·입금 기한 만료는
+        // 사용자 귀책이 아니고, 알림톡을 못 본 사용자에게는 유일한 흔적이라 남긴다.
+        // 사유를 알 수 없는 취소는 PAYMENT_TIMEOUT 으로 떨어지므로 자동으로 남는 쪽이 된다.
+        if (getBidRecordCancellationKind(bid) === "USER_CANCELLED") {
+          return false;
+        }
+
         if (
           filter !== "all" &&
           isParticipationCancelledStatus(bid.participationStatus)
@@ -2607,7 +2614,8 @@ export function BidHistoryContent({
           : records,
       );
       setHistoryMessage("");
-      showActionToast("참여를 취소했어요.");
+      // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
+      showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
     } catch (error: unknown) {
       setHistoryMessage(
         error instanceof Error
@@ -3052,7 +3060,7 @@ export function BidHistoryContent({
                         <div className="mt-4 flex items-center justify-end gap-2">
                           {isPaymentSent ? (
                             <span className="rounded-full bg-[#E4F6A5] px-2.5 py-1.5 text-[12px] font-semibold text-black/70">
-                              보냈어요 완료
+                              입금 확인 대기
                             </span>
                           ) : null}
                           {canCancel ? (
@@ -3417,8 +3425,8 @@ export function BidHistoryContent({
               <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
                 일반 사용자가 개최한 분철은 신청(무입금) 후 개최자가 성사를
                 확정하면 입금 안내를 받아요. 입금 후에는 &lsquo;보냈어요&rsquo;를
-                꼭 눌러주세요. 이 거래에서 분철이지는 통신판매중개자이며, 대금은
-                개최자 계좌로 직접 입금돼요.
+                꼭 눌러주세요. 분철이지는 통신판매중개자이며, 대금은 개최자
+                계좌로 직접 입금돼요.
               </p>
             </div>
 
@@ -3578,13 +3586,12 @@ export function BidHistoryContent({
                   ? "송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요."
                   : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요."}
               </p>
-              {isSelectedPaymentC2C ? (
-                // 중개자 고지 (전상법 §20① — docs/41 §3.3-1): 입금 화면에 상시 노출.
-                <p className="mt-1 text-[11px] font-medium leading-4 text-black/35">
-                  분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
-                  입금됩니다.
-                </p>
-              ) : null}
+              {/*
+                중개자 고지(전상법 §20①)는 계약 체결 화면(분철 상세 참여 시트)·분철 상세 본문·
+                푸터·/broker-notice 에 유지하고, 결제 정보 시트의 중복 고지는 뺐다 (docs/56 H-06).
+                이 시트에서도 "대금은 개최자 계좌로 직접" 이라는 사실은 계좌 표시와 위 안내 문구로
+                그대로 전달된다.
+              */}
               {selectedPaymentOpenChatHref ? (
                 <a
                   className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/55 underline underline-offset-2"
@@ -3670,7 +3677,7 @@ export function BidHistoryContent({
               >
                 {pendingParticipationId !== null
                   ? "표시하는 중"
-                  : "입금했어요 · 보냈어요 표시"}
+                  : "입금 보냈어요"}
               </button>
             ) : isSelectedPaymentSent ? (
               <button
