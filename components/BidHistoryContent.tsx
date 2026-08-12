@@ -428,7 +428,7 @@ type BidRecord = {
   tone: string;
   buncheolStatus?: string;
   openChatUrl?: string | null;
-  depositorName?: string | null;
+  refundHolder?: string | null;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
@@ -992,10 +992,13 @@ function getBidRecordFromParticipation(
     deliveryStatus: participation.deliveryStatus,
     flowType: participation.flowType ?? null,
     openChatUrl: participation.openChatUrl ?? null,
-    // 입금자명 = 참여 시 등록한 환불계좌 예금주 (docs/53 Q-17). 지금까지 타입에만 있고 채워진 적이 없었다.
-    // ⚠️ paymentDetail 쪽 depositorName 을 fallback 으로 끌어오지 말 것 — 그 파서의 후보 키에
-    // participantNickname 이 있어 예금주가 아닌 닉네임이 입금자명으로 표시될 수 있다.
-    depositorName: participation.depositorName ?? null,
+    // 입금자명 = 참여 시 등록한 환불계좌 예금주 (docs/53 Q-17). 서버는 입금 대기(AWAITING_PAYMENT·
+    // PAYMENT_SENT)에서만 값을 채우는데, 결제 정보 시트가 열리는 조건(canViewBidRecordPaymentSheet)과
+    // 같아 정작 필요한 구간에는 항상 값이 있다 — staging 응답으로 키 이름·노출 조건 실측 확인.
+    // ⚠️ 개최자 화면 계열의 depositorName 을 fallback 으로 끌어오지 말 것 —
+    // getBuncheolManagementWinnerFromRecord(auth-api.ts)의 후보 키와 HostedBuncheolManage 의
+    // depositorName 은 참여자 닉네임을 담을 수 있어, 예금주가 아닌 이름이 입금자명으로 표시된다.
+    refundHolder: participation.refundHolder ?? null,
     paymentSentAt: participation.paymentSentAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
@@ -3526,7 +3529,7 @@ export function BidHistoryContent({
                   계좌 복사
                 </button>
               </div>
-              {selectedPaymentBid.depositorName ? (
+              {selectedPaymentBid.refundHolder ? (
                 // 입금자명은 LEGACY 자동 입금확인(페이액션)의 매칭 키이고, C2C 에서는 개최자가 통장에서
                 // 찾는 유일한 단서다. 주문 직후 "입금 안내" 시트에만 있어서 나중에 이 시트로 계좌를 다시
                 // 확인한 사용자는 안내 없이 송금하게 됐다 (docs/53 Q-17). 문구는 상세 체크아웃과 동일하게 맞춘다.
@@ -3534,7 +3537,7 @@ export function BidHistoryContent({
                   <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                     입금자명{" "}
                     <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
-                      {selectedPaymentBid.depositorName}
+                      {selectedPaymentBid.refundHolder}
                     </span>
                   </p>
                   <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/45">

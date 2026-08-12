@@ -439,8 +439,10 @@ export type MyParticipation = {
   hostBankAccount?: BankAccountInfo | null;
   // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
   // 나중에 계좌를 다시 열어본 사용자가 다른 이름으로 송금할 위험이 있었다 (docs/53 Q-17).
-  // 이름은 개최자 화면(HostedBuncheolManage)·ParticipationPaymentDetail 과 같은 용어를 쓴다.
-  depositorName?: string | null;
+  // 이름은 서버 응답 키(refundHolder) 그대로 둔다 — depositorName 은 이 코드베이스에서
+  // "환불계좌 예금주"(HostedBuncheolManage:1128)와 "참여자 닉네임"(auth-api:2914, HostedBuncheolManage:213)
+  // 두 의미로 이미 쓰이고 있어, 여기 합류시키면 어느 쪽인지 읽어봐야 알 수 있다.
+  refundHolder?: string | null;
   shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   shippingOptions?: BuncheolShippingOption[];
@@ -4349,16 +4351,24 @@ export async function requestMyParticipations(accessToken: string) {
         // 그 후보 키에 hostAccountHolder·sellerAccountHolder 가 있어 개최자 예금주를 입금자명으로
         // 집어올 수 있다. 입금자명이 어긋나면 자동 입금확인·개최자 대조가 실패해, 값이 없어 안 보이는
         // 것보다 나쁘다. 환불계좌 객체 안에서만 좁게 읽는다.
-        depositorName:
+        refundHolder:
           getOptionalStringValue(record, [
             "refundHolder",
             "refundAccountHolder",
           ]) ??
           (isRecord(refundAccountRecord)
-            ? getOptionalStringValue(refundAccountRecord, [
+            ? // 이미 환불계좌 객체 안으로 스코프가 좁혀졌으므로 인접 파서(getBankAccountInfoFromRecord)와
+              // 같은 폭으로 본다. 단 host*/seller* 접두 키는 넣지 않는다 — 환불계좌 객체 안에 있을 이유가
+              // 없고, 있다면 그건 개최자 계좌가 잘못 실린 응답이다.
+              getOptionalStringValue(refundAccountRecord, [
                 "holder",
                 "holderName",
                 "accountHolder",
+                "accountOwner",
+                "accountOwnerName",
+                "depositor",
+                "depositorName",
+                "name",
               ])
             : undefined) ??
           null,
