@@ -43,31 +43,25 @@ export function useFavoriteGroupsQuery(isLoggedIn: boolean) {
   });
 }
 
-// 최애로 "세는" 판정. 캐시에는 이번 세션에 해제한 그룹이 favorited:false 로 남아 있다
-// (아래 useFavoriteGroupsCache 주석 참고) — 그 항목은 최애가 아니다.
-export function isFavoritedGroup(group: ApiGroup) {
-  return group.favorited !== false;
-}
-
 export function useFavoriteGroupsCache(isLoggedIn: boolean) {
   const queryClient = useQueryClient();
   const queryKey = favoriteGroupsQueryKey(isLoggedIn);
 
-  // 해제한 그룹을 목록에서 빼지 않고 favorited:false 로 남긴다 — 홈 레일이 그 자리를
-  // 유지해야 오탭을 그 자리에서 되돌릴 수 있다 (빼버리면 /artists 까지 가야 복구된다).
-  // 재조회가 돌면 서버 기준으로 정리되므로 이 잔류는 화면 수명 동안만 유지된다.
+  // 이 캐시는 "지금 최애인 그룹" 만 담는다 — 서버 목록과 같은 뜻이다. 해제하면 빼고,
+  // 등록하면 넣는다. 해제한 항목을 남겨두면 그 화면을 떠난 뒤에도(예: /artists 에서 해제하고
+  // 홈으로 복귀) 홈 레일에 계속 떠 있게 된다. 해제 직후 그 자리에서 되돌리는 동선은 캐시가
+  // 아니라 각 화면의 로컬 상태로 처리한다 (HomeContent 의 releasedRailGroups).
   function setFavorited(group: ApiGroup, favorited: boolean) {
     queryClient.setQueryData<ApiGroup[]>(queryKey, (current) => {
       const groups = current ?? [];
-      const index = groups.findIndex((item) => item.id === group.id);
 
-      if (index === -1) {
-        return favorited ? [...groups, { ...group, favorited: true }] : groups;
+      if (!favorited) {
+        return groups.filter((item) => item.id !== group.id);
       }
 
-      return groups.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, favorited } : item,
-      );
+      return groups.some((item) => item.id === group.id)
+        ? groups
+        : [...groups, { ...group, favorited: true }];
     });
   }
 

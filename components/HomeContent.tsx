@@ -38,6 +38,7 @@ import {
   requestBanners,
   toProductCardItem,
   type ApiBanner,
+  type ApiGroup,
 } from "@/lib/auth-api";
 import {
   createLoginHref,
@@ -364,6 +365,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 최애 기준 목록 필터도 첫 렌더부터 제대로 걸린다(전체 목록이 그려졌다 갈리지 않는다).
   const favoriteGroupsQuery = useFavoriteGroupsQuery(authState.isLoggedIn);
   const { setFavorited } = useFavoriteGroupsCache(authState.isLoggedIn);
+  // 이 화면에서 하트를 누른 레일 항목의 자리. 해제해도 빠지지 않고, 되돌려도 끝으로 밀리지 않게
+  // 처음 누른 자리를 붙잡아 둔다. 마운트마다 비므로 다른 화면에서 해제한 것은 남지 않는다.
+  const [pinnedRailSlots, setPinnedRailSlots] = useState<
+    { group: ApiGroup; index: number }[]
+  >([]);
 
   // 캐시는 루트 레이아웃의 QueryClient 에 살아있으므로, 뒤로가기 복귀 시 첫 렌더부터
   // 데이터가 있다(스켈레톤 없음). staleTime 내에는 재요청도 없고, 지나면 캐시를 보여준
@@ -425,13 +431,34 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         ? listingsQuery.error.message
         : "분철 목록을 불러오지 못했어요."
       : "";
-  // 레일은 조회된 최애 목록을 그대로 유지한다 — 해제해도 항목을 빼지 않고 빈 하트로만 바꾼다.
-  // 그 자리에서 오탭을 되돌릴 수 있어야 하기 때문이다 (빼버리면 /artists 까지 가야 복구된다).
-  // 해제분은 캐시에 favorited:false 로 남아 있고, 재조회가 돌면 서버 기준으로 정리된다.
-  const railGroups = useMemo(
-    () => (apiGroups ?? []).map(toArtistRailItem),
-    [apiGroups],
-  );
+  // 레일에서 해제한 항목은 이 화면에 머무는 동안만 빈 하트로 자리를 지킨다 — 그 자리에서 오탭을
+  // 바로 되돌릴 수 있어야 하기 때문이다 (빼버리면 /artists 까지 가야 복구된다). 화면을 벗어나면
+  // 사라진다: 다른 화면에서 해제한 것까지 남으면 최애가 아닌 그룹이 홈에 계속 떠 있게 된다.
+  const railGroups = useMemo(() => {
+    const favoriteGroupsData = apiGroups ?? [];
+
+    if (pinnedRailSlots.length === 0) {
+      return favoriteGroupsData.map(toArtistRailItem);
+    }
+
+    const favoriteIds = new Set(favoriteGroupsData.map((group) => group.id));
+    const pinnedIds = new Set(pinnedRailSlots.map(({ group }) => group.id));
+    const items = favoriteGroupsData
+      .filter((group) => !pinnedIds.has(group.id))
+      .map(toArtistRailItem);
+
+    // 하트를 눌렀던 항목은 해제·복구 어느 쪽이든 처음 그 자리에 그대로 둔다.
+    [...pinnedRailSlots]
+      .sort((left, right) => left.index - right.index)
+      .forEach(({ group, index }) => {
+        items.splice(Math.min(index, items.length), 0, {
+          ...toArtistRailItem(group),
+          favorited: favoriteIds.has(group.id),
+        });
+      });
+
+    return items;
+  }, [apiGroups, pinnedRailSlots]);
   // 최애는 로그인 사용자에게만 존재하므로 비로그인에는 레일 자체를 노출하지 않는다.
   const isArtistRailVisible = FEATURES.favoriteArtists && authState.isLoggedIn;
   // 레일에 남겨 둔 해제분은 빼고 "실제로 최애인" 것만 센다. 레일 길이로 판정하면 전부 해제해도
@@ -775,12 +802,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     const favoriteGroupId = item.apiId ?? item.id;
     const nextFavorited = item.favorited !== true;
-    // 레일 항목은 최애 캐시에서 나온 것이라 항상 원본이 있다.
-    const cachedGroup = (apiGroups ?? []).find(
-      (group) => group.id === favoriteGroupId,
-    );
+    // 되돌리기(빈 하트 다시 누르기) 대상은 캐시에서 이미 빠져 있으므로 붙잡아 둔 자리에서도 찾는다.
+    const sourceGroup =
+      (apiGroups ?? []).find((group) => group.id === favoriteGroupId) ??
+      pinnedRailSlots.find(({ group }) => group.id === favoriteGroupId)?.group;
 
-    if (!cachedGroup) {
+    if (!sourceGroup) {
       return;
     }
 
@@ -790,8 +817,19 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
+    // 해제하면 캐시에서 빠지지만 이 화면에서는 자리를 지킨다. 자리는 처음 누를 때만 잡는다.
+    const slotIndex = railGroups.findIndex(
+      (group) => (group.apiId ?? group.id) === favoriteGroupId,
+    );
+
+    setPinnedRailSlots((current) =>
+      current.some(({ group }) => group.id === favoriteGroupId)
+        ? current
+        : [...current, { group: sourceGroup, index: slotIndex }],
+    );
+
     // 캐시를 바로 고쳐 하트를 즉시 반영한다. 같은 캐시를 보는 /artists 도 함께 갱신된다.
-    setFavorited(cachedGroup, nextFavorited);
+    setFavorited(sourceGroup, nextFavorited);
 
     try {
       if (nextFavorited) {
@@ -802,7 +840,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       }
       setGroupMessage("");
     } catch (error) {
-      setFavorited(cachedGroup, !nextFavorited);
+      setFavorited(sourceGroup, !nextFavorited);
       setGroupMessage(
         error instanceof Error
           ? error.message

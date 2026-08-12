@@ -34,7 +34,6 @@ import {
   rankGroupSearchResults,
 } from "@/lib/group-presenters";
 import {
-  isFavoritedGroup,
   useAllGroupsQuery,
   useFavoriteGroupsCache,
   useFavoriteGroupsQuery,
@@ -56,9 +55,7 @@ function getFavoriteId(group: ArtistGroup) {
 }
 
 function mergeFavoriteGroups(groups: ApiGroup[], favorites: ApiGroup[]) {
-  const favoriteIds = new Set(
-    favorites.filter(isFavoritedGroup).map((group) => group.id),
-  );
+  const favoriteIds = new Set(favorites.map((group) => group.id));
 
   return groups.map((group) => ({
     ...group,
