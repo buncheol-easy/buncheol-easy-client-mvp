@@ -37,7 +37,7 @@ import {
   subscribeAdminAuthState,
   writeAdminAccessToken,
 } from "@/lib/admin-auth-store";
-import { writeAuthTokens } from "@/lib/auth-store";
+import { writeAuthState } from "@/lib/auth-store";
 import { FEATURES } from "@/lib/feature-flags";
 import { AdminShippingFeePaybackSection } from "@/components/AdminShippingFeePaybackSection";
 
@@ -761,7 +761,9 @@ function AdminImpersonationPanel({ accessToken }: { accessToken: string }) {
 
     // 이 브라우저의 유저 세션(auth-store)을 대상 유저로 덮어쓰고 새 탭에서 서비스를 연다.
     // 관리자 세션(admin-auth-store)과는 분리돼 있어 이 대시보드 로그인에는 영향이 없다.
-    writeAuthTokens({ accessToken: issued.accessToken });
+    // writeAuthTokens 대신 저수준 writeAuthState 를 쓴다 — analytics identify 를 건너뛰어
+    // 재현(impersonation) 중 발생한 이벤트가 대상 유저에게 귀속되지 않게 한다.
+    writeAuthState({ accessToken: issued.accessToken, isLoggedIn: true });
     window.open("/", "_blank", "noopener");
   }
 
