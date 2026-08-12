@@ -17,3 +17,13 @@ export function getArtistScrollTopKey(groupId: string) {
 export function getArtistSelectedMemberKey(groupId: string) {
   return `artist-selected-member:${groupId}`;
 }
+
+// 저장은 카드 클릭 시점, 복원은 아티스트 화면 마운트 시점이라 "돌아온 마운트인가" 를 따로 가려야 한다.
+// 이 표기가 없으면 상세에서 홈으로 빠져나간 뒤 레일로 같은 그룹을 새로 열 때도 지난번 멤버 필터가
+// 걸린 채 열린다 — 스크롤 오프셋과 달리 멤버 필터는 화면 제목과 목록 내용까지 바꾼다.
+export function getArtistRestoreIndexKey(groupId: string) {
+  return `artist-restore-index:${groupId}`;
+}
+
+// ProductCard(저장)와 ProductDetail(판독)이 같은 값을 봐야 한다.
+export const PRODUCT_ARTIST_ENTRY_INDEX_KEY = "product-artist-entry-index";

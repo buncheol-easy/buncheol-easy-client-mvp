@@ -8,6 +8,7 @@ import { BottomNavigator } from "@/components/BottomNavigator";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon, CheckIcon, UsersRoundIcon } from "@/components/icons";
 import {
+  getArtistRestoreIndexKey,
   getArtistScrollTopKey,
   getArtistSelectedMemberKey,
 } from "@/lib/artist-browse";
@@ -125,6 +126,7 @@ export function ArtistBrowseContent({
 }: ArtistBrowseContentProps) {
   const router = useRouter();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const canRestoreScrollRef = useRef(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [isMemberListExpanded, setIsMemberListExpanded] = useState(false);
   const [didRestoreSelectedMember, setDidRestoreSelectedMember] =
@@ -182,12 +184,30 @@ export function ArtistBrowseContent({
   // hydration mismatch 가 난다. 하이드레이션 이후에, 다만 페인트 전에 되돌린다 —
   // rAF 로 미루면 "전체" 목록이 한 프레임 비쳤다가 바뀐다. (HomeContent 스크롤 복원과 같은 이유)
   useLayoutEffect(() => {
+    const scrollTopKey = getArtistScrollTopKey(group.id);
     const selectedMemberKey = getArtistSelectedMemberKey(group.id);
+    const restoreIndexKey = getArtistRestoreIndexKey(group.id);
     const storedMemberId = window.sessionStorage.getItem(selectedMemberKey);
+    const storedRestoreIndex = window.sessionStorage.getItem(restoreIndexKey);
+    const historyIndex = getHistoryIndex();
     window.sessionStorage.removeItem(selectedMemberKey);
+    window.sessionStorage.removeItem(restoreIndexKey);
+
+    // 마운트라면 무조건 복원하면, 상세에서 뒤로가기 대신 하단 네비로 홈에 갔다가 레일로 같은
+    // 그룹을 새로 여는 경로에서도 지난번 필터가 되살아난다. 저장 시점의 히스토리 인덱스와
+    // 지금 인덱스가 같을 때 — 즉 그 화면으로 되돌아왔을 때 — 만 복원한다.
+    const isReturnVisit =
+      historyIndex !== null && storedRestoreIndex === String(historyIndex);
+
+    if (!isReturnVisit) {
+      window.sessionStorage.removeItem(scrollTopKey);
+    }
+
+    canRestoreScrollRef.current = isReturnVisit;
 
     /* eslint-disable react-hooks/set-state-in-effect -- 페인트 전 동기 상태 확정이 목적 */
     if (
+      isReturnVisit &&
       storedMemberId &&
       group.members.some((member) => member.id === storedMemberId)
     ) {
@@ -201,7 +221,7 @@ export function ArtistBrowseContent({
   useLayoutEffect(() => {
     // 멤버 복원 판정 전이거나 그 멤버 목록이 아직 안 왔으면, 지금 복원해 봐야 짧은 화면에
     // 잘린 오프셋만 남는다. 목록이 자리를 잡은 뒤 한 번만 되돌린다.
-    if (!didRestoreSelectedMember || isLoading) {
+    if (!didRestoreSelectedMember || !canRestoreScrollRef.current || isLoading) {
       return;
     }
 
@@ -212,14 +232,16 @@ export function ArtistBrowseContent({
       return;
     }
 
-    window.sessionStorage.removeItem(scrollTopKey);
-
+    // 키 삭제는 rAF 안에서 한다. 밖에서 지우면 프레임 전에 deps 가 한 번 더 바뀌었을 때
+    // cleanup 이 프레임을 취소한 뒤 재실행 시점엔 읽을 값이 없어, 복원이 흔적 없이 사라진다.
+    // (FavoritesContent 의 스크롤 복원과 같은 순서)
     const restoreFrame = window.requestAnimationFrame(() => {
       if (!scrollContainerRef.current) {
         return;
       }
 
       scrollContainerRef.current.scrollTop = Number(storedScrollTop);
+      window.sessionStorage.removeItem(scrollTopKey);
     });
 
     return () => {
@@ -262,9 +284,12 @@ export function ArtistBrowseContent({
       </header>
 
       {/* ProductCard 가 카드 클릭 시점에 이 컨테이너의 scrollTop 과 현재 멤버 필터를 저장한다.
-          data-artist-member-id 가 빠지면 스크롤만 복원돼 "전체" 목록 위에 다른 목록의 오프셋이 얹힌다. */}
+          data-artist-member-id 가 빠지면 스크롤만 복원돼 "전체" 목록 위에 다른 목록의 오프셋이 얹힌다.
+          group.id 를 같이 싣는 이유는 저장·복원이 같은 값을 써야 하기 때문이다 — 주소창 표기(`/artists/007`)
+          에서 잘라 쓰면 키가 어긋나 복원이 조용히 실패하고, 복귀 링크도 홈으로 떨어진다. */}
       <div
         className="min-h-0 flex-1 overflow-y-auto"
+        data-artist-group-id={group.id}
         data-artist-member-id={selectedMemberId ?? ""}
         data-product-scroll-container="artist"
         ref={scrollContainerRef}

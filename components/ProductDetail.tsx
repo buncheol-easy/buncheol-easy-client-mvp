@@ -31,6 +31,7 @@ import {
   type CvsStore,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
+import { PRODUCT_ARTIST_ENTRY_INDEX_KEY } from "@/lib/artist-browse";
 import {
   createLoginHref,
   getCurrentBrowserHref,
@@ -137,6 +138,9 @@ export function ProductReturnUnderlay({
   returnQuery,
   returnSource,
 }: ProductReturnUnderlayProps) {
+  // artist 분기는 일부러 없다. 아티스트 화면은 서버에서 받은 group·initialItems 로만 그릴 수
+  // 있어 클라이언트에서 언더레이로 재현할 수 없다. 드래그 중 셸 배경만 보이는 건 감수한 트레이드오프이지
+  // 빠뜨린 게 아니다 — 여기에 홈을 깔면 복귀처가 아닌 화면이 밑에 비친다.
   const shouldRenderHomeUnderlay =
     returnSource === "home" ||
     returnSource === "upload" ||
@@ -195,7 +199,6 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
-const PRODUCT_ARTIST_ENTRY_INDEX_KEY = "product-artist-entry-index";
 const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";

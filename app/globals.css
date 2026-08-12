@@ -686,6 +686,9 @@ body.is-pwa-standalone {
    목록이 통째로 갈릴 때의 비용을 보이는 만큼으로 묶는다. 194px = 카드 실제 높이(스켈레톤과 동일). */
 .artist-card {
   content-visibility: auto;
+  /* auto 키워드는 content-visibility 보다 늦게 들어왔다. 아는 브라우저는 아래 줄로 덮어쓰고,
+     모르는 브라우저에서는 선언 전체가 무효가 돼 화면 밖 카드가 0 높이로 접히므로 폴백을 둔다. */
+  contain-intrinsic-size: 194px;
   contain-intrinsic-size: auto 194px;
 }
 
