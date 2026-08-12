@@ -1024,29 +1024,29 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             ) : visibleListings.length === 0 && favoriteGroupNames.size > 0 ? (
               /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
                  내 최애 것만 없는 건지 구분해 알린다. */
-              <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
-                {/* 카오모지는 장식이라 스크린리더가 괄호·기호를 읽지 않도록 숨긴다. */}
-                <p
-                  aria-hidden="true"
-                  className="text-[22px] leading-none text-black/35"
-                >
-                  {"(´•̥ ᵔ •̥`)"}
-                </p>
-                <p className="mt-3 text-[15px] font-semibold tracking-[-0.05em]">
-                  최애 아티스트 그룹의 분철이 아직 없어요
-                </p>
-                <button
-                  className="motion-card mt-4 inline-flex h-11 items-center rounded-full bg-[#DDE7B8] px-5 text-[14px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
-                  onClick={openHosting}
-                  type="button"
-                >
-                  분철 직접 개최하기
-                </button>
-              </div>
+                <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
+                  <p className="text-[15px] font-semibold tracking-[-0.05em]">
+                    최애 아티스트 그룹의 분철이 아직 없어요
+                  </p>
+                  {/* 카오모지는 장식이라 스크린리더가 괄호·기호를 읽지 않도록 숨긴다. */}
+                  <p
+                      aria-hidden="true"
+                      className="mt-2 text-[14px] leading-none text-black/50"
+                  >
+                    {"(´•̥ ᵔ •̥`)"}
+                  </p>
+                  <button
+                      className="motion-card mt-4 inline-flex h-11 items-center rounded-full bg-[#DDE7B8] px-5 text-[14px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
+                      onClick={openHosting}
+                      type="button"
+                  >
+                    분철 직접 개최하기
+                  </button>
+                </div>
             ) : (
-              <div className={shouldRevealListings ? "content-reveal" : ""}>
-                <ProductGrid items={visibleListings} variant="wide" />
-              </div>
+                <div className={shouldRevealListings ? "content-reveal" : ""}>
+                  <ProductGrid items={visibleListings} variant="wide"/>
+                </div>
             )}
           </div>
         </section>
