@@ -12,6 +12,7 @@ import {
 } from "react";
 import {
   ApiRequestError,
+  requestAdminImpersonationToken,
   requestAdminLogin,
   requestAdminMe,
   requestAdminPaymentConfirmation,
@@ -21,6 +22,7 @@ import {
   requestAllAdminPayments,
   requestCreateNotice,
   type AdminBulkFailure,
+  type AdminImpersonationToken,
   type AdminPaymentRecordItem,
   type AdminPaymentSummary,
   type AdminRequestedShippingAddress,
@@ -35,6 +37,7 @@ import {
   subscribeAdminAuthState,
   writeAdminAccessToken,
 } from "@/lib/admin-auth-store";
+import { writeAuthTokens } from "@/lib/auth-store";
 import { FEATURES } from "@/lib/feature-flags";
 import { AdminShippingFeePaybackSection } from "@/components/AdminShippingFeePaybackSection";
 
@@ -703,6 +706,155 @@ function AdminNoticeUploader({ accessToken }: { accessToken: string }) {
   );
 }
 
+function AdminImpersonationPanel({ accessToken }: { accessToken: string }) {
+  const [userId, setUserId] = useState("");
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [issued, setIssued] = useState<AdminImpersonationToken | null>(null);
+
+  async function handleIssue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const targetUserId = userId.trim();
+    const issueReason = reason.trim();
+
+    if (!/^\d+$/.test(targetUserId)) {
+      setMessage("유저 ID는 숫자로 입력해 주세요.");
+      return;
+    }
+
+    if (!issueReason) {
+      setMessage("발급 사유를 입력해 주세요. (감사 로그에 남아요)");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setMessage("재현용 토큰 발급 중이에요.");
+    setIssued(null);
+
+    try {
+      const token = await requestAdminImpersonationToken(
+        accessToken,
+        targetUserId,
+        issueReason,
+      );
+      setIssued(token);
+      setMessage(
+        `유저 #${token.targetUserId} 토큰 발급 완료 (${Math.floor(
+          token.expiresInSeconds / 60,
+        )}분 유효)`,
+      );
+    } catch (error: unknown) {
+      setMessage(
+        error instanceof Error ? error.message : "토큰을 발급하지 못했어요.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleApplyAndOpen() {
+    if (!issued) {
+      return;
+    }
+
+    // 이 브라우저의 유저 세션(auth-store)을 대상 유저로 덮어쓰고 새 탭에서 서비스를 연다.
+    // 관리자 세션(admin-auth-store)과는 분리돼 있어 이 대시보드 로그인에는 영향이 없다.
+    writeAuthTokens({ accessToken: issued.accessToken });
+    window.open("/", "_blank", "noopener");
+  }
+
+  async function handleCopy() {
+    if (!issued) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(issued.accessToken);
+      setMessage("토큰을 복사했어요.");
+    } catch {
+      setMessage("복사에 실패했어요. 토큰을 직접 선택해 복사해 주세요.");
+    }
+  }
+
+  return (
+    <div className="border-t border-black/10 px-4 pb-4 pt-4">
+      {message ? (
+        <p className="mb-3 inline-block rounded-full bg-[#f4f6f8] px-3 py-2 text-[12px] font-semibold text-black/45">
+          {message}
+        </p>
+      ) : null}
+
+      <form
+        className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_auto] md:items-end"
+        onSubmit={(event) => void handleIssue(event)}
+      >
+        <label className="grid gap-1.5">
+          <span className="text-[12px] font-semibold text-black/40">
+            유저 ID
+          </span>
+          <input
+            className="h-11 w-full rounded-[0.85rem] border border-black/10 px-3 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+            inputMode="numeric"
+            onChange={(event) => setUserId(event.target.value)}
+            placeholder="예: 21"
+            value={userId}
+          />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[12px] font-semibold text-black/40">
+            발급 사유 (감사 로그)
+          </span>
+          <input
+            className="h-11 w-full min-w-0 rounded-[0.85rem] border border-black/10 px-3 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
+            maxLength={200}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="예: 결제 상태 미반영 문의 재현"
+            value={reason}
+          />
+        </label>
+        <button
+          className="h-11 rounded-full bg-black px-5 text-[15px] font-semibold text-white disabled:bg-black/20"
+          disabled={isSubmitting}
+          type="submit"
+        >
+          {isSubmitting ? "발급 중" : "토큰 발급"}
+        </button>
+      </form>
+
+      {issued ? (
+        <div className="mt-3 grid gap-2 rounded-[1rem] bg-[#f7f8f2] p-3">
+          <p className="text-[12px] font-semibold text-black/45">
+            이 브라우저의 유저 세션이 대상 유저로 바뀝니다. 조회 위주로 사용하고, 쓰기 액션은 실제 유저 데이터에 반영돼요.
+          </p>
+          <textarea
+            className="min-h-[4.5rem] resize-y rounded-[0.85rem] border border-black/10 bg-white px-3 py-2 text-[12px] font-mono leading-5 outline-none"
+            readOnly
+            value={issued.accessToken}
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="h-10 rounded-full bg-black px-4 text-[13px] font-semibold text-white"
+              onClick={handleApplyAndOpen}
+              type="button"
+            >
+              이 유저로 새 탭에서 열기
+            </button>
+            <button
+              className="h-10 rounded-full border border-black/10 px-4 text-[13px] font-semibold text-black/55"
+              onClick={() => void handleCopy()}
+              type="button"
+            >
+              토큰 복사
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AdminLoginPanel({ notice }: { notice: string }) {
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -847,6 +999,7 @@ export function AdminPaymentsDashboard() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [isNoticeOpen, setIsNoticeOpen] = useState(false);
+  const [isImpersonationOpen, setIsImpersonationOpen] = useState(false);
   const [selectedParticipationId, setSelectedParticipationId] = useState("");
   const [verificationByParticipation, setVerificationByParticipation] =
     useState<Record<string, VerificationState>>({});
@@ -1809,6 +1962,33 @@ export function AdminPaymentsDashboard() {
             {/* 접어도 언마운트하지 않아 작성 중이던 공지 내용이 유지된다. */}
             <div className={isNoticeOpen ? "" : "hidden"}>
               <AdminNoticeUploader accessToken={adminAccessToken} />
+            </div>
+          </section>
+        ) : null}
+
+        {adminAccessToken ? (
+          <section className="rounded-[1.15rem] bg-white shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
+            <button
+              aria-expanded={isImpersonationOpen}
+              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+              onClick={() => setIsImpersonationOpen((current) => !current)}
+              type="button"
+            >
+              <div>
+                <p className="text-[12px] font-semibold uppercase text-black/35">
+                  Support
+                </p>
+                <h2 className="mt-1 text-[18px] font-semibold">유저 화면 재현</h2>
+                <p className="mt-1 text-[13px] font-semibold text-black/40">
+                  문의한 유저의 짧은 수명 토큰을 발급해 그 화면을 그대로 확인해요.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-black/10 px-4 py-2 text-[12px] font-semibold text-black/45">
+                {isImpersonationOpen ? "접기" : "열기"}
+              </span>
+            </button>
+            <div className={isImpersonationOpen ? "" : "hidden"}>
+              <AdminImpersonationPanel accessToken={adminAccessToken} />
             </div>
           </section>
         ) : null}
