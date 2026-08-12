@@ -1025,7 +1025,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
                  내 최애 것만 없는 건지 구분해 알린다. */
               <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
-                <p className="text-[15px] font-semibold tracking-[-0.05em]">
+                {/* 카오모지는 장식이라 스크린리더가 괄호·기호를 읽지 않도록 숨긴다. */}
+                <p
+                  aria-hidden="true"
+                  className="text-[22px] leading-none text-black/35"
+                >
+                  {"(´•̥ ᵔ •̥`)"}
+                </p>
+                <p className="mt-3 text-[15px] font-semibold tracking-[-0.05em]">
                   최애 아티스트 그룹의 분철이 아직 없어요
                 </p>
                 <button
