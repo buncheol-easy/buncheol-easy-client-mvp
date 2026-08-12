@@ -14,7 +14,7 @@ type FeatureFlags = {
 
 export const FEATURES: FeatureFlags = {
   artistBrowse: true,
-  favoriteArtists: false,
+  favoriteArtists: true,
   search: false,
   shippingFeePayback: true,
 };

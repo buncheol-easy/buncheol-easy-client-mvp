@@ -34,6 +34,7 @@ import {
   removeFavoriteGroup,
   requestAllBuncheols,
   requestBanners,
+  requestBuncheols,
   requestFavoriteGroups,
   requestPopularGroups,
   toProductCardItem,
@@ -53,6 +54,7 @@ import { getFreshAccessToken } from "@/lib/auth-session";
 import { FEATURES } from "@/lib/feature-flags";
 import {
   bannersQueryKey,
+  favoriteListingsQueryKey,
   homeListingsQueryKey,
 } from "@/lib/query-keys";
 import { toArtistRailItem } from "@/lib/group-presenters";
@@ -252,6 +254,23 @@ function readStoredBannerSlide(): StoredBannerSlide | null {
   }
 }
 
+// 홈 "내 최애 분철" 섹션용. 서버가 최애 그룹 필터를 적용하므로 클라에서 그룹을 알 필요가 없다.
+// 최애가 0개이거나 비로그인이면 서버가 빈 목록을 준다.
+async function loadFavoriteListings() {
+  const accessToken = await getFreshAccessToken();
+
+  if (!accessToken) {
+    return [];
+  }
+
+  const items = await requestBuncheols(accessToken, {
+    onlyFavoriteGroups: true,
+    size: 20,
+  });
+
+  return items.map(toProductCardItem).map(mergeCachedProductImage);
+}
+
 async function loadHomeListings(loggedIn: boolean) {
   let accessToken: string | null = null;
 
@@ -359,6 +378,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     // 로그인 상태가 바뀌어 키가 갈릴 때 이전 목록을 유지해 스켈레톤 재노출을 막는다.
     placeholderData: keepPreviousData,
   });
+  const favoriteListingsQuery = useQuery({
+    enabled: FEATURES.favoriteArtists && authState.isLoggedIn,
+    queryKey: favoriteListingsQueryKey,
+    queryFn: loadFavoriteListings,
+    staleTime: HOME_LISTINGS_STALE_MS,
+  });
   const queryClient = useQueryClient();
   const bannersQuery = useQuery({
     queryKey: bannersQueryKey,
@@ -410,13 +435,30 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       : "";
   const favoriteGroups = apiGroups ?? [];
   const popularGroups = apiPopularGroups ?? [];
-  // 최애는 로그인 사용자만 있고 favoriteArtists 플래그에 묶여 있다. 아이돌 브라우즈는
-  // 비로그인에서도 동작해야 하므로 최애가 없으면 인기 그룹으로 레일을 채운다.
-  const railGroups =
-    FEATURES.favoriteArtists && favoriteGroups.length > 0
-      ? favoriteGroups
-      : popularGroups;
+  // 최애를 앞에 두고 인기 그룹을 이어 붙인다. 최애만 남기면 등록한 순간 새 그룹을 발견할 길이
+  // 막히고, 인기만 쓰면 내 최애가 뒤로 밀린다.
+  const railGroups = FEATURES.favoriteArtists
+    ? [
+        ...favoriteGroups,
+        ...popularGroups.filter(
+          (group) =>
+            !favoriteGroups.some((favorite) => favorite.id === group.id),
+        ),
+      ]
+    : popularGroups;
   const isArtistRailVisible = FEATURES.artistBrowse || FEATURES.favoriteArtists;
+  // 최애 섹션은 로그인 + 최애 등록이 전제다. 최애가 0개면 섹션을 아예 숨겨(레일의 "최애 추가"가
+  // 유도 자리를 대신한다), 최애는 있는데 분철만 없을 때 안내 문구를 보여준다.
+  // 최애 해제 시 레일에서 항목을 빼지 않고 favorited 만 내리므로(되돌리기 쉽게), 섹션 노출은
+  // 실제로 최애인 항목 수로 판정한다. 그러지 않으면 전부 해제해도 섹션이 남는다.
+  const favoritedGroupCount = favoriteGroups.filter(
+    (group) => group.favorited !== false,
+  ).length;
+  const isFavoriteSectionVisible =
+    FEATURES.favoriteArtists && authState.isLoggedIn && favoritedGroupCount > 0;
+  const favoriteListings = favoriteListingsQuery.data ?? [];
+  const isFavoriteListingLoading =
+    isFavoriteSectionVisible && favoriteListingsQuery.isPending;
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
@@ -709,7 +751,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     let isActive = true;
 
-    requestPopularGroups()
+    requestPopularGroups({ fallbackToAllGroups: false })
       .then((groups) => {
         if (isActive) {
           setApiPopularGroups(groups.map(toArtistRailItem));
@@ -796,6 +838,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         await removeFavoriteGroup(accessToken, favoriteGroupId);
       }
       setGroupMessage("");
+      // 최애 구성이 바뀌면 "내 최애 분철" 결과도 달라진다.
+      queryClient.invalidateQueries({ queryKey: favoriteListingsQueryKey });
     } catch (error) {
       setApiGroups((current) =>
         current?.map((group) =>
@@ -965,9 +1009,46 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             </>
           ) : null}
 
+          {isFavoriteSectionVisible ? (
+            <div className="mb-6 border-t border-black/10 pt-5">
+              <div className="mb-4 flex items-end justify-between">
+                <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+                  내 최애 분철
+                </h2>
+                {isFavoriteListingLoading ? null : (
+                  <span className="text-[13px] font-medium text-black/45">
+                    {favoriteListings.length}개
+                  </span>
+                )}
+              </div>
+
+              {isFavoriteListingLoading ? (
+                <ProductGridSkeleton
+                  ariaLabel="최애 분철을 불러오는 중"
+                  count={2}
+                />
+              ) : favoriteListings.length > 0 ? (
+                <ProductGrid items={favoriteListings} keyPrefix="favorite" />
+              ) : (
+                <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-7 text-center">
+                  <p className="text-[15px] font-semibold tracking-[-0.05em]">
+                    최애 그룹 분철이 아직 없어요
+                  </p>
+                  <p className="mt-2 text-[13px] font-medium leading-relaxed text-black/45">
+                    지금은 다른 그룹 분철만 열려 있어요.
+                    <br />
+                    아래에서 전체 분철을 둘러보세요.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : null}
+
           <div
             className={
-              isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
+              isArtistRailVisible && !isFavoriteSectionVisible
+                ? "border-t border-black/10 pt-5"
+                : "pt-2"
             }
           >
             {listingMessage ? (
