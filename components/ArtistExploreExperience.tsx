@@ -20,6 +20,11 @@ export function ArtistExploreExperience() {
   const exitTimerRef = useRef<number | null>(null);
   const [isEntered, setIsEntered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  // 언더레이 홈은 홈 화면 한 벌을 통째로 더 마운트한다(상품 카드 수십 장 + 이미지).
+  // 진입 애니메이션 동안 실제로 보이는 건 왼쪽 14px 뿐이라, 그 비용을 진입 경로에서
+  // 걷어내고 애니메이션이 끝난 뒤 한가할 때 붙인다. 나갈 때는 패널이 비켜나며 전체가
+  // 드러나므로 그 전에 반드시 준비돼 있어야 한다.
+  const [isUnderlayMounted, setIsUnderlayMounted] = useState(false);
 
   useEffect(() => {
     const enterFrame = window.requestAnimationFrame(() => {
@@ -34,6 +39,28 @@ export function ArtistExploreExperience() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isUnderlayMounted) {
+      return;
+    }
+
+    // requestIdleCallback 이 없는 브라우저(사파리 구버전)는 진입 애니메이션 직후로 대체한다.
+    const mountUnderlay = () => setIsUnderlayMounted(true);
+
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(mountUnderlay, { timeout: 1000 });
+
+      return () => window.cancelIdleCallback(handle);
+    }
+
+    const timer = window.setTimeout(
+      mountUnderlay,
+      ARTIST_EXPLORE_PANEL_TRANSITION_MS,
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [isUnderlayMounted]);
 
   function finishBackNavigation() {
     const historyIndex = getHistoryIndex();
@@ -53,6 +80,8 @@ export function ArtistExploreExperience() {
       return;
     }
 
+    // 아직 안 붙었으면 지금 붙인다 — 패널이 비켜나며 언더레이가 전부 드러난다.
+    setIsUnderlayMounted(true);
     setIsExiting(true);
     setIsEntered(false);
 
@@ -65,8 +94,12 @@ export function ArtistExploreExperience() {
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
       <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-        <HomeContent skipEnterAnimation />
-        <BottomNavigator />
+        {isUnderlayMounted ? (
+          <>
+            <HomeContent skipEnterAnimation />
+            <BottomNavigator />
+          </>
+        ) : null}
       </SwipeUnderlay>
 
       <div

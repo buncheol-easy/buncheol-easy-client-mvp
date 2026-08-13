@@ -36,9 +36,9 @@ import {
   removeFavoriteGroup,
   requestAllBuncheols,
   requestBanners,
-  requestFavoriteGroups,
   toProductCardItem,
   type ApiBanner,
+  type ApiGroup,
 } from "@/lib/auth-api";
 import {
   createLoginHref,
@@ -60,6 +60,10 @@ import {
   bannersQueryKey,
   homeListingsQueryKey,
 } from "@/lib/query-keys";
+import {
+  useFavoriteGroupsCache,
+  useFavoriteGroupsQuery,
+} from "@/lib/group-queries";
 import {
   normalizeGroupSearchText,
   toArtistRailItem,
@@ -351,13 +355,21 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
   const [shouldSuppressHeaderTransition, setShouldSuppressHeaderTransition] =
     useState(false);
-  const [apiGroups, setApiGroups] = useState<ArtistRailItem[] | null>(null);
   const [groupMessage, setGroupMessage] = useState("");
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
     getInitialAuthState,
   );
+  // /artists 와 같은 캐시를 본다 — 아티스트 화면을 다녀와도 레일이 스켈레톤으로 돌아가지 않고,
+  // 최애 기준 목록 필터도 첫 렌더부터 제대로 걸린다(전체 목록이 그려졌다 갈리지 않는다).
+  const favoriteGroupsQuery = useFavoriteGroupsQuery(authState.isLoggedIn);
+  const { setFavorited } = useFavoriteGroupsCache(authState.isLoggedIn);
+  // 이 화면에서 하트를 누른 레일 항목의 자리. 해제해도 빠지지 않고, 되돌려도 끝으로 밀리지 않게
+  // 처음 누른 자리를 붙잡아 둔다. 마운트마다 비므로 다른 화면에서 해제한 것은 남지 않는다.
+  const [pinnedRailSlots, setPinnedRailSlots] = useState<
+    { group: ApiGroup; index: number }[]
+  >([]);
 
   // 캐시는 루트 레이아웃의 QueryClient 에 살아있으므로, 뒤로가기 복귀 시 첫 렌더부터
   // 데이터가 있다(스켈레톤 없음). staleTime 내에는 재요청도 없고, 지나면 캐시를 보여준
@@ -402,10 +414,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldRevealListings] = useState(() => listingsQuery.isPending);
 
   const isListingLoading = listingsQuery.data === undefined;
-  // 최애 조회 effect 는 favoriteArtists 가 꺼져 있거나 비로그인이면 실행되지 않아 apiGroups 가
-  // 계속 null 이다. 그 상태를 기다리면 스켈레톤에서 벗어나지 못하므로 노출 조건과 함께 판정한다.
+  // 최애 조회는 favoriteArtists 가 꺼져 있거나 비로그인이면 아예 돌지 않아 data 가 계속
+  // undefined 다. 그 상태를 기다리면 스켈레톤에서 벗어나지 못하므로 노출 조건과 함께 판정한다.
+  const apiGroups = favoriteGroupsQuery.data;
   const isGroupLoading =
-    FEATURES.favoriteArtists && authState.isLoggedIn && apiGroups === null;
+    FEATURES.favoriteArtists && authState.isLoggedIn && apiGroups === undefined;
   const banners =
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
@@ -418,9 +431,34 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         ? listingsQuery.error.message
         : "분철 목록을 불러오지 못했어요."
       : "";
-  // 레일은 조회된 최애 목록을 그대로 유지한다 — 해제해도 항목을 빼지 않고 빈 하트로만 바꾼다.
-  // 그 자리에서 오탭을 되돌릴 수 있어야 하기 때문이다 (빼버리면 /artists 까지 가야 복구된다).
-  const railGroups = useMemo(() => apiGroups ?? [], [apiGroups]);
+  // 레일에서 해제한 항목은 이 화면에 머무는 동안만 빈 하트로 자리를 지킨다 — 그 자리에서 오탭을
+  // 바로 되돌릴 수 있어야 하기 때문이다 (빼버리면 /artists 까지 가야 복구된다). 화면을 벗어나면
+  // 사라진다: 다른 화면에서 해제한 것까지 남으면 최애가 아닌 그룹이 홈에 계속 떠 있게 된다.
+  const railGroups = useMemo(() => {
+    const favoriteGroupsData = apiGroups ?? [];
+
+    if (pinnedRailSlots.length === 0) {
+      return favoriteGroupsData.map(toArtistRailItem);
+    }
+
+    const favoriteIds = new Set(favoriteGroupsData.map((group) => group.id));
+    const pinnedIds = new Set(pinnedRailSlots.map(({ group }) => group.id));
+    const items = favoriteGroupsData
+      .filter((group) => !pinnedIds.has(group.id))
+      .map(toArtistRailItem);
+
+    // 하트를 눌렀던 항목은 해제·복구 어느 쪽이든 처음 그 자리에 그대로 둔다.
+    [...pinnedRailSlots]
+      .sort((left, right) => left.index - right.index)
+      .forEach(({ group, index }) => {
+        items.splice(Math.min(index, items.length), 0, {
+          ...toArtistRailItem(group),
+          favorited: favoriteIds.has(group.id),
+        });
+      });
+
+    return items;
+  }, [apiGroups, pinnedRailSlots]);
   // 최애는 로그인 사용자에게만 존재하므로 비로그인에는 레일 자체를 노출하지 않는다.
   const isArtistRailVisible = FEATURES.favoriteArtists && authState.isLoggedIn;
   // 레일에 남겨 둔 해제분은 빼고 "실제로 최애인" 것만 센다. 레일 길이로 판정하면 전부 해제해도
@@ -429,6 +467,24 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     () => railGroups.filter((group) => group.favorited !== false),
     [railGroups],
   );
+  const favoriteGroupsError = favoriteGroupsQuery.error;
+  // 401 은 토큰이 죽은 것이라 안내 대신 로그인 상태를 정리한다 (기존 fetch 경로와 동일).
+  const isFavoriteGroupsUnauthorized =
+    favoriteGroupsError !== null &&
+    (favoriteGroupsError.message.includes("401") ||
+      favoriteGroupsError.message.includes("Unauthorized"));
+  // 토글 실패·한도 안내(groupMessage)는 사용자가 방금 한 행동의 결과라 조회 실패보다 우선한다.
+  const visibleGroupMessage =
+    groupMessage ||
+    (favoriteGroupsError && !isFavoriteGroupsUnauthorized
+      ? favoriteGroupsError.message || "그룹 정보를 불러오지 못했어요."
+      : "");
+
+  useEffect(() => {
+    if (isFavoriteGroupsUnauthorized) {
+      clearAuthState();
+    }
+  }, [isFavoriteGroupsUnauthorized]);
   const favoritedGroupCount = favoritedGroups.length;
   // 한도 안내만 스스로 사라진다. 조회·변경 실패 문구는 사용자가 상황을 인지해야 하므로 남긴다.
   useEffect(() => {
@@ -678,93 +734,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     );
   }, [activeBannerIndex, banners]);
 
-  useEffect(() => {
-    // 최애 그룹 레일이 꺼져 있으면 그룹 조회 자체를 건너뛴다.
-    if (!FEATURES.favoriteArtists) {
-      return;
-    }
-
-    let isActive = true;
-    // 조회 결과가 도착했는지 표시. 초기화는 다음 프레임에 실행되는데, 응답이 그보다 먼저 오면
-    // 이미 채운 목록을 null 로 덮어써 레일이 스켈레톤에서 영영 벗어나지 못한다.
-    let hasSettled = false;
-    const resetFrame = window.requestAnimationFrame(() => {
-      if (!isActive || hasSettled) {
-        return;
-      }
-
-      setApiGroups(null);
-      setGroupMessage("");
-    });
-
-    if (!authState.isLoggedIn || !authState.accessToken) {
-      const emptyFrame = window.requestAnimationFrame(() => {
-        if (!isActive) {
-          return;
-        }
-
-        hasSettled = true;
-        setApiGroups([]);
-        setGroupMessage("");
-      });
-
-      return () => {
-        isActive = false;
-        window.cancelAnimationFrame(resetFrame);
-        window.cancelAnimationFrame(emptyFrame);
-      };
-    }
-
-    const groupRequest = async () => {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        return [];
-      }
-
-      return requestFavoriteGroups(accessToken);
-    };
-
-    groupRequest()
-      .then((groups) => {
-        if (!isActive) {
-          return;
-        }
-
-        hasSettled = true;
-        setApiGroups(groups.map(toArtistRailItem));
-        setGroupMessage("");
-      })
-      .catch((error: unknown) => {
-        if (!isActive) {
-          return;
-        }
-
-        const message = error instanceof Error ? error.message : "";
-
-        hasSettled = true;
-
-        if (message.includes("401") || message.includes("Unauthorized")) {
-          clearAuthState();
-          setApiGroups([]);
-          setGroupMessage("");
-          return;
-        }
-
-        setApiGroups([]);
-        setGroupMessage(
-          error instanceof Error
-            ? error.message
-            : "그룹 정보를 불러오지 못했어요.",
-        );
-      });
-
-    return () => {
-      isActive = false;
-      window.cancelAnimationFrame(resetFrame);
-    };
-  }, [authState.accessToken, authState.isLoggedIn]);
-
   function openArtistPage(item: ArtistRailItem) {
     if (scrollContainerRef.current) {
       window.sessionStorage.setItem(
@@ -833,6 +802,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
     const favoriteGroupId = item.apiId ?? item.id;
     const nextFavorited = item.favorited !== true;
+    // 되돌리기(빈 하트 다시 누르기) 대상은 캐시에서 이미 빠져 있으므로 붙잡아 둔 자리에서도 찾는다.
+    const sourceGroup =
+      (apiGroups ?? []).find((group) => group.id === favoriteGroupId) ??
+      pinnedRailSlots.find(({ group }) => group.id === favoriteGroupId)?.group;
+
+    if (!sourceGroup) {
+      return;
+    }
 
     // 레일에는 개수 표시가 없어 한도 초과를 눌러보고서야 알게 된다. 서버 왕복 전에 막고 이유를 알린다.
     if (nextFavorited && favoritedGroupCount >= FAVORITE_GROUP_LIMIT) {
@@ -840,11 +817,19 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
-    setApiGroups((current) =>
-      current?.map((group) =>
-        group.id === item.id ? { ...group, favorited: nextFavorited } : group,
-      ) ?? current,
+    // 해제하면 캐시에서 빠지지만 이 화면에서는 자리를 지킨다. 자리는 처음 누를 때만 잡는다.
+    const slotIndex = railGroups.findIndex(
+      (group) => (group.apiId ?? group.id) === favoriteGroupId,
     );
+
+    setPinnedRailSlots((current) =>
+      current.some(({ group }) => group.id === favoriteGroupId)
+        ? current
+        : [...current, { group: sourceGroup, index: slotIndex }],
+    );
+
+    // 캐시를 바로 고쳐 하트를 즉시 반영한다. 같은 캐시를 보는 /artists 도 함께 갱신된다.
+    setFavorited(sourceGroup, nextFavorited);
 
     try {
       if (nextFavorited) {
@@ -855,11 +840,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       }
       setGroupMessage("");
     } catch (error) {
-      setApiGroups((current) =>
-        current?.map((group) =>
-          group.id === item.id ? { ...group, favorited: !nextFavorited } : group,
-        ) ?? current,
-      );
+      setFavorited(sourceGroup, !nextFavorited);
       setGroupMessage(
         error instanceof Error
           ? error.message
@@ -1008,10 +989,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               )}
               </div>
 
-              {groupMessage ? (
+              {visibleGroupMessage ? (
                 <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
                   <p className="text-[13px] font-semibold text-black/45">
-                    {groupMessage}
+                    {visibleGroupMessage}
                   </p>
                 </div>
               ) : null}

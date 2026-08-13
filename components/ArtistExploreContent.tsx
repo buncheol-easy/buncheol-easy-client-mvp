@@ -15,8 +15,6 @@ import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import {
   addFavoriteGroup,
   removeFavoriteGroup,
-  requestFavoriteGroups,
-  requestGroups,
   type ApiGroup,
 } from "@/lib/auth-api";
 import {
@@ -35,6 +33,11 @@ import {
   getInitials,
   rankGroupSearchResults,
 } from "@/lib/group-presenters";
+import {
+  useAllGroupsQuery,
+  useFavoriteGroupsCache,
+  useFavoriteGroupsQuery,
+} from "@/lib/group-queries";
 
 type ArtistGroup = ApiGroup & {
   favorited: boolean;
@@ -60,14 +63,26 @@ function mergeFavoriteGroups(groups: ApiGroup[], favorites: ApiGroup[]) {
   }));
 }
 
-function sortFavoriteGroupsFirst(groups: ArtistGroup[]) {
+// 정렬 기준은 "지금 최애인지"가 아니라 "이 목록을 세울 때 최애였는지"다 (pinnedIds).
+// 하트를 누른 그룹만 조용히 빈 하트가 되고 카드는 제자리를 지킨다 — 현재 상태로 매번 다시
+// 정렬하면 하나를 해제하는 순간 상단에 모여 있던 최애가 전부 제자리로 흩어진다.
+function sortFavoriteGroupsFirst(groups: ArtistGroup[], pinnedIds: Set<string>) {
   return [...groups].sort((left, right) => {
-    if (left.favorited !== right.favorited) {
-      return left.favorited ? -1 : 1;
+    const leftPinned = pinnedIds.has(left.id);
+    const rightPinned = pinnedIds.has(right.id);
+
+    if (leftPinned !== rightPinned) {
+      return leftPinned ? -1 : 1;
     }
 
     return 0;
   });
+}
+
+function getFavoritedIds(groups: ArtistGroup[]) {
+  return new Set(
+    groups.filter((group) => group.favorited).map((group) => group.id),
+  );
 }
 
 function ArtistAvatar({
@@ -115,13 +130,26 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     readAuthState,
     getInitialAuthState,
   );
-  const [groups, setGroups] = useState<ArtistGroup[]>([]);
+  // 홈 레일과 같은 캐시를 본다. 서버 프리페치(app/artists/page.tsx)로 전체 그룹은
+  // 첫 렌더부터 채워져 있고, 최애도 홈에서 이미 받아뒀다면 그대로 재사용한다 —
+  // 그래서 진입할 때 8칸 스켈레톤과 0/5 카운터가 스쳐 지나가지 않는다.
+  const allGroupsQuery = useAllGroupsQuery();
+  const favoriteGroupsQuery = useFavoriteGroupsQuery(authState.isLoggedIn);
+  const { setFavorited } = useFavoriteGroupsCache(authState.isLoggedIn);
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
   const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [shouldPreserveExploreOrder, setShouldPreserveExploreOrder] =
-    useState(false);
+  // 하트를 처음 누른 시점의 최애 집합을 고정해 그 뒤로는 카드가 움직이지 않게 한다.
+  const [pinnedFavoriteIds, setPinnedFavoriteIds] = useState<Set<string> | null>(
+    null,
+  );
+  const allGroupsData = allGroupsQuery.data;
+  const favoriteGroupsData = favoriteGroupsQuery.data;
+  const isLoading = allGroupsData === undefined;
+  const groups = useMemo<ArtistGroup[]>(
+    () => mergeFavoriteGroups(allGroupsData ?? [], favoriteGroupsData ?? []),
+    [allGroupsData, favoriteGroupsData],
+  );
   const pendingGroupIdsRef = useRef(new Set<string>());
   // 한도 초과처럼 화면을 바꿀 필요 없는 안내는 잠깐 떴다 사라지는 토스트로 알린다.
   const [toast, setToast] = useState<string | null>(null);
@@ -143,103 +171,51 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   // 검색어 한 글자에 카드가 그룹 수(수백 개)만큼 갈린다. 입력과 같은 렌더에 묶으면 타이핑이 밀린다.
   // 랭킹 자체는 0.1ms 라 병목이 아니다 — 비용은 전부 카드 렌더 쪽이니 여기 최적화하지 말 것.
   const deferredQuery = useDeferredValue(query);
+  const trimmedQuery = deferredQuery.trim();
+  const [lastPinnedQuery, setLastPinnedQuery] = useState(trimmedQuery);
+
+  // 검색어가 바뀌면 목록이 통째로 다시 구성돼 지킬 자리가 없다. 고정을 풀어 현재 최애 기준으로
+  // 다시 정렬한다 — 안 풀면 검색을 다녀온 뒤 이미 해제한 그룹이 계속 상단에 박혀 있다.
+  // 렌더 중 조정이라 다음 커밋 전에 수렴한다 (effect 로 미루면 헌 순서가 한 프레임 비친다).
+  if (lastPinnedQuery !== trimmedQuery) {
+    setLastPinnedQuery(trimmedQuery);
+    setPinnedFavoriteIds(null);
+  }
+
   const visibleGroups = useMemo(() => {
-    const trimmedQuery = deferredQuery.trim();
-    const shouldPinFavorites = !shouldPreserveExploreOrder;
+    const pinnedIds = pinnedFavoriteIds ?? getFavoritedIds(groups);
 
     if (!trimmedQuery) {
-      return shouldPinFavorites ? sortFavoriteGroupsFirst(groups) : groups;
+      return sortFavoriteGroupsFirst(groups, pinnedIds);
     }
 
     const rankedGroups = rankGroupSearchResults(groups, trimmedQuery, 80);
 
-    return shouldPinFavorites
-      ? sortFavoriteGroupsFirst(rankedGroups)
-      : rankedGroups;
-  }, [groups, deferredQuery, shouldPreserveExploreOrder]);
+    return sortFavoriteGroupsFirst(rankedGroups, pinnedIds);
+  }, [groups, trimmedQuery, pinnedFavoriteIds]);
+
+  // 최애 조회가 401 이면 토큰이 죽은 것이라 로그인 상태를 정리한다 (기존 fetch 경로와 동일).
+  const favoriteGroupsError = favoriteGroupsQuery.error;
 
   useEffect(() => {
-    let isActive = true;
-
-    async function loadGroups() {
-      const accessToken = authState.isLoggedIn
-        ? await getFreshAccessToken()
-        : null;
-
-      const allGroups = await requestGroups("");
-
-      if (!authState.isLoggedIn || !accessToken) {
-        return {
-          groups: mergeFavoriteGroups(allGroups, []),
-          message: "",
-        };
-      }
-
-      try {
-        const favoriteGroups = await requestFavoriteGroups(accessToken);
-
-        return {
-          groups: mergeFavoriteGroups(allGroups, favoriteGroups),
-          message: "",
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-
-        if (message.includes("401") || message.includes("Unauthorized")) {
-          clearAuthState();
-        }
-
-        return {
-          groups: mergeFavoriteGroups(allGroups, []),
-          message:
-            error instanceof Error
-              ? error.message
-              : "최애 그룹을 불러오지 못했어요.",
-        };
-      }
+    if (!favoriteGroupsError) {
+      return;
     }
 
-    loadGroups()
-      .then((result) => {
-        if (!isActive) {
-          return;
-        }
+    const message = favoriteGroupsError.message;
 
-        setShouldPreserveExploreOrder(false);
-        setGroups(result.groups);
-        setMessage(result.message);
-      })
-      .catch((error: unknown) => {
-        if (!isActive) {
-          return;
-        }
+    if (message.includes("401") || message.includes("Unauthorized")) {
+      clearAuthState();
+    }
+  }, [favoriteGroupsError]);
 
-        const message = error instanceof Error ? error.message : "";
-
-        if (message.includes("401") || message.includes("Unauthorized")) {
-          clearAuthState();
-        }
-
-        setShouldPreserveExploreOrder(false);
-        setGroups([]);
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "아티스트 목록을 불러오지 못했어요.",
-        );
-      })
-      .finally(() => {
-        if (!isActive) {
-          return;
-        }
-
-        setIsLoading(false);
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.accessToken, authState.isLoggedIn]);
+  // 토글 실패 안내(message)가 있으면 그것을 우선 보여준다 — 사용자가 방금 한 행동의 결과다.
+  const loadErrorMessage = allGroupsQuery.isError
+    ? (allGroupsQuery.error.message || "아티스트 목록을 불러오지 못했어요.")
+    : favoriteGroupsQuery.isError
+      ? (favoriteGroupsQuery.error.message || "최애 그룹을 불러오지 못했어요.")
+      : "";
+  const visibleMessage = message || loadErrorMessage;
 
   async function handleFavoriteToggle(group: ArtistGroup) {
     if (!authState.isLoggedIn) {
@@ -281,23 +257,18 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
 
     pendingGroupIdsRef.current.add(group.id);
     setPendingGroupId(group.id);
-    setShouldPreserveExploreOrder(true);
-    setGroups((current) =>
-      current.map((item) =>
-        item.id === group.id ? { ...item, favorited: nextFavorited } : item,
-      ),
-    );
+    // 누르기 직전의 최애 집합으로 정렬을 고정한다. 이미 고정돼 있으면 그대로 둬야
+    // 두 번째 이후 토글에도 처음 본 순서가 유지된다.
+    setPinnedFavoriteIds((current) => current ?? getFavoritedIds(groups));
+    // 캐시를 바로 고쳐 하트를 즉시 반영한다. 같은 캐시를 보는 홈 레일도 함께 갱신된다.
+    setFavorited(group, nextFavorited);
 
     try {
       if (nextFavorited) {
         const result = await addFavoriteGroup(accessToken, groupId);
 
         if (result.alreadyExists) {
-          setGroups((current) =>
-            current.map((item) =>
-              item.id === group.id ? { ...item, favorited: true } : item,
-            ),
-          );
+          setFavorited(group, true);
         }
       } else {
         await removeFavoriteGroup(accessToken, groupId);
@@ -305,11 +276,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
 
       setMessage("");
     } catch (error) {
-      setGroups((current) =>
-        current.map((item) =>
-          item.id === group.id ? { ...item, favorited: !nextFavorited } : item,
-        ),
-      );
+      setFavorited(group, !nextFavorited);
       setMessage(
         error instanceof Error
           ? error.message
@@ -423,10 +390,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
         <div className="flex min-h-full flex-col">
-        {message ? (
+        {visibleMessage ? (
           <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
             <p className="text-[13px] font-semibold text-black/45">
-              {message}
+              {visibleMessage}
             </p>
           </div>
         ) : null}
