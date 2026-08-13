@@ -492,40 +492,20 @@ function canViewBidRecordPaymentSheet(bid: BidRecord, now: Date) {
   );
 }
 
-// C2C 자발 취소 가능 구간 — 성사 확정 전, 즉 신청(APPLIED)까지만 (docs/56 §14-2).
-// 확정 후(입금 대기·보냈어요)에는 개최자가 이미 인원을 확정하고 통장 대조를 시작해 자리를 임의로 비울 수 없다.
-// ⚠️ 확정 후 추가 모집(docs/46 §4.7-E1)으로 APPLIED 를 건너뛰고 곧장 입금 대기로 생성된 참여도 함께 막힌다 —
-// 참여 응답에 "성사 확정을 거쳤는지" 를 구분할 필드가 없다. 서버가 구분 값을 내려주면 여기서 되살릴 것.
-// 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 어차피 취소 대상이 아니다.
+// C2C 자발 취소 가능 구간 — 신청(자유)·입금 대기(허용). 보냈어요 이후는 문의 경유 (docs/46 §5).
+// 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 취소 버튼을 내리지 않는다.
+// ⚠️ docs/56 H-09 로 서버가 "성사 확정을 거친" 입금 대기의 취소를 막았지만(BCH-092), 여기서 함께 좁히지 않는다 —
+// 서버 판정은 참여 createdAt 과 분철 finalizedAt 의 선후이고 둘 다 참여 응답에 없어(server Buncheol#isCreatedBeforeFinalize)
+// 상태만으로 숨기면 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다. 서버가 취소 가능 여부를 필드로
+// 내려주기 전까지는 버튼을 남기고 거부 사유를 그대로 노출한다(runCancelParticipation).
 function canCancelBidRecord(bid: BidRecord, now: Date) {
   return (
     isC2CBidRecord(bid) &&
     !isBidRecordCancelled(bid) &&
     !isBidRecordPaymentExpired(bid, now) &&
-    isParticipationAppliedStatus(bid.participationStatus)
+    (isParticipationAppliedStatus(bid.participationStatus) ||
+      isParticipationAwaitingPaymentStatus(bid.participationStatus))
   );
-}
-
-// 취소 버튼이 사라진 구간에서 "왜 안 되는지 + 어디로 가면 되는지" 를 대신 남긴다 (docs/56 H-09).
-// 버튼만 없애면 사용자는 이유를 모른 채 문의로 간다.
-function getBidRecordCancelBlockedNotice(bid: BidRecord, now: Date) {
-  if (
-    !isC2CBidRecord(bid) ||
-    isBidRecordCancelled(bid) ||
-    isBidRecordPaymentConfirmed(bid) ||
-    isBidRecordPaymentExpired(bid, now)
-  ) {
-    return null;
-  }
-
-  if (
-    !isParticipationAwaitingPaymentStatus(bid.participationStatus) &&
-    !isParticipationPaymentSentStatus(bid.participationStatus)
-  ) {
-    return null;
-  }
-
-  return "개최자가 성사를 확정해서 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자 오픈채팅이나 분철이지로 문의해 주세요.";
 }
 
 function isBidRecordPaymentConfirmed(bid: BidRecord) {
@@ -2601,20 +2581,23 @@ export function BidHistoryContent({
   }
 
   // C2C 자발 취소 — 참여(슬롯) 단위 취소 (docs/46 §4.7-A5: 다슬롯이어도 1건씩).
-  // canCancelBidRecord 가 신청(APPLIED) 구간만 허용하므로 문구도 신청 기준 하나로 고정한다.
   function requestCancelParticipation(bid: BidRecord) {
     if (pendingParticipationId) {
       return;
     }
 
+    const isApplied = isParticipationAppliedStatus(bid.participationStatus);
+
     setConfirmSheetRequest({
-      confirmLabel: "신청 취소",
-      description: "취소한 자리는 다른 사람이 선점할 수 있어요.",
+      confirmLabel: isApplied ? "신청 취소" : "참여 취소",
+      description: isApplied
+        ? "취소한 자리는 다른 사람이 선점할 수 있어요."
+        : "이미 입금했다면 취소하지 말고 '보냈어요'를 눌러주세요.",
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runCancelParticipation(bid);
       },
-      title: "신청을 취소할까요?",
+      title: isApplied ? "신청을 취소할까요?" : "참여를 취소할까요?",
     });
   }
 
@@ -2651,11 +2634,15 @@ export function BidHistoryContent({
       // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
       showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
     } catch (error: unknown) {
-      setHistoryMessage(
+      const failureMessage =
         error instanceof Error
           ? error.message
-          : "참여를 취소하지 못했어요. 잠시 후 다시 시도해 주세요.",
-      );
+          : "참여를 취소하지 못했어요. 잠시 후 다시 시도해 주세요.";
+
+      setHistoryMessage(failureMessage);
+      // 서버가 성사 확정 후 취소를 거부하면(BCH-092) 그 사유가 사용자에게 닿아야 한다 —
+      // historyMessage 는 목록 맨 위라 카드까지 스크롤한 상태에서는 보이지 않는다 (docs/56 H-09).
+      showActionToast(failureMessage);
     } finally {
       setPendingParticipationId(null);
     }
@@ -2872,10 +2859,6 @@ export function BidHistoryContent({
                 now,
               );
               const canCancel = canCancelBidRecord(bid, now);
-              const cancelBlockedNotice = getBidRecordCancelBlockedNotice(
-                bid,
-                now,
-              );
               const isActionPending = pendingParticipationId !== null;
               const safeOpenChatHref =
                 isC2C && !isCancelled
@@ -3108,7 +3091,11 @@ export function BidHistoryContent({
                               onClick={() => requestCancelParticipation(bid)}
                               type="button"
                             >
-                              신청 취소
+                              {isParticipationAppliedStatus(
+                                bid.participationStatus,
+                              )
+                                ? "신청 취소"
+                                : "참여 취소"}
                             </button>
                           ) : null}
                           {canOpenPaymentSheet ? (
@@ -3121,11 +3108,6 @@ export function BidHistoryContent({
                             </button>
                           ) : null}
                         </div>
-                      ) : null}
-                      {cancelBlockedNotice ? (
-                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                          {cancelBlockedNotice}
-                        </p>
                       ) : null}
                       {bid.deliveryId && isPaymentConfirmed ? (
                         <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
@@ -3270,12 +3252,6 @@ export function BidHistoryContent({
                   (total, option) => total + option.participantCount,
                   0,
                 );
-                // 진행 확정(CONFIRMED)은 전원 입금확인이 끝난 상태라 "입금 확인 ≥1건" 의 진부분집합이다 —
-                // 개최 목록에는 확정 건수가 없어(GET /v1/buncheols/me) 이만큼만 막는다 (docs/56 §14-3).
-                // 서버도 CONFIRMED 이후 개최자 취소를 이미 거부하므로, 여기서 막지 않으면 눌러도 에러만 난다.
-                const canDeleteHosted =
-                  product.isApiProduct &&
-                  !isBuncheolConfirmedStatus(product.status);
 
                 return (
                   <article
@@ -3354,7 +3330,7 @@ export function BidHistoryContent({
                         관리하기
                       </Link>
                       ) : null}
-                      {canDeleteHosted ? (
+                      {product.isApiProduct ? (
                         <button
                           className="h-9 rounded-full border border-black/[0.08] bg-white px-4 text-[13px] font-semibold text-black/55 disabled:text-black/25"
                           disabled={
@@ -3368,12 +3344,6 @@ export function BidHistoryContent({
                         </button>
                       ) : null}
                     </div>
-                    {product.isApiProduct && !canDeleteHosted ? (
-                      <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                        입금이 확인돼 진행이 확정된 분철이라 취소할 수 없어요.
-                        정리가 필요하면 분철이지로 문의해 주세요.
-                      </p>
-                    ) : null}
                   </article>
                 );
               })}

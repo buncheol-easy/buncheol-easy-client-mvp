@@ -1586,10 +1586,10 @@ export function ProductDetail({
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
   // 입금 확인(확정)된 참여가 1건이라도 있으면 개최자 취소를 막는다 (docs/56 §14-3).
-  // 돈이 개최자 개인 계좌에 들어간 뒤라 플랫폼이 되돌릴 수단이 없는 C2C 에만 적용한다 —
-  // LEGACY(회사 개최)는 회사 계좌라 환불 경로가 있어 현행 유지.
-  // 실제로 취소가 열려 있는 입금 수집중(PAYMENT_COLLECTING)에만 건다 — 진행 확정 이후는 서버가 이미 막고,
-  // 취소된 분철에서 잠그면 개최자가 접은 분철을 정리할 수 없다.
+  // 서버 CAS(hostCancelIfCollectingAndNoConfirmed, BCH-093)와 같은 범위로 맞춘다 —
+  // C2C + 입금 수집중(PAYMENT_COLLECTING) + 확정(CONFIRMED) 참여 ≥1건.
+  // "보냈어요"(PAYMENT_SENT)는 참여자 자기 신고라 포함하지 않는다 — 허위 마킹 1건으로 개최자가 분철을
+  // 영영 못 접게 된다. 슬롯 saleStatus 는 PAYMENT_SENT 를 AWAITING_PAYMENT 로 접어 내리므로 자연히 제외된다.
   // 확정 판정에 hasOptionPurchaseState 를 함께 요구해 취소·환불된 참여의 잔여 확정 값은 제외한다.
   const isHostCancelBlocked =
     isC2CProduct &&
@@ -1600,10 +1600,10 @@ export function ProductDetail({
     );
   const canDeleteProduct =
     product.isApiProduct && isHostedProduct && !isHostCancelBlocked;
-  // 버튼만 사라지면 개최자는 "취소가 왜 없지" 로 문의한다 — 이유와 다음 행동을 함께 남긴다.
+  // 버튼만 사라지면 개최자는 "취소가 왜 없지" 로 문의한다 — 서버 BCH-093 과 같은 안내를 미리 보여준다.
   const hostCancelBlockedNotice =
     product.isApiProduct && isHostedProduct && isHostCancelBlocked
-      ? "입금이 확인된 참여자가 있어 분철을 취소할 수 없어요. 환불하고 정리해야 한다면 분철이지로 문의해 주세요."
+      ? "입금이 확인된 참여자가 있어 분철을 취소할 수 없어요. 받은 금액을 환불한 뒤 고객센터로 문의해 주세요."
       : null;
   // 임시 저장 분철(uploaded-)은 브라우저 로컬에만 있어 공유해도 열리지 않는다.
   const canShareProduct = product.isApiProduct === true;
