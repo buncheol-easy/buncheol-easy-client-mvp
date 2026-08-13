@@ -35,6 +35,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { EmptyState } from "@/components/EmptyState";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
@@ -3009,18 +3010,26 @@ export function BidHistoryContent({
             {isBidRecordsLoading ? (
               <BidHistoryListSkeleton />
             ) : records.length === 0 ? (
-              <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
-                <p className="text-[14px] font-semibold text-black/70">
-                  {authState.isLoggedIn
-                    ? "아직 참여한 분철이 없어요."
-                    : "로그인 후 이용할 수 있어요."}
-                </p>
-                {authState.isLoggedIn ? (
-                  <p className="mt-1 text-[13px] font-medium text-black/40">
-                    참여한 분철이 여기에 쌓여요.
-                  </p>
-                ) : null}
-              </div>
+              authState.isLoggedIn ? (
+                <EmptyState
+                  action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
+                  description="원하는 멤버를 골라 참여하면 진행 상황이 여기에 쌓여요."
+                  title="아직 참여한 분철이 없어요"
+                />
+              ) : (
+                <EmptyState
+                  action={{
+                    href: createLoginHref({
+                      cancelTo: "/profile/bids",
+                      returnTo: "/profile/bids",
+                    }),
+                    label: "카카오로 시작하기",
+                  }}
+                  description="입금 확인부터 편의점 수령까지 한 화면에서 볼 수 있어요."
+                  secondaryAction={{ href: "/", label: "먼저 분철 둘러보기" }}
+                  title="참여한 분철의 진행 상황을 보여드려요"
+                />
+              )
             ) : null}
             {!isBidRecordsLoading && records.length > 0 ? (
             <div className="content-reveal space-y-3">
@@ -3424,18 +3433,25 @@ export function BidHistoryContent({
               {isHostedProductsLoading ? (
                 <BidHistoryListSkeleton />
               ) : hostedRecords.length === 0 ? (
-                <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
-                  <p className="text-[14px] font-semibold text-black/70">
-                    {authState.isLoggedIn
-                      ? "아직 개최한 분철이 없어요."
-                      : "로그인 후 이용할 수 있어요."}
-                  </p>
-                  {authState.isLoggedIn ? (
-                    <p className="mt-1 text-[13px] font-medium text-black/40">
-                      상품 등록으로 만든 분철이 여기에 쌓여요.
-                    </p>
-                  ) : null}
-                </div>
+                authState.isLoggedIn ? (
+                  <EmptyState
+                    action={{ href: "/upload", label: "분철 개최하기" }}
+                    description="내가 연 분철의 입금 확인·운송장 등록을 여기서 관리해요."
+                    title="아직 개최한 분철이 없어요"
+                  />
+                ) : (
+                  <EmptyState
+                    action={{
+                      href: createLoginHref({
+                        cancelTo: "/profile/bids",
+                        returnTo: "/profile/bids",
+                      }),
+                      label: "카카오로 시작하기",
+                    }}
+                    description="분철을 열면 입금 확인과 배송을 여기서 관리해요."
+                    title="내가 개최한 분철을 모아서 보여드려요"
+                  />
+                )
               ) : null}
               {!isHostedProductsLoading && hostedRecords.length > 0 ? (
               <div className="content-reveal space-y-3">

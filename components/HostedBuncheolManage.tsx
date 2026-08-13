@@ -71,15 +71,32 @@ function formatKoreaDateTime(value: string | undefined) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("ko-KR", {
-    day: "2-digit",
+  /*
+   * 참여 내역·개최 기록과 같은 "8월 12일 17:30" 모양으로 맞춘다.
+   * 같은 정보가 화면마다 "8.12 17시" / "2026년 07월 05일 14시" / "2026. 12. 22. 20:00"
+   * 세 가지로 보이고 있었다. 연도는 올해가 아닐 때만 붙인다.
+   */
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    day: "numeric",
     hour: "2-digit",
     hour12: false,
     minute: "2-digit",
-    month: "2-digit",
+    month: "numeric",
     timeZone: "Asia/Seoul",
     year: "numeric",
-  }).format(date);
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  const currentYear = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(new Date());
+  const yearPrefix = currentYear.includes(partMap.year)
+    ? ""
+    : `${partMap.year}년 `;
+
+  return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
 function getHighestBidAmount(option: BuncheolManagementOption) {
@@ -134,10 +151,28 @@ function getDeliveryStatusLabel(status: string | undefined) {
   return getCentralDeliveryStatusLabel(status);
 }
 
+// 개최자가 운송장을 쓸 때 그대로 옮겨 적는 번호다 — 하이픈 없이 붙어 있으면 자릿수를
+// 눈으로 세게 된다. 저장 값은 건드리지 않고 표시할 때만 끊어 준다.
+function formatPhoneNumberForDisplay(value: string) {
+  const digits = value.replace(/\D/g, "");
+
+  if (/^01\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+
+  if (/^01\d{9}$/.test(digits)) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 8)}-${digits.slice(8)}`;
+  }
+
+  return value;
+}
+
 function getWinnerReceiverLabel(
   winner: BuncheolManagementWinner | null | undefined,
 ) {
-  return winner?.receiverPhoneNumber ?? "";
+  const phoneNumber = winner?.receiverPhoneNumber ?? "";
+
+  return phoneNumber ? formatPhoneNumberForDisplay(phoneNumber) : "";
 }
 
 function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {

@@ -16,6 +16,7 @@ import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { ChevronDownIcon } from "@/components/icons";
 import { SlidingTabs } from "@/components/SlidingTabs";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
+import { EmptyState } from "@/components/EmptyState";
 import { createLoginHref } from "@/lib/auth-navigation";
 import {
   getInitialAuthState,
@@ -492,13 +493,26 @@ export function FavoritesContent({
               <ProductGrid items={filteredProducts} variant="wide" />
             </div>
           ) : (
-            <div className="content-reveal rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                {authState.isLoggedIn
-                  ? "조건에 맞는 찜 상품이 없어요."
-                  : "로그인 후 이용할 수 있어요."}
-              </p>
-            </div>
+            authState.isLoggedIn ? (
+              <EmptyState
+                action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
+                description="분철 카드의 하트를 누르면 여기에 모여요."
+                title="조건에 맞는 찜한 분철이 없어요"
+              />
+            ) : (
+              <EmptyState
+                action={{
+                  href: createLoginHref({
+                    cancelTo: "/favorites",
+                    returnTo: "/favorites",
+                  }),
+                  label: "카카오로 시작하기",
+                }}
+                description="로그인하면 다른 기기에서도 이어서 볼 수 있어요."
+                secondaryAction={{ href: "/", label: "먼저 분철 둘러보기" }}
+                title="찜한 분철을 모아서 보여드려요"
+              />
+            )
           )}
         </div>
       </main>

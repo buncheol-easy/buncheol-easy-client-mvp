@@ -562,8 +562,13 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                     계정 정보가 삭제되고 다시 되돌릴 수 없어요.
                   </p>
                 </div>
+                {/*
+                  솔리드 빨강 + 빨간 글로우는 이 화면에서 가장 강한 시각 강조라,
+                  바로 위 "저장"(라임 CTA)보다 탈퇴가 더 눈에 띄었다.
+                  되돌릴 수 없는 행동은 낮은 강조로 두고, 경고는 확인 모달이 맡는다.
+                */}
                 <button
-                  className="h-9 shrink-0 rounded-full bg-[#E53935] px-3.5 text-[12px] font-semibold text-white shadow-[0_10px_24px_rgba(229,57,53,0.24)] transition-colors hover:bg-[#D32F2F] disabled:bg-[#F3B5B3] disabled:text-white/70"
+                  className="h-9 shrink-0 rounded-full px-3.5 text-[13px] font-semibold text-danger-base underline underline-offset-4 transition-colors hover:bg-danger-soft disabled:text-black/25 disabled:no-underline"
                   disabled={isDeleting}
                   onClick={() => {
                     setMessage("");

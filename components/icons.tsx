@@ -96,6 +96,21 @@ export function BrandSparkleIcon({ className = "h-5 w-5" }: IconProps) {
   );
 }
 
+// 카카오 로그인 버튼 심볼. 노란 면에 텍스트만 있으면 카카오 로그인인지 인지가 느리고,
+// 카카오 로그인 버튼 가이드도 심볼 노출을 요구한다. 단색 채움이라 createIcon 을 태우지 않는다.
+export function KakaoIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 3C6.99 3 2.93 6.2 2.93 10.15c0 2.53 1.68 4.75 4.2 6.01-.18.65-.67 2.42-.77 2.8-.12.47.17.46.36.34.15-.1 2.39-1.62 3.36-2.28.63.09 1.27.14 1.92.14 5.01 0 9.07-3.2 9.07-7.15S17.01 3 12 3z" />
+    </svg>
+  );
+}
+
 export function HeartIcon({
   className = "h-5 w-5",
   filled = false,

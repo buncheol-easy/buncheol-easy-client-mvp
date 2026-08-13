@@ -2,6 +2,7 @@
 
 import {
   accountNumberPattern,
+  maskAccountNumber,
   bankAccountFieldMaxLength,
   sanitizeAccountNumber,
 } from "@/lib/bank-account";
@@ -248,6 +249,9 @@ export function ProfileContent({
   const [isSettlementAccountFormDirty, setIsSettlementAccountFormDirty] =
     useState(false);
   const [settlementAccountMessage, setSettlementAccountMessage] = useState("");
+  // 기본은 가림. 사용자가 직접 펼칠 때만 전체 번호를 보여준다.
+  const [isSettlementAccountRevealed, setIsSettlementAccountRevealed] =
+    useState(false);
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
   const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
@@ -757,7 +761,10 @@ export function ProfileContent({
                   })
             }
           >
-            내 참여 내역 보러 가기
+            {/* 로그아웃 상태에서 "참여 내역 보러 가기"는 실제로 할 일(로그인)을 가린다. */}
+            {authState.isLoggedIn
+              ? "내 참여 내역 보러 가기"
+              : "카카오로 3초 만에 시작하기"}
           </Link>
         </section>
 
@@ -789,9 +796,9 @@ export function ProfileContent({
           </div>
 
           {!authState.isLoggedIn ? (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                로그인 후 이용할 수 있어요.
+            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5">
+              <p className="text-[14px] font-medium leading-5 text-black/45">
+                로그인하면 환불받을 계좌를 저장해 둘 수 있어요.
               </p>
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
@@ -902,18 +909,32 @@ export function ProfileContent({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-white/50">
-                    {settlementAccount.bankName}
+                    {settlementAccount.bankName} · 예금주{" "}
+                    {settlementAccount.accountHolder}
                   </p>
                   <p className="mt-1 break-all text-[17px] font-semibold tracking-[-0.04em]">
-                    {settlementAccount.accountNumber}
+                    {isSettlementAccountRevealed
+                      ? settlementAccount.accountNumber
+                      : maskAccountNumber(settlementAccount.accountNumber)}
                   </p>
                   <p className="mt-1 text-[13px] font-medium text-white/50">
-                    예금주 {settlementAccount.accountHolder}
+                    환불이 생기면 이 계좌로 보내드려요
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
-                  저장됨
-                </span>
+                {/* "저장됨" 배지는 계좌가 보이는 마당에 정보가 없었다.
+                    자리를 전체 보기 토글로 바꾼다 — 기본은 가림이라 필요할 때만 편다. */}
+                <button
+                  aria-pressed={isSettlementAccountRevealed}
+                  className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/80"
+                  onClick={() =>
+                    setIsSettlementAccountRevealed(
+                      (current) => !current,
+                    )
+                  }
+                  type="button"
+                >
+                  {isSettlementAccountRevealed ? "가리기" : "전체 보기"}
+                </button>
               </div>
             </div>
           ) : (
@@ -993,7 +1014,7 @@ export function ProfileContent({
                       </div>
                       <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                         {!authState.isLoggedIn ? (
-                          "로그인 후 이용할 수 있어요"
+                          "로그인 후 저장할 수 있어요"
                         ) : isDefaultAddressLoading ? (
                           <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
                         ) : (
