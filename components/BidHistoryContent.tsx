@@ -2601,23 +2601,20 @@ export function BidHistoryContent({
   }
 
   // C2C 자발 취소 — 참여(슬롯) 단위 취소 (docs/46 §4.7-A5: 다슬롯이어도 1건씩).
+  // canCancelBidRecord 가 신청(APPLIED) 구간만 허용하므로 문구도 신청 기준 하나로 고정한다.
   function requestCancelParticipation(bid: BidRecord) {
     if (pendingParticipationId) {
       return;
     }
 
-    const isApplied = isParticipationAppliedStatus(bid.participationStatus);
-
     setConfirmSheetRequest({
-      confirmLabel: isApplied ? "신청 취소" : "참여 취소",
-      description: isApplied
-        ? "취소한 자리는 다른 사람이 선점할 수 있어요."
-        : "이미 입금했다면 취소하지 말고 '보냈어요'를 눌러주세요.",
+      confirmLabel: "신청 취소",
+      description: "취소한 자리는 다른 사람이 선점할 수 있어요.",
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runCancelParticipation(bid);
       },
-      title: isApplied ? "신청을 취소할까요?" : "참여를 취소할까요?",
+      title: "신청을 취소할까요?",
     });
   }
 
@@ -3111,11 +3108,7 @@ export function BidHistoryContent({
                               onClick={() => requestCancelParticipation(bid)}
                               type="button"
                             >
-                              {isParticipationAppliedStatus(
-                                bid.participationStatus,
-                              )
-                                ? "신청 취소"
-                                : "참여 취소"}
+                              신청 취소
                             </button>
                           ) : null}
                           {canOpenPaymentSheet ? (
@@ -3130,7 +3123,7 @@ export function BidHistoryContent({
                         </div>
                       ) : null}
                       {cancelBlockedNotice ? (
-                        <p className="mt-2 text-right text-[12px] font-medium leading-5 text-black/40">
+                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
                           {cancelBlockedNotice}
                         </p>
                       ) : null}
@@ -3277,6 +3270,12 @@ export function BidHistoryContent({
                   (total, option) => total + option.participantCount,
                   0,
                 );
+                // 진행 확정(CONFIRMED)은 전원 입금확인이 끝난 상태라 "입금 확인 ≥1건" 의 진부분집합이다 —
+                // 개최 목록에는 확정 건수가 없어(GET /v1/buncheols/me) 이만큼만 막는다 (docs/56 §14-3).
+                // 서버도 CONFIRMED 이후 개최자 취소를 이미 거부하므로, 여기서 막지 않으면 눌러도 에러만 난다.
+                const canDeleteHosted =
+                  product.isApiProduct &&
+                  !isBuncheolConfirmedStatus(product.status);
 
                 return (
                   <article
@@ -3355,7 +3354,7 @@ export function BidHistoryContent({
                         관리하기
                       </Link>
                       ) : null}
-                      {product.isApiProduct ? (
+                      {canDeleteHosted ? (
                         <button
                           className="h-9 rounded-full border border-black/[0.08] bg-white px-4 text-[13px] font-semibold text-black/55 disabled:text-black/25"
                           disabled={
@@ -3369,6 +3368,12 @@ export function BidHistoryContent({
                         </button>
                       ) : null}
                     </div>
+                    {product.isApiProduct && !canDeleteHosted ? (
+                      <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                        입금이 확인돼 진행이 확정된 분철이라 취소할 수 없어요.
+                        정리가 필요하면 분철이지로 문의해 주세요.
+                      </p>
+                    ) : null}
                   </article>
                 );
               })}

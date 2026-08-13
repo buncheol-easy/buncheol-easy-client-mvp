@@ -1588,8 +1588,16 @@ export function ProductDetail({
   // 입금 확인(확정)된 참여가 1건이라도 있으면 개최자 취소를 막는다 (docs/56 §14-3).
   // 돈이 개최자 개인 계좌에 들어간 뒤라 플랫폼이 되돌릴 수단이 없는 C2C 에만 적용한다 —
   // LEGACY(회사 개최)는 회사 계좌라 환불 경로가 있어 현행 유지.
+  // 실제로 취소가 열려 있는 입금 수집중(PAYMENT_COLLECTING)에만 건다 — 진행 확정 이후는 서버가 이미 막고,
+  // 취소된 분철에서 잠그면 개최자가 접은 분철을 정리할 수 없다.
+  // 확정 판정에 hasOptionPurchaseState 를 함께 요구해 취소·환불된 참여의 잔여 확정 값은 제외한다.
   const isHostCancelBlocked =
-    isC2CProduct && auctionOptions.some(isConfirmedOptionPurchase);
+    isC2CProduct &&
+    isBuncheolPaymentCollectingStatus(product.status) &&
+    auctionOptions.some(
+      (option) =>
+        hasOptionPurchaseState(option) && isConfirmedOptionPurchase(option),
+    );
   const canDeleteProduct =
     product.isApiProduct && isHostedProduct && !isHostCancelBlocked;
   // 버튼만 사라지면 개최자는 "취소가 왜 없지" 로 문의한다 — 이유와 다음 행동을 함께 남긴다.
@@ -3697,7 +3705,7 @@ export function ProductDetail({
                   {participationStatusCaption}
                 </p>
                 {hostCancelBlockedNotice ? (
-                  <p className="mt-2 text-[12px] font-medium leading-5 text-black/55">
+                  <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
                     {hostCancelBlockedNotice}
                   </p>
                 ) : null}
