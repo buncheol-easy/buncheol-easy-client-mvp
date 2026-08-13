@@ -3203,7 +3203,9 @@ export function BidHistoryContent({
                             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
                               {cancellationNotice.label}
                             </span>
-                            <p className="text-center text-[11px] font-medium leading-4 text-black/40">
+                            {/* break-keep 없이는 좁은 폭에서 "환불돼 / 요." 처럼 어절 중간이
+                                끊긴다 — 한국어는 단어 안에서 줄을 넘기지 않는다. */}
+                            <p className="break-keep text-center text-[11px] font-medium leading-4 text-black/40">
                               {cancellationNotice.description}
                             </p>
                           </div>
@@ -3339,12 +3341,12 @@ export function BidHistoryContent({
                             후기를 다시 확인해 주세요
                           </p>
                           {bid.payback?.rejectReason ? (
-                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/55">
                               반려 사유: {bid.payback.rejectReason}
                             </p>
                           ) : null}
                           {paybackDeadlineNotice ? (
-                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/55">
                               {paybackDeadlineNotice}
                             </p>
                           ) : null}
@@ -3367,7 +3369,7 @@ export function BidHistoryContent({
                             X에 후기를 올리면 배송비를 돌려드려요
                           </p>
                           {paybackDeadlineNotice ? (
-                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/45">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/45">
                               {paybackDeadlineNotice}
                             </p>
                           ) : null}
