@@ -436,6 +436,9 @@ type BidRecord = {
   createdAt?: string | null;
   participationStatus?: string;
   cancelReason?: string | null;
+  // 서버가 취소 API 게이트와 같은 판정으로 내려주는 취소 가능 여부·사유 (docs/56 S-1).
+  // 필드가 없는 구 응답이면 null.
+  cancellability?: string | null;
   shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
@@ -492,20 +495,60 @@ function canViewBidRecordPaymentSheet(bid: BidRecord, now: Date) {
   );
 }
 
-// C2C 자발 취소 가능 구간 — 신청(자유)·입금 대기(허용). 보냈어요 이후는 문의 경유 (docs/46 §5).
+// 서버 취소 판정 값 (docs/56 S-1 — server ParticipationCancellability).
+const PARTICIPATION_CANCELLABLE = "CANCELLABLE";
+const PARTICIPATION_CANCEL_BLOCKED_BY_STATUS = "BLOCKED_BY_STATUS";
+const PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM = "BLOCKED_BY_HOST_CONFIRM";
+
+// C2C 자발 취소 가능 구간 (docs/46 §5). 판정은 서버가 하고 화면은 그 값을 따르기만 한다 —
+// 상태로 재판정하면 성사 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다.
 // 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 취소 버튼을 내리지 않는다.
-// ⚠️ docs/56 H-09 로 서버가 "성사 확정을 거친" 입금 대기의 취소를 막았지만(BCH-092), 여기서 함께 좁히지 않는다 —
-// 서버 판정은 참여 createdAt 과 분철 finalizedAt 의 선후이고 둘 다 참여 응답에 없어(server Buncheol#isCreatedBeforeFinalize)
-// 상태만으로 숨기면 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다. 서버가 취소 가능 여부를 필드로
-// 내려주기 전까지는 버튼을 남기고 거부 사유를 그대로 노출한다(runCancelParticipation).
 function canCancelBidRecord(bid: BidRecord, now: Date) {
+  if (
+    !isC2CBidRecord(bid) ||
+    isBidRecordCancelled(bid) ||
+    isBidRecordPaymentExpired(bid, now)
+  ) {
+    return false;
+  }
+
+  if (bid.cancellability) {
+    return bid.cancellability === PARTICIPATION_CANCELLABLE;
+  }
+
+  // 폴백(필드 없는 구 응답·조회 실패) — 잘못 숨겨 가두는 것보다 눌러서 이유를 아는 편이 낫다.
+  // 서버가 거부하면 그 사유가 토스트로 뜬다(runCancelParticipation).
   return (
-    isC2CBidRecord(bid) &&
-    !isBidRecordCancelled(bid) &&
-    !isBidRecordPaymentExpired(bid, now) &&
-    (isParticipationAppliedStatus(bid.participationStatus) ||
-      isParticipationAwaitingPaymentStatus(bid.participationStatus))
+    isParticipationAppliedStatus(bid.participationStatus) ||
+    isParticipationAwaitingPaymentStatus(bid.participationStatus)
   );
+}
+
+// 버튼만 사라지면 "취소가 왜 없지" 로 문의가 는다 — 왜 안 되는지 + 다음에 뭘 해야 하는지를 함께 보여준다.
+// 서버 에러 문구(BCH-086 · BCH-092)와 같은 내용이다.
+// 노출 범위는 사용자가 실제로 취소를 찾는 두 구간뿐 — 입금확인·배송 단계 카드까지 상시 안내를 띄우면
+// 정작 필요한 곳에서 묻힌다(Wave 2 에서 완료 분철에 상시 노출됐던 문제, docs/56 §21-4).
+function getBidRecordCancelBlockedNotice(bid: BidRecord, now: Date) {
+  if (
+    !isC2CBidRecord(bid) ||
+    isBidRecordCancelled(bid) ||
+    isBidRecordPaymentExpired(bid, now)
+  ) {
+    return null;
+  }
+
+  if (bid.cancellability === PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM) {
+    return "개최자가 성사 확정한 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
+  }
+
+  if (
+    bid.cancellability === PARTICIPATION_CANCEL_BLOCKED_BY_STATUS &&
+    isParticipationPaymentSentStatus(bid.participationStatus)
+  ) {
+    return "입금을 보냈다고 알린 뒤에는 참여를 직접 취소할 수 없어요. 고객센터로 문의해 주세요.";
+  }
+
+  return null;
 }
 
 function isBidRecordPaymentConfirmed(bid: BidRecord) {
@@ -1039,6 +1082,7 @@ function getBidRecordFromParticipation(
     productId: participation.buncheolId,
     participationStatus,
     cancelReason: participation.cancelReason ?? null,
+    cancellability: participation.cancellability ?? null,
     rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
@@ -1183,6 +1227,34 @@ async function getBidRecordWithShippingData(
   return mergedBidRecord;
 }
 
+// 서버 개최자 취소 판정 값 (docs/56 S-2 — server BuncheolHostCancellability).
+const BUNCHEOL_HOST_CANCELLABLE = "CANCELLABLE";
+const BUNCHEOL_HOST_CANCEL_BLOCKED_BY_CONFIRMED_PAYMENT =
+  "BLOCKED_BY_CONFIRMED_PAYMENT";
+
+// 개최자 취소(삭제) 가능 구간. 판정은 서버가 하고 화면은 그 값을 따르기만 한다 —
+// Wave 2 에서 상태 집합으로 자체 판정했다가 정작 대상인 입금 수집중을 빠뜨렸다 (docs/56 §21-4).
+// 필드가 없는 구 응답이면 버튼을 남긴다(폴백) — 서버가 거부하면 사유가 hostedMessage 로 뜬다.
+function canDeleteHostedProduct(product: ProductDetailItem) {
+  if (!product.isApiProduct) {
+    return false;
+  }
+
+  return (
+    !product.hostCancellability ||
+    product.hostCancellability === BUNCHEOL_HOST_CANCELLABLE
+  );
+}
+
+// 입금을 받은 뒤 막히는 경우만 안내한다 — 서버 BCH-093 과 같은 문구다. 진행 확정·이미 취소된
+// 분철은 카드 배지가 이미 상태를 말하고 있어, 거기까지 상시 안내를 붙이면 노이즈가 된다.
+function getHostedProductCancelBlockedNotice(product: ProductDetailItem) {
+  return product.hostCancellability ===
+    BUNCHEOL_HOST_CANCEL_BLOCKED_BY_CONFIRMED_PAYMENT
+    ? "입금이 확인된 참여자가 있어 분철을 취소할 수 없어요. 받은 금액을 환불한 뒤 고객센터로 문의해 주세요."
+    : null;
+}
+
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
 ): ProductDetailItem {
@@ -1192,6 +1264,7 @@ function getHostedProductFromBuncheol(
   return {
     id: buncheol.id,
     buncheolId: buncheol.id,
+    hostCancellability: buncheol.cancellability ?? null,
     title: buncheol.title,
     member: `멤버 ${buncheol.memberSlotCount}명`,
     optionCount: buncheol.memberSlotCount,
@@ -2859,6 +2932,7 @@ export function BidHistoryContent({
                 now,
               );
               const canCancel = canCancelBidRecord(bid, now);
+              const cancelBlockedNotice = getBidRecordCancelBlockedNotice(bid, now);
               const isActionPending = pendingParticipationId !== null;
               const safeOpenChatHref =
                 isC2C && !isCancelled
@@ -3077,6 +3151,11 @@ export function BidHistoryContent({
                           </span>
                         </a>
                       ) : null}
+                      {cancelBlockedNotice ? (
+                        <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                          {cancelBlockedNotice}
+                        </p>
+                      ) : null}
                       {canOpenPaymentSheet || canCancel || isPaymentSent ? (
                         <div className="mt-4 flex items-center justify-end gap-2">
                           {isPaymentSent ? (
@@ -3252,6 +3331,9 @@ export function BidHistoryContent({
                   (total, option) => total + option.participantCount,
                   0,
                 );
+                const canDelete = canDeleteHostedProduct(product);
+                const cancelBlockedNotice =
+                  getHostedProductCancelBlockedNotice(product);
 
                 return (
                   <article
@@ -3320,6 +3402,11 @@ export function BidHistoryContent({
                       </div>
                     </div>
                     </Link>
+                    {cancelBlockedNotice ? (
+                      <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                        {cancelBlockedNotice}
+                      </p>
+                    ) : null}
                     <div className="mt-3 flex justify-end gap-2 border-t border-black/[0.08] pt-3">
                       {product.isApiProduct ? (
                       <Link
@@ -3330,7 +3417,7 @@ export function BidHistoryContent({
                         관리하기
                       </Link>
                       ) : null}
-                      {product.isApiProduct ? (
+                      {canDelete ? (
                         <button
                           className="h-9 rounded-full border border-black/[0.08] bg-white px-4 text-[13px] font-semibold text-black/55 disabled:text-black/25"
                           disabled={

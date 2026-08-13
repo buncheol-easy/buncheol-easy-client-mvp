@@ -458,6 +458,10 @@ export type MyParticipation = {
   buncheolStatus: string;
   buncheolTitle: string;
   cancelReason?: string | null;
+  // 서버가 취소 API 게이트와 같은 판정으로 내려주는 취소 가능 여부·사유 (docs/56 S-1).
+  // CANCELLABLE | BLOCKED_BY_STATUS | FLOW_NOT_SUPPORTED | BLOCKED_BY_HOST_CONFIRM.
+  // 필드가 없는 구 응답이면 null — 화면은 취소 버튼을 남기는 쪽으로 폴백한다.
+  cancellability?: string | null;
   closedRank?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
@@ -493,6 +497,10 @@ export type MyParticipation = {
 
 export type MyHostedBuncheol = BuncheolSummary & {
   activeParticipationCount: number;
+  // 서버가 취소 API 게이트·CAS 와 같은 판정으로 내려주는 개최자 취소 가능 여부·사유 (docs/56 S-2).
+  // CANCELLABLE | BLOCKED_BY_STATUS | BLOCKED_BY_CONFIRMED_PAYMENT.
+  // 필드가 없는 구 응답이면 null — 화면은 삭제 버튼을 남기는 쪽으로 폴백한다.
+  cancellability?: string | null;
   createdAt: string;
   memberSlotCount: number;
 };
@@ -4420,6 +4428,8 @@ export async function requestMyParticipations(accessToken: string) {
           ]) || (buncheol ? getStringValue(buncheol, ["title"]) : ""),
         cancelReason:
           getOptionalStringValue(record, ["cancelReason"]) ?? null,
+        cancellability:
+          getOptionalStringValue(record, ["cancellability"]) ?? null,
         closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(
@@ -4618,6 +4628,8 @@ export async function requestMyHostedBuncheols(accessToken: string) {
           summary.activeParticipationCount ??
           getNumberValue(record, ["activeParticipationCount"]) ??
           0,
+        cancellability:
+          getOptionalStringValue(record, ["cancellability"]) ?? null,
         createdAt: summary.createdAt ?? "",
         memberSlotCount:
           summary.memberSlotCount ??
