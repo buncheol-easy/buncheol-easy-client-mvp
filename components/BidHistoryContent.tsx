@@ -492,16 +492,40 @@ function canViewBidRecordPaymentSheet(bid: BidRecord, now: Date) {
   );
 }
 
-// C2C 자발 취소 가능 구간 — 신청(자유)·입금 대기(허용). 보냈어요 이후는 문의 경유 (docs/46 §5).
-// 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 취소 버튼을 내리지 않는다.
+// C2C 자발 취소 가능 구간 — 성사 확정 전, 즉 신청(APPLIED)까지만 (docs/56 §14-2).
+// 확정 후(입금 대기·보냈어요)에는 개최자가 이미 인원을 확정하고 통장 대조를 시작해 자리를 임의로 비울 수 없다.
+// ⚠️ 확정 후 추가 모집(docs/46 §4.7-E1)으로 APPLIED 를 건너뛰고 곧장 입금 대기로 생성된 참여도 함께 막힌다 —
+// 참여 응답에 "성사 확정을 거쳤는지" 를 구분할 필드가 없다. 서버가 구분 값을 내려주면 여기서 되살릴 것.
+// 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 어차피 취소 대상이 아니다.
 function canCancelBidRecord(bid: BidRecord, now: Date) {
   return (
     isC2CBidRecord(bid) &&
     !isBidRecordCancelled(bid) &&
     !isBidRecordPaymentExpired(bid, now) &&
-    (isParticipationAppliedStatus(bid.participationStatus) ||
-      isParticipationAwaitingPaymentStatus(bid.participationStatus))
+    isParticipationAppliedStatus(bid.participationStatus)
   );
+}
+
+// 취소 버튼이 사라진 구간에서 "왜 안 되는지 + 어디로 가면 되는지" 를 대신 남긴다 (docs/56 H-09).
+// 버튼만 없애면 사용자는 이유를 모른 채 문의로 간다.
+function getBidRecordCancelBlockedNotice(bid: BidRecord, now: Date) {
+  if (
+    !isC2CBidRecord(bid) ||
+    isBidRecordCancelled(bid) ||
+    isBidRecordPaymentConfirmed(bid) ||
+    isBidRecordPaymentExpired(bid, now)
+  ) {
+    return null;
+  }
+
+  if (
+    !isParticipationAwaitingPaymentStatus(bid.participationStatus) &&
+    !isParticipationPaymentSentStatus(bid.participationStatus)
+  ) {
+    return null;
+  }
+
+  return "개최자가 성사를 확정해서 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자 오픈채팅이나 분철이지로 문의해 주세요.";
 }
 
 function isBidRecordPaymentConfirmed(bid: BidRecord) {
@@ -2851,6 +2875,10 @@ export function BidHistoryContent({
                 now,
               );
               const canCancel = canCancelBidRecord(bid, now);
+              const cancelBlockedNotice = getBidRecordCancelBlockedNotice(
+                bid,
+                now,
+              );
               const isActionPending = pendingParticipationId !== null;
               const safeOpenChatHref =
                 isC2C && !isCancelled
@@ -3100,6 +3128,11 @@ export function BidHistoryContent({
                             </button>
                           ) : null}
                         </div>
+                      ) : null}
+                      {cancelBlockedNotice ? (
+                        <p className="mt-2 text-right text-[12px] font-medium leading-5 text-black/40">
+                          {cancelBlockedNotice}
+                        </p>
                       ) : null}
                       {bid.deliveryId && isPaymentConfirmed ? (
                         <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
