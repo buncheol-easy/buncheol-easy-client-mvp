@@ -507,6 +507,9 @@ export type MyHostedBuncheol = BuncheolSummary & {
 
 export type ParticipationPaymentDetail = {
   bidAmount: number;
+  // 참여 목록과 같은 서버 취소 판정 (docs/56 S-1). paymentStatus 와 같은 응답에서 나오므로
+  // 상세로 상태를 보강할 때 판정도 함께 갱신해 둘이 어긋나지 않게 한다.
+  cancellability?: string | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
   flowType?: string | null;
@@ -1162,6 +1165,7 @@ function getParticipationPaymentDetailFromBody(
         "amount",
         "paymentAmount",
       ]) ?? 0,
+    cancellability: getOptionalStringValue(data, ["cancellability"]) ?? null,
     deliveryId:
       getOptionalStringValueFromRecords(
         lookupRecords,

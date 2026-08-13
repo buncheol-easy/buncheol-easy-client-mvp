@@ -1177,6 +1177,10 @@ async function getBidRecordWithShippingData(
 
     mergedBidRecord = {
       ...mergedBidRecord,
+      // 상태를 상세 응답으로 갈아끼우므로 취소 판정도 같은 응답 것으로 함께 갈아끼운다 —
+      // 한쪽만 갱신하면 "보냈어요인데 취소 가능" 같은 짝이 어긋난 조합이 생긴다.
+      cancellability:
+        paymentDetail.cancellability ?? mergedBidRecord.cancellability ?? null,
       deliveryId: mergedBidRecord.deliveryId ?? paymentDetail.deliveryId ?? null,
       deliveryStatus:
         paymentDetail.deliveryStatus ?? mergedBidRecord.deliveryStatus ?? null,
