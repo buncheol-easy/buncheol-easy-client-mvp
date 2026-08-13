@@ -754,6 +754,25 @@ function isUnavailablePurchaseOption(option: ProductOption) {
   return option.available === false;
 }
 
+// 슬롯이 실제로 점유됐는지 — "신청할 수 없다"(available === false)와는 다른 질문이다.
+// Q-14 이후 아무도 신청하지 않은 공석도 분철이 닫히면 saleStatus=CLOSED(신청 불가)로 내려오므로,
+// 신청 불가를 점유로 세면 참여 인원이 부풀어 보인다 (docs/56 §20 F-1).
+// 그래서 "신청 불가"를 빼는 대신 "참여가 있는 상태"만 더한다 — 신청 불가 값이 새로 생겨도 안 깨진다.
+// saleStatus 가 없는 구 응답만 available 폴백을 유지한다.
+function isOccupiedPurchaseOption(option: ProductOption) {
+  const saleStatus = option.saleStatus?.toUpperCase();
+
+  if (!saleStatus) {
+    return isUnavailablePurchaseOption(option);
+  }
+
+  return (
+    saleStatus === "APPLIED" ||
+    saleStatus === "AWAITING_PAYMENT" ||
+    saleStatus === "SOLD"
+  );
+}
+
 function getOptionPurchaseOverlayLabel(
   option: ProductOption,
   myBid?: number,
@@ -1566,7 +1585,26 @@ export function ProductDetail({
     );
   const canEditProduct =
     product.id.startsWith("uploaded-") || isHostedProduct;
-  const canDeleteProduct = product.isApiProduct && isHostedProduct;
+  // 입금 확인(확정)된 참여가 1건이라도 있으면 개최자 취소를 막는다 (docs/56 §14-3).
+  // 서버 CAS(hostCancelIfCollectingAndNoConfirmed, BCH-093)와 같은 범위로 맞춘다 —
+  // C2C + 입금 수집중(PAYMENT_COLLECTING) + 확정(CONFIRMED) 참여 ≥1건.
+  // "보냈어요"(PAYMENT_SENT)는 참여자 자기 신고라 포함하지 않는다 — 허위 마킹 1건으로 개최자가 분철을
+  // 영영 못 접게 된다. 슬롯 saleStatus 는 PAYMENT_SENT 를 AWAITING_PAYMENT 로 접어 내리므로 자연히 제외된다.
+  // 확정 판정에 hasOptionPurchaseState 를 함께 요구해 취소·환불된 참여의 잔여 확정 값은 제외한다.
+  const isHostCancelBlocked =
+    isC2CProduct &&
+    isBuncheolPaymentCollectingStatus(product.status) &&
+    auctionOptions.some(
+      (option) =>
+        hasOptionPurchaseState(option) && isConfirmedOptionPurchase(option),
+    );
+  const canDeleteProduct =
+    product.isApiProduct && isHostedProduct && !isHostCancelBlocked;
+  // 버튼만 사라지면 개최자는 "취소가 왜 없지" 로 문의한다 — 서버 BCH-093 과 같은 안내를 미리 보여준다.
+  const hostCancelBlockedNotice =
+    product.isApiProduct && isHostedProduct && isHostCancelBlocked
+      ? "입금이 확인된 참여자가 있어 분철을 취소할 수 없어요. 받은 금액을 환불한 뒤 고객센터로 문의해 주세요."
+      : null;
   // 임시 저장 분철(uploaded-)은 브라우저 로컬에만 있어 공유해도 열리지 않는다.
   const canShareProduct = product.isApiProduct === true;
   // 단일 선택 정책: 분철당 참여 1건(멤버 1명). 상세 응답의 participatedByMe/내 참여 목록은
@@ -1597,7 +1635,7 @@ export function ProductDetail({
   const optionParticipationCount = auctionOptions.reduce((sum, option) => {
     const explicitCount = Math.max(0, option.participantCount);
     const occupiedSlotCount =
-      hasOptionPurchaseState(option) || isUnavailablePurchaseOption(option)
+      hasOptionPurchaseState(option) || isOccupiedPurchaseOption(option)
         ? 1
         : 0;
 
@@ -3666,6 +3704,11 @@ export function ProductDetail({
                 <p className="mt-2 text-[12px] font-semibold text-black/40">
                   {participationStatusCaption}
                 </p>
+                {hostCancelBlockedNotice ? (
+                  <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                    {hostCancelBlockedNotice}
+                  </p>
+                ) : null}
               </div>
             </div>
 

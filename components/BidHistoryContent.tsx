@@ -494,6 +494,10 @@ function canViewBidRecordPaymentSheet(bid: BidRecord, now: Date) {
 
 // C2C 자발 취소 가능 구간 — 신청(자유)·입금 대기(허용). 보냈어요 이후는 문의 경유 (docs/46 §5).
 // 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 취소 버튼을 내리지 않는다.
+// ⚠️ docs/56 H-09 로 서버가 "성사 확정을 거친" 입금 대기의 취소를 막았지만(BCH-092), 여기서 함께 좁히지 않는다 —
+// 서버 판정은 참여 createdAt 과 분철 finalizedAt 의 선후이고 둘 다 참여 응답에 없어(server Buncheol#isCreatedBeforeFinalize)
+// 상태만으로 숨기면 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다. 서버가 취소 가능 여부를 필드로
+// 내려주기 전까지는 버튼을 남기고 거부 사유를 그대로 노출한다(runCancelParticipation).
 function canCancelBidRecord(bid: BidRecord, now: Date) {
   return (
     isC2CBidRecord(bid) &&
@@ -2630,11 +2634,15 @@ export function BidHistoryContent({
       // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
       showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
     } catch (error: unknown) {
-      setHistoryMessage(
+      const failureMessage =
         error instanceof Error
           ? error.message
-          : "참여를 취소하지 못했어요. 잠시 후 다시 시도해 주세요.",
-      );
+          : "참여를 취소하지 못했어요. 잠시 후 다시 시도해 주세요.";
+
+      setHistoryMessage(failureMessage);
+      // 서버가 성사 확정 후 취소를 거부하면(BCH-092) 그 사유가 사용자에게 닿아야 한다 —
+      // historyMessage 는 목록 맨 위라 카드까지 스크롤한 상태에서는 보이지 않는다 (docs/56 H-09).
+      showActionToast(failureMessage);
     } finally {
       setPendingParticipationId(null);
     }
