@@ -1218,31 +1218,6 @@ export function ProductDetail({
   );
   const estimatedShippingAmount = activeBidCount > 0 ? estimatedShippingFee : 0;
   const estimatedCheckoutTotal = totalBidAmount + estimatedShippingAmount;
-  /*
-   * 상세 상단에 보여줄 금액.
-   * 지금까지 이 화면 어디에도 "얼마인지"가 구조화된 필드로 없었다 — 가격은 개최자가
-   * 자유 서술한 상품 설명 본문과 한참 아래 멤버 목록에만 있었다.
-   * 멤버마다 금액이 다를 수 있으므로(bidMinPrice 는 멤버 단위) 전부 같을 때만
-   * 대표 금액으로 올리고, 다르면 멤버 목록에서 확인하도록 남긴다.
-   */
-  const uniformMemberPriceLabel = (() => {
-    const labels = new Set(
-      auctionOptions
-        .map((option) => getBidBaseline(option))
-        .filter((label): label is string => Boolean(label)),
-    );
-
-    return labels.size === 1 ? [...labels][0] : null;
-  })();
-  const uniformShippingFeeLabel = (() => {
-    const labels = new Set(
-      shippingMethods
-        .map((method) => method.price)
-        .filter((price): price is string => Boolean(price)),
-    );
-
-    return labels.size === 1 ? [...labels][0] : null;
-  })();
   const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
     product.shippingMethods,
     product.courier,
@@ -3698,23 +3673,6 @@ export function ProductDetail({
               {product.title}
             </h1>
             <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
-              {uniformMemberPriceLabel ? (
-                <div className="border-b border-black/10 px-4 py-3.5">
-                  <p className="text-[12px] font-medium text-black/45">
-                    멤버 1명당
-                  </p>
-                  <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <p className="text-[24px] font-semibold leading-none tracking-[-0.06em]">
-                      {uniformMemberPriceLabel}
-                    </p>
-                    {uniformShippingFeeLabel ? (
-                      <span className="rounded-full bg-brand-pale px-2 py-1 text-[11px] font-semibold leading-none text-brand-ink">
-                        배송비 {uniformShippingFeeLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
               <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
                 <div className="min-w-0 px-4 py-3.5">
                   <p className="text-[12px] font-medium text-black/45">구매처</p>
@@ -3986,11 +3944,7 @@ export function ProductDetail({
           >
             {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
                 반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
-                같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다.
-
-                실제로 참여할 수 있을 때만 금액을 앞에 붙인다 — 막혀 있는 상태에서
-                금액을 보여주면 누를 수 있는 것처럼 읽힌다. 멤버마다 금액이 다르면
-                대표 금액이 없으므로 붙이지 않는다. */}
+                같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
             {isPublicPreview
               ? isC2CProduct
                 ? "로그인하고 신청하기"
@@ -4002,9 +3956,7 @@ export function ProductDetail({
                 : canBidProduct
                   ? isC2CProduct && !isC2CCollectingProduct
                     ? "신청하기"
-                    : uniformMemberPriceLabel
-                      ? `${uniformMemberPriceLabel} · 참여하기`
-                      : "참여하기"
+                    : "참여하기"
                   : getBidUnavailableMessage()}
           </button>
         </div>

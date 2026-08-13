@@ -372,15 +372,21 @@ export function FavoritesContent({
       }`}
     >
       <header className="favorites-header shrink-0 px-4 py-3">
-        <div className="favorites-header__copy flex h-10 flex-row items-baseline gap-2">
-          <h1 className="favorites-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
-            찜한 분철
-          </h1>
-          {filteredProducts.length > 0 ? (
-            <p className="text-[13px] font-semibold leading-none text-black/35">
-              {filteredProducts.length}개
-            </p>
-          ) : null}
+        {/* 세로 가운데 정렬(justify-center)은 마이페이지·내 분철 헤더와 같은 규칙이다.
+            개수를 옆에 붙이려고 이 div 를 flex-row 로 바꿨더니 정렬 축이 가로로 넘어가면서
+            제목이 40px 박스 위쪽에 붙어, 이 화면만 제목이 위로 올라가 보였다.
+            바깥은 기존대로 두고 안쪽에 행을 하나 더 둔다. */}
+        <div className="favorites-header__copy flex h-10 flex-col justify-center">
+          <div className="flex flex-row items-baseline gap-2">
+            <h1 className="favorites-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
+              찜한 분철
+            </h1>
+            {filteredProducts.length > 0 ? (
+              <p className="text-[13px] font-semibold leading-none text-black/35">
+                {filteredProducts.length}개
+              </p>
+            ) : null}
+          </div>
         </div>
 
         {FEATURES.favoriteArtists ? (
