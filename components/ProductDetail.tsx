@@ -442,7 +442,7 @@ function getStartingBid(option: ProductOption) {
 }
 
 function getOptionPriceLabel() {
-  return "구매가";
+  return "금액";
 }
 
 function getBidBaseline(option: ProductOption) {
@@ -473,6 +473,23 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
 
   const totalSeconds = Math.floor(remainingMilliseconds / 1000);
   const days = Math.floor(totalSeconds / 86_400);
+
+  /*
+   * 하루 넘게 남았으면 초 단위 카운트다운 대신 마감 시각을 그대로 보여준다.
+   * "131일 08:50:44 남음"은 읽어도 언제 끝나는지 알 수 없는 데다, 매초 다시 그려지며
+   * 시선을 끈다. 마감이 임박한 24시간 안에서만 시계가 의미를 갖는다.
+   */
+  if (days >= 1) {
+    return `${new Intl.DateTimeFormat("ko-KR", {
+      day: "numeric",
+      hour: "2-digit",
+      hour12: false,
+      minute: "2-digit",
+      month: "long",
+      timeZone: "Asia/Seoul",
+    }).format(deadlineDate)} 마감`;
+  }
+
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
@@ -481,10 +498,6 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
     minutes.toString().padStart(2, "0"),
     seconds.toString().padStart(2, "0"),
   ].join(":");
-
-  if (days > 0) {
-    return `${days}일 ${clock} 남음`;
-  }
 
   return `${clock} 남음`;
 }
@@ -586,14 +599,12 @@ const MEMBER_STATUS_CHIP_LABELS = {
   otherPaymentWaiting: "다른 사람이 참여 진행 중이에요",
 } as const;
 
-// 멤버 슬롯 오버레이 칩 공통 스타일 — 버튼/스팬 분기가 같은 모양을 유지하도록 한 곳에 둔다.
-// max-w 는 좁은 뷰포트·글꼴 확대에서 칩이 슬롯을 넘지 않게 하기 위함.
-// truncate(= overflow:hidden) 는 base 에서 분리했다. 버튼 분기는 ::after 로 탭 영역을
-// 칩 밖까지 넓히는데, 버튼 자신에 overflow:hidden 이 걸리면 그 영역이 통째로 잘린다.
-// 버튼 분기의 말줄임은 내부 라벨 span 이 담당한다.
+// "내 참여" 칩 스타일 — 참여 내역으로 가는 버튼이라 눌리는 것으로 읽혀야 한다.
+// 그 외 상태(매진 등)는 칩이 아니라 이름 아래 텍스트 한 줄로 말한다.
+// truncate(= overflow:hidden) 는 내부 라벨 span 이 담당한다 — 버튼 자신에 걸면
+// 탭 영역을 넓히는 ::after 가 통째로 잘린다.
 const memberStatusChipBaseClassName =
-  "max-w-[calc(100%-2rem)] rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur";
-const memberStatusChipClassName = `${memberStatusChipBaseClassName} truncate`;
+  "rounded-full bg-black/70 px-3 py-1 text-[12px] font-semibold text-white";
 
 // 서버 participatedByMe(상세 응답) 또는 이 세션에서 방금 참여한 로컬 상태로 "내 참여"를 판별한다.
 function isOptionParticipatedByMe(option: ProductOption, myBid?: number) {
@@ -1160,28 +1171,32 @@ export function ProductDetail({
     return true;
   }
 
-  const sortedAuctionOptions = [...auctionOptions].sort((left, right) => {
-    const leftHasBid = Boolean(
+  /*
+   * 멤버 정렬: 고를 수 있는 멤버 → 내 참여 → 매진·불가.
+   *
+   * 이전에는 "오버레이 라벨이 있는 옵션"을 앞으로 올렸는데, 매진도 오버레이 라벨이라
+   * 같이 딸려 올라가서 정작 고를 수 있는 멤버가 목록 아래로 밀려 있었다.
+   * 매진 멤버는 "누가 이미 나갔는지"가 정보라 숨기지 않고 아래에 그대로 둔다.
+   */
+  function getOptionSortRank(option: ProductOption) {
+    const hasOverlay = Boolean(
       getOptionPurchaseOverlayLabel(
-        left,
-        myBids[left.id],
-        product.isApiProduct === true,
-      ),
-    );
-    const rightHasBid = Boolean(
-      getOptionPurchaseOverlayLabel(
-        right,
-        myBids[right.id],
+        option,
+        myBids[option.id],
         product.isApiProduct === true,
       ),
     );
 
-    if (leftHasBid === rightHasBid) {
+    if (!hasOverlay) {
       return 0;
     }
 
-    return leftHasBid ? -1 : 1;
-  });
+    return isOptionParticipatedByMe(option, myBids[option.id]) ? 1 : 2;
+  }
+
+  const sortedAuctionOptions = [...auctionOptions].sort(
+    (left, right) => getOptionSortRank(left) - getOptionSortRank(right),
+  );
 
   const shippingMethods =
     product.shippingMethods ??
@@ -1203,6 +1218,31 @@ export function ProductDetail({
   );
   const estimatedShippingAmount = activeBidCount > 0 ? estimatedShippingFee : 0;
   const estimatedCheckoutTotal = totalBidAmount + estimatedShippingAmount;
+  /*
+   * 상세 상단에 보여줄 금액.
+   * 지금까지 이 화면 어디에도 "얼마인지"가 구조화된 필드로 없었다 — 가격은 개최자가
+   * 자유 서술한 상품 설명 본문과 한참 아래 멤버 목록에만 있었다.
+   * 멤버마다 금액이 다를 수 있으므로(bidMinPrice 는 멤버 단위) 전부 같을 때만
+   * 대표 금액으로 올리고, 다르면 멤버 목록에서 확인하도록 남긴다.
+   */
+  const uniformMemberPriceLabel = (() => {
+    const labels = new Set(
+      auctionOptions
+        .map((option) => getBidBaseline(option))
+        .filter((label): label is string => Boolean(label)),
+    );
+
+    return labels.size === 1 ? [...labels][0] : null;
+  })();
+  const uniformShippingFeeLabel = (() => {
+    const labels = new Set(
+      shippingMethods
+        .map((method) => method.price)
+        .filter((price): price is string => Boolean(price)),
+    );
+
+    return labels.size === 1 ? [...labels][0] : null;
+  })();
   const availableShippingStoreTypes = getAvailableConvenienceStoreTypes(
     product.shippingMethods,
     product.courier,
@@ -3658,6 +3698,23 @@ export function ProductDetail({
               {product.title}
             </h1>
             <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
+              {uniformMemberPriceLabel ? (
+                <div className="border-b border-black/10 px-4 py-3.5">
+                  <p className="text-[12px] font-medium text-black/45">
+                    멤버 1명당
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <p className="text-[24px] font-semibold leading-none tracking-[-0.06em]">
+                      {uniformMemberPriceLabel}
+                    </p>
+                    {uniformShippingFeeLabel ? (
+                      <span className="rounded-full bg-brand-pale px-2 py-1 text-[11px] font-semibold leading-none text-brand-ink">
+                        배송비 {uniformShippingFeeLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
                 <div className="min-w-0 px-4 py-3.5">
                   <p className="text-[12px] font-medium text-black/45">구매처</p>
@@ -3818,6 +3875,12 @@ export function ProductDetail({
                           : "bg-white"
                       }`}
                     >
+                      {/*
+                        상태 칩을 행 위에 덮지 않고 이름 아래로 내린다.
+                        가운데 오버레이는 금액을 그대로 가렸고, "구매 가능 멤버" 부제는
+                        매진이 아니면 당연한 이야기라 정보가 없었다.
+                        내 진행중 참여 칩은 참여 내역으로 가는 버튼이라 그대로 살린다.
+                      */}
                       <div className="flex min-w-0 items-center gap-3">
                         <div className={overlayLabel ? "opacity-45" : ""}>
                           <OptionAvatar option={option} size="md" />
@@ -3830,11 +3893,27 @@ export function ProductDetail({
                           >
                             {option.label}
                           </p>
-                          {overlayLabel ? null : (
-                            <p className="mt-0.5 text-[12px] font-semibold text-black/35">
-                              구매 가능 멤버
-                            </p>
-                          )}
+                          {blockChipLabel ? (
+                            isMyPaymentWaitingChip ? (
+                              <button
+                                type="button"
+                                aria-label={`${blockChipLabel}, 내 참여 내역 보기`}
+                                className={`relative mt-1 inline-flex max-w-full items-center gap-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipBaseClassName}`}
+                                onClick={openBidHistory}
+                              >
+                                {/* 텍스트 › 는 칩 글자보다 작게 보여 눌러도 되는지 안 읽혔다(docs/56 H-04).
+                                    라벨은 계속 말줄임하고, 화살표만 아이콘으로 키워 고정한다. */}
+                                <span className="min-w-0 truncate">
+                                  {blockChipLabel}
+                                </span>
+                                <ForwardIcon className="h-4 w-4 shrink-0" />
+                              </button>
+                            ) : (
+                              <p className="mt-0.5 truncate text-[12px] font-semibold text-black/40">
+                                {blockChipLabel}
+                              </p>
+                            )
+                          ) : null}
                         </div>
                       </div>
                       <div
@@ -3854,32 +3933,6 @@ export function ProductDetail({
                           </p>
                         ) : null}
                       </div>
-                      {blockChipLabel ? (
-                        <div
-                          aria-hidden={isMyPaymentWaitingChip ? undefined : true}
-                          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]"
-                        >
-                          {isMyPaymentWaitingChip ? (
-                            <button
-                              type="button"
-                              aria-label={`${blockChipLabel}, 내 참여 내역 보기`}
-                              className={`relative pointer-events-auto inline-flex items-center gap-0.5 after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipBaseClassName}`}
-                              onClick={openBidHistory}
-                            >
-                              {/* 텍스트 › 는 칩 글자보다 작게 보여 눌러도 되는지 안 읽혔다(docs/56 H-04).
-                                  라벨은 계속 말줄임하고, 화살표만 아이콘으로 키워 고정한다. */}
-                              <span className="min-w-0 truncate">
-                                {blockChipLabel}
-                              </span>
-                              <ForwardIcon className="h-4 w-4 shrink-0" />
-                            </button>
-                          ) : (
-                            <span className={memberStatusChipClassName}>
-                              {blockChipLabel}
-                            </span>
-                          )}
-                        </div>
-                      ) : null}
                     </div>
                   );
                 })}
@@ -3933,7 +3986,11 @@ export function ProductDetail({
           >
             {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
                 반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
-                같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
+                같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다.
+
+                실제로 참여할 수 있을 때만 금액을 앞에 붙인다 — 막혀 있는 상태에서
+                금액을 보여주면 누를 수 있는 것처럼 읽힌다. 멤버마다 금액이 다르면
+                대표 금액이 없으므로 붙이지 않는다. */}
             {isPublicPreview
               ? isC2CProduct
                 ? "로그인하고 신청하기"
@@ -3945,7 +4002,9 @@ export function ProductDetail({
                 : canBidProduct
                   ? isC2CProduct && !isC2CCollectingProduct
                     ? "신청하기"
-                    : "참여하기"
+                    : uniformMemberPriceLabel
+                      ? `${uniformMemberPriceLabel} · 참여하기`
+                      : "참여하기"
                   : getBidUnavailableMessage()}
           </button>
         </div>
@@ -4066,52 +4125,48 @@ export function ProductDetail({
                           onClick={() => togglePurchaseOption(option.id)}
                           type="button"
                         >
+                          {/*
+                            상태는 이름 아래 한 줄로만 말한다.
+                            이전에는 같은 "매진"이 ① 이름 밑 부제 ② 행 가운데 검정 알약
+                            ③ 우측 "선택 불가" 칩으로 세 번 나왔고, 가운데 알약이
+                            가격 숫자를 물리적으로 가렸다. 가운데 오버레이를 걷어내고
+                            고를 수 없는 행은 우측 칩도 빼서 가격이 끝까지 보이게 한다.
+                          */}
                           <div
                             className={`flex items-center justify-between gap-2.5 ${
-                              overlayLabel ? "opacity-65" : ""
+                              overlayLabel ? "opacity-60" : ""
                             }`}
                           >
                             <div className="flex min-w-0 items-center gap-2.5">
                               <OptionAvatar option={option} size="sm" />
                               <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                                    {option.label}
-                                  </p>
-                                </div>
-                                <p className="mt-0.5 text-[12px] font-medium tracking-[-0.04em] text-black/45">
-                                  {displayedOverlayLabel ?? "구매 가능"}
+                                <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                                  {option.label}
                                 </p>
+                                {displayedOverlayLabel ? (
+                                  <p className="mt-0.5 truncate text-[12px] font-medium tracking-[-0.04em] text-black/45">
+                                    {displayedOverlayLabel}
+                                  </p>
+                                ) : null}
                               </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-2 text-right">
                               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                                 {getBidBaseline(option)}
                               </p>
-                              <span
-                                className={`inline-flex h-7 min-w-[52px] items-center justify-center rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
-                                  overlayLabel
-                                    ? "bg-black/10 text-black/35"
-                                    : isSelected
-                                      ? "bg-[#DDE7B8] text-black"
-                                      : "bg-[#f7f7f7] text-black/55"
-                                }`}
-                              >
-                                {overlayLabel
-                                  ? "선택 불가"
-                                  : isSelected
-                                    ? "해제"
-                                    : "선택"}
-                              </span>
+                              {overlayLabel ? null : (
+                                <span
+                                  className={`inline-flex h-7 min-w-[52px] items-center justify-center rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
+                                    isSelected
+                                      ? "bg-brand-soft text-black"
+                                      : "bg-surface-2 text-black/55"
+                                  }`}
+                                >
+                                  {isSelected ? "해제" : "선택"}
+                                </span>
+                              )}
                             </div>
                           </div>
-                          {overlayLabel ? (
-                            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/40 backdrop-blur-[0.5px]">
-                              <span className="whitespace-nowrap rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
-                                {displayedOverlayLabel}
-                              </span>
-                            </div>
-                          ) : null}
                         </button>
                       );
                     })}
