@@ -239,7 +239,7 @@ function formatPaymentRemainingTime(
   );
 
   if (Number.isNaN(paymentDeadline.getTime())) {
-    return "결제 기한 확인 필요";
+    return "입금 기한 확인 필요";
   }
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
@@ -263,7 +263,7 @@ function formatPaymentCountdown(
   );
 
   if (Number.isNaN(paymentDeadline.getTime())) {
-    return "결제 기한 확인 필요";
+    return "입금 기한 확인 필요";
   }
 
   const paymentWindowMs = isC2C
@@ -334,7 +334,7 @@ const participationStatusGuide = [
     icon: BanknoteIcon,
     label: bidProgressStepLabels[0],
     description:
-      "주문 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 결제 정보 버튼에서 확인할 수 있어요.",
+      "참여 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 입금 정보 버튼에서 확인할 수 있어요.",
   },
   {
     icon: CheckIcon,
@@ -669,6 +669,7 @@ function getBidRecordBuncheolChip(
   }
 
   // C2C 입금 수집 구간 — "마감"으로 접히면 진행 중인 분철이 끝난 것처럼 보인다.
+  // 이 칩은 썸네일 아래 56px 컬럼에 들어가므로 4글자를 넘기지 않는다.
   if (isBuncheolPaymentCollectingStatus(bid.buncheolStatus)) {
     return { label: "입금 진행", tone: "urgent" };
   }
@@ -1053,16 +1054,18 @@ function formatCompactDeadline(value: string) {
     : `${Number(month)}월 ${Number(day)}일`;
 }
 
-function getBidRecordShippingAddressLabel(bid: BidRecord) {
-  const address = bid.shippingAddress;
-
-  if (!address) {
-    return "배송지 확인 중";
-  }
-
-  return `${getConvenienceStoreLabel(address.storeType)} ${getDeliveryAddressDisplayBranchName(address)}`;
-}
-
+/*
+ * 참여 요약 카드에서는 배송지를 보여주지 않는다.
+ *
+ * 참여 목록 API(/participations/me)는 배송지를 내려주지 않는다 — 이 값은 체크아웃을
+ * 이 브라우저에서 진행했을 때 남는 로컬 캐시(participation-payment-cache)에만 있다.
+ * 그래서 기기를 바꾸거나 캐시가 비면 영영 "배송지 확인 중"으로 남았는데, 실제로는
+ * 확인 중인 게 아니라 클라이언트가 값을 모르는 것이라 문구부터 거짓말이었다.
+ * 카드마다 상세를 조회해 채우는 건 이미 걷어낸 N+1 을 되살리는 일이라 하지 않는다.
+ *
+ * 배송지는 값이 확실한 곳에서만 보여준다 — 입금 정보 시트(상세 조회로 받아온다)와
+ * 배송 시작 후의 배송 블록. 서버가 목록 응답에 배송지를 실어주면 그때 요약 카드로 올린다.
+ */
 function getToneFromId(id: string) {
   const tones = [
     "from-black via-zinc-800 to-zinc-500",
@@ -3054,7 +3057,6 @@ export function BidHistoryContent({
                   ? getSafeOpenChatHref(bid.openChatUrl)
                   : null;
               const progressSteps = getBidRecordProgressSteps(bid, now);
-              const shippingAddressLabel = getBidRecordShippingAddressLabel(bid);
               const cardShippingFee =
                 typeof bid.shippingFee === "number" ? bid.shippingFee : null;
               const cardTotalAmount =
@@ -3128,8 +3130,10 @@ export function BidHistoryContent({
                           />
                         ) : null}
                       </Link>
+                      {/* 썸네일 폭(56px)에 갇힌 칩이라 라벨이 길면 글자가 잘려 나갔다
+                          ("입금 모으는 중" → "입금 모으는"). 넘치면 말줄임으로 드러나게 한다. */}
                       <span
-                        className={`w-full whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+                        className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
                       >
                         {buncheolChip.label}
                       </span>
@@ -3188,14 +3192,6 @@ export function BidHistoryContent({
                             </dt>
                             <dd className="truncate font-semibold tracking-[-0.03em]">
                               {formatCompactDeadline(bid.deadline)}
-                            </dd>
-                          </div>
-                          <div className="flex items-baseline justify-between gap-2">
-                            <dt className="shrink-0 font-medium text-black/35">
-                              배송지
-                            </dt>
-                            <dd className="truncate font-semibold tracking-[-0.03em]">
-                              {shippingAddressLabel}
                             </dd>
                           </div>
                         </dl>
@@ -3311,7 +3307,7 @@ export function BidHistoryContent({
                               onClick={() => openPaymentSheet(bid.id)}
                               type="button"
                             >
-                              결제 정보
+                              입금 정보
                             </button>
                           ) : null}
                         </div>
@@ -3696,7 +3692,7 @@ export function BidHistoryContent({
           }`}
         >
           <button
-            aria-label="결제 정보 닫기"
+            aria-label="입금 정보 닫기"
             className="absolute inset-0 cursor-default"
             onClick={closePaymentSheet}
             type="button"
@@ -3721,7 +3717,7 @@ export function BidHistoryContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  결제 정보
+                  입금 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
                   {isSelectedPaymentC2C
@@ -3877,7 +3873,7 @@ export function BidHistoryContent({
                   <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
                     {paymentDeliveryAddress
                       ? getDeliveryAddressDisplayBranchName(paymentDeliveryAddress)
-                      : "결제 요청 배송지 확인 중"}
+                      : "배송지 확인 중"}
                   </p>
                 </div>
                 <span className="shrink-0 text-[11px] font-semibold text-black/40">

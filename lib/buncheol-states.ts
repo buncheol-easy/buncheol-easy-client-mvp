@@ -91,8 +91,10 @@ export function getBuncheolStatusBadgeLabel(status: string | null | undefined) {
     return "모집 중";
   }
 
+  // 참여 내역 칩(getBidRecordBuncheolChip)과 같은 문자열을 쓴다 — 한 상태를 두 이름으로
+  // 부르면 목록과 상세가 서로 다른 말을 하게 된다.
   if (normalizeStatusValue(status) === "PAYMENT_COLLECTING") {
-    return "입금 진행 중";
+    return "입금 진행";
   }
 
   return "모집 종료";

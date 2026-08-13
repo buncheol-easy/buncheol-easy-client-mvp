@@ -490,7 +490,7 @@ export function FavoritesContent({
           ) : null}
           {isFavoriteProductsLoading ? (
             <ProductGridSkeleton
-              ariaLabel="찜한 상품을 불러오는 중"
+              ariaLabel="찜한 분철을 불러오는 중"
               memberRowVariant="text"
               variant="wide"
             />

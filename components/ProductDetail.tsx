@@ -1377,7 +1377,7 @@ export function ProductDetail({
       });
       setRefundAccountError("");
       setIsRefundAccountSheetOpen(false);
-      showProductToast("환불계좌를 등록했어요. 이어서 참여해 주세요.");
+      showProductToast("계좌를 등록했어요. 이어서 참여해 주세요.");
     } catch (error: unknown) {
       setRefundAccountError(
         error instanceof Error ? error.message : "계좌를 저장하지 못했어요.",
@@ -4747,11 +4747,11 @@ export function ProductDetail({
             >
               <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                환불계좌 등록
+                계좌 등록
               </h2>
-              <p className="mt-1 text-[13px] font-medium leading-5 text-black/45">
-                입금자명 확인과 환불에 쓰는 계좌예요. 등록하면 참여를 바로 이어갈
-                수 있어요.
+              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
+                입금자명 확인과 환불에 쓰고, 분철을 개최하면 참여자 입금을 받는
+                계좌이기도 해요. 등록하면 참여를 바로 이어갈 수 있어요.
               </p>
 
               <div className="mt-4 space-y-3">
