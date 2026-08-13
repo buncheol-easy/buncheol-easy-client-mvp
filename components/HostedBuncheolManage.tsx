@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BackIcon } from "@/components/icons";
 import {
@@ -880,10 +881,49 @@ export function HostedBuncheolManage({
   // ② 패널 자체가 스크롤 가능해져, 데스크톱에서 fixed → absolute 로 바뀌는 확인 시트가
   //    스크롤된 패널 원점 기준으로 화면 밖에 그려진다(docs/56 H-10).
   // 어긋남이 가장 큰 데스크톱에서 먼저 발견됐을 뿐, 위 두 모드에도 inset 만큼 같은 문제가 있었다.
+  /*
+   * 상세를 못 받은 상태 — 불러오는 중이거나, 남의 분철 관리 URL 로 들어와 403 이 난 경우다.
+   * 이전에는 문장 한 줄만 흰 화면 한가운데 떠 있어서, 뒤로가기도 다른 화면으로 갈 길도 없었다.
+   * (하단 탭도 이 화면에는 없다.) 헤더와 나갈 길을 함께 준다.
+   */
   if (!detail) {
+    const isLoadingDetail = !message;
+
     return (
-      <main className="system-chrome-white system-chrome-bottom-white flex h-full items-center justify-center bg-white px-6 text-center">
-        <p className="text-[15px] font-semibold text-black/45">{message}</p>
+      <main className="system-chrome-white system-chrome-bottom-white h-full bg-white">
+        <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
+          <header className="shrink-0 px-5 pb-3 pt-4">
+            <div className="flex items-center gap-3">
+              <button
+                aria-label="이전 화면"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                onClick={onBack ?? (() => router.back())}
+                type="button"
+              >
+                <BackIcon />
+              </button>
+              <div className="min-w-0 flex-1 text-right">
+                <p className="text-[12px] font-semibold text-black/35">
+                  분철 개최 관리
+                </p>
+              </div>
+            </div>
+          </header>
+
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
+            <p className="break-keep text-[15px] font-semibold leading-6 text-black/55">
+              {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : message}
+            </p>
+            {isLoadingDetail ? null : (
+              <Link
+                className="mt-5 flex h-12 w-full max-w-[240px] items-center justify-center rounded-full bg-[#CFE86B] text-[14px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
+                href="/profile/bids"
+              >
+                내 분철로 돌아가기
+              </Link>
+            )}
+          </div>
+        </div>
       </main>
     );
   }
