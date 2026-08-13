@@ -674,7 +674,7 @@ export function HostedBuncheolManage({
 
       await finalizeBuncheolCollected(accessToken, id);
       await reloadManagementDetail(accessToken);
-      setMessage("진행을 확정했어요. 이제 주문과 배송을 진행해 주세요.");
+      setMessage("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
     } catch (error: unknown) {
       setMessage(
         error instanceof Error
@@ -1144,7 +1144,7 @@ export function HostedBuncheolManage({
           <section className="mt-6">
             <div className="mb-3">
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                {isC2C ? "참여자 관리" : "멤버별 주문 관리"}
+                {isC2C ? "참여자 관리" : "멤버별 참여 관리"}
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/40">
                 {/* 리스트 모수는 취소를 뺀 활성 참여 전건(신청됨·입금 대기 포함)이라
@@ -1518,8 +1518,10 @@ export function HostedBuncheolManage({
                     </div>
 
                     <div className="mt-4 grid grid-cols-[1.15fr_0.85fr] gap-2">
-                      <div className="rounded-[0.9rem] bg-black px-3 py-3 text-white">
-                        <p className="text-[11px] font-medium text-white/45">
+                      {/* 읽기 전용 금액이라 검정 면을 쓰지 않는다 — 이 화면에서 검정은
+                          기본 버튼·현재 선택을 뜻해서, 누를 수 있는 것처럼 보였다. */}
+                      <div className="rounded-[0.9rem] bg-brand-pale px-3 py-3 ring-1 ring-[#E4F6A5]/70">
+                        <p className="text-[11px] font-medium text-black/35">
                           상품 금액
                         </p>
                         <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em]">
@@ -1544,7 +1546,7 @@ export function HostedBuncheolManage({
                             : "bg-[#f7f7f7] text-black/35"
                         }`}
                       >
-                        주문
+                        참여
                       </span>
                       <span
                         className={`rounded-full px-2 py-1.5 text-[11px] font-semibold ${
@@ -1581,11 +1583,11 @@ export function HostedBuncheolManage({
                                   <div className="mt-2 space-y-1">
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
-                                        주문자
+                                        참여자
                                       </span>
                                       {option.winner?.depositorName ?? "-"}
                                     </p>
-                                    {/* 통장에 찍히는 건 예금주명이라, 닉네임(주문자)만으로는 대조가 안 된다 (docs/53 Q-18).
+                                    {/* 통장에 찍히는 건 예금주명이라, 닉네임(참여자)만으로는 대조가 안 된다 (docs/53 Q-18).
                                         C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
@@ -1629,14 +1631,9 @@ export function HostedBuncheolManage({
                                       : "입금 확인"}
                                 </button>
                               </div>
-                              {option.winner?.paymentConfirmedAt ? (
-                                <p className="mt-2 text-[12px] font-medium text-black/40">
-                                  확인 시각{" "}
-                                  {formatKoreaDateTime(
-                                    option.winner.paymentConfirmedAt,
-                                  )}
-                                </p>
-                              ) : null}
+                              {/* "확인 시각 …" 줄을 뺐다 — 바로 위 "확인 …" 이 같은
+                                  paymentConfirmedAt 을 이미 보여주고 있어, 입금 확인이
+                                  끝난 건마다 같은 시각이 두 줄 연속으로 찍혔다. */}
                             </div>
                           ) : (
                             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
@@ -1647,7 +1644,7 @@ export function HostedBuncheolManage({
                                 {option.winner
                                   ? isPaymentDuePassed
                                     ? "입금 기한이 지났어요."
-                                    : "주문자 입금을 기다리고 있어요."
+                                    : "참여자 입금을 기다리고 있어요."
                                   : "아직 참여자가 없어요."}
                               </p>
                               {option.winner?.paymentDueAt ? (

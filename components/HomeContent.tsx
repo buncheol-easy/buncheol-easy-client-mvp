@@ -30,6 +30,7 @@ import { BusinessFooter } from "@/components/BusinessFooter";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import {
   addFavoriteGroup,
   readCachedBanners,
@@ -149,19 +150,19 @@ const homeUsageGuide = [
     icon: SearchIcon,
     label: "분철 둘러보기",
     description:
-      "홈에서 진행 중인 분철을 둘러봐요. 남은 멤버를 보면 어떤 멤버를 구매할 수 있는지 바로 알 수 있어요.",
+      "홈에서 진행 중인 분철을 둘러봐요. 남은 멤버를 보면 어떤 멤버에 참여할 수 있는지 바로 알 수 있어요.",
   },
   {
     icon: ClipboardListIcon,
-    label: "멤버 골라 주문",
+    label: "멤버 골라 참여",
     description:
-      "분철에 들어가 원하는 멤버를 고르고, 택배 받을 편의점을 정해 주문해요.",
+      "분철에 들어가 원하는 멤버를 고르고, 택배 받을 편의점을 정해 참여해요.",
   },
   {
     icon: BanknoteIcon,
     label: "30분 안에 입금",
     description:
-      "주문하면 개최자 계좌가 보여요. 30분 안에 입금과 개최자 확인까지 끝나야 참여가 확정돼요.",
+      "참여하면 개최자 계좌가 보여요. 30분 안에 입금과 개최자 확인까지 끝나야 참여가 확정돼요.",
   },
   {
     icon: BidIcon,
@@ -343,6 +344,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 도트 클릭으로 이동 중인 목표 슬라이드. 이동하는 동안 스크롤 기반 도트 갱신을 억제해
   // 활성 도트가 이전 슬라이드로 되돌아갔다 오는 왕복(→←→)을 막는다.
   const bannerScrollTargetRef = useRef<number | null>(null);
+  // 도움말 버튼도 하단 탭과 같은 신호로 비켜난다 — 상시 떠 있으면 카드 하트·진행바를 가린다.
+  const isChromeScrolledAway = useScrollDirectionHidden();
   const [isUsageHelpSheetOpen, setIsUsageHelpSheetOpen] = useState(false);
   const [isUsageHelpSheetEntered, setIsUsageHelpSheetEntered] =
     useState(false);
@@ -1057,7 +1060,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
       <button
         aria-label="분철이지 이용 방법 보기"
-        className="motion-icon-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)]"
+        className={`motion-icon-button floating-help-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)] ${
+          isChromeScrolledAway ? "floating-help-button--scrolled-away" : ""
+        }`}
         onClick={openUsageHelpSheet}
         type="button"
       >
@@ -1125,8 +1130,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 </div>
               ))}
               <p className="px-1 pt-1 text-[12px] font-medium leading-5 text-black/40">
-                마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 분철을 직접
-                여는 기능은 준비 중이에요. 조금만 기다려 주세요!
+                마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 원하는 분철이
+                없다면 하단 &lsquo;개최&rsquo; 탭에서 직접 열 수도 있어요.
               </p>
             </div>
 
