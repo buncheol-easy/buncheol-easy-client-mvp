@@ -502,7 +502,11 @@ const PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM = "BLOCKED_BY_HOST_CONFIRM";
 
 // C2C 자발 취소 가능 구간 (docs/46 §5). 판정은 서버가 하고 화면은 그 값을 따르기만 한다 —
 // 상태로 재판정하면 성사 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다.
-// 기한이 지난 입금 대기는 서버가 곧 만료 처리하므로 취소 버튼을 내리지 않는다.
+//
+// ⚠️ 만료 가드(isBidRecordPaymentExpired)만 서버 판정보다 앞선다. 서버 취소 API 는 기한을 보지 않아
+// CANCELLABLE 을 내리지만, 만료 카드는 곧 서버 스케줄러가 자동 취소할 것이라 "취소" 액션을 남겨 두면
+// 방금 만료된 건에 대고 취소를 누르는 흐름이 된다. 이 순서는 이 PR 이전부터의 동작이고, 여기서 뒤집으면
+// 만료 표시 UX 전반을 함께 봐야 해 그대로 뒀다 (이전 주석은 코드와 반대로 적혀 있었다).
 function canCancelBidRecord(bid: BidRecord, now: Date) {
   if (
     !isC2CBidRecord(bid) ||
@@ -524,6 +528,27 @@ function canCancelBidRecord(bid: BidRecord, now: Date) {
   );
 }
 
+// 낙관적 상태 갱신용 판정 전이. 서버 응답을 기다리지 않고 화면을 먼저 바꾸는 두 경로("보냈어요"
+// 마킹·철회)가 상태만 올리고 판정을 두면 버튼과 사유가 어긋난다. 다음 폴링이 서버 값으로 정정하지만
+// 그 사이에 사용자가 보는 건 방금 누른 액션의 결과 화면이다.
+function markPaymentSentCancellability(current: string | null | undefined) {
+  // 서버 판정이 없으면(구 응답) 폴백 로직이 상태로 판정하므로 건드리지 않는다.
+  if (!current) {
+    return current ?? null;
+  }
+
+  // 이미 다른 사유로 막혀 있으면(성사 확정 등) 그 사유가 더 구체적이라 유지한다.
+  return current === PARTICIPATION_CANCELLABLE
+    ? PARTICIPATION_CANCEL_BLOCKED_BY_STATUS
+    : current;
+}
+
+function withdrawPaymentSentCancellability(current: string | null | undefined) {
+  // 마킹으로 올린 값만 되돌린다 — null 로 두면 폴백(상태 기준)이 걸려 입금 대기 구간의 취소가 열린다.
+  // 다른 사유는 철회로 풀리지 않으므로 그대로 둔다.
+  return current === PARTICIPATION_CANCEL_BLOCKED_BY_STATUS ? null : current ?? null;
+}
+
 // 버튼만 사라지면 "취소가 왜 없지" 로 문의가 는다 — 왜 안 되는지 + 다음에 뭘 해야 하는지를 함께 보여준다.
 // 서버 에러 문구(BCH-086 · BCH-092)와 같은 내용이다.
 // 노출 범위는 사용자가 실제로 취소를 찾는 두 구간뿐 — 입금확인·배송 단계 카드까지 상시 안내를 띄우면
@@ -537,7 +562,12 @@ function getBidRecordCancelBlockedNotice(bid: BidRecord, now: Date) {
     return null;
   }
 
-  if (bid.cancellability === PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM) {
+  // 구간을 화면에서도 못박는다 — 지금 서버는 상태를 먼저 판정해 입금확인·배송 카드가 이 값을 받지
+  // 않지만, 그 평가 순서에 안내 노출을 기대는 순간 서버 enum 이 바뀔 때 조용히 노이즈가 된다.
+  if (
+    bid.cancellability === PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM &&
+    isParticipationAwaitingPaymentStatus(bid.participationStatus)
+  ) {
     return "개최자가 성사 확정한 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
   }
 
@@ -2162,6 +2192,12 @@ export function BidHistoryContent({
                         participationStatus:
                           paymentDetail.paymentStatus ||
                           bid.participationStatus,
+                        // 상태를 상세 응답으로 갈아끼우므로 판정도 같은 응답 것으로 함께 갈아끼운다
+                        // (getBidRecordWithShippingData 와 같은 규칙).
+                        cancellability:
+                          paymentDetail.cancellability ??
+                          bid.cancellability ??
+                          null,
                         shippingFee:
                           paymentDetail.shippingFee ?? bid.shippingFee,
                       }
@@ -2543,6 +2579,12 @@ export function BidHistoryContent({
                   ? {
                       ...record,
                       participationStatus: "PAYMENT_SENT",
+                      // 상태를 낙관적으로 올리면 취소 판정도 같은 전이를 반영해야 한다 —
+                      // 상태만 올리면 서버 판정이 CANCELLABLE 로 남아 취소 버튼이 그대로 노출된다.
+                      // 이미 다른 사유로 막혀 있으면(성사 확정 등) 그 사유를 유지한다.
+                      cancellability: markPaymentSentCancellability(
+                        record.cancellability,
+                      ),
                       paymentSentAt: record.paymentSentAt ?? sentAt,
                     }
                   : record,
@@ -2633,7 +2675,15 @@ export function BidHistoryContent({
           records
             ? records.map((record) =>
                 succeededIds.has(record.id)
-                  ? { ...record, participationStatus: "AWAITING_PAYMENT" }
+                  ? {
+                      ...record,
+                      participationStatus: "AWAITING_PAYMENT",
+                      // 마킹 때 올린 판정을 되돌린다. 되돌리지 않으면 버튼도 없고 안내도 없는
+                      // (안내는 보냈어요 구간에서만 뜬다) 카드가 되어 사용자를 가둔다.
+                      cancellability: withdrawPaymentSentCancellability(
+                        record.cancellability,
+                      ),
+                    }
                   : record,
               )
             : records,
