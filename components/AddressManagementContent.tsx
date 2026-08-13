@@ -603,9 +603,11 @@ export function AddressManagementContent({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1 pr-1">
+                      {/* 배지는 줄바꿈하지 않는다 — 좁은 폭에서 두 글자 별칭이
+                          "회 / 사" 처럼 쪼개졌다. 별칭이 길면 말줄임으로 처리한다. */}
                       <div className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                             isDefault
                               ? "bg-[#DDE7B8] text-black"
                               : "bg-white text-black/55"
@@ -614,7 +616,7 @@ export function AddressManagementContent({
                           {getConvenienceStoreLabel(address.storeType)}
                         </span>
                         {displayAlias ? (
-                          <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                          <span className="min-w-0 truncate whitespace-nowrap rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
                             {displayAlias}
                           </span>
                         ) : null}
