@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,19 +15,27 @@ import {
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
 import { readAuthState } from "@/lib/auth-store";
+import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 
+/*
+ * key 는 활성 탭 판별용 식별자(호출부가 넘기는 값), label 은 화면·스크린리더에 쓰는 한글이다.
+ * 예전에는 label 하나가 두 역할을 겸해서, 설치형 PWA 처럼 라벨이 켜지는 환경에서
+ * "Home / Upload / 참여 / Favorites / Profile" 처럼 영어가 그대로 노출됐다.
+ * key 는 "Bids" 같은 과거 경매 용어가 남아 있지만 화면에는 나오지 않는 내부 값이다.
+ */
 type NavItem = {
   authRequired?: boolean;
   href?: string;
+  key: string;
   label: string;
 };
 
 const navItems: NavItem[] = [
-  { href: "/", label: "Home" },
-  { authRequired: true, href: "/upload", label: "Upload" },
-  { authRequired: true, href: "/profile/bids", label: "Bids" },
-  { authRequired: true, href: "/favorites", label: "Favorites" },
-  { href: "/profile", label: "Profile" },
+  { href: "/", key: "Home", label: "홈" },
+  { authRequired: true, href: "/upload", key: "Upload", label: "개최" },
+  { authRequired: true, href: "/profile/bids", key: "Bids", label: "참여 내역" },
+  { authRequired: true, href: "/favorites", key: "Favorites", label: "찜" },
+  { href: "/profile", key: "Profile", label: "마이페이지" },
 ];
 
 type BottomNavigatorProps = {
@@ -36,6 +44,39 @@ type BottomNavigatorProps = {
 
 export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) {
   const router = useRouter();
+  // 스크롤을 내리면 비켜나고 올리면 돌아온다 — 홈 상단 헤더가 이미 하던 동작을
+  // 하단 탭에도 맞춘다. 목록을 훑는 동안 화면 세로를 그만큼 돌려준다.
+  const isScrolledAway = useScrollDirectionHidden();
+  const navRef = useRef<HTMLElement | null>(null);
+
+  /*
+   * 탭이 비켜날 때 그 자리를 콘텐츠가 쓰게 하려면 흐름에서도 빠져야 한다.
+   * 높이는 환경마다 다르므로(설치형 PWA 라벨 높이·safe-area) 실측해서 CSS 변수로 넘기고,
+   * 숨김 상태에서 같은 값만큼 음수 마진을 준다. transform 과 함께 트랜지션되어
+   * 탭이 내려가는 동안 스크롤 영역이 같은 속도로 늘어난다.
+   */
+  useEffect(() => {
+    const navElement = navRef.current;
+
+    if (!navElement || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    function syncHeight(element: HTMLElement) {
+      element.style.setProperty(
+        "--bottom-navigator-height",
+        `${element.offsetHeight}px`,
+      );
+    }
+
+    syncHeight(navElement);
+
+    const observer = new ResizeObserver(() => syncHeight(navElement));
+
+    observer.observe(navElement);
+
+    return () => observer.disconnect();
+  }, []);
 
   function handleProtectedNavigation(
     event: MouseEvent<HTMLAnchorElement>,
@@ -66,11 +107,16 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
   }
 
   return (
-    <nav className="bottom-navigator shrink-0 bg-black px-3 py-2 text-white">
+    <nav
+      className={`bottom-navigator shrink-0 bg-black px-3 py-2 text-white ${
+        isScrolledAway ? "bottom-navigator--scrolled-away" : ""
+      }`}
+      ref={navRef}
+    >
       <div className="bottom-navigator__grid grid grid-cols-5 items-center">
         {navItems.map((item) => {
-          const isActive = item.label === activeLabel;
-          const className = `bottom-navigator__item flex min-w-0 items-center justify-center px-1 ${
+          const isActive = item.key === activeLabel;
+          const className = `bottom-navigator__item flex min-w-0 flex-col items-center justify-center gap-0.5 px-1 ${
             isActive ? "text-white" : "text-white/55"
           }`;
           const content = (
@@ -78,24 +124,26 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
               <span
                 className={`motion-icon-button inline-flex h-9 w-9 items-center justify-center rounded-full ${
                   isActive
-                    ? "bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]"
+                    ? "bg-brand-soft text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]"
                     : "bg-transparent"
                 }`}
               >
-                {item.label === "Home" ? (
+                {item.key === "Home" ? (
                   <HomeIcon />
-                ) : item.label === "Upload" ? (
+                ) : item.key === "Upload" ? (
                   <PlusIcon />
-                ) : item.label === "Bids" ? (
+                ) : item.key === "Bids" ? (
                   <BidIcon />
-                ) : item.label === "Favorites" ? (
+                ) : item.key === "Favorites" ? (
                   <HeartIcon />
                 ) : (
                   <ProfileIcon />
                 )}
               </span>
-              <span className="bottom-navigator__label hidden max-w-full truncate">
-                {item.label === "Bids" ? "참여" : item.label}
+              {/* 아이콘만 있는 탭바는 "＋(개최)"·"영수증(참여 내역)"이 무엇인지 알 수 없어
+                  첫 사용자의 탐색이 막힌다. 라벨은 브라우저에서도 항상 노출한다. */}
+              <span className="bottom-navigator__label max-w-full truncate text-[10px] font-semibold leading-none tracking-[-0.02em]">
+                {item.label}
               </span>
             </>
           );
@@ -103,10 +151,10 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
           if (item.href) {
             return (
               <Link
-                key={item.label}
+                key={item.key}
                 href={item.href}
                 className={className}
-                aria-label={item.label}
+                aria-current={isActive ? "page" : undefined}
                 onClick={(event) => handleProtectedNavigation(event, item)}
               >
                 {content}
@@ -115,12 +163,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
           }
 
           return (
-            <button
-              key={item.label}
-              className={className}
-              type="button"
-              aria-label={item.label}
-            >
+            <button key={item.key} className={className} type="button">
               {content}
             </button>
           );

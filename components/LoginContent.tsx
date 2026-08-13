@@ -55,11 +55,8 @@ export function LoginContent({
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 flex-1 text-right">
-            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-              Login
-            </p>
-            <h1 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+          <div className="min-w-0 flex-1 text-left">
+            <h1 className="text-[22px] font-semibold leading-none tracking-[-0.06em]">
               로그인
             </h1>
           </div>

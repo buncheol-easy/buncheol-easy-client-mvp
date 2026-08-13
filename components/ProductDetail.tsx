@@ -468,7 +468,7 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
   const remainingMilliseconds = deadlineDate.getTime() - now;
 
   if (remainingMilliseconds <= 0) {
-    return "구매 마감";
+    return "참여 마감";
   }
 
   const totalSeconds = Math.floor(remainingMilliseconds / 1000);
@@ -571,7 +571,7 @@ function clampPaymentDueAt(
 
 const PURCHASE_OPTION_LABELS = {
   applied: "신청이 완료된 멤버예요",
-  complete: "구매가 완료됐어요",
+  complete: "참여가 완료됐어요",
   paymentWaiting: "입금 대기중",
   unavailable: "선택할 수 없는 멤버예요",
 } as const;
@@ -579,11 +579,11 @@ const PURCHASE_OPTION_LABELS = {
 // 멤버 슬롯 칩에 실제로 노출되는 문구. PURCHASE_OPTION_LABELS 는 상태 판별용 내부 값이라 분리한다.
 const MEMBER_STATUS_CHIP_LABELS = {
   myApplied: "내가 신청한 멤버",
-  myComplete: "내가 구매한 멤버",
-  myPaymentWaiting: "내 주문이 진행중이에요",
+  myComplete: "내가 참여한 멤버",
+  myPaymentWaiting: "내 참여가 진행 중이에요",
   otherApplied: "다른 사람이 신청했어요",
   otherComplete: "매진",
-  otherPaymentWaiting: "다른 사람이 주문 진행중이에요",
+  otherPaymentWaiting: "다른 사람이 참여 진행 중이에요",
 } as const;
 
 // 멤버 슬롯 오버레이 칩 공통 스타일 — 버튼/스팬 분기가 같은 모양을 유지하도록 한 곳에 둔다.
@@ -838,7 +838,7 @@ function getOptionPurchaseBlockChipLabel(
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.unavailable) {
-    return "구매 불가";
+    return "참여 불가";
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.applied) {
@@ -1362,7 +1362,7 @@ export function ProductDetail({
       });
       setRefundAccountError("");
       setIsRefundAccountSheetOpen(false);
-      showProductToast("환불계좌를 등록했어요. 이어서 주문해 주세요.");
+      showProductToast("환불계좌를 등록했어요. 이어서 참여해 주세요.");
     } catch (error: unknown) {
       setRefundAccountError(
         error instanceof Error ? error.message : "계좌를 저장하지 못했어요.",
@@ -1446,7 +1446,7 @@ export function ProductDetail({
       if (addedAddress) {
         setCheckoutDeliveryAddress(addedAddress);
         setCheckoutError("");
-        showProductToast("배송지를 등록했어요. 이어서 주문해 주세요.");
+        showProductToast("배송지를 등록했어요. 이어서 참여해 주세요.");
       } else {
         setCheckoutError(
           "배송지 등록 결과를 확인하지 못했어요. 목록에서 배송지를 선택해 주세요.",
@@ -1540,11 +1540,11 @@ export function ProductDetail({
     isC2CProduct && isBuncheolPaymentCollectingStatus(product.status);
   // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를,
   // C2C 입금 수집 중에는 기한이 지나도 빈 슬롯 즉시입금 신청이 열려 있으므로
-  // 카운트다운의 "구매 마감" 대신 추가 신청 가능 문구를 보여준다.
+  // 카운트다운의 "참여 마감" 대신 추가 신청 가능 문구를 보여준다.
   const purchaseDeadlineDisplay = isCancelledProduct
     ? getBuncheolStatusBadgeLabel(product.status)
     : isConfirmedProduct
-      ? "구매 마감"
+      ? "참여 마감"
       : isC2CCollectingProduct && isDeadlinePassed
         ? "추가 신청 가능"
         : purchaseDeadlineCountdown;
@@ -1559,11 +1559,11 @@ export function ProductDetail({
     : isCancelledProduct
       ? "분철 취소"
       : isDeadlineBlocked
-        ? "구매 마감"
+        ? "참여 마감"
         : isConfirmedProduct
           ? "진행 확정"
           : !isPurchasableStatus || isBidUnavailable
-            ? "구매 불가"
+            ? "참여 불가"
             : null;
   const hasSelectableOption = auctionOptions.some(
     (option) =>
@@ -1676,7 +1676,7 @@ export function ProductDetail({
       ? Math.max(0, minHeadcount - currentParticipationCount)
       : null;
   const participationStatusCaption = isConfirmedProduct
-    ? "마감된 분철이에요. 아래 멤버에서 입금 대기/구매 완료 기록을 확인해요."
+    ? "마감된 분철이에요. 아래 멤버에서 입금 대기/참여 완료 기록을 확인해요."
     : isCancelledProduct
       ? "취소된 분철이에요."
       : isC2CProduct
@@ -1691,7 +1691,7 @@ export function ProductDetail({
 
   function getBidUnavailableMessage() {
     if (isHostedProduct) {
-      return "내가 연 분철은 구매할 수 없어요";
+      return "내가 연 분철은 참여할 수 없어요";
     }
 
     if (isCancelledProduct) {
@@ -1704,20 +1704,20 @@ export function ProductDetail({
     }
 
     if (isDeadlineBlocked) {
-      return isC2CProduct ? "신청 기한이 지났어요" : "구매 기한이 지났어요";
+      return isC2CProduct ? "신청 기한이 지났어요" : "참여 기한이 지났어요";
     }
 
     if (!hasSelectableOption) {
       return isC2CProduct
         ? "신청 가능한 멤버가 없어요"
-        : "구매 가능한 멤버가 없어요";
+        : "참여할 수 있는 멤버가 없어요";
     }
 
     if (isConfirmedProduct) {
       return "진행 확정된 분철이에요";
     }
 
-    return "지금은 구매할 수 없는 분철이에요";
+    return "지금은 참여할 수 없는 분철이에요";
   }
 
   function getSelectedCheckoutReturnOptions(): CheckoutAddressReturnOption[] {
@@ -2516,7 +2516,7 @@ export function ProductDetail({
             );
 
             if (!Number.isFinite(buncheolMemberId)) {
-              throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
+              throw new Error("참여할 멤버 정보를 확인하지 못했어요.");
             }
 
             return {
@@ -2655,7 +2655,7 @@ export function ProductDetail({
         }
 
         const errorMessage =
-          error instanceof Error ? error.message : "구매를 시작하지 못했어요.";
+          error instanceof Error ? error.message : "참여를 시작하지 못했어요.";
         const isForbidden =
           error instanceof ApiRequestError && error.status === 403;
         const didDeadlinePass = isDeadlineClosed(product.deadline);
@@ -2670,13 +2670,13 @@ export function ProductDetail({
         if (isHostParticipationBlocked) {
           setIsHostedByMeFromApi(true);
           setCheckoutError(
-            "내가 연 분철은 구매할 수 없어요. 구매 계정으로 전환해 주세요.",
+            "내가 연 분철은 참여할 수 없어요. 다른 계정으로 전환해 주세요.",
           );
         } else if (didDeadlinePass) {
-          setCheckoutError("구매 기한이 지났어요.");
+          setCheckoutError("참여 기한이 지났어요.");
         } else if (isForbidden) {
           setCheckoutError(
-            "구매 권한이 없어요. 테스트 리모콘에서 구매 계정으로 다시 전환한 뒤 시도해 주세요.",
+            "참여 권한이 없어요. 테스트 리모콘에서 다른 계정으로 전환한 뒤 시도해 주세요.",
           );
         } else {
           setCheckoutError(errorMessage);
@@ -3667,7 +3667,7 @@ export function ProductDetail({
                 </div>
                 <div className="min-w-0 px-4 py-3.5">
                   <p className="text-[12px] font-medium text-black/45">
-                    구매 기한
+                    참여 마감
                   </p>
                   <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums">
                     {purchaseDeadlineDisplay}
@@ -3931,18 +3931,21 @@ export function ProductDetail({
               isMainBidButtonDisabled ? undefined : handleBidButtonClick
             }
           >
+            {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
+                반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
+                같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
             {isPublicPreview
               ? isC2CProduct
-                ? "로그인 후 신청하기"
-                : "로그인 후 구매하기"
+                ? "로그인하고 신청하기"
+                : "로그인하고 참여하기"
               : isBidUnavailable
                 ? isC2CProduct
                   ? "신청하기"
-                  : "구매하기"
+                  : "참여하기"
                 : canBidProduct
                   ? isC2CProduct && !isC2CCollectingProduct
                     ? "신청하기"
-                    : "구매하기"
+                    : "참여하기"
                   : getBidUnavailableMessage()}
           </button>
         </div>
@@ -4002,7 +4005,7 @@ export function ProductDetail({
                         : checkoutStep === "confirm"
                           ? isC2CProduct && !isC2CCollectingProduct
                             ? "신청 확인"
-                            : "주문 확인"
+                            : "참여 확인"
                           : "멤버 선택"}
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
@@ -4013,10 +4016,10 @@ export function ProductDetail({
                         : checkoutStep === "confirm"
                           ? isC2CProduct && !isC2CCollectingProduct
                             ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
-                            : "주문하면 입금 계좌와 마감 시각이 안내돼요."
+                            : "참여하면 입금 계좌와 마감 시각이 안내돼요."
                           : isC2CProduct
                             ? "신청할 멤버를 선택해 주세요. 여러 멤버에 각각 신청할 수 있어요."
-                            : "구매할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
+                            : "참여할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                   </p>
                 </div>
                 <button
@@ -4242,7 +4245,7 @@ export function ProductDetail({
                         ? "신청 단계에서는 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 드리고, 확정 전에는 언제든 무료로 취소할 수 있어요."
                         : isC2CCollectingProduct
                           ? "신청하면 24시간 입금 기한이 정해져요. 기한 내에 입금하지 않으면 신청이 자동 취소돼요."
-                          : "주문하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 주문이 자동 취소돼요."}
+                          : "참여하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 참여가 자동 취소돼요."}
                     </p>
                     {isC2CProduct ? (
                       // 중개자 고지(전상법 §20① — docs/41 §3.3-1) + 미성년자 §13③ 취소 가능성 고지
@@ -4288,8 +4291,8 @@ export function ProductDetail({
                           ? "신청 접수 중"
                           : "이대로 신청할게요!"
                         : isBidSubmitPending
-                          ? "주문 접수 중"
-                          : "이대로 주문할게요!"}
+                          ? "참여 접수 중"
+                          : "이대로 참여할게요!"}
                     </button>
                   </div>
                 </>
@@ -4740,7 +4743,7 @@ export function ProductDetail({
                 환불계좌 등록
               </h2>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/45">
-                입금자명 확인과 환불에 쓰는 계좌예요. 등록하면 주문을 바로 이어갈
+                입금자명 확인과 환불에 쓰는 계좌예요. 등록하면 참여를 바로 이어갈
                 수 있어요.
               </p>
 

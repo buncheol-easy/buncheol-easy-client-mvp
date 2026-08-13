@@ -11,10 +11,57 @@
   /* 찜·최애 활성 색. 브랜드 액센트(라임)와 별개로, "찜 = 빨강" 관습을 따른다.
      이미지 위에 얹히는 하트는 배경 없이 이 색과 흰색만으로 상태를 구분한다. */
   --like: #ff3b4e;
-  --motion-blur: 8px;
   --motion-pop: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-snap: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-soft: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /*
+   * ── 디자인 토큰 ──────────────────────────────────────────────
+   * 지금까지 컴포넌트마다 헥스를 직접 써서, 눈으로 구분되지 않는 회색 12종·라임 13종이
+   * 생겼다(#f7f7f7·#f5f5f5·#f4f4f4·#f3f3f3·#f2f2f2·#f1f1f1 …). 인접한 카드끼리
+   * 미세하게 달라 이음매가 보이는 게 유일한 증상이라 원인을 찾기 어렵다.
+   *
+   * 기존 화면을 한 번에 갈아엎지 않는다 — 토큰을 먼저 깔고, 손대는 화면부터 흡수한다.
+   * 새 코드에서는 아래 토큰만 쓴다.
+   */
+
+  /* 면 — 1: 카드/시트, 2: 화면 배경·비활성 입력, 3: 눌린 상태·구분선 대용 */
+  --surface-1: #ffffff;
+  --surface-2: #f5f5f5;
+  --surface-3: #ebebeb;
+
+  /* 브랜드 라임 — strong: CTA 면, base: 활성 칩·프로그레스, soft: 보조 면, pale: 아주 옅은 배경 */
+  --brand-strong: #d7ff5f;
+  --brand-base: #cfe86b;
+  --brand-soft: #dde7b8;
+  --brand-pale: #f3f7e6;
+  /* 라임 위에 얹는 글자색. 라임 자체는 흰 배경 대비 1.06:1 이라 선·작은 글자로 쓰면 안 된다. */
+  --brand-ink: #4d6117;
+
+  /* 글자 */
+  --text-strong: #111111;
+  --text-base: rgba(17, 17, 17, 0.72);
+  --text-muted: rgba(17, 17, 17, 0.45);
+  --text-disabled: rgba(17, 17, 17, 0.28);
+
+  /* 경고 — 파괴적 행동은 면이 아니라 글자색으로 쓴다 (탈퇴/취소 버튼을 라임 CTA보다
+     눈에 띄게 만들지 않기 위한 규칙). */
+  --danger-base: #c03131;
+  --danger-soft: #fdecec;
+
+  /* 모서리 — 12/16/20 세 단계. 0.8~1.2rem 이 뒤섞여 인접 카드가 어긋나 보이던 것을 정리한다.
+     Tailwind 의 --radius-* 네임스페이스와 이름이 겹치면 @theme 에서 자기 참조가 되므로
+     원본 값은 --app-radius-* 로 두고 아래 @theme 에서 매핑한다. */
+  --app-radius-sm: 12px;
+  --app-radius-md: 16px;
+  --app-radius-lg: 20px;
+
+  /* 모션 — 4단계. 35ms~2400ms 20종이 섞여 있어 앱 전체 속도감이 균일하지 않았다.
+     instant: 탭 피드백 / base: 페이드·칩 / screen: 패널 전환 / emphasis: 성공·확정 */
+  --duration-instant: 120ms;
+  --duration-base: 200ms;
+  --duration-screen: 280ms;
+  --duration-emphasis: 400ms;
 }
 
 @theme inline {
@@ -23,6 +70,19 @@
   --color-like: var(--like);
   /* 라임은 면으로만 쓴다. #f7f7f7 위에서 명도 대비가 1.06:1 이라 선·작은 글자로 쓰면 안 보인다. */
   --color-brand-accent: var(--brand-accent);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-base: var(--brand-base);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-pale: var(--brand-pale);
+  --color-brand-ink: var(--brand-ink);
+  --color-danger-base: var(--danger-base);
+  --color-danger-soft: var(--danger-soft);
+  --radius-sm: var(--app-radius-sm);
+  --radius-md: var(--app-radius-md);
+  --radius-lg: var(--app-radius-lg);
   --font-sans:
     "Pretendard",
     "Apple SD Gothic Neo",
@@ -78,13 +138,14 @@ body.is-pwa-standalone {
   }
 }
 
+/* 검정 상단 크롬은 홈(app-header)·검색처럼 "루트 화면"에만 쓴다.
+   개최 폼(upload-header)은 뒤로가기가 있는 하위 화면이라 흰 크롬 쪽으로 옮겼다 —
+   하위 화면인데 헤더만 검정이면 "검정 = 홈" 규칙이 깨진다. */
 html:has(.app-header),
 html:has(.search-header),
-html:has(.upload-header),
 html:has(.system-chrome-black),
 body:has(.app-header),
 body:has(.search-header),
-body:has(.upload-header),
 body:has(.system-chrome-black) {
   --system-top-color: #000000;
   background: #000000;
@@ -94,11 +155,13 @@ html:has(.favorites-header),
 html:has(.profile-header),
 html:has(.bid-history-header),
 html:has(.product-detail-header),
+html:has(.upload-header),
 html:has(.system-chrome-white),
 body:has(.favorites-header),
 body:has(.profile-header),
 body:has(.bid-history-header),
 body:has(.product-detail-header),
+body:has(.upload-header),
 body:has(.system-chrome-white) {
   --system-top-color: #ffffff;
   background: #ffffff;
@@ -600,16 +663,20 @@ body.is-pwa-standalone {
   animation-play-state: paused;
 }
 
+/*
+ * 등장 애니메이션에서 filter: blur() 를 걷어냈다.
+ * blur 는 합성만으로 끝나지 않고 매 프레임 재래스터화가 필요해서, 카드가 여러 장 동시에
+ * 등장하는 홈·아티스트 목록에서 중저가 안드로이드의 첫 스크롤이 끊겼다.
+ * opacity + translateY 만 남겨도 체감 차이는 거의 없고 합성 스레드에서만 돈다.
+ */
 @keyframes soft-panel-enter {
   from {
     opacity: 0;
-    filter: blur(var(--motion-blur));
     transform: translateY(8px) scale(0.982);
   }
 
   to {
     opacity: 1;
-    filter: blur(0);
     transform: translateY(0) scale(1);
   }
 }
@@ -622,7 +689,6 @@ body.is-pwa-standalone {
 
   to {
     opacity: 0;
-    filter: blur(4px);
     transform: translateY(-4px) scale(0.985);
   }
 }
@@ -651,16 +717,15 @@ body.is-pwa-standalone {
   }
 }
 
+/* 이름은 유지한다 — 참조하는 클래스가 여럿이다. blur 만 뺐다(위 soft-panel-enter 주석 참고). */
 @keyframes motion-blur-enter {
   from {
     opacity: 0;
-    filter: blur(10px);
     transform: translateY(10px) scale(0.982);
   }
 
   to {
     opacity: 1;
-    filter: blur(0);
     transform: translateY(0) scale(1);
   }
 }
@@ -719,21 +784,20 @@ body.is-pwa-standalone {
   animation: error-shake 320ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
+/* 하단 탭은 세션마다 수십 번 눌린다. blur + 1.08 오버슈트는 그 빈도에서 산만해서
+   오버슈트를 1.03 으로 낮추고 blur 를 뺐다. */
 @keyframes motion-icon-swap {
   0% {
-    filter: blur(1.8px);
     opacity: 0.62;
-    transform: scale(0.74);
+    transform: scale(0.86);
   }
 
   56% {
-    filter: blur(0);
     opacity: 1;
-    transform: scale(1.08);
+    transform: scale(1.03);
   }
 
   100% {
-    filter: blur(0);
     opacity: 0.92;
     transform: scale(1);
   }
@@ -769,10 +833,9 @@ body.is-pwa-standalone {
   backface-visibility: hidden;
   transform: translateZ(0);
   transition:
-    box-shadow 260ms var(--motion-snap),
-    filter 260ms var(--motion-snap),
-    opacity 220ms var(--motion-snap),
-    transform 260ms var(--motion-snap);
+    box-shadow var(--duration-base) var(--motion-snap),
+    opacity var(--duration-base) var(--motion-snap),
+    transform var(--duration-base) var(--motion-snap);
   will-change: transform;
 }
 
@@ -890,13 +953,11 @@ body.is-pwa-standalone {
 @keyframes motion-blur-enter-snap {
   from {
     opacity: 0;
-    filter: blur(10px);
     transform: translateY(10px);
   }
 
   to {
     opacity: 1;
-    filter: blur(0);
     transform: translateY(0);
   }
 }
@@ -1235,12 +1296,6 @@ body.is-pwa-standalone {
     transform: none;
   }
 
-  .upload-header__eyebrow {
-    display: block;
-    font-size: 12px;
-    line-height: 1;
-  }
-
   .upload-header__title {
     font-size: 26px;
     line-height: 1.2;
@@ -1254,11 +1309,6 @@ body.is-pwa-standalone {
 
   .bid-history-header__copy {
     height: auto;
-  }
-
-  .bid-history-header__eyebrow {
-    font-size: 12px;
-    line-height: 1;
   }
 
   .bid-history-header__title {
@@ -1276,11 +1326,6 @@ body.is-pwa-standalone {
     height: auto;
   }
 
-  .favorites-header__eyebrow {
-    font-size: 12px;
-    line-height: 1;
-  }
-
   .favorites-header__title {
     font-size: 26px;
     line-height: 1.2;
@@ -1294,11 +1339,6 @@ body.is-pwa-standalone {
 
   .profile-header__copy {
     height: auto;
-  }
-
-  .profile-header__eyebrow {
-    font-size: 12px;
-    line-height: 1;
   }
 
   .profile-header__title {
@@ -1455,12 +1495,6 @@ body.is-pwa-standalone .upload-header__copy {
   transform: none;
 }
 
-body.is-pwa-standalone .upload-header__eyebrow {
-  display: block;
-  font-size: 12px;
-  line-height: 1;
-}
-
 body.is-pwa-standalone .upload-header__title {
   font-size: 26px;
   line-height: 1.2;
@@ -1474,11 +1508,6 @@ body.is-pwa-standalone .bid-history-header {
 
 body.is-pwa-standalone .bid-history-header__copy {
   height: auto;
-}
-
-body.is-pwa-standalone .bid-history-header__eyebrow {
-  font-size: 12px;
-  line-height: 1;
 }
 
 body.is-pwa-standalone .bid-history-header__title {
@@ -1496,11 +1525,6 @@ body.is-pwa-standalone .favorites-header__copy {
   height: auto;
 }
 
-body.is-pwa-standalone .favorites-header__eyebrow {
-  font-size: 12px;
-  line-height: 1;
-}
-
 body.is-pwa-standalone .favorites-header__title {
   font-size: 26px;
   line-height: 1.2;
@@ -1514,11 +1538,6 @@ body.is-pwa-standalone .profile-header {
 
 body.is-pwa-standalone .profile-header__copy {
   height: auto;
-}
-
-body.is-pwa-standalone .profile-header__eyebrow {
-  font-size: 12px;
-  line-height: 1;
 }
 
 body.is-pwa-standalone .profile-header__title {
@@ -1567,9 +1586,24 @@ body.is-pwa-standalone .bottom-navigator__label {
 
 .bottom-navigator {
   transition:
-    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    margin-bottom var(--duration-base) var(--motion-snap),
+    opacity var(--duration-base) var(--motion-snap),
+    transform var(--duration-base) var(--motion-snap);
   will-change: opacity, transform;
+}
+
+/*
+ * 스크롤을 내리는 동안 하단 탭이 비켜난다 (BottomNavigator + useScrollDirectionHidden).
+ * transform 만 주면 흐름에는 자리가 남아 목록 아래에 빈 띠가 생기므로,
+ * 실측 높이(--bottom-navigator-height)만큼 음수 마진을 함께 준다.
+ * 두 속성이 같은 시간으로 트랜지션되어 탭이 내려가는 만큼 스크롤 영역이 늘어난다.
+ * 스크롤 위치가 튀지 않도록 바닥 근처에서는 애초에 숨기지 않는다(BOTTOM_EDGE_GUARD).
+ */
+.bottom-navigator--scrolled-away {
+  margin-bottom: calc(-1 * var(--bottom-navigator-height, 4rem));
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(100%);
 }
 
 body.is-virtual-keyboard-open .bottom-navigator {
@@ -1838,27 +1872,26 @@ body.is-pwa-standalone .bid-sheet-panel {
 
 .bid-sheet-backdrop {
   background: rgba(0, 0, 0, 0);
-  transition: background-color 260ms var(--motion-snap);
+  transition: background-color var(--duration-screen) var(--motion-snap);
 }
 
 .bid-sheet-backdrop-active {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* 시트는 화면 전환급 이동이라 --duration-screen. blur 는 뺐다 —
+   전체 화면 폭의 패널에 걸리는 blur 가 이 앱에서 가장 비싼 애니메이션이었다. */
 .bid-sheet-panel {
-  filter: blur(8px);
   opacity: 0.92;
   transform: translateY(100%) scale(0.985);
   transform-origin: bottom center;
   transition:
-    filter 300ms var(--motion-pop),
-    opacity 300ms var(--motion-pop),
-    transform 300ms var(--motion-pop);
-  will-change: filter, opacity, transform;
+    opacity var(--duration-screen) var(--motion-pop),
+    transform var(--duration-screen) var(--motion-pop);
+  will-change: opacity, transform;
 }
 
 .bid-sheet-panel-active {
-  filter: blur(0);
   opacity: 1;
   transform: translateY(0) scale(1);
 }

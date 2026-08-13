@@ -673,7 +673,7 @@ function getBidRecordBuncheolChip(
   const deadlineDate = parseDeadline(bid.deadline);
 
   if (Number.isNaN(deadlineDate.getTime())) {
-    return { label: "모집중", tone: "dday" };
+    return { label: "모집 중", tone: "dday" };
   }
 
   const dayDifference = getKstDayDifference(deadlineDate, now);
@@ -2897,12 +2897,12 @@ export function BidHistoryContent({
       }`}
     >
       <header className="bid-history-header shrink-0 px-4 py-3">
+        {/* 제목은 탭과 무관하게 고정한다 — 탭을 누를 때마다 h1 이 "참여 내역 ↔ 개최 기록"으로
+            바뀌면 같은 페이지 안에서 화면 정체성이 흔들리고, 브라우저 탭 제목과도 어긋난다.
+            둘의 구분은 바로 아래 탭이 이미 하고 있다. */}
         <div className="bid-history-header__copy flex h-10 flex-col justify-center">
-          <p className="bid-history-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-            History
-          </p>
-          <h1 className="bid-history-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
-            {mode === "joined" ? "참여 내역" : "개최 기록"}
+          <h1 className="bid-history-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
+            내 분철
           </h1>
         </div>
       </header>
@@ -3470,7 +3470,7 @@ export function BidHistoryContent({
                                 ? "진행 확정"
                                 : isClosed
                                   ? "모집 종료"
-                                  : "모집중"}
+                                  : "모집 중"}
                           </span>
                         </div>
                         <p className="mt-1 truncate text-[13px] font-medium text-black/45">

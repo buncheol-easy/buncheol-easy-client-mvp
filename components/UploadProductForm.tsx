@@ -1994,15 +1994,15 @@ export function UploadProductForm({
 
   if (isApiEditMode) {
     return (
-      <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+      <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
         <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
           <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
             <div className="absolute inset-0 flex flex-col bg-white">
-              <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-                <div className="upload-header__inner flex h-10 items-center justify-between">
+              <header className="upload-header shrink-0 border-b border-black/10 bg-white px-4 py-3 text-black">
+                <div className="upload-header__inner flex h-10 items-center gap-2">
                   <button
                     aria-label="이전 화면"
-                    className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
+                    className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
                     onClick={() => {
                       if (editProductId) {
                         const returnSourceQuery = returnSource
@@ -2022,11 +2022,8 @@ export function UploadProductForm({
                     <BackIcon />
                   </button>
 
-                  <div className="upload-header__copy translate-y-0.5 text-right">
-                    <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                      Edit
-                    </p>
-                    <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
+                  <div className="upload-header__copy min-w-0 flex-1">
+                    <h1 className="upload-header__title text-[20px] font-semibold leading-none tracking-[-0.05em]">
                       분철 수정
                     </h1>
                   </div>
@@ -2067,10 +2064,7 @@ export function UploadProductForm({
                             <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
                             <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
                             <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
-                                Photo Upload
-                              </p>
-                              <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
+                              <p className="text-[19px] font-semibold tracking-[-0.05em]">
                                 사진 업로드
                               </p>
                             </div>
@@ -2350,15 +2344,15 @@ export function UploadProductForm({
   }
 
   return (
-    <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div className="absolute inset-0 flex flex-col bg-white">
-            <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-              <div className="upload-header__inner flex h-10 items-center justify-between">
+            <header className="upload-header shrink-0 border-b border-black/10 bg-white px-4 py-3 text-black">
+              <div className="upload-header__inner flex h-10 items-center gap-2">
                 <button
                   aria-label="이전 화면"
-                  className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
+                  className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
                   onClick={() => {
                     if (editProductId) {
                       const returnSourceQuery = returnSource
@@ -2378,12 +2372,11 @@ export function UploadProductForm({
                   <BackIcon />
                 </button>
 
-                <div className="upload-header__copy translate-y-0.5 text-right">
-                  <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                    {isEditMode ? "Edit" : "Upload"}
-                  </p>
-                  <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
-                    {isEditMode ? "분철 수정" : "상품 등록"}
+                {/* "상품 등록" → "분철 개최": 하단 탭·안내 화면·페이지 타이틀이 모두 "개최"인데
+                    이 헤더만 "상품 등록"이라 같은 화면을 다른 이름으로 부르고 있었다. */}
+                <div className="upload-header__copy min-w-0 flex-1">
+                  <h1 className="upload-header__title text-[20px] font-semibold leading-none tracking-[-0.05em]">
+                    {isEditMode ? "분철 수정" : "분철 개최"}
                   </h1>
                 </div>
               </div>
@@ -2409,10 +2402,7 @@ export function UploadProductForm({
                   <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
                   <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
                   <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
-                      Photo Upload
-                    </p>
-                    <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
+                    <p className="text-[19px] font-semibold tracking-[-0.05em]">
                       사진 업로드
                     </p>
                   </div>

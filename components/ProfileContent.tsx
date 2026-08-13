@@ -708,10 +708,7 @@ export function ProfileContent({
     >
       <header className="profile-header shrink-0 px-4 py-3">
         <div className="profile-header__copy flex h-10 flex-col justify-center">
-          <p className="profile-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-            My Page
-          </p>
-          <h1 className="profile-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+          <h1 className="profile-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
             마이페이지
           </h1>
         </div>

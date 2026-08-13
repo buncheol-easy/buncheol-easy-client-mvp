@@ -9,7 +9,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { BackIcon, BellIcon } from "@/components/icons";
+import { BackIcon } from "@/components/icons";
 import { SlidingTabs } from "@/components/SlidingTabs";
 import {
   readCachedNoticeInboxMessages,
@@ -299,16 +299,12 @@ export function BoardContent({
           >
             <BackIcon />
           </button>
+          {/* 장식용 종 아이콘을 뺐다 — 소식함으로 들어오는 입구가 홈 헤더의 종인데,
+              도착한 화면에 같은 아이콘이 또 있으면 누를 수 있는 것처럼 보인다. */}
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-              News
-            </p>
-            <h1 className="mt-1 text-[24px] font-semibold leading-none tracking-[-0.05em]">
+            <h1 className="text-[24px] font-semibold leading-none tracking-[-0.05em]">
               소식함
             </h1>
-          </div>
-          <div className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f5f5f5] text-black">
-            <BellIcon />
           </div>
         </div>
 

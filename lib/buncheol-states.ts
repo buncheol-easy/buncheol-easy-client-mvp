@@ -88,7 +88,7 @@ export function getBuncheolStatusBadgeLabel(status: string | null | undefined) {
   }
 
   if (isBuncheolRecruitingStatus(status)) {
-    return "모집중";
+    return "모집 중";
   }
 
   if (normalizeStatusValue(status) === "PAYMENT_COLLECTING") {

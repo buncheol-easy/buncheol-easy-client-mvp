@@ -113,7 +113,7 @@ function getIntroRecentState(item: BuncheolSummary) {
     return item.memberNames.slice(0, 2).join(" · ");
   }
 
-  return item.groupName || "모집중";
+  return item.groupName || "모집 중";
 }
 
 function toIntroRecentBuncheol(item: BuncheolSummary): IntroRecentBuncheol {
