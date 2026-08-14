@@ -65,6 +65,37 @@ function getNoticeCopy(
   reason: HostingEligibilityReason,
   variant: "blocked" | "requirements",
 ): NoticeCopy {
+  // 오픈 전은 사용자가 고칠 것이 없는 유일한 사유라, 요건 안내를 하지 않고 준비할 것만 알려준다.
+  // 서버는 이 사유를 다른 자격 검사보다 먼저 판정한다(자격을 갖춰도 미오픈이 앞선다). 다만 사유는
+  // 한 번에 하나만 내려오고 아래 분기는 서로 배타적이라, 여기 배치 순서는 동작에 영향이 없다.
+  if (reason === "NOT_OPEN_YET") {
+    return {
+      headline: "회원 개최는 아직 오픈 전이에요",
+      description:
+        "직접 분철을 여는 기능을 준비하고 있어요. 열리면 공지사항으로 알려드릴게요.",
+      sectionTitle: "먼저 알아두면 좋아요",
+      items: [
+        {
+          title: "참여는 지금도 할 수 있어요",
+          description: "열려 있는 분철은 홈에서 자유롭게 참여할 수 있어요.",
+        },
+        {
+          title: "성인 회원만 열 수 있어요",
+          description:
+            "참여자 돈이 개최자 계좌로 바로 가는 직거래라, 오픈 후에도 개최는 성인 회원만 가능해요.",
+        },
+        {
+          title: "연락처와 정산 계좌를 미리 등록해 두세요",
+          description:
+            "오픈되면 바로 열 수 있게, 마이페이지에서 전화번호와 정산 계좌를 채워두면 좋아요.",
+        },
+      ],
+      // 개최 폼(/upload)으로 되돌리면 제자리를 돌지만, 준비를 권하면서 경로를 안 주면 마이페이지를
+      // 찾아 헤맨다. href 가 "/" 가 아니면 "진행 중인 분철 둘러보기" 보조 버튼이 자동으로 붙는다.
+      primaryAction: { label: "마이페이지에서 미리 등록하기", href: "/profile" },
+    };
+  }
+
   if (reason === "PHONE_REQUIRED") {
     return {
       headline: "가입 정보를 먼저 채워 주세요",
