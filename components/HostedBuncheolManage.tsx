@@ -157,12 +157,13 @@ function getDeliveryStatusLabel(status: string | undefined) {
 function formatPhoneNumberForDisplay(value: string) {
   const digits = value.replace(/\D/g, "");
 
+  // 10자리(01x-xxx-xxxx) / 11자리(01x-xxxx-xxxx). 가운데 자릿수가 다르다.
   if (/^01\d{8}$/.test(digits)) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
 
   if (/^01\d{9}$/.test(digits)) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 8)}-${digits.slice(8)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
   }
 
   return value;

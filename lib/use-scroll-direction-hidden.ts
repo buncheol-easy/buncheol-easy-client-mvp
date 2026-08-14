@@ -83,7 +83,8 @@ export function useScrollDirectionHidden() {
       }
 
       const nextScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
-      const previousScrollTop = lastScrollTops.get(element) ?? 0;
+      const hasPreviousScrollTop = lastScrollTops.has(element);
+      const previousScrollTop = lastScrollTops.get(element) ?? nextScrollTop;
 
       lastScrollTops.set(element, nextScrollTop);
 
@@ -97,6 +98,15 @@ export function useScrollDirectionHidden() {
       // 갇히면 다른 화면으로 이동할 방법이 없어진다.
       if (maxScrollTop - nextScrollTop <= BOTTOM_EDGE_GUARD) {
         setIsHidden(false);
+        return;
+      }
+
+      /*
+       * 처음 보는 컨테이너는 방향을 판단할 기준이 없다 — 위치만 기록하고 넘어간다.
+       * 직전 값을 0 으로 가정하면, 스크롤 위치가 복원된 화면(목록 → 상세 → 뒤로가기)에서
+       * 사용자가 위로 올리는 첫 제스처가 "아래로 많이 내렸다"로 읽혀 탭이 잘못 숨었다.
+       */
+      if (!hasPreviousScrollTop) {
         return;
       }
 
