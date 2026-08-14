@@ -990,6 +990,15 @@ function isHostedProductClosed(product: ProductDetailItem, now: Date) {
   );
 }
 
+// 개최 시각(ms). 값이 없거나 못 읽으면 null — 정렬에서 맨 뒤로 보낸다.
+function getHostedProductOpenedAtTime(product: ProductDetailItem) {
+  const parsed = product.createdAt
+    ? Date.parse(product.createdAt)
+    : Number.NaN;
+
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 function formatApiDateTime(value: string) {
   const date = new Date(value);
 
@@ -1304,6 +1313,9 @@ function getHostedProductFromBuncheol(
     optionCount: buncheol.memberSlotCount,
     targetMembers: buncheol.memberNames,
     uploadedAt: formatApiDateTime(buncheol.createdAt),
+    // 정렬용 원본 개최 시각. uploadedAt 은 "시" 단위로 잘린 표시용 문자열이라 같은 시각에 연
+    // 분철들을 구분하지 못한다 (toProductCardItem 과 같은 방식으로 원본을 함께 들고 간다).
+    createdAt: buncheol.createdAt,
     era: buncheol.groupName,
     rating: "0.0",
     reviews: String(buncheol.activeParticipationCount),
@@ -2058,8 +2070,9 @@ export function BidHistoryContent({
 
         return true;
       })
-      // 취소된 분철을 아래로 내린 뒤 마감일 역순 (docs/53 Q-19). 정렬 기준이 두 곳으로 나뉘면
-      // 뒤에 도는 쪽이 앞의 그룹핑을 덮어쓰므로 이 비교자 하나로 합친다.
+      // 취소된 분철을 아래로 내린 뒤 개최일 역순 = 최근에 연 분철이 맨 위 (docs/57 §3).
+      // 마감일은 개최일과 다른 축이라, 나중에 연 분철의 마감일이 더 이르면 순서가 뒤집힌다.
+      // 정렬 기준이 두 곳으로 나뉘면 뒤에 도는 쪽이 앞의 그룹핑을 덮어쓰므로 이 비교자 하나로 합친다.
       .sort((left, right) => {
         const cancelledDiff =
           (isBuncheolCancelledStatus(left.status) ? 1 : 0) -
@@ -2069,10 +2082,31 @@ export function BidHistoryContent({
           return cancelledDiff;
         }
 
-        return (
-          parseHistoryDeadline(right.deadline).getTime() -
-          parseHistoryDeadline(left.deadline).getTime()
-        );
+        const leftOpenedAt = getHostedProductOpenedAtTime(left);
+        const rightOpenedAt = getHostedProductOpenedAtTime(right);
+
+        // 개최일이 없는 구 응답은 맨 뒤로 내린다. 양쪽 다 없으면 기존 마감일 축으로 폴백해
+        // 최소한 일정한 순서를 유지한다 (마감일도 못 읽으면 서버가 준 순서 그대로 둔다).
+        if (leftOpenedAt === null || rightOpenedAt === null) {
+          if (leftOpenedAt !== rightOpenedAt) {
+            return leftOpenedAt === null ? 1 : -1;
+          }
+
+          const leftDeadline = parseHistoryDeadline(left.deadline).getTime();
+          const rightDeadline = parseHistoryDeadline(right.deadline).getTime();
+          const isLeftDeadlineValid = !Number.isNaN(leftDeadline);
+          const isRightDeadlineValid = !Number.isNaN(rightDeadline);
+
+          // 한쪽만 못 읽으면 읽은 쪽을 앞에 둔다. 여기서 0 을 돌려주면 "못 읽음"이 서로 다른
+          // 두 건과 동시에 동률이 돼 비교자의 추이성이 깨지고 엔진마다 순서가 달라진다.
+          if (isLeftDeadlineValid !== isRightDeadlineValid) {
+            return isLeftDeadlineValid ? -1 : 1;
+          }
+
+          return isLeftDeadlineValid ? rightDeadline - leftDeadline : 0;
+        }
+
+        return rightOpenedAt - leftOpenedAt;
       });
   }, [
     apiHostedProducts,
