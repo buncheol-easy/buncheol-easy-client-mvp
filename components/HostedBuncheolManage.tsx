@@ -398,10 +398,10 @@ export function HostedBuncheolManage({
         }
 
         setDetail(null);
+        // 아래 화면이 "메시지 없음 = 불러오는 중"으로 분기하므로 빈 문자열을 넣으면 안 된다.
         setMessage(
-          error instanceof Error
-            ? error.message
-            : "개최한 분철 정보를 불러오지 못했어요.",
+          (error instanceof Error ? error.message.trim() : "") ||
+            "개최한 분철 정보를 불러오지 못했어요.",
         );
       });
 
