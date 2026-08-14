@@ -44,7 +44,8 @@ export type UserProfileStatus = {
 
 // 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
 export const hostingEligibilityReasons = [
-  // 회원 개최 오픈 전 — 사용자가 무엇을 해도 해소되지 않는 유일한 사유다 (서버 USR-035)
+  // 회원 개최 오픈 전 — 사용자가 무엇을 해도 해소되지 않는 유일한 사유다 (서버 USR-035).
+  // 배열 순서는 isHostingEligibilityReason 의 includes 에만 쓰여 동작에 영향이 없다.
   "NOT_OPEN_YET",
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
