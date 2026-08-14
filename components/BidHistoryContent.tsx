@@ -2094,10 +2094,16 @@ export function BidHistoryContent({
 
           const leftDeadline = parseHistoryDeadline(left.deadline).getTime();
           const rightDeadline = parseHistoryDeadline(right.deadline).getTime();
+          const isLeftDeadlineValid = !Number.isNaN(leftDeadline);
+          const isRightDeadlineValid = !Number.isNaN(rightDeadline);
 
-          return Number.isNaN(leftDeadline) || Number.isNaN(rightDeadline)
-            ? 0
-            : rightDeadline - leftDeadline;
+          // 한쪽만 못 읽으면 읽은 쪽을 앞에 둔다. 여기서 0 을 돌려주면 "못 읽음"이 서로 다른
+          // 두 건과 동시에 동률이 돼 비교자의 추이성이 깨지고 엔진마다 순서가 달라진다.
+          if (isLeftDeadlineValid !== isRightDeadlineValid) {
+            return isLeftDeadlineValid ? -1 : 1;
+          }
+
+          return isLeftDeadlineValid ? rightDeadline - leftDeadline : 0;
         }
 
         return rightOpenedAt - leftOpenedAt;
