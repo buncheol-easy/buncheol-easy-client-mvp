@@ -1377,8 +1377,11 @@ body.is-pwa-standalone {
     font-size: 11px;
   }
 
+  /* 라벨은 이제 브라우저에서도 항상 보이므로 display 를 켤 필요가 없다.
+     설치형에서는 탭 높이에 여유가 있어 한 단계 크게 쓴다 —
+     JSX 의 text-[10px] 보다 우선하려면 라벨을 직접 지정해야 한다. */
   .bottom-navigator__label {
-    display: block;
+    font-size: 11px;
   }
 }
 
@@ -1581,7 +1584,7 @@ body.is-pwa-standalone .bottom-navigator__item {
 }
 
 body.is-pwa-standalone .bottom-navigator__label {
-  display: block;
+  font-size: 11px;
 }
 
 .bottom-navigator {
