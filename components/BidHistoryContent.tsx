@@ -3219,8 +3219,12 @@ export function BidHistoryContent({
                                 : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
                             }
                           />
+                          {/* gap 은 0.5(2px) — 6단계 라벨이 한 줄에 들어갈 수 있는 폭을
+                              한 칸이라도 더 벌기 위한 값이다. 아래 라벨의 tracking 과 함께
+                              "한 줄로 필요한 폭"을 395px → 373px 로 낮춘다 (실측).
+                              그래야 iPhone SE(375) · iPhone 12~15(390) 에서 접히지 않는다. */}
                           <div
-                            className={`relative grid gap-1 ${
+                            className={`relative grid gap-0.5 ${
                               progressSteps.length === 6
                                 ? "grid-cols-6"
                                 : "grid-cols-5"
@@ -3246,7 +3250,7 @@ export function BidHistoryContent({
                                   }`}
                                 />
                                 <span
-                                  className={`break-keep text-center text-[10px] leading-3 ${
+                                  className={`break-keep text-center text-[10px] leading-3 tracking-[-0.06em] ${
                                     step.isCurrent
                                       ? "font-bold text-black"
                                       : step.isActive
