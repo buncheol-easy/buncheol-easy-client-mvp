@@ -65,6 +65,35 @@ function getNoticeCopy(
   reason: HostingEligibilityReason,
   variant: "blocked" | "requirements",
 ): NoticeCopy {
+  // 오픈 전은 사용자가 고칠 것이 없는 유일한 사유라, 요건 안내를 하지 않고 기다릴 곳만 알려준다.
+  // 다른 사유보다 먼저 본다 — 서버도 같은 순서로 판정한다(자격을 갖춰도 미오픈이 앞선다).
+  if (reason === "NOT_OPEN_YET") {
+    return {
+      headline: "회원 개최는 아직 오픈 전이에요",
+      description:
+        "직접 분철을 여는 기능을 준비하고 있어요. 열리면 공지로 가장 먼저 알려드릴게요.",
+      sectionTitle: "먼저 알아두면 좋아요",
+      items: [
+        {
+          title: "참여는 지금도 할 수 있어요",
+          description:
+            "열려 있는 분철은 홈과 검색에서 자유롭게 참여할 수 있어요.",
+        },
+        {
+          title: "성인 회원만 열 수 있어요",
+          description:
+            "참여자 돈이 개최자 계좌로 바로 가는 직거래라, 오픈 후에도 개최는 성인 회원만 가능해요.",
+        },
+        {
+          title: "연락처와 정산 계좌를 미리 등록해 두세요",
+          description:
+            "오픈되면 바로 열 수 있게, 마이페이지에서 전화번호와 정산 계좌를 채워두면 좋아요.",
+        },
+      ],
+      primaryAction: { label: "진행 중인 분철 둘러보기", href: "/" },
+    };
+  }
+
   if (reason === "PHONE_REQUIRED") {
     return {
       headline: "가입 정보를 먼저 채워 주세요",
