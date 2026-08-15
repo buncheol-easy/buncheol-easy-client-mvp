@@ -4563,9 +4563,10 @@ export function ProductDetail({
                         노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
                       개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
-                      있어요.{" "}
+                      있어요.
                       {isC2CProduct ? (
-                        <span className="font-semibold text-black/60">
+                        // 취소 안내와 중개자 고지는 성격이 다른 문장이라 줄을 나눈다.
+                        <span className="mt-1 block font-semibold text-black/60">
                           분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
                           직접 입금돼요.
                         </span>
