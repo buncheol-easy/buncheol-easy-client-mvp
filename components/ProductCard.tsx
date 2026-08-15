@@ -245,7 +245,12 @@ function getProductCardBadge(item: ProductCardItem) {
     };
   }
 
-  return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
+  // 라벨은 상세·참여 내역과 같은 "모집 중"을 쓴다. 여기만 "구매 가능"이라
+  // 홈 카드 → 상세로 넘어갈 때 같은 상태를 다른 말로 부르고 있었다.
+  return {
+    label: "모집 중",
+    value: getReadableDeadlineBadge(item.deadline).value,
+  };
 }
 
 function getAvailableMemberSummary(memberNames: string[]) {

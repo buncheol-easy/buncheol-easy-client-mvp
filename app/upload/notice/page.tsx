@@ -1,8 +1,8 @@
 import { HostingIneligibleNotice } from "@/components/HostingIneligibleNotice";
 import { buildPageMetadata } from "@/lib/seo";
-import { blackChromeViewport } from "@/lib/system-chrome";
+import { whiteChromeViewport } from "@/lib/system-chrome";
 
-export const viewport = blackChromeViewport;
+export const viewport = whiteChromeViewport;
 
 export const metadata = {
   ...buildPageMetadata({

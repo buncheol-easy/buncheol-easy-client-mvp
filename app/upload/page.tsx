@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { UploadEntry } from "@/components/UploadEntry";
-import { blackChromeViewport } from "@/lib/system-chrome";
+import { whiteChromeViewport } from "@/lib/system-chrome";
 
-export const viewport = blackChromeViewport;
+export const viewport = whiteChromeViewport;
 
 export const metadata: Metadata = {
   title: "분철 개최",

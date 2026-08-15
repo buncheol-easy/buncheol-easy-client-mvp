@@ -306,26 +306,23 @@ export function HostingIneligibleNotice({
   }
 
   return (
-    <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div className="absolute inset-0 flex flex-col bg-white">
-            <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-              <div className="upload-header__inner flex h-10 items-center justify-between">
+            <header className="upload-header shrink-0 border-b border-black/10 bg-white px-4 py-3 text-black">
+              <div className="upload-header__inner flex h-10 items-center gap-2">
                 <button
                   aria-label="이전 화면"
-                  className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
+                  className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
                   onClick={handleBack}
                   type="button"
                 >
                   <BackIcon />
                 </button>
 
-                <div className="upload-header__copy translate-y-0.5 text-right">
-                  <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                    Upload
-                  </p>
-                  <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
+                <div className="upload-header__copy min-w-0 flex-1">
+                  <h1 className="upload-header__title text-[20px] font-semibold leading-none tracking-[-0.05em]">
                     분철 개최 안내
                   </h1>
                 </div>
@@ -336,10 +333,7 @@ export function HostingIneligibleNotice({
               <section className="relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] px-5 py-7 text-white shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.5),transparent_26%),radial-gradient(circle_at_14%_82%,rgba(255,255,255,0.18),transparent_30%)]" />
                 <div className="relative">
-                  <p className="text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-[#D7FF5F]">
-                    Hosting Notice
-                  </p>
-                  <h2 className="mt-3 break-keep text-[22px] font-semibold leading-[1.25] tracking-[-0.05em]">
+                  <h2 className="break-keep text-[22px] font-semibold leading-[1.25] tracking-[-0.05em]">
                     {copy.headline}
                   </h2>
                   <p className="mt-3 break-keep text-[14px] font-medium leading-6 tracking-[-0.03em] text-white/75">
@@ -370,8 +364,8 @@ export function HostingIneligibleNotice({
               </section>
 
               <section className="mt-7 rounded-[1.15rem] border border-black/10 px-4 py-4">
-                <p className="text-[12px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-                  Contact
+                <p className="text-[12px] font-semibold leading-none text-black/35">
+                  문의
                 </p>
                 <a
                   className="mt-2 inline-block text-[15px] font-semibold tracking-[-0.03em] underline underline-offset-4"

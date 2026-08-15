@@ -122,17 +122,14 @@ export function UploadEntry({ editProductId, returnSource }: UploadEntryProps) {
 // 클래스 기준이라, 빼면 조회 중 작은 헤더 → 결과 화면 큰 헤더로 점프해 오히려 깜빡임이 생긴다.
 function UploadGateCheckingScreen() {
   return (
-    <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div className="absolute inset-0 flex flex-col bg-white">
-            <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-              <div className="upload-header__inner flex h-10 items-center justify-end">
-                <div className="upload-header__copy translate-y-0.5 text-right">
-                  <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                    Upload
-                  </p>
-                  <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
+            <header className="upload-header shrink-0 border-b border-black/10 bg-white px-4 py-3 text-black">
+              <div className="upload-header__inner flex h-10 items-center">
+                <div className="upload-header__copy min-w-0 flex-1">
+                  <h1 className="upload-header__title text-[20px] font-semibold leading-none tracking-[-0.05em]">
                     분철 개최
                   </h1>
                 </div>

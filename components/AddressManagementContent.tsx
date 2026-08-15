@@ -532,11 +532,10 @@ export function AddressManagementContent({
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 flex-1 text-right">
-            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-              My Page
-            </p>
-            <h1 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+          {/* 하위 화면 제목은 뒤로가기 옆(좌측)에 둔다 — 우측 정렬이면 시선이 좌(뒤로가기)에서
+              우(제목)로 튀어 화면을 훑기 어렵다. */}
+          <div className="min-w-0 flex-1 text-left">
+            <h1 className="text-[22px] font-semibold leading-none tracking-[-0.06em]">
               배송지 관리
             </h1>
           </div>

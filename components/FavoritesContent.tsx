@@ -371,13 +371,15 @@ export function FavoritesContent({
       }`}
     >
       <header className="favorites-header shrink-0 px-4 py-3">
-        <div className="favorites-header__copy flex h-10 flex-col justify-center">
-          <p className="favorites-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-            Favorites
-          </p>
-          <h1 className="favorites-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
-            찜한 상품
+        <div className="favorites-header__copy flex h-10 flex-row items-baseline gap-2">
+          <h1 className="favorites-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
+            찜한 분철
           </h1>
+          {filteredProducts.length > 0 ? (
+            <p className="text-[13px] font-semibold leading-none text-black/35">
+              {filteredProducts.length}개
+            </p>
+          ) : null}
         </div>
 
         {FEATURES.favoriteArtists ? (

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BackIcon, BellIcon, BidIcon } from "@/components/icons";
+import { BackIcon, BidIcon } from "@/components/icons";
 import type { BoardCategory, BoardPost } from "@/lib/board-posts";
 
 const categoryLabels: Record<BoardCategory, string> = {
@@ -78,15 +78,9 @@ export function BoardDetailContent({
             <BackIcon />
           </button>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-              News
-            </p>
-            <h1 className="mt-1 text-[24px] font-semibold leading-none tracking-[-0.05em]">
+            <h1 className="text-[24px] font-semibold leading-none tracking-[-0.05em]">
               소식함
             </h1>
-          </div>
-          <div className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f5f5f5] text-black">
-            <BellIcon />
           </div>
         </div>
       </header>

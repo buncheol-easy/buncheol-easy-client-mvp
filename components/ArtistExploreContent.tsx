@@ -312,11 +312,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 flex-1 text-right">
-            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-              Artists
-            </p>
-            <h1 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+          <div className="min-w-0 flex-1 text-left">
+            <h1 className="text-[22px] font-semibold leading-none tracking-[-0.06em]">
               아티스트
             </h1>
           </div>

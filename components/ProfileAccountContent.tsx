@@ -415,11 +415,8 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 text-right">
-            <p className="text-[11px] font-semibold uppercase leading-none tracking-[0.2em] text-black/35">
-              Account
-            </p>
-            <h1 className="mt-1 text-[28px] font-semibold leading-none tracking-[-0.07em]">
+          <div className="min-w-0 flex-1 self-center text-left">
+            <h1 className="text-[24px] font-semibold leading-none tracking-[-0.06em]">
               회원 정보
             </h1>
           </div>

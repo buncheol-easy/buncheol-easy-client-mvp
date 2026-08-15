@@ -80,6 +80,22 @@ export function XLogoIcon({ className = "h-5 w-5" }: IconProps) {
   );
 }
 
+// 브랜드 마크 안의 4각 별. 워드마크 PNG 를 헤더 크기(40px)로 줄이면 글자를 감싼
+// 라운드 사각 테두리가 정체불명의 헤어라인이 되고 카드 심볼이 뭉개져서, 헤더에서는
+// 이 별 하나만 떼어 텍스트와 조립해 쓴다. 라임 채움이라 검정·흰 배경 모두에서 살아남는다.
+export function BrandSparkleIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 1.5c.55 5.3 5.2 9.95 10.5 10.5-5.3.55-9.95 5.2-10.5 10.5-.55-5.3-5.2-9.95-10.5-10.5C6.8 11.45 11.45 6.8 12 1.5z" />
+    </svg>
+  );
+}
+
 export function HeartIcon({
   className = "h-5 w-5",
   filled = false,
