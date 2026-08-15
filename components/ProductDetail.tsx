@@ -3799,8 +3799,12 @@ export function ProductDetail({
                   {auctionOptions.length.toLocaleString("ko-KR")}명
                 </p>
               </div>
+              {/*
+                시트와 같은 정렬을 쓴다. 두 목록의 순서가 다르면 상세에서 세 번째로
+                보이던 멤버가 시트에서는 일곱 번째에 있어 고를 때 헤맨다.
+              */}
               <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
-                {auctionOptions.map((option) => {
+                {sortedAuctionOptions.map((option) => {
                   const overlayLabel =
                     getOptionPurchaseOverlayLabel(
                       option,
