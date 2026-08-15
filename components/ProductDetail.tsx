@@ -3574,7 +3574,7 @@ export function ProductDetail({
                 className={`product-detail-action motion-icon-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 ${
                   isLiked
                     ? "bg-like/10 text-like ring-1 ring-like/25"
-                    : "bg-white text-black/45"
+                    : "bg-white text-black"
                 }`}
                 aria-label={isLiked ? "찜 해제" : "찜하기"}
                 disabled={isBookmarkPending}
