@@ -2,7 +2,7 @@ name: CI
 
 # PR(base dev/main)과 dev push 에서 lint·타입체크·빌드를 강제한다.
 # 그동안 검증은 배포 이미지 빌드의 `npm run build` 하나뿐이었고 `npm run lint` 는
-# CI 어디에서도 돌지 않았다 — AGENTS.md 가 PR 전 실행을 요구했지만 강제 장치가 없었다.
+# CI 어디에서도 돌지 않았다 — CLAUDE.md 가 PR 전 실행을 요구했지만 강제 장치가 없었다.
 # main 타깃(릴리스 PR)도 커버 — main 머지는 곧장 production 배포로 이어진다.
 #
 # ⚠️ 이 워크플로만으로는 머지가 막히지 않는다. branch protection 의 required status check 에

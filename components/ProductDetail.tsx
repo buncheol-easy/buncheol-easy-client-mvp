@@ -725,16 +725,23 @@ function getMyBidsFromOptions(options: ProductOption[]) {
   }, {});
 }
 
+function isConfirmedPurchaseStatus(status: string | undefined) {
+  const normalized = status?.toUpperCase();
+
+  return (
+    normalized === "CONFIRMED" ||
+    normalized === "PAYMENT_CONFIRMED" ||
+    normalized === "PAID"
+  );
+}
+
 function isConfirmedOptionPurchase(option: ProductOption) {
-  const status = option.purchasePaymentStatus?.toUpperCase();
   const saleStatus = option.saleStatus?.toUpperCase();
 
   return Boolean(
     option.purchasePaymentConfirmedAt ||
       saleStatus === "SOLD" ||
-      status === "CONFIRMED" ||
-      status === "PAYMENT_CONFIRMED" ||
-      status === "PAID",
+      isConfirmedPurchaseStatus(option.purchasePaymentStatus),
   );
 }
 
@@ -783,6 +790,29 @@ function isOccupiedPurchaseOption(option: ProductOption) {
     saleStatus === "AWAITING_PAYMENT" ||
     saleStatus === "SOLD"
   );
+}
+
+// 참여 직후 재조회 응답이 오기 전까지 쓸 슬롯 점유 상태. 서버 saleStatus 와 같은 값 공간이다.
+function toOptimisticSaleStatus(
+  participationStatus: string | undefined,
+  currentSaleStatus: string | undefined,
+) {
+  const status = participationStatus?.toUpperCase();
+
+  if (status === "APPLIED") {
+    return "APPLIED";
+  }
+
+  if (isConfirmedPurchaseStatus(status)) {
+    return "SOLD";
+  }
+
+  // 상태를 못 읽었으면 점유 사실만 확실하다. 이미 점유로 내려와 있던 값은 유지한다.
+  return currentSaleStatus &&
+    currentSaleStatus.toUpperCase() !== "AVAILABLE" &&
+    currentSaleStatus.toUpperCase() !== "CLOSED"
+    ? currentSaleStatus
+    : "AWAITING_PAYMENT";
 }
 
 function getOptionPurchaseOverlayLabel(
@@ -2286,7 +2316,11 @@ export function ProductDetail({
   function applySubmittedBidState(
     participationResults: Map<
       string,
-      { bidAmount: number; participationId: string }
+      {
+        bidAmount: number;
+        participationId: string;
+        participationStatus?: string;
+      }
     >,
     onlyParticipationResults = false,
   ) {
@@ -2317,6 +2351,13 @@ export function ProductDetail({
               : option.participantCount + 1,
           myBidAmount: participationAmount,
           myParticipationId: apiResult.participationId,
+          // getOptionPurchaseOverlayLabel 이 AVAILABLE 이면 내 참여를 보기 전에 끊으므로,
+          // saleStatus 를 안 올리면 방금 참여한 멤버가 다시 선택 가능해 보인다.
+          // participatedByMe 는 서버 값만 믿는 필드(배송비 부과 판정)라 건드리지 않는다.
+          saleStatus: toOptimisticSaleStatus(
+            apiResult.participationStatus,
+            option.saleStatus,
+          ),
         };
       }),
     );
@@ -2461,7 +2502,11 @@ export function ProductDetail({
 
     const participationResults = new Map<
       string,
-      { bidAmount: number; participationId: string }
+      {
+        bidAmount: number;
+        participationId: string;
+        participationStatus?: string;
+      }
     >();
     const paymentItems: CheckoutPaymentItem[] = [];
     const bankAccountKeys = new Set<string>();
@@ -2651,6 +2696,7 @@ export function ProductDetail({
           participationResults.set(option.id, {
             bidAmount,
             participationId,
+            participationStatus: sharedParticipationStatus,
           });
 
           paymentItems.push({
@@ -3163,6 +3209,9 @@ export function ProductDetail({
       sheetEnterAnimationFrameRef.current = null;
       setIsSheetEntered(true);
     });
+
+    // 상세를 연 뒤 남이 가져간 슬롯을 제출 시점이 아니라 여기서 걸러낸다.
+    void refreshDetailOptions();
   }
 
   function handleBidButtonClick() {

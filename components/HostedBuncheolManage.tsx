@@ -429,6 +429,13 @@ export function HostedBuncheolManage({
     0;
   // 취소분은 서버가 participants 와 분리해 내려준다 — 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
   const cancelledParticipants = detail?.cancelledParticipants ?? [];
+  // 취소분 대다수는 입금 기한 만료라 돈이 오간 적이 없고, 같은 사람이 재참여해 활성으로도 있다.
+  const refundTargetParticipants = cancelledParticipants.filter(
+    (participant) =>
+      Boolean(participant.confirmedAt) || Boolean(participant.paymentSentAt),
+  );
+  const unpaidCancelledCount =
+    cancelledParticipants.length - refundTargetParticipants.length;
   const minHeadcount = detail?.minHeadcount ?? 0;
   const confirmedProgressLabel = minHeadcount
     ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
@@ -1168,18 +1175,19 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
-          {/* 취소된 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
+          {/* 입금 흔적이 있는 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
               LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다. */}
-          {isC2C && cancelledParticipants.length > 0 ? (
+          {isC2C && refundTargetParticipants.length > 0 ? (
             <section className="mt-6 rounded-[1.05rem] border border-black/10 bg-[#f7f7f7] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                취소된 참여 {cancelledParticipants.length}건
+                환불이 필요한 참여 {refundTargetParticipants.length}건
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                환불이 필요한 건은 아래 계좌로 보내주세요.
+                입금 내역이 있는 취소 건이에요. 통장을 확인하고 아래 계좌로
+                환불해 주세요.
               </p>
               <div className="mt-3 space-y-2">
-                {cancelledParticipants.map((participant) => (
+                {refundTargetParticipants.map((participant) => (
                   <div
                     className="rounded-[0.85rem] bg-white px-3 py-3"
                     key={participant.participationId}
@@ -1195,6 +1203,11 @@ export function HostedBuncheolManage({
                             {participant.memberName}
                           </p>
                         ) : null}
+                        <p className="mt-1 text-[12px] font-semibold text-black/45">
+                          {participant.confirmedAt
+                            ? "입금 확인됨"
+                            : "입금 확인 전 · 보냈어요 표시만 있음"}
+                        </p>
                       </div>
                       <p className="shrink-0 text-[14px] font-semibold tabular-nums">
                         {formatWonAmount(participant.amount)}
@@ -1214,6 +1227,12 @@ export function HostedBuncheolManage({
                   </div>
                 ))}
               </div>
+              {unpaidCancelledCount > 0 ? (
+                <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
+                  입금 전에 취소된 참여 {unpaidCancelledCount}건은 환불할 금액이
+                  없어 여기 표시하지 않아요.
+                </p>
+              ) : null}
             </section>
           ) : null}
 
