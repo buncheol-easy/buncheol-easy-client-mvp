@@ -1623,6 +1623,10 @@ export function ProductDetail({
       : null;
   // 임시 저장 분철(uploaded-)은 브라우저 로컬에만 있어 공유해도 열리지 않는다.
   const canShareProduct = product.isApiProduct === true;
+  // 찜은 개최자에게도 열어 둔다 — 서버가 자기 분철 북마크를 허용하고(POST 201/DELETE 204),
+  // 목록 카드에서 찜해 둔 것을 해제할 곳이 상세뿐이다. 공유와 조건이 같아도 제약의 출처가
+  // 달라(로그인 필요) 상수를 나눠 둔다.
+  const canBookmarkProduct = product.isApiProduct === true;
   // 단일 선택 정책: 분철당 참여 1건(멤버 1명). 상세 응답의 participatedByMe/내 참여 목록은
   // 활성(입금확인중·확정) 참여만 표시하므로, 취소·만료된 참여는 재참여를 막지 않는다. 서버도 동일하게 거부한다.
   const hasMyActiveParticipation = auctionOptions.some((option) =>
@@ -3560,13 +3564,13 @@ export function ProductDetail({
                 <ShareIcon />
               </button>
             ) : null}
-            {!canEditProduct ? (
+            {canBookmarkProduct ? (
               <button
                 type="button"
                 className={`product-detail-action motion-icon-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 ${
                   isLiked
                     ? "bg-like/10 text-like ring-1 ring-like/25"
-                    : "bg-white text-black/45"
+                    : "bg-white text-black"
                 }`}
                 aria-label={isLiked ? "찜 해제" : "찜하기"}
                 disabled={isBookmarkPending}
@@ -4555,9 +4559,10 @@ export function ProductDetail({
                         노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
                       개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
-                      있어요.{" "}
+                      있어요.
                       {isC2CProduct ? (
-                        <span className="font-semibold text-black/60">
+                        // 취소 안내와 중개자 고지는 성격이 다른 문장이라 줄을 나눈다.
+                        <span className="mt-1 block font-semibold text-black/60">
                           분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
                           직접 입금돼요.
                         </span>

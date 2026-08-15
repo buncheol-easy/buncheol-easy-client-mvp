@@ -305,7 +305,6 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     ? getAvailableMemberSummary(availableMemberNames)
     : "";
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
-  const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
   useEffect(() => {
     setIsLiked(item.liked === true);
@@ -544,21 +543,25 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
                 </span>
               ) : null}
             </div>
-            {shouldShowBookmarkButton ? (
-              <button
-                type="button"
-                aria-label={isLiked ? "찜 해제" : "찜하기"}
-                className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                  isLiked
-                    ? "heart-on-image heart-on-image--active text-like"
-                    : "heart-on-image text-white"
-                } disabled:opacity-60`}
-                disabled={isBookmarkPending}
-                onClick={handleBookmarkClick}
-              >
-                <HeartIcon filled={isLiked} />
-              </button>
-            ) : null}
+            {/*
+              개최자 분철에도 하트를 띄운다 — 상세와 같은 정책이다.
+              전에는 isHostedByMe 로 가렸는데, 목록·찜 응답에 그 필드가 아예 없어
+              사실상 늘 노출되던 죽은 가드였다. 서버가 필드를 내려주기 시작하는 날
+              찜 목록에서 내 분철만 해제 못 하는 상태로 바뀐다.
+            */}
+            <button
+              type="button"
+              aria-label={isLiked ? "찜 해제" : "찜하기"}
+              className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                isLiked
+                  ? "heart-on-image heart-on-image--active text-like"
+                  : "heart-on-image text-white"
+              } disabled:opacity-60`}
+              disabled={isBookmarkPending}
+              onClick={handleBookmarkClick}
+            >
+              <HeartIcon filled={isLiked} />
+            </button>
           </div>
           {deadlineBadge.value ? (
             <span className="absolute bottom-3 left-3 rounded-full bg-black/76 px-2.5 py-1 text-[13px] font-semibold tracking-[-0.04em] text-white backdrop-blur-sm">
@@ -664,21 +667,19 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             </p>
           ) : null}
         </div>
-        {shouldShowBookmarkButton ? (
-          <button
-            type="button"
-            aria-label={isLiked ? "찜 해제" : "찜하기"}
-            className={`absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full ${
-              isLiked
-                ? "heart-on-image heart-on-image--active text-like"
-                : "heart-on-image text-white"
-            } disabled:opacity-60`}
-            disabled={isBookmarkPending}
-            onClick={handleBookmarkClick}
-          >
-            <HeartIcon filled={isLiked} />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          aria-label={isLiked ? "찜 해제" : "찜하기"}
+          className={`absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full ${
+            isLiked
+              ? "heart-on-image heart-on-image--active text-like"
+              : "heart-on-image text-white"
+          } disabled:opacity-60`}
+          disabled={isBookmarkPending}
+          onClick={handleBookmarkClick}
+        >
+          <HeartIcon filled={isLiked} />
+        </button>
       </div>
 
       <div className={shouldDimCard ? "opacity-60" : ""}>

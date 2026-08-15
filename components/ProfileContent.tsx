@@ -975,7 +975,7 @@ export function ProfileContent({
                 기본 배송지
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                GS25·CU 각각 기본 지점을 하나씩 저장해 둬요.
+                GS25·CU 각각 기본 지점을 하나씩 저장할 수 있어요.
               </p>
             </div>
             <Link
