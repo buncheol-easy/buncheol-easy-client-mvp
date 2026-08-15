@@ -9,10 +9,12 @@ export default function ProductNotFound() {
   return (
     <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-white text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col items-center justify-center bg-white px-6 text-center">
+        {/* width/height 는 원본 비율(1200×675)을 그대로 축소한 값이어야 한다 —
+            132×42 로 두면 실제 렌더(h-auto)와 어긋나 next/image 경고가 난다. */}
         <Image
           alt="분철이지"
           className="h-auto w-[132px]"
-          height={42}
+          height={74}
           src="/brand/logo-black.png"
           width={132}
         />

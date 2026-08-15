@@ -10,6 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ConfirmSheet,
+  type ConfirmSheetRequest,
+} from "@/components/ConfirmSheet";
 import { useQueryClient } from "@tanstack/react-query";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -20,7 +24,6 @@ import {
   PlusIcon,
   SearchIcon,
 } from "@/components/icons";
-import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   readUploadedProduct,
   writeUploadedProduct,
@@ -626,6 +629,18 @@ export function UploadProductForm({
     return loginReturnQuery ? `/upload?${loginReturnQuery}` : "/upload";
   })();
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
+  /*
+   * 작성 중 이탈 가드.
+   *
+   * 개최 폼은 사진·멤버·멤버별 금액까지 다 채우는 데 몇 분이 걸리는데, 지금까지는
+   * 뒤로가기 한 번에 아무 확인 없이 전부 사라졌다. 되돌릴 방법도 없다.
+   * 폼에 손댄 흔적이 있을 때만 확인 시트를 띄운다 — 빈 폼에서 나가는 건 그냥 보내준다.
+   *
+   * window.confirm 대신 ConfirmSheet 를 쓰는 이유는 카카오·네이버 인앱 브라우저가
+   * confirm 을 억제하고 즉시 false 를 반환하기 때문이다 (ConfirmSheet 주석 참고).
+   */
+  const [exitConfirmRequest, setExitConfirmRequest] =
+    useState<ConfirmSheetRequest | null>(null);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
   const formScrollRef = useRef<HTMLFormElement | null>(null);
@@ -672,6 +687,71 @@ export function UploadProductForm({
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
+
+  /*
+   * 폼에 사용자가 손댔는지 판정한다.
+   *
+   * 등록 모드는 빈 폼에서 시작하므로 "값이 하나라도 들어있으면 손댄 것"이다.
+   * 수정 모드는 처음부터 채워져 있어 같은 기준을 못 쓴다 — 불러오기가 끝난 시점의
+   * 값을 기준선으로 잡아 두고 그것과 달라졌을 때만 손댄 것으로 본다.
+   * (기준선은 아래 effect 에서 갱신한다. 렌더 중 ref 를 읽으므로 불러오기 직후 한 프레임은
+   *  dirty 로 보일 수 있는데, 이 값은 뒤로가기를 눌렀을 때만 읽혀서 화면에 드러나지 않는다.)
+   */
+  const formSignature = JSON.stringify({
+    closingDate,
+    description,
+    excludedMemberIds,
+    memberMinimumPrices,
+    minHeadcount,
+    openChatUrl,
+    photoIds: photos.map((photo) => photo.id),
+    purchaseSource,
+    selectedGroupId,
+    selectedShipping,
+    shippingPrices,
+    targetMemberIds,
+    title,
+  });
+  const emptyFormSignatureRef = useRef(formSignature);
+  const baselineFormSignatureRef = useRef<string | null>(null);
+  const isFormDirty = isEditMode
+    ? baselineFormSignatureRef.current !== null &&
+      formSignature !== baselineFormSignatureRef.current
+    : formSignature !== emptyFormSignatureRef.current;
+
+  // 수정 모드 기준선 — 불러오기가 끝나 editingProduct 가 채워진 시점의 폼 값을 기억한다.
+  useEffect(() => {
+    if (!isEditMode || !editingProduct) {
+      return;
+    }
+
+    baselineFormSignatureRef.current = formSignature;
+    // formSignature 를 의존성에 넣으면 입력할 때마다 기준선이 갱신돼 영영 dirty 가 되지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingProduct, isEditMode]);
+
+  /*
+   * 이탈 요청 — 폼에 손댄 흔적이 없으면 그대로 보내고, 있으면 확인 시트를 띄운다.
+   * 확인 시트의 기본 액션은 "계속 작성"(취소)이고, 파괴적인 쪽이 확인 버튼이다.
+   */
+  function requestExit(navigate: () => void) {
+    if (!isFormDirty) {
+      navigate();
+      return;
+    }
+
+    setExitConfirmRequest({
+      confirmLabel: "나가기",
+      description: isEditMode
+        ? "수정한 내용은 저장되지 않아요."
+        : "지금까지 작성한 사진과 내용이 모두 사라져요.",
+      onConfirm: () => {
+        setExitConfirmRequest(null);
+        navigate();
+      },
+      title: isEditMode ? "수정을 그만둘까요?" : "작성을 그만둘까요?",
+    });
+  }
   // 가입 미완료(전화번호 미등록) 유저를 /upload 직접 진입에서도 보완 화면으로 보낸다(공용 가드,
   // 홈 경유와 동일 동작). 개최 자격(연령대·상한)은 서버 게이트가 제출 시 판정한다.
   useProfileCompletionGuard();
@@ -1994,7 +2074,7 @@ export function UploadProductForm({
 
   if (isApiEditMode) {
     return (
-      <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+      <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
         <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
           <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
             <div className="absolute inset-0 flex flex-col bg-white">
@@ -2003,20 +2083,22 @@ export function UploadProductForm({
                   <button
                     aria-label="이전 화면"
                     className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
-                    onClick={() => {
-                      if (editProductId) {
-                        const returnSourceQuery = returnSource
-                          ? `?from=${returnSource}`
-                          : "";
+                    onClick={() =>
+                      requestExit(() => {
+                        if (editProductId) {
+                          const returnSourceQuery = returnSource
+                            ? `?from=${returnSource}`
+                            : "";
 
-                        router.replace(
-                          `/products/${editProductId}${returnSourceQuery}`,
-                        );
-                        return;
-                      }
+                          router.replace(
+                            `/products/${editProductId}${returnSourceQuery}`,
+                          );
+                          return;
+                        }
 
-                      router.replace("/");
-                    }}
+                        router.replace("/");
+                      })
+                    }
                     type="button"
                   >
                     <BackIcon />
@@ -2031,7 +2113,7 @@ export function UploadProductForm({
               </header>
 
               <form
-                className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-6"
+                className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handleSubmit();
@@ -2336,15 +2418,19 @@ export function UploadProductForm({
               </form>
             </div>
           </div>
-
-          <BottomNavigator />
         </div>
+
+          <ConfirmSheet
+            cancelLabel="계속 작성"
+            onCancel={() => setExitConfirmRequest(null)}
+            request={exitConfirmRequest}
+          />
       </main>
     );
   }
 
   return (
-    <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div className="absolute inset-0 flex flex-col bg-white">
@@ -2353,20 +2439,22 @@ export function UploadProductForm({
                 <button
                   aria-label="이전 화면"
                   className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
-                  onClick={() => {
-                    if (editProductId) {
-                      const returnSourceQuery = returnSource
-                        ? `?from=${returnSource}`
-                        : "";
+                  onClick={() =>
+                    requestExit(() => {
+                      if (editProductId) {
+                        const returnSourceQuery = returnSource
+                          ? `?from=${returnSource}`
+                          : "";
 
-                      router.replace(
-                        `/products/${editProductId}${returnSourceQuery}`,
-                      );
-                      return;
-                    }
+                        router.replace(
+                          `/products/${editProductId}${returnSourceQuery}`,
+                        );
+                        return;
+                      }
 
-                    router.replace("/");
-                  }}
+                      router.replace("/");
+                    })
+                  }
                   type="button"
                 >
                   <BackIcon />
@@ -2383,7 +2471,7 @@ export function UploadProductForm({
             </header>
 
             <form
-              className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-6"
+              className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
               onSubmit={(event) => event.preventDefault()}
               ref={formScrollRef}
             >
@@ -3099,9 +3187,13 @@ export function UploadProductForm({
             </form>
           </div>
         </div>
-
-        <BottomNavigator activeLabel="Upload" />
       </div>
+
+          <ConfirmSheet
+            cancelLabel="계속 작성"
+            onCancel={() => setExitConfirmRequest(null)}
+            request={exitConfirmRequest}
+          />
     </main>
   );
 }

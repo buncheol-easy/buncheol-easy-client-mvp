@@ -77,13 +77,30 @@ export function useScrollDirectionHidden() {
       const { clientHeight, element, scrollHeight, scrollTop } = metrics;
       const maxScrollTop = scrollHeight - clientHeight;
 
-      // 세로로 스크롤할 여지가 없는 요소(가로 레일 등)는 대상이 아니다.
+      /*
+       * 세로로 스크롤할 여지가 없는 요소.
+       *
+       * 가로 레일(배너 캐러셀·칩 레일)이 여기로 들어오는데, 이들은 아래
+       * lastScrollTops.set 까지 도달한 적이 없으므로 map 에 없다 — 그냥 흘려보낸다.
+       *
+       * 반대로 map 에 있다면 "세로 스크롤 컨테이너였는데 콘텐츠가 줄어 더 이상
+       * 스크롤되지 않게 된" 경우다. 예: 참여 내역에서 아래로 스크롤해 탭을 숨긴 뒤
+       * "입금 필요" 필터를 눌러 목록이 한 장으로 줄어드는 흐름.
+       * 이때 되살리지 않으면 이 요소에서는 다시 스크롤 이벤트가 날 수 없어 탭이
+       * 영영 숨은 채로 남는다 — 설치형 PWA 는 브라우저 뒤로가기도 없어 화면에 갇힌다.
+       */
       if (maxScrollTop <= 0) {
+        if (lastScrollTops.has(element)) {
+          lastScrollTops.delete(element);
+          setIsHidden(false);
+        }
+
         return;
       }
 
       const nextScrollTop = Math.max(0, Math.min(scrollTop, maxScrollTop));
-      const previousScrollTop = lastScrollTops.get(element) ?? 0;
+      const hasPreviousScrollTop = lastScrollTops.has(element);
+      const previousScrollTop = lastScrollTops.get(element) ?? nextScrollTop;
 
       lastScrollTops.set(element, nextScrollTop);
 
@@ -97,6 +114,15 @@ export function useScrollDirectionHidden() {
       // 갇히면 다른 화면으로 이동할 방법이 없어진다.
       if (maxScrollTop - nextScrollTop <= BOTTOM_EDGE_GUARD) {
         setIsHidden(false);
+        return;
+      }
+
+      /*
+       * 처음 보는 컨테이너는 방향을 판단할 기준이 없다 — 위치만 기록하고 넘어간다.
+       * 직전 값을 0 으로 가정하면, 스크롤 위치가 복원된 화면(목록 → 상세 → 뒤로가기)에서
+       * 사용자가 위로 올리는 첫 제스처가 "아래로 많이 내렸다"로 읽혀 탭이 잘못 숨었다.
+       */
+      if (!hasPreviousScrollTop) {
         return;
       }
 

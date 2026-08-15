@@ -604,6 +604,24 @@ function getJsonHeaders(accessToken?: string) {
   };
 }
 
+/*
+ * 이 값은 대부분 그대로 사용자 화면에 뿌려진다. 빈 문자열이 나오면 안내가 통째로
+ * 사라지고, "메시지가 없으면 로딩 중"으로 분기하는 화면(개최 관리)에서는 끝나지 않는
+ * 로딩으로 보인다. statusText 는 HTTP/2 응답에서 항상 비어 있으므로 특히 위험하다.
+ * 어떤 경로로도 빈 문자열을 내보내지 않는다.
+ */
+const DEFAULT_ERROR_MESSAGE = "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
+
+function getFirstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
 async function parseErrorMessage(response: Response) {
   try {
     const body = (await response.json()) as {
@@ -612,21 +630,18 @@ async function parseErrorMessage(response: Response) {
       title?: unknown;
     };
 
-    if (typeof body.message === "string") {
-      return body.message;
-    }
-
-    if (typeof body.detail === "string") {
-      return body.detail;
-    }
-
-    if (typeof body.title === "string") {
-      return body.title;
-    }
-
-    return response.statusText;
+    return (
+      getFirstNonEmptyString(
+        body.message,
+        body.detail,
+        body.title,
+        response.statusText,
+      ) || DEFAULT_ERROR_MESSAGE
+    );
   } catch {
-    return response.statusText;
+    return (
+      getFirstNonEmptyString(response.statusText) || DEFAULT_ERROR_MESSAGE
+    );
   }
 }
 
@@ -4178,10 +4193,14 @@ export async function createBuncheol(
       errorBody = null;
     }
 
+    // parseErrorMessage 와 같은 규칙 — 빈 문자열이 화면에 그대로 나가면 안 된다.
     const errorMessage =
-      [errorBody?.message, errorBody?.detail, errorBody?.title].find(
-        (value): value is string => typeof value === "string",
-      ) ?? response.statusText;
+      getFirstNonEmptyString(
+        errorBody?.message,
+        errorBody?.detail,
+        errorBody?.title,
+        response.statusText,
+      ) || DEFAULT_ERROR_MESSAGE;
 
     if (errorBody?.code === buncheolHostPermissionErrorCode) {
       throw new BuncheolHostPermissionError(errorMessage);

@@ -780,6 +780,7 @@ const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progre
                     : undefined,
                 }}
               />
+              {/* 목업 문구는 실화면 문자열을 그대로 쓴다 (참여 내역 분철 칩). */}
               <span className="w-full whitespace-nowrap rounded-full bg-[#E4F6A5] px-1 py-0.5 text-center text-[10px] font-semibold text-black/70">
                 입금 진행
               </span>

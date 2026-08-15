@@ -2,6 +2,7 @@
 
 import {
   accountNumberPattern,
+  maskAccountNumber,
   bankAccountFieldMaxLength,
   sanitizeAccountNumber,
 } from "@/lib/bank-account";
@@ -248,6 +249,9 @@ export function ProfileContent({
   const [isSettlementAccountFormDirty, setIsSettlementAccountFormDirty] =
     useState(false);
   const [settlementAccountMessage, setSettlementAccountMessage] = useState("");
+  // 기본은 가림. 사용자가 직접 펼칠 때만 전체 번호를 보여준다.
+  const [isSettlementAccountRevealed, setIsSettlementAccountRevealed] =
+    useState(false);
   const [isSavingSettlementAccount, setIsSavingSettlementAccount] =
     useState(false);
   const settlementAccountPanelCloseTimerRef = useRef<number | null>(null);
@@ -757,7 +761,10 @@ export function ProfileContent({
                   })
             }
           >
-            내 참여 내역 보러 가기
+            {/* 로그아웃 상태에서 "참여 내역 보러 가기"는 실제로 할 일(로그인)을 가린다. */}
+            {authState.isLoggedIn
+              ? "내 참여 내역 보러 가기"
+              : "카카오로 3초 만에 시작하기"}
           </Link>
         </section>
 
@@ -767,8 +774,13 @@ export function ProfileContent({
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 계좌
               </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                환불받을 때 사용할 계좌를 확인해요.
+              {/* C2C 개최가 열리면서 이 계좌의 용도가 둘이 됐다 —
+                  참여자로서 환불받을 때, 개최자로서 참여자 입금을 받을 때.
+                  예금주명은 입금자명 대조 기준이기도 한데(docs/53 Q-17) 지금까지 약관에만
+                  적혀 있었다. 입금 확인이 지연되는 실제 원인이라 여기서 한 번 짚는다. */}
+              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
+                환불과 개최 입금을 받는 계좌예요. 예금주명은 입금자명 확인에도
+                쓰여요.
               </p>
             </div>
             {authState.isLoggedIn &&
@@ -789,9 +801,9 @@ export function ProfileContent({
           </div>
 
           {!authState.isLoggedIn ? (
-            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                로그인 후 이용할 수 있어요.
+            <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5">
+              <p className="text-[14px] font-medium leading-5 text-black/45">
+                로그인하면 환불·입금받을 계좌를 저장해 둘 수 있어요.
               </p>
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
@@ -902,18 +914,31 @@ export function ProfileContent({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-white/50">
-                    {settlementAccount.bankName}
+                    {settlementAccount.bankName} · 예금주{" "}
+                    {settlementAccount.accountHolder}
                   </p>
+                  {/* 이 계좌가 어디에 쓰이는지는 섹션 설명이 이미 말한다 —
+                      카드 안에서 한 번 더 반복하지 않는다. */}
                   <p className="mt-1 break-all text-[17px] font-semibold tracking-[-0.04em]">
-                    {settlementAccount.accountNumber}
-                  </p>
-                  <p className="mt-1 text-[13px] font-medium text-white/50">
-                    예금주 {settlementAccount.accountHolder}
+                    {isSettlementAccountRevealed
+                      ? settlementAccount.accountNumber
+                      : maskAccountNumber(settlementAccount.accountNumber)}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-[#DDE7B8] px-2.5 py-1 text-[11px] font-semibold text-black">
-                  저장됨
-                </span>
+                {/* "저장됨" 배지는 계좌가 보이는 마당에 정보가 없었다.
+                    자리를 전체 보기 토글로 바꾼다 — 기본은 가림이라 필요할 때만 편다. */}
+                <button
+                  aria-pressed={isSettlementAccountRevealed}
+                  className="shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/80"
+                  onClick={() =>
+                    setIsSettlementAccountRevealed(
+                      (current) => !current,
+                    )
+                  }
+                  type="button"
+                >
+                  {isSettlementAccountRevealed ? "가리기" : "전체 보기"}
+                </button>
               </div>
             </div>
           ) : (
@@ -924,10 +949,10 @@ export function ProfileContent({
             >
               <span>
                 <span className="block text-[14px] font-semibold text-black/70">
-                  환불받을 계좌를 등록해 주세요.
+                  계좌를 등록해 주세요.
                 </span>
-                <span className="mt-1 block text-[13px] font-medium text-black/40">
-                  등록해 두면 환불이 필요할 때 바로 받을 수 있어요.
+                <span className="mt-1 block break-keep text-[13px] font-medium leading-5 text-black/40">
+                  환불을 받을 때, 분철을 개최해 참여자 입금을 받을 때 쓰여요.
                 </span>
               </span>
               <span className="shrink-0 rounded-full bg-[#CFE86B] px-3 py-2 text-[12px] font-semibold text-black">
@@ -950,7 +975,7 @@ export function ProfileContent({
                 기본 배송지
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/45">
-                결제할 때 바로 사용할 지점을 확인해요.
+                GS25·CU 각각 기본 지점을 하나씩 저장해 둬요.
               </p>
             </div>
             <Link
@@ -993,7 +1018,7 @@ export function ProfileContent({
                       </div>
                       <p className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                         {!authState.isLoggedIn ? (
-                          "로그인 후 이용할 수 있어요"
+                          "로그인 후 저장할 수 있어요"
                         ) : isDefaultAddressLoading ? (
                           <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
                         ) : (

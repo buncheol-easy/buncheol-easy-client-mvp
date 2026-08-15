@@ -1377,8 +1377,11 @@ body.is-pwa-standalone {
     font-size: 11px;
   }
 
+  /* 라벨은 이제 브라우저에서도 항상 보이므로 display 를 켤 필요가 없다.
+     설치형에서는 탭 높이에 여유가 있어 한 단계 크게 쓴다 —
+     JSX 의 text-[10px] 보다 우선하려면 라벨을 직접 지정해야 한다. */
   .bottom-navigator__label {
-    display: block;
+    font-size: 11px;
   }
 }
 
@@ -1581,7 +1584,7 @@ body.is-pwa-standalone .bottom-navigator__item {
 }
 
 body.is-pwa-standalone .bottom-navigator__label {
-  display: block;
+  font-size: 11px;
 }
 
 .bottom-navigator {
@@ -1604,6 +1607,23 @@ body.is-pwa-standalone .bottom-navigator__label {
   opacity: 0;
   pointer-events: none;
   transform: translateY(100%);
+}
+
+/*
+ * 우하단 도움말 버튼도 스크롤 중에는 같이 비켜난다.
+ * 상시 떠 있는 동안 홈 카드의 하트, 참여 내역 진행바의 마지막 단계, 모집 기한 값을
+ * 번갈아 가리고 있었다. 하단 탭과 같은 신호를 쓰므로 둘이 따로 놀지 않는다.
+ */
+.floating-help-button {
+  transition:
+    opacity var(--duration-base) var(--motion-snap),
+    transform var(--duration-base) var(--motion-snap);
+}
+
+.floating-help-button--scrolled-away {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(100% + 1.25rem));
 }
 
 body.is-virtual-keyboard-open .bottom-navigator {

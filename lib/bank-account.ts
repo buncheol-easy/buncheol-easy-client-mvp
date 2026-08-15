@@ -10,3 +10,32 @@ export const bankAccountFieldMaxLength = 50;
 export function sanitizeAccountNumber(value: string) {
   return value.replace(/[^\d-]/g, "");
 }
+
+/*
+ * 저장된 계좌번호를 화면에 보여줄 때 쓰는 가림 처리.
+ * 마이페이지는 카페·지하철에서도 여는 화면인데 환불계좌가 가장 큰 글씨로 그대로 떠 있었다.
+ * 앞 4자리와 뒤 2자리만 남기고 가운데를 가린다 — 내 계좌가 맞는지 확인하는 데는 충분하고,
+ * 어깨너머로 옮겨 적기에는 부족한 정도다. 하이픈 등 구분자는 위치를 유지한다.
+ */
+export function maskAccountNumber(value: string) {
+  const visiblePrefixLength = 4;
+  const visibleSuffixLength = 2;
+  const digits = value.replace(/\D/g, "");
+
+  if (digits.length <= visiblePrefixLength + visibleSuffixLength) {
+    return value;
+  }
+
+  let digitIndex = 0;
+
+  return value.replace(/\d/g, (digit) => {
+    const currentIndex = digitIndex;
+
+    digitIndex += 1;
+
+    return currentIndex < visiblePrefixLength ||
+      currentIndex >= digits.length - visibleSuffixLength
+      ? digit
+      : "•";
+  });
+}

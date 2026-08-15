@@ -120,10 +120,13 @@ export default function RootLayout({
               버튼은 헤더 우측 정렬이라 로고에 인접하지는 않는다(패널 우측 라인에 맞춘다). */}
           <div className="desktop-web-brand__header">
             <div className="desktop-web-brand__logo">
-              {/* 데스크톱 전용 장식 로고 — priority 를 주면 모바일에서도 preload 되어 LCP 대역폭을 뺏는다. */}
+              {/* 데스크톱 전용 장식 로고 — priority 를 주면 모바일에서도 preload 되어 LCP 대역폭을 뺏는다.
+                  width/height 는 원본 비율(1200×675)을 그대로 축소한 값이어야 한다. 224×72 로
+                  두면 실제 렌더 비율(CSS width:100% + height:auto)과 어긋나, 모든 페이지 로드마다
+                  next/image 가 "width or height modified, but not the other" 경고를 찍었다. */}
               <Image
                 alt="분철이지"
-                height={72}
+                height={126}
                 src="/brand/logo-black.png"
                 width={224}
               />

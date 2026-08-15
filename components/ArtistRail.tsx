@@ -383,7 +383,11 @@ export function ArtistRail({
             </button>
           </div>
 
-          <div className="my-2 w-px self-stretch bg-black/10" />
+          {/* 구분선은 "추가 버튼"과 "담은 목록"을 가르는 선이라 가를 것이 있을 때만 그린다.
+              최애가 하나도 없으면 선 오른쪽이 통째로 비어, 선만 허공에 남아 있었다. */}
+          {items.length > 0 ? (
+            <div className="my-2 w-px self-stretch bg-black/10" />
+          ) : null}
         </>
       ) : null}
 

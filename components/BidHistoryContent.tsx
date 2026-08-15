@@ -35,7 +35,9 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { EmptyState } from "@/components/EmptyState";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   cancelParticipation,
@@ -237,7 +239,7 @@ function formatPaymentRemainingTime(
   );
 
   if (Number.isNaN(paymentDeadline.getTime())) {
-    return "결제 기한 확인 필요";
+    return "입금 기한 확인 필요";
   }
 
   return formatRemainingTimeFromDate(paymentDeadline, now);
@@ -261,7 +263,7 @@ function formatPaymentCountdown(
   );
 
   if (Number.isNaN(paymentDeadline.getTime())) {
-    return "결제 기한 확인 필요";
+    return "입금 기한 확인 필요";
   }
 
   const paymentWindowMs = isC2C
@@ -300,11 +302,16 @@ type BidHistoryViewState = {
   mode?: BidHistoryMode;
 };
 
-// "진행 확정"은 내 결제·배송 축이 아니라 분철 축(마감 때 최소 인원 충족) 단계지만,
-// 참여자 입장에서는 결제 완료 다음에 기다리는 관문이라 하나의 여정으로 묶어 보여준다.
+// "진행 확정"은 내 입금·배송 축이 아니라 분철 축(마감 때 최소 인원 충족) 단계지만,
+// 참여자 입장에서는 입금 확인 다음에 기다리는 관문이라 하나의 여정으로 묶어 보여준다.
+//
+// 단계 이름은 "입금"으로 통일한다 — 서비스의 다른 곳(입금 총액·입금 확인·"입금 필요" 필터,
+// 그리고 아래 C2C 진행바)이 전부 "입금"인데 여기만 "결제"라, 같은 목록을 스크롤하다
+// 두 벌의 단어를 만나게 된다. 5단계 vs 6단계 차이는 C2C 에 무입금 "신청" 단계가
+// 실제로 하나 더 있어서이므로 그대로 둔다.
 const bidProgressStepLabels = [
-  "결제 대기",
-  "결제 완료",
+  "입금 대기",
+  "입금 확인",
   "진행 확정",
   "배송 중",
   "배송 완료",
@@ -327,7 +334,7 @@ const participationStatusGuide = [
     icon: BanknoteIcon,
     label: bidProgressStepLabels[0],
     description:
-      "주문 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 결제 정보 버튼에서 확인할 수 있어요.",
+      "참여 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 입금 정보 버튼에서 확인할 수 있어요.",
   },
   {
     icon: CheckIcon,
@@ -662,6 +669,7 @@ function getBidRecordBuncheolChip(
   }
 
   // C2C 입금 수집 구간 — "마감"으로 접히면 진행 중인 분철이 끝난 것처럼 보인다.
+  // 이 칩은 썸네일 아래 56px 컬럼에 들어가므로 4글자를 넘기지 않는다.
   if (isBuncheolPaymentCollectingStatus(bid.buncheolStatus)) {
     return { label: "입금 진행", tone: "urgent" };
   }
@@ -861,19 +869,17 @@ function getC2CBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
 }
 
 function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
-  if (isC2CBidRecord(bid)) {
-    const currentStepIndex = getC2CBidRecordProgressStepIndex(bid, now);
+  const isC2C = isC2CBidRecord(bid);
+  const labels = isC2C ? c2cProgressStepLabels : bidProgressStepLabels;
+  const currentStepIndex = isC2C
+    ? getC2CBidRecordProgressStepIndex(bid, now)
+    : getBidRecordProgressStepIndex(bid, now);
 
-    return c2cProgressStepLabels.map((label, index) => ({
-      isActive: currentStepIndex >= index,
-      label,
-    }));
-  }
-
-  const currentStepIndex = getBidRecordProgressStepIndex(bid, now);
-
-  return bidProgressStepLabels.map((label, index) => ({
+  // isCurrent 는 "지금 어디"를 점 하나로 표시하기 위한 것 — 라벨이 10px 이라
+  // 채워진 점만으로는 진행된 구간과 현재 단계가 구분되지 않았다.
+  return labels.map((label, index) => ({
     isActive: currentStepIndex >= index,
+    isCurrent: currentStepIndex === index,
     label,
   }));
 }
@@ -899,7 +905,7 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
   }
 
   if (isBidRecordPaymentConfirmed(bid)) {
-    return "결제 완료";
+    return "입금 확인";
   }
 
   if (isC2CBidRecord(bid)) {
@@ -913,11 +919,11 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
   }
 
   if (isBidRecordPaymentExpired(bid, now)) {
-    return "결제 만료";
+    return "입금 기한 만료";
   }
 
   if (isBidRecordPaymentReady(bid, now)) {
-    return "결제 대기";
+    return "입금 대기";
   }
 
   return isBidRecordClosed(bid, now) ? "모집 종료" : "참여중";
@@ -1006,19 +1012,28 @@ function formatApiDateTime(value: string) {
     return value;
   }
 
+  // 참여 카드(formatCompactDeadline)와 같은 모양으로 맞춘다 — 같은 화면의 두 탭이
+  // "8.12 17시" 와 "2026년 07월 05일 14시" 로 달랐다. 연도는 올해가 아닐 때만 붙인다.
   const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "2-digit",
-    hour: "2-digit",
+    day: "numeric",
+    hour: "numeric",
     hour12: false,
-    month: "2-digit",
+    month: "numeric",
     timeZone: "Asia/Seoul",
     year: "numeric",
   }).formatToParts(date);
   const partMap = Object.fromEntries(
     parts.map((part) => [part.type, part.value]),
   );
+  const currentYear = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(new Date());
+  const yearPrefix = currentYear.includes(partMap.year)
+    ? ""
+    : `${partMap.year}년 `;
 
-  return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
+  return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
 }
 
 function formatCompactDeadline(value: string) {
@@ -1030,22 +1045,27 @@ function formatCompactDeadline(value: string) {
     return value;
   }
 
+  // "8.12 17시" 같은 축약 대신 "8월 12일 17시" 로 쓴다 — 목록·상세·개최 기록이
+  // 각각 다른 날짜 표기를 쓰고 있어 같은 정보가 매번 다른 모양으로 보였다.
   const [, month, day, hour] = match;
-  const paddedDay = day.padStart(2, "0");
 
-  return hour ? `${Number(month)}.${paddedDay} ${hour.padStart(2, "0")}시` : `${Number(month)}.${paddedDay}`;
+  return hour
+    ? `${Number(month)}월 ${Number(day)}일 ${Number(hour)}시`
+    : `${Number(month)}월 ${Number(day)}일`;
 }
 
-function getBidRecordShippingAddressLabel(bid: BidRecord) {
-  const address = bid.shippingAddress;
-
-  if (!address) {
-    return "배송지 확인 중";
-  }
-
-  return `${getConvenienceStoreLabel(address.storeType)} ${getDeliveryAddressDisplayBranchName(address)}`;
-}
-
+/*
+ * 참여 요약 카드에서는 배송지를 보여주지 않는다.
+ *
+ * 참여 목록 API(/participations/me)는 배송지를 내려주지 않는다 — 이 값은 체크아웃을
+ * 이 브라우저에서 진행했을 때 남는 로컬 캐시(participation-payment-cache)에만 있다.
+ * 그래서 기기를 바꾸거나 캐시가 비면 영영 "배송지 확인 중"으로 남았는데, 실제로는
+ * 확인 중인 게 아니라 클라이언트가 값을 모르는 것이라 문구부터 거짓말이었다.
+ * 카드마다 상세를 조회해 채우는 건 이미 걷어낸 N+1 을 되살리는 일이라 하지 않는다.
+ *
+ * 배송지는 값이 확실한 곳에서만 보여준다 — 입금 정보 시트(상세 조회로 받아온다)와
+ * 배송 시작 후의 배송 블록. 서버가 목록 응답에 배송지를 실어주면 그때 요약 카드로 올린다.
+ */
 function getToneFromId(id: string) {
   const tones = [
     "from-black via-zinc-800 to-zinc-500",
@@ -1095,7 +1115,7 @@ function getBidRecordFromParticipation(
     optionLabel: participation.memberName,
     participantCount: 0,
     paidAt: isParticipationConfirmedStatus(participation.participationStatus)
-      ? "결제 완료"
+      ? "입금 확인"
       : null,
     buncheolStatus: participation.buncheolStatus,
     deliveryId: participation.deliveryId,
@@ -1235,7 +1255,7 @@ async function getBidRecordWithShippingData(
       paidAt:
         mergedBidRecord.paidAt ??
         (isParticipationConfirmedStatus(participationStatus)
-          ? "결제 완료"
+          ? "입금 확인"
           : null),
       participationStatus,
       paymentAmount:
@@ -1406,6 +1426,8 @@ export function BidHistoryContent({
   const [isPaymentSheetEntered, setIsPaymentSheetEntered] = useState(false);
   const [isPaymentSheetClosing, setIsPaymentSheetClosing] = useState(false);
   const paymentSheetCloseTimerRef = useRef<number | null>(null);
+  // 도움말 버튼도 하단 탭과 같은 신호로 비켜난다 — 상시 떠 있으면 진행바 마지막 단계를 가린다.
+  const isChromeScrolledAway = useScrollDirectionHidden();
   const [isStatusHelpSheetOpen, setIsStatusHelpSheetOpen] = useState(false);
   const [isStatusHelpSheetEntered, setIsStatusHelpSheetEntered] =
     useState(false);
@@ -2045,6 +2067,17 @@ export function BidHistoryContent({
     // — 마감일 기준으로 다시 정렬하면 방금 참여한 건이 아래로 밀린다.
     return filteredRecords;
   }, [authState.isLoggedIn, filter, now, paymentBidRecords]);
+  /*
+   * 필터를 걸어 목록이 비었을 때 "아직 참여한 분철이 없어요"라고 하면 사실과 다르다 —
+   * 참여는 있는데 이 조건에 맞는 게 없을 뿐이고, 화면에는 필터를 되돌릴 안내도 없었다.
+   * 필터 이전 개수로 "정말 없음"과 "조건에 안 맞음"을 갈라 쓴다.
+   */
+  const hasAnyBidRecords = useMemo(
+    () =>
+      authState.isLoggedIn &&
+      paymentBidRecords.some((bid) => !isHiddenCancelledBidRecord(bid)),
+    [authState.isLoggedIn, paymentBidRecords],
+  );
   const hostedRecords = useMemo(() => {
     if (!authState.isLoggedIn) {
       return [];
@@ -2114,6 +2147,14 @@ export function BidHistoryContent({
     hostedFilter,
     now,
   ]);
+  const hasAnyHostedRecords = useMemo(
+    () =>
+      authState.isLoggedIn &&
+      (apiHostedProducts ?? []).some(
+        (product) => !isBuncheolDeletedStatus(product.status),
+      ),
+    [apiHostedProducts, authState.isLoggedIn],
+  );
 
   function openPaymentSheet(bidId: string) {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -2991,18 +3032,45 @@ export function BidHistoryContent({
             {isBidRecordsLoading ? (
               <BidHistoryListSkeleton />
             ) : records.length === 0 ? (
-              <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
-                <p className="text-[14px] font-semibold text-black/70">
-                  {authState.isLoggedIn
-                    ? "아직 참여한 분철이 없어요."
-                    : "로그인 후 이용할 수 있어요."}
-                </p>
-                {authState.isLoggedIn ? (
-                  <p className="mt-1 text-[13px] font-medium text-black/40">
-                    참여한 분철이 여기에 쌓여요.
-                  </p>
-                ) : null}
-              </div>
+              authState.isLoggedIn ? (
+                filter !== "all" && hasAnyBidRecords ? (
+                  <EmptyState
+                    action={{
+                      label: "전체 보기",
+                      onClick: () => setFilter("all"),
+                    }}
+                    description={
+                      filter === "payment"
+                        ? "입금할 차례가 오면 여기에 모아 보여드려요."
+                        : "개최자가 입금을 확인하면 여기로 옮겨져요."
+                    }
+                    title={
+                      filter === "payment"
+                        ? "입금이 필요한 참여가 없어요"
+                        : "확정된 참여가 없어요"
+                    }
+                  />
+                ) : (
+                  <EmptyState
+                    action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
+                    description="원하는 멤버를 골라 참여하면 진행 상황이 여기에 쌓여요."
+                    title="아직 참여한 분철이 없어요"
+                  />
+                )
+              ) : (
+                <EmptyState
+                  action={{
+                    href: createLoginHref({
+                      cancelTo: "/profile/bids",
+                      returnTo: "/profile/bids",
+                    }),
+                    label: "카카오로 시작하기",
+                  }}
+                  description="입금 확인부터 편의점 수령까지 한 화면에서 볼 수 있어요."
+                  secondaryAction={{ href: "/", label: "먼저 분철 둘러보기" }}
+                  title="참여한 분철의 진행 상황을 보여드려요"
+                />
+              )
             ) : null}
             {!isBidRecordsLoading && records.length > 0 ? (
             <div className="content-reveal space-y-3">
@@ -3027,7 +3095,6 @@ export function BidHistoryContent({
                   ? getSafeOpenChatHref(bid.openChatUrl)
                   : null;
               const progressSteps = getBidRecordProgressSteps(bid, now);
-              const shippingAddressLabel = getBidRecordShippingAddressLabel(bid);
               const cardShippingFee =
                 typeof bid.shippingFee === "number" ? bid.shippingFee : null;
               const cardTotalAmount =
@@ -3101,8 +3168,10 @@ export function BidHistoryContent({
                           />
                         ) : null}
                       </Link>
+                      {/* 썸네일 폭(56px)에 갇힌 칩이라 라벨이 길면 글자가 잘려 나갔다
+                          ("입금 모으는 중" → "입금 모으는"). 넘치면 말줄임으로 드러나게 한다. */}
                       <span
-                        className={`w-full whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+                        className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
                       >
                         {buncheolChip.label}
                       </span>
@@ -3121,53 +3190,49 @@ export function BidHistoryContent({
                         </p>
                       </Link>
 
-                      <div className="mt-4 grid gap-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
-                            <p className="text-[11px] font-medium text-black/35">
+                      {/*
+                        같은 무게의 연둣빛 박스 5개가 나열돼 있어 "지금 뭘 해야 하는지"가
+                        보이지 않고 카드 하나가 화면 1.5개를 먹었다.
+                        실제로 중요한 건 "얼마를 넣어야 하는가"(입금 총액) 하나이므로
+                        그것만 큰 글씨로 세우고, 나머지는 라벨-값 목록으로 접어 넣는다.
+                      */}
+                      <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/55">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="text-[11px] font-medium text-black/35">
+                            입금 총액
+                          </p>
+                          <p className="text-[17px] font-semibold tracking-[-0.05em]">
+                            {formatPrice(cardTotalAmount)}
+                          </p>
+                        </div>
+                        <dl className="mt-2 space-y-1 border-t border-[#E4F6A5]/80 pt-2 text-[12px]">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <dt className="shrink-0 font-medium text-black/35">
                               상품 금액
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                            </dt>
+                            <dd className="font-semibold tracking-[-0.03em]">
                               {formatPrice(bid.amount)}
-                            </p>
+                            </dd>
                           </div>
-                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
-                            <p className="text-[11px] font-medium text-black/35">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <dt className="shrink-0 font-medium text-black/35">
                               배송비
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                            </dt>
+                            <dd className="font-semibold tracking-[-0.03em]">
                               {cardShippingFee !== null
                                 ? formatPrice(cardShippingFee)
                                 : "-"}
-                            </p>
+                            </dd>
                           </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
-                            <p className="text-[11px] font-medium text-black/35">
-                              입금 총액
-                            </p>
-                            <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                              {formatPrice(cardTotalAmount)}
-                            </p>
-                          </div>
-                          <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
-                            <p className="text-[11px] font-medium text-black/35">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <dt className="shrink-0 font-medium text-black/35">
                               모집 기한
-                            </p>
-                            <p className="mt-1 truncate whitespace-nowrap text-[14px] font-semibold tracking-[-0.04em]">
+                            </dt>
+                            <dd className="truncate font-semibold tracking-[-0.03em]">
                               {formatCompactDeadline(bid.deadline)}
-                            </p>
+                            </dd>
                           </div>
-                        </div>
-                        <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
-                          <p className="text-[11px] font-medium text-black/35">
-                            배송지
-                          </p>
-                          <p className="mt-1 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                            {shippingAddressLabel}
-                          </p>
-                        </div>
+                        </dl>
                       </div>
 
                       <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
@@ -3176,7 +3241,9 @@ export function BidHistoryContent({
                             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
                               {cancellationNotice.label}
                             </span>
-                            <p className="text-center text-[11px] font-medium leading-4 text-black/40">
+                            {/* break-keep 없이는 좁은 폭에서 "환불돼 / 요." 처럼 어절 중간이
+                                끊긴다 — 한국어는 단어 안에서 줄을 넘기지 않는다. */}
+                            <p className="break-keep text-center text-[11px] font-medium leading-4 text-black/40">
                               {cancellationNotice.description}
                             </p>
                           </div>
@@ -3190,8 +3257,12 @@ export function BidHistoryContent({
                                 : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
                             }
                           />
+                          {/* gap 은 0.5(2px) — 6단계 라벨이 한 줄에 들어갈 수 있는 폭을
+                              한 칸이라도 더 벌기 위한 값이다. 아래 라벨의 tracking 과 함께
+                              "한 줄로 필요한 폭"을 395px → 373px 로 낮춘다 (실측).
+                              그래야 iPhone SE(375) · iPhone 12~15(390) 에서 접히지 않는다. */}
                           <div
-                            className={`relative grid gap-1 ${
+                            className={`relative grid gap-0.5 ${
                               progressSteps.length === 6
                                 ? "grid-cols-6"
                                 : "grid-cols-5"
@@ -3202,18 +3273,27 @@ export function BidHistoryContent({
                                 className="flex min-w-0 flex-col items-center gap-1.5"
                                 key={step.label}
                               >
+                                {/* 현재 단계에만 링을 둘러 "지금 어디"를 표시한다 —
+                                    라벨이 10px 이라 채워진 점만으로는 지나온 구간과
+                                    현재 단계가 구분되지 않았다. */}
                                 <span
                                   className={`h-[18px] w-[18px] rounded-full border-2 ${
                                     step.isActive
                                       ? "border-[#CFE86B] bg-[#D7FF5F]"
                                       : "border-[#dedede] bg-white"
+                                  } ${
+                                    step.isCurrent
+                                      ? "ring-2 ring-[#CFE86B]/45 ring-offset-1 ring-offset-[#F7FAEE]"
+                                      : ""
                                   }`}
                                 />
                                 <span
-                                  className={`break-keep text-center text-[10px] font-semibold leading-3 ${
-                                    step.isActive
-                                      ? "text-black"
-                                      : "text-black/35"
+                                  className={`break-keep text-center text-[10px] leading-3 tracking-[-0.06em] ${
+                                    step.isCurrent
+                                      ? "font-bold text-black"
+                                      : step.isActive
+                                        ? "font-semibold text-black/70"
+                                        : "font-semibold text-black/35"
                                   }`}
                                 >
                                   {step.label}
@@ -3271,7 +3351,7 @@ export function BidHistoryContent({
                               onClick={() => openPaymentSheet(bid.id)}
                               type="button"
                             >
-                              결제 정보
+                              입금 정보
                             </button>
                           ) : null}
                         </div>
@@ -3303,12 +3383,12 @@ export function BidHistoryContent({
                             후기를 다시 확인해 주세요
                           </p>
                           {bid.payback?.rejectReason ? (
-                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/55">
                               반려 사유: {bid.payback.rejectReason}
                             </p>
                           ) : null}
                           {paybackDeadlineNotice ? (
-                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/55">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/55">
                               {paybackDeadlineNotice}
                             </p>
                           ) : null}
@@ -3331,7 +3411,7 @@ export function BidHistoryContent({
                             X에 후기를 올리면 배송비를 돌려드려요
                           </p>
                           {paybackDeadlineNotice ? (
-                            <p className="mt-0.5 text-[12px] font-medium leading-5 text-black/45">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/45">
                               {paybackDeadlineNotice}
                             </p>
                           ) : null}
@@ -3393,18 +3473,44 @@ export function BidHistoryContent({
               {isHostedProductsLoading ? (
                 <BidHistoryListSkeleton />
               ) : hostedRecords.length === 0 ? (
-                <div className="content-reveal rounded-[0.95rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
-                  <p className="text-[14px] font-semibold text-black/70">
-                    {authState.isLoggedIn
-                      ? "아직 개최한 분철이 없어요."
-                      : "로그인 후 이용할 수 있어요."}
-                  </p>
-                  {authState.isLoggedIn ? (
-                    <p className="mt-1 text-[13px] font-medium text-black/40">
-                      상품 등록으로 만든 분철이 여기에 쌓여요.
-                    </p>
-                  ) : null}
-                </div>
+                authState.isLoggedIn ? (
+                  hostedFilter !== "all" && hasAnyHostedRecords ? (
+                    <EmptyState
+                      action={{
+                        label: "전체 보기",
+                        onClick: () => setHostedFilter("all"),
+                      }}
+                      description={
+                        hostedFilter === "active"
+                          ? "모집 중인 분철이 생기면 여기에 보여요."
+                          : "모집이 끝나면 여기로 옮겨져요."
+                      }
+                      title={
+                        hostedFilter === "active"
+                          ? "진행 중인 분철이 없어요"
+                          : "모집이 끝난 분철이 없어요"
+                      }
+                    />
+                  ) : (
+                    <EmptyState
+                      action={{ href: "/upload", label: "분철 개최하기" }}
+                      description="내가 연 분철의 입금 확인·운송장 등록을 여기서 관리해요."
+                      title="아직 개최한 분철이 없어요"
+                    />
+                  )
+                ) : (
+                  <EmptyState
+                    action={{
+                      href: createLoginHref({
+                        cancelTo: "/profile/bids",
+                        returnTo: "/profile/bids",
+                      }),
+                      label: "카카오로 시작하기",
+                    }}
+                    description="분철을 열면 입금 확인과 배송을 여기서 관리해요."
+                    title="내가 개최한 분철을 모아서 보여드려요"
+                  />
+                )
               ) : null}
               {!isHostedProductsLoading && hostedRecords.length > 0 ? (
               <div className="content-reveal space-y-3">
@@ -3473,8 +3579,9 @@ export function BidHistoryContent({
                                   : "모집 중"}
                           </span>
                         </div>
+                        {/* 부제에서 "멤버 N명"을 뺐다 — 바로 아래 칩이 같은 말을 반복하고 있었다. */}
                         <p className="mt-1 truncate text-[13px] font-medium text-black/45">
-                          {product.member} · {product.era}
+                          {product.era}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           <span className="rounded-full bg-[#E4F6A5] px-2.5 py-1 text-[12px] font-semibold text-black/70">
@@ -3532,7 +3639,9 @@ export function BidHistoryContent({
       {mode === "joined" ? (
         <button
           aria-label="참여 상태 안내 보기"
-          className="motion-icon-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)]"
+          className={`motion-icon-button floating-help-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)] ${
+            isChromeScrolledAway ? "floating-help-button--scrolled-away" : ""
+          }`}
           onClick={openStatusHelpSheet}
           type="button"
         >
@@ -3646,7 +3755,7 @@ export function BidHistoryContent({
           }`}
         >
           <button
-            aria-label="결제 정보 닫기"
+            aria-label="입금 정보 닫기"
             className="absolute inset-0 cursor-default"
             onClick={closePaymentSheet}
             type="button"
@@ -3671,7 +3780,7 @@ export function BidHistoryContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  결제 정보
+                  입금 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
                   {isSelectedPaymentC2C
@@ -3827,7 +3936,7 @@ export function BidHistoryContent({
                   <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
                     {paymentDeliveryAddress
                       ? getDeliveryAddressDisplayBranchName(paymentDeliveryAddress)
-                      : "결제 요청 배송지 확인 중"}
+                      : "배송지 확인 중"}
                   </p>
                 </div>
                 <span className="shrink-0 text-[11px] font-semibold text-black/40">

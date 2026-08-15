@@ -239,7 +239,7 @@ function getProductCardBadge(item: ProductCardItem) {
           ? "진행 확정"
           : // C2C 입금 수집 구간 — 끝난 분철이 아니라 진행 중(추가 신청은 상세에서 가능).
             isBuncheolPaymentCollectingStatus(item.status)
-            ? "입금 진행 중"
+            ? "입금 진행"
             : "모집 종료",
       value: null,
     };
@@ -292,7 +292,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const deadlineBadge = getProductCardBadge(item);
   const isPurchasable = isProductCardPurchasable(item);
   // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
-  // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행 중" 유지).
+  // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
   const shouldDimCard =
     !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
   // 서버가 availableMemberNames 를 내려준 경우에만 남은 멤버로 취급한다(null = 데이터 없음).

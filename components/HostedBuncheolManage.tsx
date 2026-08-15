@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BackIcon } from "@/components/icons";
 import {
@@ -71,15 +72,32 @@ function formatKoreaDateTime(value: string | undefined) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("ko-KR", {
-    day: "2-digit",
+  /*
+   * 참여 내역·개최 기록과 같은 "8월 12일 17:30" 모양으로 맞춘다.
+   * 같은 정보가 화면마다 "8.12 17시" / "2026년 07월 05일 14시" / "2026. 12. 22. 20:00"
+   * 세 가지로 보이고 있었다. 연도는 올해가 아닐 때만 붙인다.
+   */
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    day: "numeric",
     hour: "2-digit",
     hour12: false,
     minute: "2-digit",
-    month: "2-digit",
+    month: "numeric",
     timeZone: "Asia/Seoul",
     year: "numeric",
-  }).format(date);
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  const currentYear = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).format(new Date());
+  const yearPrefix = currentYear.includes(partMap.year)
+    ? ""
+    : `${partMap.year}년 `;
+
+  return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
 function getHighestBidAmount(option: BuncheolManagementOption) {
@@ -134,10 +152,29 @@ function getDeliveryStatusLabel(status: string | undefined) {
   return getCentralDeliveryStatusLabel(status);
 }
 
+// 개최자가 운송장을 쓸 때 그대로 옮겨 적는 번호다 — 하이픈 없이 붙어 있으면 자릿수를
+// 눈으로 세게 된다. 저장 값은 건드리지 않고 표시할 때만 끊어 준다.
+function formatPhoneNumberForDisplay(value: string) {
+  const digits = value.replace(/\D/g, "");
+
+  // 10자리(01x-xxx-xxxx) / 11자리(01x-xxxx-xxxx). 가운데 자릿수가 다르다.
+  if (/^01\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  if (/^01\d{9}$/.test(digits)) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+
+  return value;
+}
+
 function getWinnerReceiverLabel(
   winner: BuncheolManagementWinner | null | undefined,
 ) {
-  return winner?.receiverPhoneNumber ?? "";
+  const phoneNumber = winner?.receiverPhoneNumber ?? "";
+
+  return phoneNumber ? formatPhoneNumberForDisplay(phoneNumber) : "";
 }
 
 function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
@@ -361,10 +398,10 @@ export function HostedBuncheolManage({
         }
 
         setDetail(null);
+        // 아래 화면이 "메시지 없음 = 불러오는 중"으로 분기하므로 빈 문자열을 넣으면 안 된다.
         setMessage(
-          error instanceof Error
-            ? error.message
-            : "개최한 분철 정보를 불러오지 못했어요.",
+          (error instanceof Error ? error.message.trim() : "") ||
+            "개최한 분철 정보를 불러오지 못했어요.",
         );
       });
 
@@ -674,7 +711,7 @@ export function HostedBuncheolManage({
 
       await finalizeBuncheolCollected(accessToken, id);
       await reloadManagementDetail(accessToken);
-      setMessage("진행을 확정했어요. 이제 주문과 배송을 진행해 주세요.");
+      setMessage("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
     } catch (error: unknown) {
       setMessage(
         error instanceof Error
@@ -845,10 +882,49 @@ export function HostedBuncheolManage({
   // ② 패널 자체가 스크롤 가능해져, 데스크톱에서 fixed → absolute 로 바뀌는 확인 시트가
   //    스크롤된 패널 원점 기준으로 화면 밖에 그려진다(docs/56 H-10).
   // 어긋남이 가장 큰 데스크톱에서 먼저 발견됐을 뿐, 위 두 모드에도 inset 만큼 같은 문제가 있었다.
+  /*
+   * 상세를 못 받은 상태 — 불러오는 중이거나, 남의 분철 관리 URL 로 들어와 403 이 난 경우다.
+   * 이전에는 문장 한 줄만 흰 화면 한가운데 떠 있어서, 뒤로가기도 다른 화면으로 갈 길도 없었다.
+   * (하단 탭도 이 화면에는 없다.) 헤더와 나갈 길을 함께 준다.
+   */
   if (!detail) {
+    const isLoadingDetail = !message;
+
     return (
-      <main className="system-chrome-white system-chrome-bottom-white flex h-full items-center justify-center bg-white px-6 text-center">
-        <p className="text-[15px] font-semibold text-black/45">{message}</p>
+      <main className="system-chrome-white system-chrome-bottom-white h-full bg-white">
+        <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
+          <header className="shrink-0 px-5 pb-3 pt-4">
+            <div className="flex items-center gap-3">
+              <button
+                aria-label="이전 화면"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white"
+                onClick={onBack ?? (() => router.back())}
+                type="button"
+              >
+                <BackIcon />
+              </button>
+              <div className="min-w-0 flex-1 text-right">
+                <p className="text-[12px] font-semibold text-black/35">
+                  분철 개최 관리
+                </p>
+              </div>
+            </div>
+          </header>
+
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
+            <p className="break-keep text-[15px] font-semibold leading-6 text-black/55">
+              {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : message}
+            </p>
+            {isLoadingDetail ? null : (
+              <Link
+                className="mt-5 flex h-12 w-full max-w-[240px] items-center justify-center rounded-full bg-[#CFE86B] text-[14px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
+                href="/profile/bids"
+              >
+                내 분철로 돌아가기
+              </Link>
+            )}
+          </div>
+        </div>
       </main>
     );
   }
@@ -1144,7 +1220,7 @@ export function HostedBuncheolManage({
           <section className="mt-6">
             <div className="mb-3">
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-                {isC2C ? "참여자 관리" : "멤버별 주문 관리"}
+                {isC2C ? "참여자 관리" : "멤버별 참여 관리"}
               </h2>
               <p className="mt-1 text-[13px] font-medium text-black/40">
                 {/* 리스트 모수는 취소를 뺀 활성 참여 전건(신청됨·입금 대기 포함)이라
@@ -1518,8 +1594,10 @@ export function HostedBuncheolManage({
                     </div>
 
                     <div className="mt-4 grid grid-cols-[1.15fr_0.85fr] gap-2">
-                      <div className="rounded-[0.9rem] bg-black px-3 py-3 text-white">
-                        <p className="text-[11px] font-medium text-white/45">
+                      {/* 읽기 전용 금액이라 검정 면을 쓰지 않는다 — 이 화면에서 검정은
+                          기본 버튼·현재 선택을 뜻해서, 누를 수 있는 것처럼 보였다. */}
+                      <div className="rounded-[0.9rem] bg-brand-pale px-3 py-3 ring-1 ring-[#E4F6A5]/70">
+                        <p className="text-[11px] font-medium text-black/35">
                           상품 금액
                         </p>
                         <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em]">
@@ -1544,7 +1622,7 @@ export function HostedBuncheolManage({
                             : "bg-[#f7f7f7] text-black/35"
                         }`}
                       >
-                        주문
+                        참여
                       </span>
                       <span
                         className={`rounded-full px-2 py-1.5 text-[11px] font-semibold ${
@@ -1581,11 +1659,11 @@ export function HostedBuncheolManage({
                                   <div className="mt-2 space-y-1">
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
-                                        주문자
+                                        참여자
                                       </span>
                                       {option.winner?.depositorName ?? "-"}
                                     </p>
-                                    {/* 통장에 찍히는 건 예금주명이라, 닉네임(주문자)만으로는 대조가 안 된다 (docs/53 Q-18).
+                                    {/* 통장에 찍히는 건 예금주명이라, 닉네임(참여자)만으로는 대조가 안 된다 (docs/53 Q-18).
                                         C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}
                                     <p className="text-[13px] font-semibold text-black/55">
                                       <span className="mr-2 text-black/35">
@@ -1629,14 +1707,9 @@ export function HostedBuncheolManage({
                                       : "입금 확인"}
                                 </button>
                               </div>
-                              {option.winner?.paymentConfirmedAt ? (
-                                <p className="mt-2 text-[12px] font-medium text-black/40">
-                                  확인 시각{" "}
-                                  {formatKoreaDateTime(
-                                    option.winner.paymentConfirmedAt,
-                                  )}
-                                </p>
-                              ) : null}
+                              {/* "확인 시각 …" 줄을 뺐다 — 바로 위 "확인 …" 이 같은
+                                  paymentConfirmedAt 을 이미 보여주고 있어, 입금 확인이
+                                  끝난 건마다 같은 시각이 두 줄 연속으로 찍혔다. */}
                             </div>
                           ) : (
                             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
@@ -1647,7 +1720,7 @@ export function HostedBuncheolManage({
                                 {option.winner
                                   ? isPaymentDuePassed
                                     ? "입금 기한이 지났어요."
-                                    : "주문자 입금을 기다리고 있어요."
+                                    : "참여자 입금을 기다리고 있어요."
                                   : "아직 참여자가 없어요."}
                               </p>
                               {option.winner?.paymentDueAt ? (
