@@ -467,8 +467,9 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
 
   const remainingMilliseconds = deadlineDate.getTime() - now;
 
+  // 이 값은 "참여 마감" 라벨 아래에 놓인다 — 값에서 "마감"을 되풀이하지 않는다.
   if (remainingMilliseconds <= 0) {
-    return "참여 마감";
+    return "마감됨";
   }
 
   const totalSeconds = Math.floor(remainingMilliseconds / 1000);
@@ -487,7 +488,7 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
       minute: "2-digit",
       month: "long",
       timeZone: "Asia/Seoul",
-    }).format(deadlineDate)} 마감`;
+    }).format(deadlineDate)}`;
   }
 
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
@@ -1559,7 +1560,7 @@ export function ProductDetail({
   const purchaseDeadlineDisplay = isCancelledProduct
     ? getBuncheolStatusBadgeLabel(product.status)
     : isConfirmedProduct
-      ? "참여 마감"
+      ? "마감됨"
       : isC2CCollectingProduct && isDeadlinePassed
         ? "추가 신청 가능"
         : purchaseDeadlineCountdown;
