@@ -2067,6 +2067,17 @@ export function BidHistoryContent({
     // — 마감일 기준으로 다시 정렬하면 방금 참여한 건이 아래로 밀린다.
     return filteredRecords;
   }, [authState.isLoggedIn, filter, now, paymentBidRecords]);
+  /*
+   * 필터를 걸어 목록이 비었을 때 "아직 참여한 분철이 없어요"라고 하면 사실과 다르다 —
+   * 참여는 있는데 이 조건에 맞는 게 없을 뿐이고, 화면에는 필터를 되돌릴 안내도 없었다.
+   * 필터 이전 개수로 "정말 없음"과 "조건에 안 맞음"을 갈라 쓴다.
+   */
+  const hasAnyBidRecords = useMemo(
+    () =>
+      authState.isLoggedIn &&
+      paymentBidRecords.some((bid) => !isHiddenCancelledBidRecord(bid)),
+    [authState.isLoggedIn, paymentBidRecords],
+  );
   const hostedRecords = useMemo(() => {
     if (!authState.isLoggedIn) {
       return [];
@@ -2136,6 +2147,14 @@ export function BidHistoryContent({
     hostedFilter,
     now,
   ]);
+  const hasAnyHostedRecords = useMemo(
+    () =>
+      authState.isLoggedIn &&
+      (apiHostedProducts ?? []).some(
+        (product) => !isBuncheolDeletedStatus(product.status),
+      ),
+    [apiHostedProducts, authState.isLoggedIn],
+  );
 
   function openPaymentSheet(bidId: string) {
     if (paymentSheetCloseTimerRef.current !== null) {
@@ -3014,11 +3033,30 @@ export function BidHistoryContent({
               <BidHistoryListSkeleton />
             ) : records.length === 0 ? (
               authState.isLoggedIn ? (
-                <EmptyState
-                  action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
-                  description="원하는 멤버를 골라 참여하면 진행 상황이 여기에 쌓여요."
-                  title="아직 참여한 분철이 없어요"
-                />
+                filter !== "all" && hasAnyBidRecords ? (
+                  <EmptyState
+                    action={{
+                      label: "전체 보기",
+                      onClick: () => setFilter("all"),
+                    }}
+                    description={
+                      filter === "payment"
+                        ? "입금할 차례가 오면 여기에 모아 보여드려요."
+                        : "개최자가 입금을 확인하면 여기로 옮겨져요."
+                    }
+                    title={
+                      filter === "payment"
+                        ? "입금이 필요한 참여가 없어요"
+                        : "확정된 참여가 없어요"
+                    }
+                  />
+                ) : (
+                  <EmptyState
+                    action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
+                    description="원하는 멤버를 골라 참여하면 진행 상황이 여기에 쌓여요."
+                    title="아직 참여한 분철이 없어요"
+                  />
+                )
               ) : (
                 <EmptyState
                   action={{
@@ -3436,11 +3474,30 @@ export function BidHistoryContent({
                 <BidHistoryListSkeleton />
               ) : hostedRecords.length === 0 ? (
                 authState.isLoggedIn ? (
-                  <EmptyState
-                    action={{ href: "/upload", label: "분철 개최하기" }}
-                    description="내가 연 분철의 입금 확인·운송장 등록을 여기서 관리해요."
-                    title="아직 개최한 분철이 없어요"
-                  />
+                  hostedFilter !== "all" && hasAnyHostedRecords ? (
+                    <EmptyState
+                      action={{
+                        label: "전체 보기",
+                        onClick: () => setHostedFilter("all"),
+                      }}
+                      description={
+                        hostedFilter === "active"
+                          ? "모집 중인 분철이 생기면 여기에 보여요."
+                          : "모집이 끝나면 여기로 옮겨져요."
+                      }
+                      title={
+                        hostedFilter === "active"
+                          ? "진행 중인 분철이 없어요"
+                          : "모집이 끝난 분철이 없어요"
+                      }
+                    />
+                  ) : (
+                    <EmptyState
+                      action={{ href: "/upload", label: "분철 개최하기" }}
+                      description="내가 연 분철의 입금 확인·운송장 등록을 여기서 관리해요."
+                      title="아직 개최한 분철이 없어요"
+                    />
+                  )
                 ) : (
                   <EmptyState
                     action={{

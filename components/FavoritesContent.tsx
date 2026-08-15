@@ -500,11 +500,38 @@ export function FavoritesContent({
             </div>
           ) : (
             authState.isLoggedIn ? (
-              <EmptyState
-                action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
-                description="분철 카드의 하트를 누르면 여기에 모여요."
-                title="조건에 맞는 찜한 분철이 없어요"
-              />
+              /*
+               * 필터에 걸려 안 보이는 것과 정말 하나도 없는 것은 다른 상황이다.
+               * 앞의 경우에 "찜한 분철이 없어요"라고 하면 사실과 다르고, 무엇을 끄면
+               * 다시 보이는지도 알 수 없다.
+               * 목록은 서버에서 이미 걸러져 오므로(hideClosed·onlyFavoriteGroups)
+               * "필터 밖에 몇 개가 있는지"는 클라에서 셀 수 없다 — 필터 상태만 보고 가른다.
+               */
+              filter === "favoriteArtist" ? (
+                <EmptyState
+                  action={{
+                    label: "전체 보기",
+                    onClick: () => setFilter("all"),
+                  }}
+                  description="최애로 등록한 아티스트의 분철만 골라 보는 중이에요."
+                  title="최애 아티스트의 찜한 분철이 없어요"
+                />
+              ) : hideClosed ? (
+                <EmptyState
+                  action={{
+                    label: "모집 종료된 분철도 보기",
+                    onClick: () => setHideClosed(false),
+                  }}
+                  description="모집이 끝난 분철을 숨겨 둔 상태예요."
+                  title="모집 중인 찜한 분철이 없어요"
+                />
+              ) : (
+                <EmptyState
+                  action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
+                  description="분철 카드의 하트를 누르면 여기에 모여요."
+                  title="아직 찜한 분철이 없어요"
+                />
+              )
             ) : (
               <EmptyState
                 action={{
