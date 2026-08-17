@@ -1345,6 +1345,24 @@ export function UploadProductForm({
     }, 2200);
   }
 
+  // 토스트는 사진 유무로 갈리는 두 화면 모두에 필요하다. addPhotos 는 파일을 읽기 전에
+  // 토스트를 띄우므로, 0장 화면에 이게 없으면 사진을 읽는 동안 안내가 통째로 사라진다.
+  function renderPhotoLimitToast(positionClassName: string) {
+    if (!photoLimitToast) {
+      return null;
+    }
+
+    return (
+      <p
+        aria-live="polite"
+        className={`soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] ${positionClassName}`}
+        role="status"
+      >
+        {photoLimitToast}
+      </p>
+    );
+  }
+
   function showMemberToast(memberId: string, message: string) {
     if (memberToastTimeoutRef.current) {
       clearTimeout(memberToastTimeoutRef.current);
@@ -2133,26 +2151,19 @@ export function UploadProductForm({
                 ) : (
                   <>
                     <section className="px-4 pt-4">
-                      {photos.length === 0 ? (
+                      {!coverPhoto ? (
                         <>
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="text-[14px] font-semibold tracking-[-0.045em]">
-                              사진
-                              <span className="ml-1.5 text-[13px] text-black/30">
-                                0/{maxPhotos}
-                              </span>
-                            </p>
-                            <p className="text-[12px] font-semibold text-black/40">
-                              최대 {maxPhotos}장
-                            </p>
-                          </div>
-                          <label className="mt-2.5 flex h-[76px] w-[76px] cursor-pointer flex-col items-center justify-center gap-0.5 rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA]">
-                            <CameraIcon className="h-6 w-6 text-[#4d6117]" />
-                            <span className="text-[11px] font-semibold text-[#4d6117]">
-                              0/{maxPhotos}
+                          <p className="text-[14px] font-semibold tracking-[-0.045em]">
+                            사진
+                            <span className="ml-1.5 text-[13px] text-black/30">
+                              {photos.length}/{maxPhotos}
                             </span>
+                          </p>
+                          <label className="mt-2.5 flex h-[76px] w-[76px] cursor-pointer items-center justify-center rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA] focus-within:ring-2 focus-within:ring-black">
+                            <CameraIcon className="h-6 w-6 text-brand-ink" />
                             <input
                               accept="image/*"
+                              aria-label="사진 추가"
                               className="sr-only"
                               multiple
                               onChange={(event) => {
@@ -2166,37 +2177,28 @@ export function UploadProductForm({
                             대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과
                             구성품이 잘 보이는 사진이 좋아요.
                           </p>
+                          {renderPhotoLimitToast("mt-3")}
                         </>
                       ) : (
                         <>
                           <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
-                            {coverPhoto ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                alt=""
-                                className="h-full w-full object-cover"
-                                src={coverPhoto.url}
-                              />
-                            ) : null}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              alt=""
+                              className="h-full w-full object-cover"
+                              src={coverPhoto.url}
+                            />
 
-                            {coverPhoto ? (
-                              <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
-                                대표 사진
-                              </span>
-                            ) : null}
+                            <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
+                              대표 사진
+                            </span>
 
                             <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                               <PlusIcon />
                             </span>
-                            {photoLimitToast ? (
-                              <p
-                                aria-live="polite"
-                                className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                                role="status"
-                              >
-                                {photoLimitToast}
-                              </p>
-                            ) : null}
+                            {renderPhotoLimitToast(
+                              "pointer-events-none absolute bottom-4 left-4 right-4 z-20",
+                            )}
                             <input
                               accept="image/*"
                               className="sr-only"
@@ -2214,7 +2216,7 @@ export function UploadProductForm({
                           </p>
                           <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
                             {photos.map((photo) => {
-                              const isCover = photo.id === coverPhoto?.id;
+                              const isCover = photo.id === coverPhoto.id;
 
                               return (
                                 <div
@@ -2505,27 +2507,21 @@ export function UploadProductForm({
             >
           <section className="px-4 pt-4">
             {/* 사진이 없을 때 4:3 히어로를 띄우면 첫 화면을 전부 먹어 폼이 "사진 올리는 화면"으로만
-                읽힌다. 0장은 카메라 타일 한 칸으로 줄이고, 대표 사진이 생긴 뒤에만 히어로를 연다. */}
-            {photos.length === 0 ? (
+                읽힌다. 0장은 카메라 타일 한 칸으로 줄이고, 대표 사진이 생긴 뒤에만 히어로를 연다.
+                coverPhoto 는 사진이 1장 이상이면 항상 있으므로(위 fallback) 이 조건이 곧 0장 여부다. */}
+            {!coverPhoto ? (
               <>
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-[14px] font-semibold tracking-[-0.045em]">
-                    사진
-                    <span className="ml-1.5 text-[13px] text-black/30">
-                      0/{maxPhotos}
-                    </span>
-                  </p>
-                  <p className="text-[12px] font-semibold text-black/40">
-                    최대 {maxPhotos}장
-                  </p>
-                </div>
-                <label className="mt-2.5 flex h-[76px] w-[76px] cursor-pointer flex-col items-center justify-center gap-0.5 rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA]">
-                  <CameraIcon className="h-6 w-6 text-[#4d6117]" />
-                  <span className="text-[11px] font-semibold text-[#4d6117]">
-                    0/{maxPhotos}
+                <p className="text-[14px] font-semibold tracking-[-0.045em]">
+                  사진
+                  <span className="ml-1.5 text-[13px] text-black/30">
+                    {photos.length}/{maxPhotos}
                   </span>
+                </p>
+                <label className="mt-2.5 flex h-[76px] w-[76px] cursor-pointer items-center justify-center rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA] focus-within:ring-2 focus-within:ring-black">
+                  <CameraIcon className="h-6 w-6 text-brand-ink" />
                   <input
                     accept="image/*"
+                    aria-label="사진 추가"
                     className="sr-only"
                     multiple
                     onChange={(event) => {
@@ -2539,37 +2535,28 @@ export function UploadProductForm({
                   대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과 구성품이 잘
                   보이는 사진이 좋아요.
                 </p>
+                {renderPhotoLimitToast("mt-3")}
               </>
             ) : (
               <>
                 <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
-                  {coverPhoto ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      alt=""
-                      className="h-full w-full object-cover"
-                      src={coverPhoto.url}
-                    />
-                  ) : null}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    alt=""
+                    className="h-full w-full object-cover"
+                    src={coverPhoto.url}
+                  />
 
-                  {coverPhoto ? (
-                    <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
-                      대표 사진
-                    </span>
-                  ) : null}
+                  <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
+                    대표 사진
+                  </span>
 
                   <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                     <PlusIcon />
                   </span>
-                  {photoLimitToast ? (
-                    <p
-                      aria-live="polite"
-                      className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                      role="status"
-                    >
-                      {photoLimitToast}
-                    </p>
-                  ) : null}
+                  {renderPhotoLimitToast(
+                    "pointer-events-none absolute bottom-4 left-4 right-4 z-20",
+                  )}
                   <input
                     accept="image/*"
                     className="sr-only"
@@ -2587,7 +2574,7 @@ export function UploadProductForm({
                 </p>
                 <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
                   {photos.map((photo) => {
-                    const isCover = photo.id === coverPhoto?.id;
+                    const isCover = photo.id === coverPhoto.id;
 
                     return (
                       <div
