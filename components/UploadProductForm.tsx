@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
   BackIcon,
+  CameraIcon,
   CheckIcon,
   CloseIcon,
   MinusIcon,
@@ -2132,109 +2133,23 @@ export function UploadProductForm({
                 ) : (
                   <>
                     <section className="px-4 pt-4">
-                      <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
-                        {coverPhoto ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            alt=""
-                            className="h-full w-full object-cover"
-                            src={coverPhoto.url}
-                          />
-                        ) : (
-                          <>
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.72),transparent_24%),radial-gradient(circle_at_16%_78%,rgba(255,255,255,0.24),transparent_30%)]" />
-                            <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
-                            <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
-                            <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
-                              <p className="text-[19px] font-semibold tracking-[-0.05em]">
-                                사진 업로드
-                              </p>
-                            </div>
-                          </>
-                        )}
-
-                        {coverPhoto ? (
-                          <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
-                            대표 사진
-                          </span>
-                        ) : null}
-
-                        <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
-                          <PlusIcon />
-                        </span>
-                        {photoLimitToast ? (
-                          <p
-                            aria-live="polite"
-                            className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                            role="status"
-                          >
-                            {photoLimitToast}
-                          </p>
-                        ) : null}
-                        <input
-                          accept="image/*"
-                          className="sr-only"
-                          multiple
-                          onChange={(event) => {
-                            void addPhotos(event.currentTarget.files);
-                            event.currentTarget.value = "";
-                          }}
-                          type="file"
-                        />
-                      </label>
-
-                      <p className="mt-5 text-[12px] font-semibold text-black/40">
-                        사진을 눌러 대표 사진을 변경할 수 있어요.
-                      </p>
-                      <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
-                        {photos.map((photo) => {
-                          const isCover = photo.id === coverPhoto?.id;
-
-                          return (
-                            <div
-                              className="relative"
-                              key={photo.id}
-                            >
-                              <div className="relative aspect-square overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]">
-                                <button
-                                  aria-label={`${photo.name} 대표 사진으로 설정`}
-                                  className="h-full w-full"
-                                  onClick={() => setCoverPhotoId(photo.id)}
-                                  type="button"
-                                >
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    alt={photo.name}
-                                    className="h-full w-full object-cover"
-                                    src={photo.url}
-                                  />
-                                </button>
-                                {isCover ? (
-                                  <>
-                                    <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
-                                    <span className="absolute bottom-1 left-1 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
-                                      대표
-                                    </span>
-                                  </>
-                                ) : null}
-                              </div>
-                              <button
-                                aria-label="사진 삭제"
-                                className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white shadow-[0_6px_14px_rgba(0,0,0,0.22)]"
-                                onClick={() => removePhoto(photo.id)}
-                                type="button"
-                              >
-                                <CloseIcon />
-                              </button>
-                            </div>
-                          );
-                        })}
-
-                        {photos.length < maxPhotos ? (
-                          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45 shadow-[0_8px_18px_rgba(120,132,82,0.08)]">
-                            <PlusIcon />
-                            <span className="mt-1 text-[11px] font-semibold text-black/35">
-                              ({photos.length}/{maxPhotos})
+                      {photos.length === 0 ? (
+                        <>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="text-[14px] font-semibold tracking-[-0.045em]">
+                              사진
+                              <span className="ml-1.5 text-[13px] text-black/30">
+                                0/{maxPhotos}
+                              </span>
+                            </p>
+                            <p className="text-[12px] font-semibold text-black/40">
+                              최대 {maxPhotos}장
+                            </p>
+                          </div>
+                          <label className="mt-2.5 flex h-[76px] w-[76px] cursor-pointer flex-col items-center justify-center gap-0.5 rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA]">
+                            <CameraIcon className="h-6 w-6 text-[#4d6117]" />
+                            <span className="text-[11px] font-semibold text-[#4d6117]">
+                              0/{maxPhotos}
                             </span>
                             <input
                               accept="image/*"
@@ -2247,8 +2162,121 @@ export function UploadProductForm({
                               type="file"
                             />
                           </label>
-                        ) : null}
-                      </div>
+                          <p className="mt-3 text-[12px] font-semibold text-black/40">
+                            대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과
+                            구성품이 잘 보이는 사진이 좋아요.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
+                            {coverPhoto ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                alt=""
+                                className="h-full w-full object-cover"
+                                src={coverPhoto.url}
+                              />
+                            ) : null}
+
+                            {coverPhoto ? (
+                              <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
+                                대표 사진
+                              </span>
+                            ) : null}
+
+                            <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
+                              <PlusIcon />
+                            </span>
+                            {photoLimitToast ? (
+                              <p
+                                aria-live="polite"
+                                className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                                role="status"
+                              >
+                                {photoLimitToast}
+                              </p>
+                            ) : null}
+                            <input
+                              accept="image/*"
+                              className="sr-only"
+                              multiple
+                              onChange={(event) => {
+                                void addPhotos(event.currentTarget.files);
+                                event.currentTarget.value = "";
+                              }}
+                              type="file"
+                            />
+                          </label>
+
+                          <p className="mt-5 text-[12px] font-semibold text-black/40">
+                            사진을 눌러 대표 사진을 변경할 수 있어요.
+                          </p>
+                          <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
+                            {photos.map((photo) => {
+                              const isCover = photo.id === coverPhoto?.id;
+
+                              return (
+                                <div
+                                  className="relative"
+                                  key={photo.id}
+                                >
+                                  <div className="relative aspect-square overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]">
+                                    <button
+                                      aria-label={`${photo.name} 대표 사진으로 설정`}
+                                      className="h-full w-full"
+                                      onClick={() => setCoverPhotoId(photo.id)}
+                                      type="button"
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        alt={photo.name}
+                                        className="h-full w-full object-cover"
+                                        src={photo.url}
+                                      />
+                                    </button>
+                                    {isCover ? (
+                                      <>
+                                        <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
+                                        <span className="absolute bottom-1 left-1 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                                          대표
+                                        </span>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                  <button
+                                    aria-label="사진 삭제"
+                                    className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white shadow-[0_6px_14px_rgba(0,0,0,0.22)]"
+                                    onClick={() => removePhoto(photo.id)}
+                                    type="button"
+                                  >
+                                    <CloseIcon />
+                                  </button>
+                                </div>
+                              );
+                            })}
+
+                            {photos.length < maxPhotos ? (
+                              <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45 shadow-[0_8px_18px_rgba(120,132,82,0.08)]">
+                                <PlusIcon />
+                                <span className="mt-1 text-[11px] font-semibold text-black/35">
+                                  ({photos.length}/{maxPhotos})
+                                </span>
+                                <input
+                                  accept="image/*"
+                                  className="sr-only"
+                                  multiple
+                                  onChange={(event) => {
+                                    void addPhotos(event.currentTarget.files);
+                                    event.currentTarget.value = "";
+                                  }}
+                                  type="file"
+                                />
+                              </label>
+                            ) : null}
+                          </div>
+                        </>
+                      )}
                     </section>
 
                     <section className="px-5 pt-6">
@@ -2476,111 +2504,25 @@ export function UploadProductForm({
               ref={formScrollRef}
             >
           <section className="px-4 pt-4">
-            <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
-              {coverPhoto ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  alt=""
-                  className="h-full w-full object-cover"
-                  src={coverPhoto.url}
-                />
-              ) : (
-                <>
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.72),transparent_24%),radial-gradient(circle_at_16%_78%,rgba(255,255,255,0.24),transparent_30%)]" />
-                  <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
-                  <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
-                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
-                    <p className="text-[19px] font-semibold tracking-[-0.05em]">
-                      사진 업로드
-                    </p>
-                  </div>
-                </>
-              )}
-
-              {coverPhoto ? (
-                <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
-                  대표 사진
-                </span>
-              ) : null}
-
-              <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
-                <PlusIcon />
-              </span>
-              {photoLimitToast ? (
-                <p
-                  aria-live="polite"
-                  className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                  role="status"
-                >
-                  {photoLimitToast}
-                </p>
-              ) : null}
-              <input
-                accept="image/*"
-                className="sr-only"
-                multiple
-                onChange={(event) => {
-                  void addPhotos(event.currentTarget.files);
-                  event.currentTarget.value = "";
-                }}
-                type="file"
-              />
-            </label>
-
-            <p className="mt-5 text-[12px] font-semibold text-black/40">
-              사진을 눌러 대표 사진을 변경할 수 있어요.
-            </p>
-            <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
-              {photos.map((photo) => {
-                const isCover = photo.id === coverPhoto?.id;
-
-                return (
-                  <div
-                    className="relative"
-                    key={photo.id}
-                  >
-                    <div
-                      className="relative aspect-square overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]"
-                    >
-                      <button
-                        aria-label={`${photo.name} 대표 사진으로 설정`}
-                        className="h-full w-full"
-                        onClick={() => setCoverPhotoId(photo.id)}
-                        type="button"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          alt={photo.name}
-                          className="h-full w-full object-cover"
-                          src={photo.url}
-                        />
-                      </button>
-                      {isCover ? (
-                        <>
-                          <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
-                          <span className="absolute bottom-1 left-1 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
-                            대표
-                          </span>
-                        </>
-                      ) : null}
-                    </div>
-                    <button
-                      aria-label="사진 삭제"
-                      className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white shadow-[0_6px_14px_rgba(0,0,0,0.22)]"
-                      onClick={() => removePhoto(photo.id)}
-                      type="button"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                );
-              })}
-
-              {photos.length < maxPhotos ? (
-                <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45">
-                  <PlusIcon />
-                  <span className="mt-1 text-[11px] font-semibold text-black/35">
-                    ({photos.length}/{maxPhotos})
+            {/* 사진이 없을 때 4:3 히어로를 띄우면 첫 화면을 전부 먹어 폼이 "사진 올리는 화면"으로만
+                읽힌다. 0장은 카메라 타일 한 칸으로 줄이고, 대표 사진이 생긴 뒤에만 히어로를 연다. */}
+            {photos.length === 0 ? (
+              <>
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-[14px] font-semibold tracking-[-0.045em]">
+                    사진
+                    <span className="ml-1.5 text-[13px] text-black/30">
+                      0/{maxPhotos}
+                    </span>
+                  </p>
+                  <p className="text-[12px] font-semibold text-black/40">
+                    최대 {maxPhotos}장
+                  </p>
+                </div>
+                <label className="mt-2.5 flex h-[76px] w-[76px] cursor-pointer flex-col items-center justify-center gap-0.5 rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA]">
+                  <CameraIcon className="h-6 w-6 text-[#4d6117]" />
+                  <span className="text-[11px] font-semibold text-[#4d6117]">
+                    0/{maxPhotos}
                   </span>
                   <input
                     accept="image/*"
@@ -2593,8 +2535,123 @@ export function UploadProductForm({
                     type="file"
                   />
                 </label>
-              ) : null}
-            </div>
+                <p className="mt-3 text-[12px] font-semibold text-black/40">
+                  대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과 구성품이 잘
+                  보이는 사진이 좋아요.
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="product-hero-media relative z-0 flex cursor-pointer overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
+                  {coverPhoto ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      alt=""
+                      className="h-full w-full object-cover"
+                      src={coverPhoto.url}
+                    />
+                  ) : null}
+
+                  {coverPhoto ? (
+                    <span className="absolute left-4 top-4 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)]">
+                      대표 사진
+                    </span>
+                  ) : null}
+
+                  <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
+                    <PlusIcon />
+                  </span>
+                  {photoLimitToast ? (
+                    <p
+                      aria-live="polite"
+                      className="soft-panel-enter pointer-events-none absolute bottom-4 left-4 right-4 z-20 rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                      role="status"
+                    >
+                      {photoLimitToast}
+                    </p>
+                  ) : null}
+                  <input
+                    accept="image/*"
+                    className="sr-only"
+                    multiple
+                    onChange={(event) => {
+                      void addPhotos(event.currentTarget.files);
+                      event.currentTarget.value = "";
+                    }}
+                    type="file"
+                  />
+                </label>
+
+                <p className="mt-5 text-[12px] font-semibold text-black/40">
+                  사진을 눌러 대표 사진을 변경할 수 있어요.
+                </p>
+                <div className="relative z-10 mt-2 grid grid-cols-5 gap-2">
+                  {photos.map((photo) => {
+                    const isCover = photo.id === coverPhoto?.id;
+
+                    return (
+                      <div
+                        className="relative"
+                        key={photo.id}
+                      >
+                        <div
+                          className="relative aspect-square overflow-hidden rounded-[0.8rem] bg-[#f7f7f7]"
+                        >
+                          <button
+                            aria-label={`${photo.name} 대표 사진으로 설정`}
+                            className="h-full w-full"
+                            onClick={() => setCoverPhotoId(photo.id)}
+                            type="button"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              alt={photo.name}
+                              className="h-full w-full object-cover"
+                              src={photo.url}
+                            />
+                          </button>
+                          {isCover ? (
+                            <>
+                              <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
+                              <span className="absolute bottom-1 left-1 rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-white">
+                                대표
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                        <button
+                          aria-label="사진 삭제"
+                          className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/75 text-white shadow-[0_6px_14px_rgba(0,0,0,0.22)]"
+                          onClick={() => removePhoto(photo.id)}
+                          type="button"
+                        >
+                          <CloseIcon />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {photos.length < maxPhotos ? (
+                    <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[0.8rem] border border-dashed border-[#CDEB55] bg-[#F7FBEA] text-black/45">
+                      <PlusIcon />
+                      <span className="mt-1 text-[11px] font-semibold text-black/35">
+                        ({photos.length}/{maxPhotos})
+                      </span>
+                      <input
+                        accept="image/*"
+                        className="sr-only"
+                        multiple
+                        onChange={(event) => {
+                          void addPhotos(event.currentTarget.files);
+                          event.currentTarget.value = "";
+                        }}
+                        type="file"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              </>
+            )}
           </section>
 
           <section className="px-5 pt-6">
