@@ -17,6 +17,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { useIsInAppNavigation } from "@/lib/use-in-app-navigation";
 
 const LOGIN_PANEL_TRANSITION_MS = 240;
 
@@ -44,6 +45,9 @@ export function LoginExperience({
   const exitTimerRef = useRef<number | null>(null);
   const [isEntered, setIsEntered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  // 딥링크·새로고침으로 곧장 들어온 경우에는 뒤로 갈 화면이 없다 — 언더레이(마이페이지)를
+  // 깔지 않는다. 깔면 방문한 적 없는 화면이 먼저 그려진다.
+  const isInAppNavigation = useIsInAppNavigation();
 
   useEffect(() => {
     const enterFrame = window.requestAnimationFrame(() => {
@@ -143,8 +147,12 @@ export function LoginExperience({
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
       <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-        <ProfileContent skipEnterAnimation />
-        <BottomNavigator activeLabel="Profile" />
+        {isInAppNavigation ? (
+          <>
+            <ProfileContent skipEnterAnimation />
+            <BottomNavigator activeLabel="Profile" />
+          </>
+        ) : null}
       </SwipeUnderlay>
 
       <div

@@ -8,15 +8,81 @@
   --system-top-color: #000000;
   --brand-accent: #d7ff5f;
   --brand-accent-foreground: #111111;
-  --motion-blur: 8px;
+  /* 찜·최애 활성 색. 브랜드 액센트(라임)와 별개로, "찜 = 빨강" 관습을 따른다.
+     이미지 위에 얹히는 하트는 배경 없이 이 색과 흰색만으로 상태를 구분한다. */
+  --like: #ff3b4e;
   --motion-pop: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-snap: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-soft: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /*
+   * ── 디자인 토큰 ──────────────────────────────────────────────
+   * 지금까지 컴포넌트마다 헥스를 직접 써서, 눈으로 구분되지 않는 회색 12종·라임 13종이
+   * 생겼다(#f7f7f7·#f5f5f5·#f4f4f4·#f3f3f3·#f2f2f2·#f1f1f1 …). 인접한 카드끼리
+   * 미세하게 달라 이음매가 보이는 게 유일한 증상이라 원인을 찾기 어렵다.
+   *
+   * 기존 화면을 한 번에 갈아엎지 않는다 — 토큰을 먼저 깔고, 손대는 화면부터 흡수한다.
+   * 새 코드에서는 아래 토큰만 쓴다.
+   */
+
+  /* 면 — 1: 카드/시트, 2: 화면 배경·비활성 입력, 3: 눌린 상태·구분선 대용 */
+  --surface-1: #ffffff;
+  --surface-2: #f5f5f5;
+  --surface-3: #ebebeb;
+
+  /* 브랜드 라임 — strong: CTA 면, base: 활성 칩·프로그레스, soft: 보조 면, pale: 아주 옅은 배경 */
+  --brand-strong: #d7ff5f;
+  --brand-base: #cfe86b;
+  --brand-soft: #dde7b8;
+  --brand-pale: #f3f7e6;
+  /* 라임 위에 얹는 글자색. 라임 자체는 흰 배경 대비 1.06:1 이라 선·작은 글자로 쓰면 안 된다. */
+  --brand-ink: #4d6117;
+
+  /* 글자 */
+  --text-strong: #111111;
+  --text-base: rgba(17, 17, 17, 0.72);
+  --text-muted: rgba(17, 17, 17, 0.45);
+  --text-disabled: rgba(17, 17, 17, 0.28);
+
+  /* 경고 — 파괴적 행동은 면이 아니라 글자색으로 쓴다 (탈퇴/취소 버튼을 라임 CTA보다
+     눈에 띄게 만들지 않기 위한 규칙). */
+  --danger-base: #c03131;
+  --danger-soft: #fdecec;
+
+  /* 모서리 — 12/16/20 세 단계. 0.8~1.2rem 이 뒤섞여 인접 카드가 어긋나 보이던 것을 정리한다.
+     Tailwind 의 --radius-* 네임스페이스와 이름이 겹치면 @theme 에서 자기 참조가 되므로
+     원본 값은 --app-radius-* 로 두고 아래 @theme 에서 매핑한다. */
+  --app-radius-sm: 12px;
+  --app-radius-md: 16px;
+  --app-radius-lg: 20px;
+
+  /* 모션 — 4단계. 35ms~2400ms 20종이 섞여 있어 앱 전체 속도감이 균일하지 않았다.
+     instant: 탭 피드백 / base: 페이드·칩 / screen: 패널 전환 / emphasis: 성공·확정 */
+  --duration-instant: 120ms;
+  --duration-base: 200ms;
+  --duration-screen: 280ms;
+  --duration-emphasis: 400ms;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-like: var(--like);
+  /* 라임은 면으로만 쓴다. #f7f7f7 위에서 명도 대비가 1.06:1 이라 선·작은 글자로 쓰면 안 보인다. */
+  --color-brand-accent: var(--brand-accent);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-base: var(--brand-base);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-pale: var(--brand-pale);
+  --color-brand-ink: var(--brand-ink);
+  --color-danger-base: var(--danger-base);
+  --color-danger-soft: var(--danger-soft);
+  --radius-sm: var(--app-radius-sm);
+  --radius-md: var(--app-radius-md);
+  --radius-lg: var(--app-radius-lg);
   --font-sans:
     "Pretendard",
     "Apple SD Gothic Neo",
@@ -72,13 +138,14 @@ body.is-pwa-standalone {
   }
 }
 
+/* 검정 상단 크롬은 홈(app-header)·검색처럼 "루트 화면"에만 쓴다.
+   개최 폼(upload-header)은 뒤로가기가 있는 하위 화면이라 흰 크롬 쪽으로 옮겼다 —
+   하위 화면인데 헤더만 검정이면 "검정 = 홈" 규칙이 깨진다. */
 html:has(.app-header),
 html:has(.search-header),
-html:has(.upload-header),
 html:has(.system-chrome-black),
 body:has(.app-header),
 body:has(.search-header),
-body:has(.upload-header),
 body:has(.system-chrome-black) {
   --system-top-color: #000000;
   background: #000000;
@@ -88,11 +155,13 @@ html:has(.favorites-header),
 html:has(.profile-header),
 html:has(.bid-history-header),
 html:has(.product-detail-header),
+html:has(.upload-header),
 html:has(.system-chrome-white),
 body:has(.favorites-header),
 body:has(.profile-header),
 body:has(.bid-history-header),
 body:has(.product-detail-header),
+body:has(.upload-header),
 body:has(.system-chrome-white) {
   --system-top-color: #ffffff;
   background: #ffffff;
@@ -228,7 +297,21 @@ body.is-pwa-standalone {
   display: none;
 }
 
-@media (min-width: 768px) and (hover: hover) {
+/*
+ * 넓은 화면에서는 앱을 폰 프레임 안에 담아 보여준다.
+ * 조건을 hover 로만 잠그면 아이패드·갤럭시탭처럼 마우스가 없는 태블릿이 빠져나가
+ * 모바일 레이아웃이 뷰포트 폭만큼 늘어난다. 그래서 "마우스가 있거나, 브라우저 탭에서 보는
+ * 세로가 충분한 기기"를 조건으로 쓴다.
+ * - 세로 600px 하한: 가로 모드 폰(iPhone 15 Pro Max 가로 430px, 대형 안드로이드 ~480px)을
+ *   걸러내면서 아이패드 mini 가로(툴바 제외 ~660px)까지는 포함하는 값.
+ * - display-mode: browser: 홈 화면에 설치한 태블릿 PWA 는 브라우저 UI 가 없는 전체화면이라
+ *   그 안에 폰 목업을 그리면 안 된다. 마우스가 있는 데스크톱 PWA 는 hover 분기로 기존대로 유지.
+ *
+ * ⚠️ 아래 브랜드 패널 블록(min-width: 1024px)이 같은 조건을 복제하고 있다. 한쪽만 고치면
+ *    프레임 없이 브랜드 패널만 뜨는 조합이 생기므로 두 블록은 항상 같이 바꾼다.
+ */
+@media (min-width: 768px) and
+  ((hover: hover) or ((min-height: 600px) and (display-mode: browser))) {
   html:has(body.desktop-web-shell > main.system-chrome-black),
   html:has(body.desktop-web-shell > main.system-chrome-white) {
     height: 100%;
@@ -240,9 +323,7 @@ body.is-pwa-standalone {
   }
 
   body.desktop-web-shell:has(> main.system-chrome-black),
-  body.desktop-web-shell:has(> main.system-chrome-white),
-  body.desktop-web-shell.is-browser-tab:has(> main.system-chrome-black),
-  body.desktop-web-shell.is-browser-tab:has(> main.system-chrome-white) {
+  body.desktop-web-shell:has(> main.system-chrome-white) {
     align-items: center;
     display: grid;
     height: 100dvh;
@@ -280,11 +361,19 @@ body.is-pwa-standalone {
   }
 }
 
-@media (min-width: 1120px) and (hover: hover) {
+/*
+ * 브랜드 패널은 프레임 옆에 380px 이상을 확보할 수 있을 때만 붙인다.
+ * 1024px 기준은 아이패드 가로(1024~1194px)를 포함시키기 위한 것 — 그 폭에서
+ * 브랜드 최소 380px + gap + 프레임(세로에서 역산, 768px 높이 기준 약 342px) + 좌우 패딩이
+ * 900px 안쪽이라 겹치지 않는다.
+ * 프레임 조건(위 블록)을 그대로 복제한다 — 프레임 없이 브랜드 패널만 뜨면 안 된다.
+ * 세로 660px 하한은 패널 콘텐츠(로고+텍스트+칩+비주얼 ≈606px)가 body { overflow: hidden }
+ * 에 잘리는 것을 막는 값이다. 실측상 620px 에서 잘리고 680px 부터는 여유가 있다.
+ */
+@media (min-width: 1024px) and (min-height: 660px) and
+  ((hover: hover) or ((min-height: 600px) and (display-mode: browser))) {
   body.desktop-web-shell:has(> main.system-chrome-black),
-  body.desktop-web-shell:has(> main.system-chrome-white),
-  body.desktop-web-shell.is-browser-tab:has(> main.system-chrome-black),
-  body.desktop-web-shell.is-browser-tab:has(> main.system-chrome-white) {
+  body.desktop-web-shell:has(> main.system-chrome-white) {
     grid-template-columns: minmax(380px, 560px) auto;
     justify-content: center;
     align-items: center;
@@ -292,8 +381,13 @@ body.is-pwa-standalone {
     padding: clamp(22px, 3.6vh, 40px) clamp(32px, 5vw, 72px) clamp(72px, 9vh, 112px);
   }
 
+  /* 브랜드 패널은 DOM 상 main 뒤에 있다(탭 순서 때문). 자동 배치에 맡기면 좌우가
+     뒤집히므로 두 요소의 행·열을 명시한다. 이 선언은 반드시 이 미디어 블록 안에만
+     둔다 — 밖으로 나가면 단일 컬럼 구간에서 main 이 없는 2열로 밀려난다. */
   body.desktop-web-shell:has(> main.system-chrome-black) > main,
   body.desktop-web-shell:has(> main.system-chrome-white) > main {
+    grid-column: 2;
+    grid-row: 1;
     justify-self: center;
   }
 
@@ -303,11 +397,23 @@ body.is-pwa-standalone {
     display: flex;
     flex-direction: column;
     gap: clamp(16px, 2.2vw, 26px);
+    grid-column: 1;
+    grid-row: 1;
     justify-self: end;
     max-width: 560px;
     min-width: 0;
     padding-block: clamp(6px, 1.4vh, 14px) 0;
   }
+}
+
+/* 로고와 X 버튼을 한 줄에 둬 패널 높이를 로고 높이(72px) 그대로 유지한다.
+   space-between 이라 버튼은 로고에 인접하지 않고 패널 우측 라인에 정렬된다
+   (aside 는 내용 폭으로 줄어 480px — body·visual 의 max-width 와 같은 선). */
+.desktop-web-brand__header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
 }
 
 .desktop-web-brand__logo {
@@ -317,6 +423,85 @@ body.is-pwa-standalone {
 .desktop-web-brand__logo img {
   height: auto;
   width: 100%;
+}
+
+/* 패널 최소 폭이 380px 이라 로고(224px) 옆에 핸들 텍스트까지 넣으면 넘친다.
+   아이콘만 두고 계정명은 aria-label·title 로 전달한다.
+   패널 배경·로고·타이포가 모두 옅은 톤이라 배지를 채우면 로고보다 X 가 먼저 읽힌다.
+   마크만 잉크색으로 얹되, 박스는 46px 로 남겨 터치 타깃(권장 44px)을 지킨다 —
+   이 패널은 태블릿 가로에서도 뜨므로 박스를 아이콘 크기까지 줄이면 안 된다. */
+.desktop-web-brand__social {
+  align-items: center;
+  border-radius: 999px;
+  color: #111111;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 46px;
+  justify-content: center;
+  position: relative;
+  transition: opacity 160ms ease;
+  width: 46px;
+}
+
+/* 아이콘 아래에 absolute 로 띄운다 — 헤더 행 높이(로고 72px)를 그대로 두기 위해서다.
+   링크 안에 두어 말풍선까지 클릭 영역이 되고, 접근 이름도 이 문구가 된다. */
+.desktop-web-brand__social-hint {
+  background: #ffffff;
+  border: 1px solid rgba(17, 17, 17, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(17, 17, 17, 0.08);
+  color: rgba(17, 17, 17, 0.6);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  padding: 8px 12px;
+  position: absolute;
+  right: 0;
+  /* 링크 박스(46px)는 터치 타깃이라 X 글리프(26px)보다 10px 크다. 꼬리 길이는 글리프 기준으로
+     잡아야 아이콘을 가리키는 것처럼 읽힌다 — 박스 아래 8px + 박스 여백 10px = 글리프까지 18px. */
+  top: calc(100% + 8px);
+  white-space: nowrap;
+}
+
+/* 꼬리 — 글리프까지 18px 중 13px 를 채운다. 다 채우면 화살표처럼 길어져 말풍선 꼴이 깨진다.
+   테두리가 있는 말풍선이라 삼각형을 두 겹으로 쌓는다: ::before 가 테두리색, ::after 가 배경색.
+   꼭짓점 x = 아이콘 중앙(우측 23px) 에 맞춘다 — 폭 16px 이면 right 15px, 14px 이면 right 16px. */
+.desktop-web-brand__social-hint::before,
+.desktop-web-brand__social-hint::after {
+  content: "";
+  height: 0;
+  position: absolute;
+  width: 0;
+}
+
+.desktop-web-brand__social-hint::before {
+  border-bottom: 13px solid rgba(17, 17, 17, 0.08);
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  right: 15px;
+  top: -13px;
+}
+
+.desktop-web-brand__social-hint::after {
+  border-bottom: 11px solid #ffffff;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  right: 16px;
+  top: -11px;
+}
+
+/* 패널 노출 조건(위 미디어 쿼리)에 마우스 없는 태블릿이 포함돼 있어, hover 를 감싸지
+   않으면 탭한 뒤 흐려진 상태가 그대로 남는다. 포커스는 motion-icon-button 관행대로
+   hover 와 같은 표현을 쓰되 UA 아웃라인은 지우지 않는다. */
+.desktop-web-brand__social:focus-visible {
+  opacity: 0.55;
+}
+
+@media (hover: hover) {
+  .desktop-web-brand__social:hover {
+    opacity: 0.55;
+  }
 }
 
 .desktop-web-brand__eyebrow {
@@ -478,16 +663,20 @@ body.is-pwa-standalone {
   animation-play-state: paused;
 }
 
+/*
+ * 등장 애니메이션에서 filter: blur() 를 걷어냈다.
+ * blur 는 합성만으로 끝나지 않고 매 프레임 재래스터화가 필요해서, 카드가 여러 장 동시에
+ * 등장하는 홈·아티스트 목록에서 중저가 안드로이드의 첫 스크롤이 끊겼다.
+ * opacity + translateY 만 남겨도 체감 차이는 거의 없고 합성 스레드에서만 돈다.
+ */
 @keyframes soft-panel-enter {
   from {
     opacity: 0;
-    filter: blur(var(--motion-blur));
     transform: translateY(8px) scale(0.982);
   }
 
   to {
     opacity: 1;
-    filter: blur(0);
     transform: translateY(0) scale(1);
   }
 }
@@ -500,7 +689,6 @@ body.is-pwa-standalone {
 
   to {
     opacity: 0;
-    filter: blur(4px);
     transform: translateY(-4px) scale(0.985);
   }
 }
@@ -529,16 +717,15 @@ body.is-pwa-standalone {
   }
 }
 
+/* 이름은 유지한다 — 참조하는 클래스가 여럿이다. blur 만 뺐다(위 soft-panel-enter 주석 참고). */
 @keyframes motion-blur-enter {
   from {
     opacity: 0;
-    filter: blur(10px);
     transform: translateY(10px) scale(0.982);
   }
 
   to {
     opacity: 1;
-    filter: blur(0);
     transform: translateY(0) scale(1);
   }
 }
@@ -558,6 +745,16 @@ body.is-pwa-standalone {
 
 .content-reveal {
   animation: content-reveal 240ms var(--motion-snap) both;
+}
+
+/* 아티스트 그리드는 그룹 수(수백 개)만큼 카드가 한 번에 깔린다. 화면 밖 카드를 건너뛰게 해
+   목록이 통째로 갈릴 때의 비용을 보이는 만큼으로 묶는다. 194px = 카드 실제 높이(스켈레톤과 동일). */
+.artist-card {
+  content-visibility: auto;
+  /* auto 키워드는 content-visibility 보다 늦게 들어왔다. 아는 브라우저는 아래 줄로 덮어쓰고,
+     모르는 브라우저에서는 선언 전체가 무효가 돼 화면 밖 카드가 0 높이로 접히므로 폴백을 둔다. */
+  contain-intrinsic-size: 194px;
+  contain-intrinsic-size: auto 194px;
 }
 
 @keyframes error-shake {
@@ -587,21 +784,20 @@ body.is-pwa-standalone {
   animation: error-shake 320ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
+/* 하단 탭은 세션마다 수십 번 눌린다. blur + 1.08 오버슈트는 그 빈도에서 산만해서
+   오버슈트를 1.03 으로 낮추고 blur 를 뺐다. */
 @keyframes motion-icon-swap {
   0% {
-    filter: blur(1.8px);
     opacity: 0.62;
-    transform: scale(0.74);
+    transform: scale(0.86);
   }
 
   56% {
-    filter: blur(0);
     opacity: 1;
-    transform: scale(1.08);
+    transform: scale(1.03);
   }
 
   100% {
-    filter: blur(0);
     opacity: 0.92;
     transform: scale(1);
   }
@@ -637,10 +833,9 @@ body.is-pwa-standalone {
   backface-visibility: hidden;
   transform: translateZ(0);
   transition:
-    box-shadow 260ms var(--motion-snap),
-    filter 260ms var(--motion-snap),
-    opacity 220ms var(--motion-snap),
-    transform 260ms var(--motion-snap);
+    box-shadow var(--duration-base) var(--motion-snap),
+    opacity var(--duration-base) var(--motion-snap),
+    transform var(--duration-base) var(--motion-snap);
   will-change: transform;
 }
 
@@ -758,13 +953,11 @@ body.is-pwa-standalone {
 @keyframes motion-blur-enter-snap {
   from {
     opacity: 0;
-    filter: blur(10px);
     transform: translateY(10px);
   }
 
   to {
     opacity: 1;
-    filter: blur(0);
     transform: translateY(0);
   }
 }
@@ -878,30 +1071,48 @@ body.is-pwa-standalone {
   will-change: transform;
 }
 
-@keyframes intro-typing {
-  0%,
-  24% {
-    max-width: 0;
+/* 어두운 섹션의 그라데이션 밴딩을 가리는 미세 노이즈.
+   SVG 에 intrinsic size 를 주지 않으면 배경 영역 전체(섹션 높이 1000px 대 × DPR)로 한 장을
+   래스터화한다 — feTurbulence 는 CPU 필터라 초기 페인트 비용이 커진다. 160px 타일로 고정해
+   repeat 시킨다. 콘텐츠는 z-10 으로 올려 이 오버레이 위에 오게 한다. */
+.intro-grain::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  content: "";
+  inset: 0;
+  mix-blend-mode: overlay;
+  opacity: 0.16;
+  pointer-events: none;
+  position: absolute;
+}
+
+@keyframes intro-live-ping {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
   }
 
-  62%,
+  70%,
   100% {
-    max-width: 5.6rem;
+    opacity: 0;
+    transform: scale(2.4);
   }
 }
 
-@keyframes intro-search-results {
-  0%,
-  14% {
-    opacity: 1;
-    transform: translateY(4px);
-  }
+.intro-live-ping {
+  animation: intro-live-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
 
-  28%,
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* 히어로 키워드 형광펜 — 첫 진입에서 왼쪽부터 그어진다. */
+.intro-marker {
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 760ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.intro-marker-on {
+  transform: scaleX(1);
 }
 
 @keyframes intro-confirm-pulse {
@@ -948,18 +1159,6 @@ body.is-pwa-standalone {
   }
 }
 
-.intro-typing-text {
-  animation: intro-typing 3.6s steps(5, end) infinite;
-  display: inline-block;
-  max-width: 5.6rem;
-  min-height: 1.5rem;
-  will-change: max-width;
-}
-
-.intro-search-results {
-  opacity: 1;
-}
-
 .intro-mini-phone-screen {
   --intro-phone-screen-scale: 0.707;
 }
@@ -999,12 +1198,11 @@ body.is-pwa-standalone {
 @media (prefers-reduced-motion: reduce) {
   .settlement-account-panel-enter,
   .settlement-account-panel-exit,
-  .intro-typing-text,
-  .intro-search-results,
   .intro-payment-sheet,
   .intro-confirm-pulse,
   .intro-waybill-typing,
   .intro-ship-complete-button,
+  .intro-live-ping,
   .intro-float,
   .intro-spin-slow,
   .intro-pulse,
@@ -1013,6 +1211,11 @@ body.is-pwa-standalone {
   }
 
   .intro-payment-sheet {
+    transition: none;
+  }
+
+  .intro-marker {
+    transform: scaleX(1);
     transition: none;
   }
 }
@@ -1093,12 +1296,6 @@ body.is-pwa-standalone {
     transform: none;
   }
 
-  .upload-header__eyebrow {
-    display: block;
-    font-size: 12px;
-    line-height: 1;
-  }
-
   .upload-header__title {
     font-size: 26px;
     line-height: 1.2;
@@ -1112,11 +1309,6 @@ body.is-pwa-standalone {
 
   .bid-history-header__copy {
     height: auto;
-  }
-
-  .bid-history-header__eyebrow {
-    font-size: 12px;
-    line-height: 1;
   }
 
   .bid-history-header__title {
@@ -1134,11 +1326,6 @@ body.is-pwa-standalone {
     height: auto;
   }
 
-  .favorites-header__eyebrow {
-    font-size: 12px;
-    line-height: 1;
-  }
-
   .favorites-header__title {
     font-size: 26px;
     line-height: 1.2;
@@ -1152,11 +1339,6 @@ body.is-pwa-standalone {
 
   .profile-header__copy {
     height: auto;
-  }
-
-  .profile-header__eyebrow {
-    font-size: 12px;
-    line-height: 1;
   }
 
   .profile-header__title {
@@ -1195,8 +1377,11 @@ body.is-pwa-standalone {
     font-size: 11px;
   }
 
+  /* 라벨은 이제 브라우저에서도 항상 보이므로 display 를 켤 필요가 없다.
+     설치형에서는 탭 높이에 여유가 있어 한 단계 크게 쓴다 —
+     JSX 의 text-[10px] 보다 우선하려면 라벨을 직접 지정해야 한다. */
   .bottom-navigator__label {
-    display: block;
+    font-size: 11px;
   }
 }
 
@@ -1313,12 +1498,6 @@ body.is-pwa-standalone .upload-header__copy {
   transform: none;
 }
 
-body.is-pwa-standalone .upload-header__eyebrow {
-  display: block;
-  font-size: 12px;
-  line-height: 1;
-}
-
 body.is-pwa-standalone .upload-header__title {
   font-size: 26px;
   line-height: 1.2;
@@ -1332,11 +1511,6 @@ body.is-pwa-standalone .bid-history-header {
 
 body.is-pwa-standalone .bid-history-header__copy {
   height: auto;
-}
-
-body.is-pwa-standalone .bid-history-header__eyebrow {
-  font-size: 12px;
-  line-height: 1;
 }
 
 body.is-pwa-standalone .bid-history-header__title {
@@ -1354,11 +1528,6 @@ body.is-pwa-standalone .favorites-header__copy {
   height: auto;
 }
 
-body.is-pwa-standalone .favorites-header__eyebrow {
-  font-size: 12px;
-  line-height: 1;
-}
-
 body.is-pwa-standalone .favorites-header__title {
   font-size: 26px;
   line-height: 1.2;
@@ -1372,11 +1541,6 @@ body.is-pwa-standalone .profile-header {
 
 body.is-pwa-standalone .profile-header__copy {
   height: auto;
-}
-
-body.is-pwa-standalone .profile-header__eyebrow {
-  font-size: 12px;
-  line-height: 1;
 }
 
 body.is-pwa-standalone .profile-header__title {
@@ -1420,14 +1584,46 @@ body.is-pwa-standalone .bottom-navigator__item {
 }
 
 body.is-pwa-standalone .bottom-navigator__label {
-  display: block;
+  font-size: 11px;
 }
 
 .bottom-navigator {
   transition:
-    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    margin-bottom var(--duration-base) var(--motion-snap),
+    opacity var(--duration-base) var(--motion-snap),
+    transform var(--duration-base) var(--motion-snap);
   will-change: opacity, transform;
+}
+
+/*
+ * 스크롤을 내리는 동안 하단 탭이 비켜난다 (BottomNavigator + useScrollDirectionHidden).
+ * transform 만 주면 흐름에는 자리가 남아 목록 아래에 빈 띠가 생기므로,
+ * 실측 높이(--bottom-navigator-height)만큼 음수 마진을 함께 준다.
+ * 두 속성이 같은 시간으로 트랜지션되어 탭이 내려가는 만큼 스크롤 영역이 늘어난다.
+ * 스크롤 위치가 튀지 않도록 바닥 근처에서는 애초에 숨기지 않는다(BOTTOM_EDGE_GUARD).
+ */
+.bottom-navigator--scrolled-away {
+  margin-bottom: calc(-1 * var(--bottom-navigator-height, 4rem));
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
+/*
+ * 우하단 도움말 버튼도 스크롤 중에는 같이 비켜난다.
+ * 상시 떠 있는 동안 홈 카드의 하트, 참여 내역 진행바의 마지막 단계, 모집 기한 값을
+ * 번갈아 가리고 있었다. 하단 탭과 같은 신호를 쓰므로 둘이 따로 놀지 않는다.
+ */
+.floating-help-button {
+  transition:
+    opacity var(--duration-base) var(--motion-snap),
+    transform var(--duration-base) var(--motion-snap);
+}
+
+.floating-help-button--scrolled-away {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(100% + 1.25rem));
 }
 
 body.is-virtual-keyboard-open .bottom-navigator {
@@ -1696,27 +1892,26 @@ body.is-pwa-standalone .bid-sheet-panel {
 
 .bid-sheet-backdrop {
   background: rgba(0, 0, 0, 0);
-  transition: background-color 260ms var(--motion-snap);
+  transition: background-color var(--duration-screen) var(--motion-snap);
 }
 
 .bid-sheet-backdrop-active {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* 시트는 화면 전환급 이동이라 --duration-screen. blur 는 뺐다 —
+   전체 화면 폭의 패널에 걸리는 blur 가 이 앱에서 가장 비싼 애니메이션이었다. */
 .bid-sheet-panel {
-  filter: blur(8px);
   opacity: 0.92;
   transform: translateY(100%) scale(0.985);
   transform-origin: bottom center;
   transition:
-    filter 300ms var(--motion-pop),
-    opacity 300ms var(--motion-pop),
-    transform 300ms var(--motion-pop);
-  will-change: filter, opacity, transform;
+    opacity var(--duration-screen) var(--motion-pop),
+    transform var(--duration-screen) var(--motion-pop);
+  will-change: opacity, transform;
 }
 
 .bid-sheet-panel-active {
-  filter: blur(0);
   opacity: 1;
   transform: translateY(0) scale(1);
 }
@@ -1729,5 +1924,41 @@ body.is-pwa-standalone .bid-sheet-panel {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 1ms !important;
+  }
+}
+
+
+/* 이미지 위에 얹히는 찜·최애 하트 (시안 A).
+   배경 원을 없애는 대신 그림자로 외곽선을 만들어, 밝은 썸네일 위에서도 형태가 남게 한다.
+   흰 배경 UI 위의 하트는 이 유틸을 쓰지 않는다 — 흰 하트가 배경에 묻힌다. */
+.heart-on-image {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 0 1px rgba(0, 0, 0, 0.35));
+}
+
+.heart-on-image--active {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+}
+
+
+/* 아티스트 목록의 일시 안내 토스트 — 잠깐 떴다 스스로 사라진다. */
+.artist-toast {
+  animation: artist-toast-in 180ms var(--motion-snap) both;
+}
+
+@keyframes artist-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artist-toast {
+    animation: none;
   }
 }

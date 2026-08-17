@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { BackIcon, CheckIcon, ProfileIcon } from "@/components/icons";
+import { BackIcon, CheckIcon, KakaoIcon, ProfileIcon } from "@/components/icons";
 import { getKakaoAuthorizationUrl } from "@/lib/auth-api";
 import { authReturnHrefStorageKey } from "@/lib/auth-store";
 
@@ -55,11 +55,8 @@ export function LoginContent({
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 flex-1 text-right">
-            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-              Login
-            </p>
-            <h1 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+          <div className="min-w-0 flex-1 text-left">
+            <h1 className="text-[22px] font-semibold leading-none tracking-[-0.06em]">
               로그인
             </h1>
           </div>
@@ -90,7 +87,7 @@ export function LoginContent({
           </p>
 
           <div className="mt-6 grid gap-2">
-            {["진행 중인 참여 확인", "배송지 관리", "찜한 상품 이어보기"].map(
+            {["진행 중인 참여 확인", "배송지 관리", "찜한 분철 이어보기"].map(
               (label) => (
                 <div
                   className="flex h-11 items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] px-3 text-[13px] font-semibold tracking-[-0.04em] text-black/65"
@@ -106,10 +103,11 @@ export function LoginContent({
           </div>
 
           <button
-            className="mt-6 flex h-12 w-full items-center justify-center rounded-full bg-[#fee500] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(254,229,0,0.32)]"
+            className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#fee500] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(254,229,0,0.32)]"
             onClick={handleKakaoLogin}
             type="button"
           >
+            <KakaoIcon className="h-[18px] w-[18px]" />
             카카오로 로그인
           </button>
         </section>

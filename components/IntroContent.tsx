@@ -1,44 +1,50 @@
 "use client";
 
+import Link from "next/link";
 import {
   createContext,
+  memo,
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
   type ReactNode,
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
+import { isBuncheolRecruitingStatus } from "@/lib/buncheol-states";
+import { X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import {
   BackIcon,
+  BanknoteIcon,
   BellIcon,
-  BidIcon,
-  CheckIcon,
+  ClipboardListIcon,
   CloseIcon,
+  ForwardIcon,
   HeartIcon,
   HomeIcon,
+  PackageCheckIcon,
   PlusIcon,
   ProfileIcon,
-  SearchIcon,
+  BidIcon,
+  TruckIcon,
+  UsersRoundIcon,
+  XLogoIcon,
 } from "@/components/icons";
 
 type RevealProps = {
   children: ReactNode;
   className?: string;
   delay?: number;
-  direction?: "up" | "down" | "left" | "right" | "scale";
+  direction?: "up" | "left" | "right" | "scale";
 };
-
-type ScrollDirection = "down" | "up";
 
 type IntroMotionContextValue = {
   homeScrollOffset: number;
-  pageScrollTop: number;
   prefersReducedMotion: boolean;
-  scrollDirection: ScrollDirection;
 };
 
 type LegacyMediaQueryList = MediaQueryList & {
@@ -46,10 +52,9 @@ type LegacyMediaQueryList = MediaQueryList & {
   removeListener: (listener: () => void) => void;
 };
 
-type FeatureSection = {
+type FeatureSlide = {
   body: string;
-  eyebrow: string;
-  screen: ReactNode;
+  chips: readonly string[];
   title: string;
 };
 
@@ -61,9 +66,7 @@ type IntroRecentBuncheol = {
 
 const IntroMotionContext = createContext<IntroMotionContextValue>({
   homeScrollOffset: 0,
-  pageScrollTop: 0,
   prefersReducedMotion: false,
-  scrollDirection: "down",
 });
 
 const fallbackRecentBuncheols: IntroRecentBuncheol[] = [
@@ -78,6 +81,10 @@ const fallbackRecentBuncheols: IntroRecentBuncheol[] = [
     title: "세븐틴 팬미팅 MD",
   },
 ];
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 function formatIntroRecentDeadline(deadline: string) {
   const deadlineTime = new Date(deadline).getTime();
@@ -106,7 +113,7 @@ function getIntroRecentState(item: BuncheolSummary) {
     return item.memberNames.slice(0, 2).join(" · ");
   }
 
-  return item.groupName || "모집중";
+  return item.groupName || "모집 중";
 }
 
 function toIntroRecentBuncheol(item: BuncheolSummary): IntroRecentBuncheol {
@@ -124,9 +131,10 @@ function Reveal({
   direction = "up",
 }: RevealProps) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const { prefersReducedMotion, scrollDirection } =
-    useContext(IntroMotionContext);
+  const { prefersReducedMotion } = useContext(IntroMotionContext);
   const [isVisible, setIsVisible] = useState(false);
+  // 전이가 끝나면 will-change 를 놓아준다 — 30여 개가 페이지 수명 내내 합성 레이어를 붙잡지 않도록.
+  const [isSettled, setIsSettled] = useState(false);
 
   useEffect(() => {
     if (prefersReducedMotion) {
@@ -141,11 +149,16 @@ function Reveal({
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsVisible(Boolean(entry?.isIntersecting));
+        if (!entry?.isIntersecting) {
+          return;
+        }
+
+        setIsVisible(true);
+        observer.disconnect();
       },
       {
-        rootMargin: "-8% 0px -12% 0px",
-        threshold: 0.18,
+        rootMargin: "0px 0px -12% 0px",
+        threshold: 0.12,
       },
     );
 
@@ -155,28 +168,17 @@ function Reveal({
   }, [prefersReducedMotion]);
 
   const hiddenTransforms = {
-    down: "translateY(-28px)",
-    left: "translateX(32px)",
-    right: "translateX(-32px)",
-    scale: "translateY(18px) scale(0.94)",
-    up: "translateY(34px)",
+    left: "translate3d(20px,0,0)",
+    right: "translate3d(-20px,0,0)",
+    scale: "translate3d(0,14px,0) scale(0.97)",
+    up: "translate3d(0,22px,0)",
   };
-  const reverseHiddenTransforms = {
-    down: "translateY(28px)",
-    left: "translateX(-32px)",
-    right: "translateX(32px)",
-    scale: "translateY(-18px) scale(0.94)",
-    up: "translateY(-34px)",
-  };
-  const hiddenTransform =
-    scrollDirection === "down"
-      ? hiddenTransforms[direction]
-      : reverseHiddenTransforms[direction];
   const shouldShow = prefersReducedMotion || isVisible;
 
   return (
     <div
       className={className}
+      onTransitionEnd={() => setIsSettled(true)}
       ref={ref}
       style={{
         opacity: shouldShow ? 1 : 0,
@@ -184,11 +186,12 @@ function Reveal({
           ? "none"
           : shouldShow
             ? "translate3d(0,0,0) scale(1)"
-            : hiddenTransform,
+            : hiddenTransforms[direction],
         transition: prefersReducedMotion
           ? "none"
-          : `opacity 680ms ${delay}ms cubic-bezier(0.22, 1, 0.36, 1), transform 680ms ${delay}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-        willChange: prefersReducedMotion ? "auto" : "opacity, transform",
+          : `opacity 620ms ${delay}ms cubic-bezier(0.16, 1, 0.3, 1), transform 620ms ${delay}ms cubic-bezier(0.16, 1, 0.3, 1)`,
+        willChange:
+          prefersReducedMotion || isSettled ? "auto" : "opacity, transform",
       }}
     >
       {children}
@@ -244,12 +247,15 @@ function useDeferredMockupImages<T extends HTMLElement>(
   return shouldLoadImages;
 }
 
+// 목업 화면은 실제 앱과 같은 430px 기준으로 그리고, 폰 프레임 폭에 맞춰 스케일만 줄인다.
 function MiniPhone({
   children,
   className = "",
+  widthClassName = "w-[20rem] max-w-[84vw]",
 }: {
   children: ReactNode;
   className?: string;
+  widthClassName?: string;
 }) {
   const screenRef = useRef<HTMLDivElement | null>(null);
 
@@ -293,16 +299,16 @@ function MiniPhone({
   }, []);
 
   return (
-    <div className={`relative mx-auto w-[21rem] max-w-[86vw] ${className}`}>
-      <div className="absolute -left-[0.28rem] top-[7.5rem] h-14 w-[0.34rem] rounded-l-full bg-[#171717] shadow-[inset_1px_0_0_rgba(255,255,255,0.16)]" />
-      <div className="absolute -left-[0.28rem] top-[11.6rem] h-20 w-[0.34rem] rounded-l-full bg-[#171717] shadow-[inset_1px_0_0_rgba(255,255,255,0.16)]" />
-      <div className="absolute -right-[0.28rem] top-[9.6rem] h-24 w-[0.34rem] rounded-r-full bg-[#171717] shadow-[inset_-1px_0_0_rgba(255,255,255,0.12)]" />
-      <div className="relative rounded-[2.75rem] bg-[linear-gradient(145deg,#252529_0%,#090909_34%,#000_72%,#202022_100%)] p-[0.42rem] shadow-[0_32px_80px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.08)]">
-        <div className="relative rounded-[2.42rem] bg-[#050505] px-[0.58rem] pb-7 pt-8">
-          <div className="pointer-events-none absolute left-1/2 top-2 z-20 h-5 w-[5.4rem] -translate-x-1/2 rounded-full bg-black shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]" />
-          <div className="absolute bottom-2 left-1/2 z-20 h-1 w-24 -translate-x-1/2 rounded-full bg-white/22" />
+    <div className={`relative mx-auto ${widthClassName} ${className}`}>
+      <div className="absolute -left-[0.26rem] top-[22%] h-[6%] w-[0.32rem] rounded-l-full bg-[#1a1a1c]" />
+      <div className="absolute -left-[0.26rem] top-[31%] h-[9%] w-[0.32rem] rounded-l-full bg-[#1a1a1c]" />
+      <div className="absolute -right-[0.26rem] top-[27%] h-[11%] w-[0.32rem] rounded-r-full bg-[#1a1a1c]" />
+      <div className="relative rounded-[2.6rem] bg-[linear-gradient(150deg,#3a3a3f_0%,#0b0b0c_28%,#000_70%,#2b2b2f_100%)] p-[0.4rem] shadow-[0_2px_6px_rgba(0,0,0,0.12),0_28px_60px_-18px_rgba(0,0,0,0.45)]">
+        <div className="relative rounded-[2.3rem] bg-[#050505] px-[0.5rem] pb-6 pt-7">
+          <div className="pointer-events-none absolute left-1/2 top-2 z-20 h-[1.05rem] w-[26%] -translate-x-1/2 rounded-full bg-black" />
+          <div className="absolute bottom-2 left-1/2 z-20 h-1 w-[24%] -translate-x-1/2 rounded-full bg-white/25" />
           <div
-            className="intro-mini-phone-screen relative aspect-[430/932] overflow-hidden rounded-[1.35rem] bg-black text-black"
+            className="intro-mini-phone-screen relative aspect-[430/932] overflow-hidden rounded-[1.3rem] bg-black text-black"
             ref={screenRef}
           >
             <div className="intro-mini-phone-content pointer-events-none absolute left-0 top-0 h-[932px] w-[430px] origin-top-left">
@@ -315,101 +321,64 @@ function MiniPhone({
   );
 }
 
-const introFavoriteArtists = [
+// 홈 목록 카드 — components/ProductCard.tsx 의 wide variant 를 그대로 옮긴 구성.
+const introHomeProducts = [
   {
-    kind: "add",
-    name: "최애 추가",
-  },
-  {
-    background: "#3f3568",
-    kind: "logo",
-    logo: "/intro-logos/ive.svg",
-    logoSize: "35% auto",
-    name: "IVE",
-  },
-  {
-    background: "#2e735f",
-    kind: "logo",
-    logo: "/intro-logos/nct-dream.svg",
-    logoSize: "78% auto",
-    name: "NCT",
-  },
-  {
-    background: "#6d5838",
-    kind: "logo",
-    logo: "/intro-logos/aespa.svg",
-    logoSize: "78% auto",
-    name: "aespa",
-  },
-] as const;
-
-const introRecommendedProducts = [
-  {
+    availableMembers: ["셔누", "민혁", "기현", "형원", "아이엠"],
     deadline: "D-2",
-    image: "/intro-products/nct-dream-main.png",
-    status: "마감 임박",
-    tags: "#재민 #런쥔",
-    title: "NCT DREAM 일본 럭드 분철",
-    tone: "green",
-  },
-  {
-    deadline: "D-DAY",
     image: "/intro-products/monsta-x-main.png",
-    status: "오늘 마감",
-    tags: "#형원 #민혁",
-    title: "MONSTA X 팬콘 특전 포카",
-    tone: "blue",
+    isNew: true,
+    purchasable: true,
+    status: "구매 가능",
+    title: "MONSTA X 팬콘 특전 포카 분철",
   },
   {
-    deadline: "CLOSED",
-    image: "/intro-products/seventeen-main.png",
-    status: "마감",
-    tags: "#정한 #호시",
-    title: "세븐틴 팬미팅 MD 포카",
-    tone: "pink",
+    availableMembers: ["재민", "런쥔", "제노"],
+    deadline: "D-4",
+    image: "/intro-products/nct-dream-main.png",
+    isNew: false,
+    purchasable: true,
+    status: "구매 가능",
+    title: "NCT DREAM 일본 럭드 분철",
   },
   {
-    deadline: "D-1",
-    image: "/intro-products/riize-main.png",
-    status: "마감 임박",
-    tags: "#원빈 #성찬",
-    title: "RIIZE 팬콘 특전 포카",
-    tone: "gray",
-  },
-  {
-    deadline: "CLOSED",
+    availableMembers: ["장원영", "리즈"],
+    deadline: "D-DAY",
     image: "/intro-products/ive-main.png",
-    status: "마감",
-    tags: "#장원영 #리즈",
-    title: "IVE 시즌그리팅 포카",
-    tone: "blue",
+    isNew: false,
+    purchasable: true,
+    status: "구매 가능",
+    title: "IVE 시즌그리팅 포카 분철",
   },
   {
-    deadline: "D-3",
-    image: "/intro-products/aespa-main.png",
-    status: "마감 임박",
-    tags: "#카리나 #윈터",
-    title: "aespa 미공포 럭드",
-    tone: "pink",
+    availableMembers: [],
+    deadline: "",
+    image: "/intro-products/seventeen-main.png",
+    isNew: false,
+    purchasable: false,
+    status: "모집 종료",
+    title: "세븐틴 팬미팅 MD 포카 분철",
   },
 ] as const;
 
 function MiniBottomNav() {
   return (
-    <div className="absolute inset-x-0 bottom-0 z-10 flex h-16 items-center justify-around bg-black px-4 text-white/42">
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black">
-        <HomeIcon />
+    <div className="absolute inset-x-0 bottom-0 z-10 grid h-16 grid-cols-5 items-center bg-black px-3 text-white/55">
+      <span className="flex justify-center">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]">
+          <HomeIcon />
+        </span>
       </span>
-      <span className="flex h-10 w-10 items-center justify-center">
+      <span className="flex justify-center">
         <PlusIcon />
       </span>
-      <span className="flex h-10 w-10 items-center justify-center">
+      <span className="flex justify-center">
         <BidIcon />
       </span>
-      <span className="flex h-10 w-10 items-center justify-center">
+      <span className="flex justify-center">
         <HeartIcon />
       </span>
-      <span className="flex h-10 w-10 items-center justify-center">
+      <span className="flex justify-center">
         <ProfileIcon />
       </span>
     </div>
@@ -420,19 +389,15 @@ function HomeMiniScreen() {
   const { homeScrollOffset } = useContext(IntroMotionContext);
 
   return (
-    <div className="relative h-full overflow-hidden bg-black">
-      <div className="absolute inset-x-0 top-0 z-20 border-b border-black bg-black px-5 py-3 text-white">
+    <div className="relative h-full overflow-hidden bg-white">
+      <div className="absolute inset-x-0 top-0 z-20 border-b border-black bg-black px-5 py-3">
         <div className="flex h-10 items-center gap-3">
-          <p className="shrink-0 text-[22px] font-semibold tracking-[-0.05em]">
-            분철이지
-          </p>
-          <div className="flex h-10 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-4 text-left text-[13px] text-black">
-            <span className="min-w-0 truncate text-[16px] text-black/35">
-              포토카드
-            </span>
-            <SearchIcon />
-          </div>
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white">
+          <span
+            className="-ml-2 h-10 w-[106px] shrink-0 bg-contain bg-left bg-no-repeat"
+            style={{ backgroundImage: "url(/brand/logo-white.png)" }}
+          />
+          <span className="min-w-0 flex-1" />
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#C8D4A5] bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.24)]">
             <BellIcon />
           </span>
         </div>
@@ -440,667 +405,358 @@ function HomeMiniScreen() {
 
       <div className="absolute inset-x-0 bottom-16 top-16 overflow-hidden bg-white">
         <div
-          className="intro-home-screen-scroll px-4 pb-24 pt-4"
+          className="intro-home-screen-scroll px-4 pb-16 pt-4"
           style={{
             transform: `translateY(-${homeScrollOffset}px)`,
           }}
         >
-          <div className="grid w-full grid-cols-[0.95fr_1.05fr] overflow-hidden rounded-[1.15rem] border border-black bg-black text-white">
-            <div className="flex items-center px-4 py-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/45">
-                  Buncheol Easy
-                </p>
-                <h2 className="mt-2 whitespace-pre-line text-[17px] font-semibold leading-[1.22] text-white">
-                  최애 굿즈{"\n"}분철을 더 쉽게
-                </h2>
-                <p className="mt-2 text-[10px] font-semibold tracking-[-0.03em] text-white/52">
-                  탐색 · 참여 · 결제 확인
-                </p>
-              </div>
-            </div>
-            <div className="relative min-h-[112px] overflow-hidden border-l border-white/10 bg-[linear-gradient(135deg,#171717_0%,#6f6f6f_48%,#f0f0f0_100%)]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_28%,rgba(255,255,255,0.7),transparent_22%)]" />
-              <div className="absolute bottom-4 left-4 h-[82px] w-[62px] rotate-[-10deg] rounded-[0.85rem] border border-white/25 bg-black shadow-[0_12px_24px_rgba(0,0,0,0.24)]" />
-              <div className="absolute bottom-4 left-[4.8rem] h-[96px] w-[70px] rotate-[7deg] rounded-[0.85rem] border border-white/40 bg-white/85 shadow-[0_12px_24px_rgba(0,0,0,0.16)]" />
-              <div className="absolute right-4 top-4 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
-                NEW
-              </div>
-              <div className="absolute bottom-3 right-3 rounded-xl border border-black/10 bg-white/90 px-2.5 py-2 backdrop-blur">
-                <p className="text-[9px] font-medium uppercase tracking-[0.16em] text-black/45">
-                  Start Flow
-                </p>
-                <p className="mt-1 text-[12px] font-semibold tracking-[-0.03em] text-black">
-                  바로 둘러보기
-                </p>
-              </div>
-            </div>
+          <div className="relative aspect-[1.72/1] overflow-hidden rounded-[1.15rem] bg-white shadow-[0_14px_34px_rgba(0,0,0,0.08)]">
+            <span
+              className="absolute inset-0 scale-110 bg-cover bg-center blur-xl"
+              style={{ backgroundImage: "url(/banners/buncheol-guide.png)" }}
+            />
+            <span
+              className="absolute inset-0 bg-contain bg-center bg-no-repeat"
+              style={{ backgroundImage: "url(/banners/buncheol-guide.png)" }}
+            />
           </div>
 
           <div className="flex items-center justify-center gap-2 pb-4 pt-2">
-            <span className="h-2 w-5 rounded-full bg-black" />
+            <span className="h-2 w-6 rounded-full bg-[#CFE86B] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_6px_16px_rgba(120,132,82,0.3)]" />
             <span className="h-2 w-2 rounded-full bg-zinc-300" />
             <span className="h-2 w-2 rounded-full bg-zinc-300" />
           </div>
 
-        <div className="flex gap-3 overflow-hidden">
-          {introFavoriteArtists.map((artist) => (
-            <div
-              className={`flex min-w-[76px] flex-col items-center gap-2.5 ${
-                artist.kind === "add"
-                  ? "mr-1 border-r border-black/10 pr-3"
-                  : ""
-              }`}
-              key={artist.name}
-            >
-              {artist.kind === "add" ? (
-                <span className="relative flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-[1.15rem] bg-[#efefed] text-black/35 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]">
-                  <span className="-translate-x-2 -translate-y-1 scale-95">
-                    <ProfileIcon />
-                  </span>
-                  <span className="absolute bottom-[0.62rem] right-[0.62rem] text-[27px] font-light leading-none text-black/42">
-                    +
-                  </span>
-                </span>
-              ) : (
-                <span
-                  className="relative flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-[1.15rem] bg-center bg-no-repeat shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
-                  style={{
-                    backgroundColor: artist.background,
-                    backgroundImage: `url(${artist.logo})`,
-                    backgroundSize: artist.logoSize,
-                  }}
+          <div className="space-y-3 pt-2">
+            {introHomeProducts.map(
+              ({
+                availableMembers,
+                deadline,
+                image,
+                isNew,
+                purchasable,
+                status,
+                title,
+              }) => (
+                <div
+                  className="overflow-hidden rounded-[1rem] border border-black/8 bg-white shadow-[0_12px_28px_rgba(0,0,0,0.08)]"
+                  key={title}
                 >
-                  <span className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-black shadow-[0_2px_7px_rgba(0,0,0,0.18)]">
-                    <HeartIcon className="h-4 w-4" filled />
-                  </span>
-                </span>
-              )}
-              <span className="max-w-[78px] text-center text-[15px] font-semibold leading-[1.14] tracking-[-0.05em]">
-                {artist.name}
-              </span>
-            </div>
-          ))}
-        </div>
+                  <div
+                    className="relative aspect-[1.72/1] overflow-hidden bg-cover bg-center"
+                    style={{ backgroundImage: `url(${image})` }}
+                  >
+                    {purchasable ? null : (
+                      <span className="absolute inset-0 bg-black/45" />
+                    )}
+                    <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          purchasable
+                            ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
+                            : "bg-black/55 text-white/80"
+                        }`}
+                      >
+                        {status}
+                      </span>
+                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white/95 text-black/45 shadow-[0_10px_22px_rgba(0,0,0,0.16)]">
+                        <HeartIcon />
+                      </span>
+                    </div>
+                    {deadline ? (
+                      <span className="absolute bottom-3 left-3 rounded-full bg-black/76 px-2.5 py-1 text-[13px] font-semibold tracking-[-0.04em] text-white">
+                        {deadline}
+                      </span>
+                    ) : null}
+                  </div>
 
-        <div className="mt-5 border-t border-black/10 pt-5">
-          <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-            {introRecommendedProducts.map(({ deadline, image, status, tags, title, tone }) => (
-              <div className="min-w-0" key={title}>
-                <div className="relative aspect-square overflow-hidden rounded-[1.05rem] bg-[#f5f5f5]">
-                  <span
-                    className="absolute inset-0"
-                    style={{
-                      backgroundImage: `url(${image}), ${
-                        tone === "green"
-                          ? "linear-gradient(135deg,#d7f2df 0%,#ffffff 48%,#1d7f5f 100%)"
-                          : tone === "pink"
-                            ? "linear-gradient(135deg,#ffe0f0 0%,#ffffff 55%,#202029 100%)"
-                            : tone === "gray"
-                              ? "linear-gradient(135deg,#1f2027 0%,#f8f8f8 58%,#cfd1d6 100%)"
-                              : "linear-gradient(135deg,#dceaff 0%,#f8fbff 52%,#1b1b1f 100%)"
-                      }`,
-                      backgroundPosition: "center",
-                      backgroundSize: "cover",
-                    }}
-                  />
-                  <span
-                    className={`absolute inset-0 ${
-                      deadline === "CLOSED" ? "bg-black/18" : "bg-transparent"
-                    }`}
-                  />
-                  <span className="absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-black/62 via-black/22 to-transparent" />
-                  <span className="absolute bottom-12 left-3 rounded-full bg-black/72 px-2.5 py-1 text-[10px] font-semibold tracking-[-0.03em] text-white">
-                    {status}
-                  </span>
-                  <span className="absolute bottom-3 left-3 text-[18px] font-semibold tracking-[-0.06em] text-white">
-                    {deadline}
-                  </span>
-                  <span className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black/50 shadow-[0_8px_16px_rgba(0,0,0,0.16)]">
-                    <HeartIcon filled />
-                  </span>
+                  <div
+                    className={`px-3.5 py-3.5 ${purchasable ? "" : "opacity-60"}`}
+                  >
+                    {availableMembers.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-[#D7FF5F]">
+                          남은 멤버
+                        </span>
+                        {availableMembers.map((memberName) => (
+                          <span
+                            className="rounded-full bg-[#EEF8C8] px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-black/70 ring-1 ring-[#CFE86B]/55"
+                            key={memberName}
+                          >
+                            {memberName}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="inline-flex rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-black/38">
+                        남은 멤버 없음
+                      </span>
+                    )}
+                    <div className="mt-2 flex items-start justify-between gap-3">
+                      <p className="min-w-0 text-[16px] font-semibold leading-6 tracking-[-0.04em] text-black">
+                        {title}
+                      </p>
+                      {isNew ? (
+                        <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black">
+                          신규
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-                <p className="mt-2 truncate text-[11px] font-semibold text-black/36">
-                  {tags}
-                </p>
-                <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.05em]">
-                  {title}
-                </p>
-              </div>
-            ))}
+              ),
+            )}
           </div>
         </div>
       </div>
-      </div>
+
+      <span className="absolute bottom-[4.75rem] right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)]">
+        ?
+      </span>
       <MiniBottomNav />
     </div>
   );
 }
 
-function SearchMiniScreen() {
-  const { pageScrollTop } = useContext(IntroMotionContext);
+// 목업의 구매 기한 — 렌더 중에 날짜를 만들면 정적 프리렌더된 HTML 에 빌드 시각(CI 는 UTC)이
+// 굳어 배포가 묵을수록 과거 날짜가 뜬다. 실제 화면 캡처처럼 고정 문자열로 둔다.
+const MOCKUP_PURCHASE_DEADLINE = "2026년 08월 14일 18시";
+
+// 분철 상세 — components/ProductDetail.tsx 의 섹션 순서·토큰을 그대로 따른다.
+const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
-  const [searchScrollOffset, setSearchScrollOffset] = useState(0);
-  const shouldLoadSearchImages = useDeferredMockupImages(frameRef);
-  const searchMembers = [
-    {
-      group: "MONSTA X",
-      name: "셔누",
-      photo: "/intro-members/shownu.webp",
-      selected: false,
-      tone: "gray",
-    },
-    {
-      group: "MONSTA X",
-      name: "민혁",
-      photo: "/intro-members/minhyuk.webp",
-      selected: false,
-      tone: "blue",
-    },
-    {
-      group: "MONSTA X",
-      name: "형원",
-      photo: "/intro-members/hyungwon.webp",
-      selected: false,
-      tone: "green",
-    },
-    {
-      group: "MONSTA X",
-      name: "아이엠",
-      photo: "/intro-members/im.webp",
-      selected: false,
-      tone: "pink",
-    },
-  ] as const;
-  const searchResults = [
-    {
-      deadline: "D-DAY",
-      image: "/intro-products/monsta-x-search-1.png",
-      status: "오늘 마감",
-      tags: "#셔누 #형원",
-      title: "MONSTA X 팬콘 특전 포카",
-      tone: "green",
-    },
-    {
-      deadline: "D-2",
-      image: "/intro-products/monsta-x-search-2.png",
-      status: "마감 임박",
-      tags: "#민혁 #아이엠",
-      title: "몬스타엑스 미공포 럭드 분철",
-      tone: "blue",
-    },
-    {
-      deadline: "D-4",
-      image: "/intro-products/monsta-x-search-3.png",
-      status: "마감 임박",
-      tags: "#기현 #주헌",
-      title: "MONSTA X 시즌그리팅 포카",
-      tone: "gray",
-    },
-    {
-      deadline: "CLOSED",
-      image: "/intro-products/monsta-x-search-4.png",
-      status: "마감",
-      tags: "#형원 #민혁",
-      title: "몬스타엑스 쇼케이스 포카",
-      tone: "pink",
-    },
-    {
-      deadline: "D-1",
-      image: "/intro-products/monsta-x-search-5.png",
-      status: "마감 임박",
-      tags: "#셔누 #기현",
-      title: "MONSTA X 럭드 포카 세트",
-      tone: "blue",
-    },
-    {
-      deadline: "D-5",
-      image: "/intro-products/monsta-x-search-6.png",
-      status: "모집 중",
-      tags: "#주헌 #아이엠",
-      title: "몬스타엑스 앨범 포카 분철",
-      tone: "green",
-    },
-  ] as const;
-
-  useLayoutEffect(() => {
-    const frameElement = frameRef.current;
-
-    if (!frameElement) {
-      return;
-    }
-
-    const viewportHeight = window.innerHeight || 900;
-    const frameTop = frameElement.getBoundingClientRect().top;
-    const startLine = viewportHeight * 0.2;
-    const nextSearchScrollOffset = Math.max(
-      0,
-      Math.min(150, Math.round((startLine - frameTop) * 0.62)),
-    );
-    const animationFrame = window.requestAnimationFrame(() => {
-      setSearchScrollOffset((currentOffset) =>
-        currentOffset === nextSearchScrollOffset
-          ? currentOffset
-          : nextSearchScrollOffset,
-      );
-    });
-
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [pageScrollTop]);
-
-  return (
-    <div className="h-full overflow-hidden bg-white" ref={frameRef}>
-      <div className="bg-black px-4 pb-3 pt-9 text-white">
-        <div className="flex h-12 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center text-white">
-            <BackIcon />
-          </span>
-          <div className="flex h-12 min-w-0 flex-1 items-center justify-between rounded-full bg-white px-5 text-black">
-            <span className="intro-typing-text overflow-hidden whitespace-nowrap text-[18px] font-semibold tracking-[-0.05em] text-black">
-              몬스타엑스
-            </span>
-            <SearchIcon />
-          </div>
-        </div>
-      </div>
-
-      <div className="relative h-[calc(100%-6.75rem)] overflow-hidden bg-white">
-        <div
-          className="intro-search-results pt-5 will-change-transform"
-          style={{ transform: `translateY(-${searchScrollOffset}px)` }}
-        >
-          <div className="flex gap-4 overflow-hidden border-b border-black/10 px-5 pb-5">
-          <div className="flex w-[84px] shrink-0 flex-col gap-2 border-r border-black/10 pr-4">
-            <div
-              className="relative flex h-[72px] w-[72px] items-center justify-center rounded-[1.05rem] bg-black bg-center bg-no-repeat text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
-              style={{
-                backgroundImage: shouldLoadSearchImages
-                  ? "url(/intro-members/monsta-x-group.svg)"
-                  : undefined,
-                backgroundSize: "74% auto",
-              }}
-            >
-              <span className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-black shadow-[0_2px_7px_rgba(0,0,0,0.18)]">
-                <HeartIcon className="h-4 w-4" />
-              </span>
-            </div>
-            <p className="text-center text-[15px] font-semibold tracking-[-0.05em]">
-              MONSTA X
-            </p>
-          </div>
-
-          {searchMembers.map(({ group, name, photo, selected, tone }) => (
-            <div className="flex w-[74px] shrink-0 flex-col gap-2" key={name}>
-              <div
-                className="relative flex h-[72px] w-[72px] items-center justify-center rounded-[1.05rem] bg-[#d4d0d2] p-[6px] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.08)]"
-              >
-                <span
-                  className="block h-full w-full rounded-[0.55rem] bg-cover bg-center"
-                  style={{
-                    backgroundColor:
-                      tone === "green"
-                        ? "#1d332c"
-                        : tone === "pink"
-                          ? "#2b1f27"
-                          : tone === "gray"
-                            ? "#d4d0d2"
-                            : "#3b4c68",
-                    backgroundImage: shouldLoadSearchImages
-                      ? `url(${photo})`
-                      : undefined,
-                    backgroundPosition: "center",
-                    backgroundSize: "cover",
-                  }}
-                />
-                {selected ? (
-                  <span className="absolute -bottom-2 -right-2 flex h-9 w-9 items-center justify-center rounded-full bg-black text-white ring-[3px] ring-white">
-                    <CheckIcon className="h-[18px] w-[18px]" />
-                  </span>
-                ) : null}
-              </div>
-              <div className="text-center leading-tight">
-                <p className="truncate text-[15px] font-semibold tracking-[-0.05em]">
-                  {name}
-                </p>
-                <p className="mt-1 truncate text-[12px] font-semibold text-black/34">
-                  {group}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <section className="px-5 pt-5">
-          <div className="mb-4 flex items-end justify-between">
-            <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-              검색 결과
-            </h2>
-            <span className="text-[13px] font-medium text-black/45">6개</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-              {searchResults.map(({ deadline, image, status, tags, title, tone }) => (
-                <div className="min-w-0" key={title}>
-                  <div
-                    className="relative aspect-square overflow-hidden rounded-[1.05rem] bg-[#f5f5f5] ring-1 ring-black/8"
-                    style={{
-                      backgroundImage: `${
-                        shouldLoadSearchImages ? `url(${image}), ` : ""
-                      }${
-                        tone === "green"
-                          ? "linear-gradient(135deg,#d7f2df 0%,#ffffff 48%,#1d7f5f 100%)"
-                          : tone === "pink"
-                            ? "linear-gradient(135deg,#ffe0f0 0%,#ffffff 55%,#202029 100%)"
-                            : tone === "gray"
-                              ? "linear-gradient(135deg,#1f2027 0%,#f8f8f8 58%,#cfd1d6 100%)"
-                              : "linear-gradient(135deg,#dceaff 0%,#f8fbff 52%,#1b1b1f 100%)"
-                      }`,
-                      backgroundPosition: "center",
-                      backgroundSize: "cover",
-                    }}
-                  >
-                    <span
-                      className={`absolute inset-0 ${
-                        deadline === "CLOSED" ? "bg-black/18" : "bg-transparent"
-                      }`}
-                    />
-                    <span className="absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-black/62 via-black/22 to-transparent" />
-                    <span className="absolute bottom-12 left-3 rounded-full bg-black/72 px-2.5 py-1 text-[10px] font-semibold tracking-[-0.03em] text-white">
-                      {status}
-                    </span>
-                    <span className="absolute bottom-3 left-3 text-[18px] font-semibold tracking-[-0.06em] text-white">
-                      {deadline}
-                    </span>
-                    <span className="absolute bottom-2.5 right-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-white text-black/50 shadow-[0_8px_16px_rgba(0,0,0,0.16)]">
-                      <HeartIcon filled />
-                    </span>
-                  </div>
-                  <p className="mt-2 truncate text-[11px] font-semibold text-black/36">
-                    {tags}
-                  </p>
-                  <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.05em]">
-                    {title}
-                  </p>
-                </div>
-              ))}
-          </div>
-        </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function getThreeDaysLaterDeadlineText() {
-  const deadline = new Date();
-  deadline.setDate(deadline.getDate() + 3);
-
-  const year = deadline.getFullYear();
-  const month = String(deadline.getMonth() + 1).padStart(2, "0");
-  const day = String(deadline.getDate()).padStart(2, "0");
-  const hour = String(deadline.getHours()).padStart(2, "0");
-
-  return `${year}년 ${month}월 ${day}일 ${hour}시`;
-}
-
-function DetailMiniScreen() {
-  const { pageScrollTop } = useContext(IntroMotionContext);
-  const frameRef = useRef<HTMLDivElement | null>(null);
-  const [detailScrollOffset, setDetailScrollOffset] = useState(0);
   const shouldLoadDetailImages = useDeferredMockupImages(frameRef);
-  const bidDeadlineText = getThreeDaysLaterDeadlineText();
-  const optionPrices = [
+  const memberSlots = [
     {
       image: "/intro-members/nct-dream/jaemin.webp",
       member: "재민",
-      participants: 14,
-      prices: ["31,000원", "28,000원", "24,000원"],
+      price: "24,000원",
+      soldOut: false,
     },
     {
       image: "/intro-members/nct-dream/haechan.webp",
       member: "해찬",
-      participants: 11,
-      prices: ["29,000원", "25,000원", "21,000원"],
+      price: "24,000원",
+      soldOut: false,
     },
     {
       image: "/intro-members/nct-dream/renjun.webp",
       member: "런쥔",
-      participants: 9,
-      prices: ["22,000원", "20,000원", "18,000원"],
+      price: "22,000원",
+      soldOut: true,
     },
     {
       image: "/intro-members/nct-dream/jeno.webp",
       member: "제노",
-      participants: 7,
-      prices: ["19,000원", "17,000원", "15,000원"],
+      price: "22,000원",
+      soldOut: false,
     },
     {
       image: "/intro-members/nct-dream/jisung.webp",
       member: "지성",
-      participants: 6,
-      prices: ["18,000원", "16,000원", "14,000원"],
+      price: "20,000원",
+      soldOut: true,
     },
   ] as const;
-
-  useEffect(() => {
-    const frameElement = frameRef.current;
-
-    if (!frameElement) {
-      return;
-    }
-
-    const viewportHeight = window.innerHeight || 900;
-    const frameTop = frameElement.getBoundingClientRect().top;
-    const startLine = viewportHeight * 0.34;
-    const nextDetailScrollOffset = Math.max(
-      0,
-      Math.min(430, Math.round((startLine - frameTop) * 0.95)),
-    );
-
-    setDetailScrollOffset((currentOffset) =>
-      currentOffset === nextDetailScrollOffset
-        ? currentOffset
-        : nextDetailScrollOffset,
-    );
-  }, [pageScrollTop]);
 
   return (
     <div className="relative h-full overflow-hidden bg-white" ref={frameRef}>
       <div
-        className="px-5 pb-28 pt-7 will-change-transform"
-        style={{ transform: `translateY(-${detailScrollOffset}px)` }}
+        className="pb-40 pt-3 will-change-transform"
+        style={{ transform: `translateY(-${Math.round(progress * 520)}px)` }}
       >
-        <div className="sticky top-0 z-10 -mx-5 flex items-center justify-between bg-white/96 px-5 pb-3 pt-2">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black text-white">
+        <div className="flex items-center gap-2 px-4 pb-2">
+          <span className="mr-auto flex h-10 w-10 items-center justify-center rounded-full bg-black text-white">
             <BackIcon />
           </span>
-          <div className="flex gap-2 text-black">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white">
-              <HeartIcon />
+          <span className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black">
+            <HeartIcon />
+          </span>
+        </div>
+
+        <div className="px-4">
+          <div
+            className="relative aspect-[4/3] overflow-hidden rounded-[1.35rem] bg-[#f5f5f5] bg-cover bg-center"
+            style={{
+              backgroundImage: shouldLoadDetailImages
+                ? "url(/intro-products/nct-dream-main.png)"
+                : undefined,
+            }}
+          >
+            <span className="absolute left-5 top-5 rounded-full bg-[#DDE7B8] px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+              구매 가능
+            </span>
+            <span className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white">
+              1/5
             </span>
           </div>
         </div>
 
-        <div
-          className="relative mt-4 aspect-[4/3] overflow-hidden rounded-[1.35rem] bg-[#f5f5f5] bg-cover bg-center"
-          style={{
-            backgroundImage: shouldLoadDetailImages
-              ? "url(/intro-products/nct-dream-main.png)"
-              : undefined,
-          }}
-        >
-          <span className="absolute left-5 top-5 rounded-full bg-black px-3 py-1.5 text-[12px] font-semibold tracking-[-0.04em] text-white">
-            모집 중
-          </span>
-          <span className="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-black/40 via-black/8 to-transparent" />
-          <span className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white">
-            1/5
-          </span>
-        </div>
-        <p className="mt-5 text-[13px] font-semibold leading-5 text-black/38">
-          #런쥔 #제노 #해찬 #재민 #천러 #지성
-        </p>
-        <h3 className="mt-3 break-keep text-[28px] font-semibold leading-[1.08] tracking-[-0.08em]">
-          드림 2026 시즌팩 포카 분철
-        </h3>
+        <div className="px-5 pt-6">
+          <p className="text-[13px] font-semibold leading-5 text-black/40">
+            #런쥔 #제노 #해찬 #재민 #천러 #지성
+          </p>
+          <h3 className="mt-4 text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
+            드림 2026 시즌팩 포카 분철
+          </h3>
 
-        <div className="mt-6 grid grid-cols-2 gap-2">
-          <div className="col-span-2 rounded-[0.9rem] border border-black/10 bg-white px-4 py-3">
-            <p className="text-[12px] font-medium text-black/45">구매처</p>
-            <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-              공식 시즌팩 판매처
-            </p>
-          </div>
-          <div className="col-span-2 rounded-[0.9rem] border border-black/10 bg-white px-4 py-3">
-            <p className="text-[12px] font-medium text-black/45">참여 기한</p>
-            <p
-              className="mt-1 text-[16px] font-semibold tracking-[-0.04em]"
-              suppressHydrationWarning
-            >
-              {bidDeadlineText}
-            </p>
-          </div>
-        </div>
-
-        <section className="mt-7 border-t border-black/10 pt-6">
-          <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
-            배송 방법
-          </h2>
-          <div className="mt-3 grid gap-2">
-            {[
-              ["CU 알뜰택배", "3,000원"],
-              ["GS25 반값택배", "3,200원"],
-            ].map(([method, price]) => (
-              <div
-                className="flex min-h-12 items-center justify-between rounded-[0.8rem] bg-white px-4"
-                key={method}
-              >
-                <span className="text-[14px] font-semibold tracking-[-0.04em]">
-                  {method}
-                </span>
-                <span className="text-[14px] font-semibold tracking-[-0.04em] text-black/55">
-                  {price}
-                </span>
+          <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
+            <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
+              <div className="min-w-0 px-4 py-3.5">
+                <p className="text-[12px] font-medium text-black/45">구매처</p>
+                <p className="mt-1 truncate text-[16px] font-semibold tracking-[-0.04em]">
+                  공식 판매처
+                </p>
               </div>
-            ))}
+              <div className="min-w-0 px-4 py-3.5">
+                <p className="text-[12px] font-medium text-black/45">
+                  구매 기한
+                </p>
+                <p className="mt-1 text-[15px] font-semibold leading-6 tracking-[-0.04em] tabular-nums">
+                  {MOCKUP_PURCHASE_DEADLINE}
+                </p>
+              </div>
+            </div>
+            <div className="px-4 py-4">
+              <p className="text-[12px] font-medium text-black/45">참여 현황</p>
+              <p className="mt-1 text-[22px] font-semibold tracking-[-0.06em]">
+                현재 4/6명
+              </p>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/[0.06]">
+                <div
+                  className="h-full rounded-full bg-[#CFE86B]"
+                  style={{ width: "66%" }}
+                />
+              </div>
+              <p className="mt-2 text-[12px] font-semibold text-black/40">
+                분철 진행 최소 인원까지 2명 남았어요. 인원을 채우면 진행이
+                확정돼요.
+              </p>
+            </div>
           </div>
-        </section>
 
-        <section className="mt-7 border-t border-black/10 pt-6">
-          <div className="flex items-center justify-between">
+          <div className="mt-7 border-t border-black/10 pt-6">
             <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
-              옵션별 가격
+              배송 방법
             </h2>
-            <span className="text-[12px] font-medium text-black/45">
-              5개 옵션
-            </span>
+            <div className="mt-3 space-y-2">
+              {[
+                ["CU 알뜰택배", "3,000원"],
+                ["GS25 반값택배", "3,200원"],
+              ].map(([method, price]) => (
+                <div
+                  className="flex min-h-12 items-center justify-between rounded-[0.8rem] bg-[#f7f7f7] px-4"
+                  key={method}
+                >
+                  <span className="text-[14px] font-semibold tracking-[-0.04em]">
+                    {method}
+                  </span>
+                  <span className="text-[14px] font-semibold tracking-[-0.04em] text-black/55">
+                    {price}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
+              이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이
+              중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께
+              입금해요.
+            </p>
           </div>
-          <div className="mt-4 grid gap-3">
-            {optionPrices.map(({ image, member, participants, prices }) => (
-              <div
-                className="rounded-[0.9rem] border border-black/10 bg-white px-4 py-3"
-                key={member}
-              >
-                <div className="flex items-center justify-between gap-3">
+
+          <div className="mt-8 border-t border-black/10 pt-6">
+            <div className="flex items-end justify-between gap-3">
+              <h2 className="text-[18px] font-semibold">멤버</h2>
+              <p className="text-[12px] font-semibold text-black/35">5명</p>
+            </div>
+            <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
+              {memberSlots.map(({ image, member, price, soldOut }) => (
+                <div
+                  className={`relative flex min-h-[72px] items-center justify-between gap-3 overflow-hidden border-b border-black/[0.06] px-4 py-3 last:border-b-0 ${
+                    soldOut ? "bg-[#fafafa]" : "bg-white"
+                  }`}
+                  key={member}
+                >
                   <div className="flex min-w-0 items-center gap-3">
                     <span
-                      className="block h-16 w-16 shrink-0 rounded-[1.05rem] bg-[#f5f5f5] bg-cover bg-center ring-1 ring-black/5"
+                      className={`block h-12 w-12 shrink-0 rounded-[0.9rem] bg-[#f1f1f1] bg-cover bg-center ring-1 ring-black/[0.04] ${
+                        soldOut ? "opacity-45" : ""
+                      }`}
                       style={{
                         backgroundImage: shouldLoadDetailImages
                           ? `url(${image})`
                           : undefined,
                       }}
                     />
-                    <p className="truncate text-[16px] font-semibold tracking-[-0.04em]">
-                      {member}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-[12px] font-medium text-black/45">
-                    참여 {participants}명
-                  </span>
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {prices.map((price) => (
-                    <div
-                      className="rounded-[0.7rem] bg-[#f7f7f7] px-3 py-2"
-                      key={price}
-                    >
-                      <p className="text-[11px] font-semibold text-black/35">
-                        가격
+                    <div className="min-w-0">
+                      <p
+                        className={`truncate text-[16px] font-semibold ${
+                          soldOut ? "text-black/45" : "text-black"
+                        }`}
+                      >
+                        {member}
                       </p>
-                      <p className="mt-1 text-[12px] font-semibold tracking-[-0.04em]">
-                        {price}
-                      </p>
+                      {soldOut ? null : (
+                        <p className="mt-0.5 text-[12px] font-semibold text-black/35">
+                          구매 가능 멤버
+                        </p>
+                      )}
                     </div>
-                  ))}
+                  </div>
+                  <div
+                    className={`shrink-0 text-right ${soldOut ? "opacity-45" : ""}`}
+                  >
+                    <p className="text-[11px] font-semibold text-black/35">
+                      구매가
+                    </p>
+                    <p className="mt-0.5 text-[16px] font-semibold">{price}</p>
+                  </div>
+                  {soldOut ? (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/55 backdrop-blur-[0.5px]">
+                      <span className="rounded-full bg-black/70 px-3.5 py-1.5 text-[12px] font-semibold text-white backdrop-blur">
+                        매진
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </section>
+        </div>
       </div>
-      <div className="absolute inset-x-0 bottom-0 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
-        <div className="rounded-full bg-black py-4 text-center text-[17px] font-semibold text-white">
-          참여하기
+
+      <div className="absolute inset-x-0 bottom-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
+        <p className="mb-2 text-center text-[11px] font-medium text-black/40">
+          지금은 신청만 하고, 개최자가 확정하면 입금해요.
+        </p>
+        <div className="flex h-14 items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]">
+          신청하기
         </div>
       </div>
     </div>
   );
-}
+});
 
-function PaymentMiniScreen() {
-  const { pageScrollTop, prefersReducedMotion } = useContext(IntroMotionContext);
+// 참여 진행 바 — C2C 6단계 (components/BidHistoryContent.tsx 의 c2cProgressStepLabels 와 동일 문자열).
+const introProgressSteps = [
+  "신청",
+  "입금 대기",
+  "입금 확인",
+  "진행 확정",
+  "배송 중",
+  "배송 완료",
+] as const;
+
+// 참여 내역 + 결제 정보 시트 — components/BidHistoryContent.tsx 의 카드·시트 구성을 따른다.
+const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
-  const [isPaymentSheetOpen, setIsPaymentSheetOpen] =
-    useState(prefersReducedMotion);
   const shouldLoadPaymentImages = useDeferredMockupImages(frameRef);
-  const participatedBids = [
-    {
-      amount: "42,000원",
-      deadline: "입금 마감 14시간 남음",
-      image: "/intro-products/ive-main.png",
-      member: "장원영",
-      rank: "참여",
-      status: "입금대기",
-      title: "IVE 시즌그리팅 포카",
-    },
-    {
-      amount: "31,000원",
-      deadline: "입금 마감 23시간 남음",
-      image: "/intro-products/seventeen-main.png",
-      member: "정한",
-      rank: "참여",
-      status: "입금대기",
-      title: "세븐틴 팬미팅 MD 포카",
-    },
-  ] as const;
-
-  useEffect(() => {
-    const frameElement = frameRef.current;
-
-    if (!frameElement || isPaymentSheetOpen) {
-      return;
-    }
-
-    const viewportHeight = window.innerHeight || 900;
-    const frameTop = frameElement.getBoundingClientRect().top;
-
-    if (frameTop < viewportHeight * 0.22) {
-      const animationFrame = window.requestAnimationFrame(() => {
-        setIsPaymentSheetOpen(true);
-      });
-
-      return () => window.cancelAnimationFrame(animationFrame);
-    }
-  }, [isPaymentSheetOpen, pageScrollTop, prefersReducedMotion]);
+  const isSheetOpen = progress > 0.28;
 
   return (
     <div className="relative h-full overflow-hidden bg-white" ref={frameRef}>
       <div className="px-4 pt-9">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-black/35">
-          History
-        </p>
-        <h3 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+        <h3 className="text-[22px] font-semibold leading-none tracking-[-0.05em]">
           참여 내역
         </h3>
 
@@ -1113,438 +769,729 @@ function PaymentMiniScreen() {
           </div>
         </div>
 
-        <div className="mt-3 grid gap-3">
-          {participatedBids.map(({ amount, deadline, image, member, rank, status, title }) => (
-            <div className="rounded-[1rem] border border-black/10 px-4 py-4" key={title}>
-              <div className="flex items-start gap-3">
-                <span
-                  className="block h-16 w-16 shrink-0 rounded-[1rem] bg-[#f4f4f4] bg-cover bg-center ring-1 ring-black/5"
-                  style={{
-                    backgroundImage: shouldLoadPaymentImages
-                      ? `url(${image})`
-                      : undefined,
-                  }}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                        {title}
-                      </p>
-                      <p className="mt-1 text-[13px] font-medium text-black/45">
-                        {member} · {status}
-                      </p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-black px-2.5 py-1 text-[12px] font-semibold text-white">
-                      {rank}
-                    </span>
-                  </div>
+        <div className="mt-3 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+          <div className="flex items-start gap-3">
+            <div className="flex w-14 shrink-0 flex-col items-center gap-1.5">
+              <span
+                className="block h-14 w-14 overflow-hidden rounded-[0.85rem] bg-[#f1f1f1] bg-cover bg-center"
+                style={{
+                  backgroundImage: shouldLoadPaymentImages
+                    ? "url(/intro-products/ive-main.png)"
+                    : undefined,
+                }}
+              />
+              {/* 목업 문구는 실화면 문자열을 그대로 쓴다 (참여 내역 분철 칩). */}
+              <span className="w-full whitespace-nowrap rounded-full bg-[#E4F6A5] px-1 py-0.5 text-center text-[10px] font-semibold text-black/70">
+                입금 진행
+              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                IVE 시즌그리팅 포카 분철
+              </p>
+              <p className="mt-1 text-[13px] font-medium text-black/45">
+                장원영
+              </p>
 
-                  <div className="mt-4 grid gap-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                        <p className="text-[11px] font-medium text-black/35">
-                          상품 금액
-                        </p>
-                        <p className="mt-1 text-[14px] font-semibold">{amount}</p>
-                      </div>
-                      <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                        <p className="text-[11px] font-medium text-black/35">
-                          상태
-                        </p>
-                        <p className="mt-1 text-[14px] font-semibold">{status}</p>
-                      </div>
-                    </div>
-                    <div className="rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2">
-                      <p className="text-[11px] font-medium text-black/35">마감</p>
-                      <p className="mt-1 text-[14px] font-semibold">
-                        {deadline}
+              <div className="mt-4 grid gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ["상품 금액", "24,000원"],
+                    ["배송비", "3,000원"],
+                    ["입금 총액", "27,000원"],
+                    ["모집 기한", "8.14 17시"],
+                  ].map(([label, value]) => (
+                    <div
+                      className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55"
+                      key={label}
+                    >
+                      <p className="text-[11px] font-medium text-black/35">
+                        {label}
+                      </p>
+                      <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
+                        {value}
                       </p>
                     </div>
-                  </div>
+                  ))}
+                </div>
+                <div className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55">
+                  <p className="text-[11px] font-medium text-black/35">
+                    배송지
+                  </p>
+                  <p className="mt-1 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                    CU 성수역점
+                  </p>
+                </div>
+              </div>
 
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <div className="text-[12px] font-medium text-black">
-                      <p>결제가 필요해요</p>
-                      <p className="mt-0.5 text-black/45">결제까지 23시간</p>
-                    </div>
-                    <span className="rounded-full bg-black px-3 py-2 text-[13px] font-semibold text-white">
-                      결제
-                    </span>
+              <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                <div className="relative">
+                  <div className="absolute left-[8.333%] right-[8.333%] top-[9px] h-px bg-[#CAD6A0]" />
+                  <div className="relative grid grid-cols-6 gap-1">
+                    {introProgressSteps.map((step, stepIndex) => (
+                      <div
+                        className="flex min-w-0 flex-col items-center gap-1.5"
+                        key={step}
+                      >
+                        <span
+                          className={`h-[18px] w-[18px] rounded-full border-2 ${
+                            stepIndex === 1
+                              ? "border-[#CFE86B] bg-[#D7FF5F]"
+                              : "border-[#dedede] bg-white"
+                          }`}
+                        />
+                        <span
+                          className={`break-keep text-center text-[10px] font-semibold leading-3 ${
+                            stepIndex === 1 ? "text-black" : "text-black/35"
+                          }`}
+                        >
+                          {step}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
-          ))}
+          </div>
         </div>
       </div>
 
       <div
-        className={`intro-payment-sheet absolute inset-x-0 bottom-0 rounded-t-[1.8rem] bg-white px-5 pb-5 pt-6 shadow-[0_-18px_55px_rgba(0,0,0,0.2)] ${
-          isPaymentSheetOpen ? "intro-payment-sheet-open" : ""
+        className={`intro-payment-sheet absolute inset-x-0 bottom-0 rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+          isSheetOpen ? "intro-payment-sheet-open" : ""
         }`}
       >
-        <div className="mx-auto mb-5 h-1 w-12 rounded-full bg-black/12" />
-        <div className="flex items-start justify-between">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[24px] font-semibold tracking-[-0.08em]">
-              배송지 선택
+            <p className="text-[21px] font-semibold tracking-[-0.06em]">
+              결제 정보
             </p>
-            <p className="mt-2 text-[14px] font-medium text-black/45">
-              참여 상품을 받을 주소를 확인해 주세요.
+            <p className="mt-1 text-[13px] font-medium text-black/45">
+              계좌 확인 후 입금하고 &apos;보냈어요&apos;를 눌러주세요.
             </p>
           </div>
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white">
-            <CloseIcon className="h-5 w-5" />
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black text-white">
+            <CloseIcon />
           </span>
         </div>
 
-        <div className="mt-5 rounded-[1rem] bg-[#f7f7f7] px-4 py-4">
-          <p className="text-[16px] font-semibold tracking-[-0.04em]">
-            IVE 시즌그리팅 포카
+        <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+          <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+            IVE 시즌그리팅 포카 분철
           </p>
-          <p className="mt-1 text-[13px] font-medium text-black/45">
-            6개 옵션 · 장원영
-          </p>
-        </div>
-
-        <div className="mt-4 rounded-[1rem] border border-black/10 px-4 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[12px] font-semibold text-black/35">
-                개최자 계좌
-              </p>
-              <p className="mt-2 text-[17px] font-semibold tracking-[-0.05em]">
-                카카오뱅크 3333-24-2427024
-              </p>
-              <p className="mt-2 text-[13px] font-medium leading-5 text-black/45">
-                개최자가 등록한 계좌로 입금해 주세요.
-              </p>
-            </div>
-            <span className="shrink-0 rounded-full bg-black px-4 py-2 text-[12px] font-semibold text-white">
-              계좌 복사
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65">
+              장원영
             </span>
           </div>
         </div>
 
-        <div className="mt-4 rounded-[0.95rem] bg-[#f4f4f4] px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="rounded-full bg-white px-3 py-1 text-[12px] font-semibold text-black/48">
-              CU
-            </span>
-            <p className="text-[15px] font-semibold tracking-[-0.04em]">
-              성수역점
+        <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
+              입금 마감까지
             </p>
+            <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
+              입금 대기
+            </span>
+          </div>
+          <p className="mt-1 text-[24px] font-semibold tracking-[-0.06em]">
+            23시간 12분
+          </p>
+          <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
+            기한 안에 아래 계좌로 입금해 주세요.
+          </p>
+        </div>
+
+        <div className="mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold text-black/40">
+                개최자 계좌
+              </p>
+              <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                카카오뱅크 3333-24-2427024
+              </p>
+              <p className="mt-1 text-[12px] font-medium text-black/40">
+                예금주 김분철
+              </p>
+            </div>
+            <span className="flex h-9 shrink-0 items-center rounded-full bg-black px-3 text-[12px] font-semibold text-[#D7FF5F]">
+              계좌 복사
+            </span>
+          </div>
+          <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+            송금 후 아래 &apos;보냈어요&apos;를 누르면 개최자가 입금을 확인해요.
+          </p>
+        </div>
+
+        <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-[#D7FF5F]">
+                  CU
+                </span>
+                <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/55">
+                  배송지 고정
+                </span>
+              </div>
+              <p className="mt-1.5 truncate text-[13px] font-semibold tracking-[-0.04em]">
+                성수역점
+              </p>
+            </div>
+            <span className="shrink-0 text-[11px] font-semibold text-black/40">
+              변경 불가
+            </span>
           </div>
         </div>
 
         <div className="mt-4 border-t border-black/10 pt-4">
-          <div className="flex justify-between text-[15px] font-medium text-black/45">
+          <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
             <span>상품 금액</span>
-            <span>42,000원</span>
+            <span>24,000원</span>
           </div>
-          <div className="mt-2 flex justify-between text-[15px] font-medium text-black/45">
+          <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
             <span>배송비</span>
-            <span>1,800원</span>
+            <span>3,000원</span>
           </div>
-          <div className="mt-4 flex items-end justify-between">
-            <span className="text-[17px] font-semibold tracking-[-0.04em]">
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-[15px] font-semibold tracking-[-0.04em]">
               결제 예정 금액
             </span>
-            <span className="text-[28px] font-semibold tracking-[-0.07em]">
-              43,800원
+            <span className="text-[22px] font-semibold tracking-[-0.05em]">
+              27,000원
             </span>
           </div>
         </div>
 
-        <div className="mt-5 rounded-full bg-black py-4 text-center text-[16px] font-semibold text-white">
-          확인했어요
+        <div className="intro-confirm-pulse mt-4 flex h-14 items-center justify-center rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
+          입금했어요 · 보냈어요 표시
         </div>
       </div>
     </div>
   );
-}
+});
 
-function ManageMiniScreen() {
-  const { pageScrollTop } = useContext(IntroMotionContext);
+// 개최 분철 관리 — components/HostedBuncheolManage.tsx 의 운영 요약·입금 수집 중·참여자 관리 구성.
+const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
-  const [manageScrollOffset, setManageScrollOffset] = useState(0);
   const shouldLoadManageImages = useDeferredMockupImages(frameRef);
   const manageMembers = [
     {
-      amount: "42,000원",
+      amount: "24,000원",
+      depositor: "김분철",
       image: "/intro-members/ive/wonyoung.webp",
       member: "장원영",
-      participants: "6명",
-      reported: true,
-      trackingNumber: "CJ 5839 2047 1182",
-      store: "CU 성수역점",
+      state: "sent",
     },
     {
-      amount: "31,000원",
+      amount: "24,000원",
+      depositor: "이분철",
       image: "/intro-members/ive/liz.webp",
       member: "리즈",
-      participants: "5명",
-      reported: false,
-      trackingNumber: "",
-      store: "GS25 홍대입구점",
+      state: "confirmed",
     },
   ] as const;
 
-  useLayoutEffect(() => {
-    const frameElement = frameRef.current;
-
-    if (!frameElement) {
-      return;
-    }
-
-    const viewportHeight = window.innerHeight || 900;
-    const frameTop = frameElement.getBoundingClientRect().top;
-    const startLine = viewportHeight * 0.34;
-    const nextManageScrollOffset = Math.max(
-      0,
-      Math.min(165, Math.round((startLine - frameTop) * 0.7)),
-    );
-    const animationFrame = window.requestAnimationFrame(() => {
-      setManageScrollOffset((currentOffset) =>
-        currentOffset === nextManageScrollOffset
-          ? currentOffset
-          : nextManageScrollOffset,
-      );
-    });
-
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [pageScrollTop]);
-
   return (
-    <div className="h-full overflow-hidden bg-white" ref={frameRef}>
+    <div className="relative h-full overflow-hidden bg-white" ref={frameRef}>
       <div
-        className="px-5 pb-24 pt-9 will-change-transform"
-        style={{ transform: `translateY(-${manageScrollOffset}px)` }}
+        className="px-4 pb-24 pt-9 will-change-transform"
+        style={{ transform: `translateY(-${Math.round(progress * 300)}px)` }}
       >
-      <div className="flex items-end justify-between">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white">
-          <BackIcon />
-        </span>
-        <div className="text-right">
-          <p className="text-[12px] font-semibold text-black/35">
+        <div className="flex items-center gap-2 pb-3">
+          <span className="mr-auto flex h-10 w-10 items-center justify-center rounded-full bg-black text-white">
+            <BackIcon />
+          </span>
+          <p className="text-[13px] font-semibold text-black/40">
             개최 분철 관리
           </p>
-          <p className="mt-1 max-w-[12rem] truncate text-[22px] font-semibold leading-none tracking-[-0.06em]">
-            IVE 시즌그리팅 포카
-          </p>
         </div>
-      </div>
 
-      <section className="mt-5 rounded-[1rem] border border-black/10 px-4 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-black/40">IVE</p>
-            <p className="mt-1 truncate text-[18px] font-semibold tracking-[-0.05em]">
-              시즌그리팅 MD
+        <section className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+          <div className="bg-black px-4 py-4 text-white">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
+                  IVE
+                </p>
+                <p className="mt-1 truncate text-[18px] font-semibold tracking-[-0.05em]">
+                  시즌그리팅 포카 분철
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/75">
+                입금 수집중
+              </span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/15">
+              <div
+                className="h-full rounded-full bg-white"
+                style={{ width: "66%" }}
+              />
+            </div>
+          </div>
+
+          <div className="px-4 py-4">
+            <p className="text-[13px] font-semibold text-black/40">운영 요약</p>
+            <p className="mt-1 text-[14px] font-semibold text-black/55">
+              입금 확인 후 운송장 등록까지 한 곳에서 처리해요.
             </p>
-          </div>
-          <span className="shrink-0 rounded-full bg-[#f1f1f1] px-3 py-1 text-[12px] font-semibold text-black/55">
-            마감
-          </span>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-            <p className="text-[11px] font-medium text-black/35">옵션</p>
-            <p className="mt-1 text-[15px] font-semibold">6개</p>
-          </div>
-          <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-            <p className="text-[11px] font-medium text-black/35">참여</p>
-            <p className="mt-1 text-[15px] font-semibold">23명</p>
-          </div>
-          <div className="col-span-2 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-            <p className="text-[11px] font-medium text-black/35">마감</p>
-            <p className="mt-1 whitespace-nowrap text-[15px] font-semibold tracking-[-0.04em]">
-              2026년 06월 03일 18시
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-5">
-        <div className="mb-3">
-          <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
-            멤버별 참여 현황
-          </h2>
-          <p className="mt-1 text-[13px] font-medium text-black/40">
-            멤버별 참여와 배송 준비를 확인해요.
-          </p>
-        </div>
-
-        <div className="grid gap-3">
-          {manageMembers.map(({ amount, image, member, participants, reported, store, trackingNumber }) => (
-        <article className="rounded-[1rem] border border-black/10 px-4 py-4" key={member}>
-          <div className="flex items-center gap-3">
-            <span
-              className="block h-16 w-16 shrink-0 rounded-[1rem] bg-[#f4f4f4] bg-cover bg-center ring-1 ring-black/5"
-              style={{
-                backgroundImage: shouldLoadManageImages
-                  ? `url(${image})`
-                  : undefined,
-              }}
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[16px] font-semibold tracking-[-0.04em]">
-                {member}
-              </p>
-              <p className="mt-1 text-[12px] font-medium text-black/40">
-                참여 {participants}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-              <p className="text-[11px] font-medium text-black/35">
-                가격
-              </p>
-              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                {amount}
-              </p>
-            </div>
-            <div className="rounded-[0.8rem] bg-[#f7f7f7] px-3 py-3">
-              <p className="text-[11px] font-medium text-black/35">참여</p>
-              <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
-                {participants}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 border-t border-black/10 pt-4">
-            <div className="rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-black/35">
-                    결제 확인
-                  </p>
-                  <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                    {reported ? "결제 확인 완료" : "결제 대기"}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold ${
-                    reported
-                      ? "intro-confirm-pulse bg-black text-white"
-                      : "bg-black/10 text-black/32"
-                  }`}
-                >
-                  결제 확인
-                </span>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">멤버</p>
+                <p className="mt-1 text-[15px] font-semibold">6명</p>
+              </div>
+              <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">
+                  최소 진행 인원
+                </p>
+                <p className="mt-1 text-[15px] font-semibold">4명</p>
+              </div>
+              <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">
+                  입금 대기
+                </p>
+                <p className="mt-1 text-[15px] font-semibold">0명</p>
+              </div>
+              <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
+                <p className="text-[11px] font-medium text-black/35">
+                  보냈어요
+                </p>
+                <p className="mt-1 text-[15px] font-semibold">0명</p>
               </div>
             </div>
-
-            <div className="mt-3 rounded-[0.85rem] bg-[#f7f7f7] px-3 py-3">
-              <p className="text-[11px] font-medium text-black/35">
-                배송 정보
-              </p>
-              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em]">
-                {store}
-              </p>
-            </div>
-
-            <p className="mt-3 text-[12px] font-semibold text-black/45">
-              운송장 번호
-            </p>
-            <div className="mt-2 rounded-[0.85rem] border border-black/10 px-4 py-3 text-[14px] font-semibold text-black/70">
-              {trackingNumber ? (
-                <span className="intro-waybill-typing inline-block overflow-hidden whitespace-nowrap">
-                  {trackingNumber}
-                </span>
-              ) : (
-                <span className="text-black/24">운송장 번호 입력</span>
-              )}
-            </div>
-            <div
-              className={`mt-3 rounded-full py-3 text-center text-[14px] font-semibold tracking-[-0.04em] ${
-                trackingNumber
-                  ? "intro-ship-complete-button bg-black text-white"
-                  : "bg-black/15 text-black/35"
-              }`}
-            >
-              발송 완료
-            </div>
           </div>
-        </article>
-          ))}
-        </div>
-      </section>
+        </section>
+
+        <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[15px] font-semibold tracking-[-0.04em]">
+              입금 수집 중
+            </p>
+            <span className="shrink-0 text-[12px] font-semibold text-black/45">
+              기한 8월 14일 17시
+            </span>
+          </div>
+          {/* 부분 확정 버튼은 미입금이 0일 때만 뜬다(HostedBuncheolManage). 목업이 그 조건을
+              어기면 "미입금이 남아도 누를 수 있는 버튼"으로 잘못 배우게 되므로 집계를 맞춘다. */}
+          <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
+            입금 확인 6명 · 입금 대기 0명 · 보냈어요 0명
+          </p>
+          <div className="intro-confirm-pulse mt-3 flex h-12 items-center justify-center rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F]">
+            입금한 6명으로 진행 확정
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <div className="mb-3">
+            <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
+              참여자 관리
+            </h2>
+            {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다. */}
+            <p className="mt-1 text-[13px] font-medium text-black/40">
+              {"참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조하고, 입금이 확인되지 않으면 '입금 못 찾음'으로 재확인을 요청할 수 있어요."}
+            </p>
+          </div>
+
+          <div className="grid gap-3">
+            {manageMembers.map(
+              ({ amount, depositor, image, member, state }) => (
+                <article
+                  className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white shadow-[0_10px_28px_rgba(0,0,0,0.035)]"
+                  key={member}
+                >
+                  <div className="flex items-center gap-3 border-b border-black/[0.06] px-4 py-3">
+                    <span
+                      className="block h-11 w-11 shrink-0 rounded-[0.9rem] bg-[#f1f1f1] bg-cover bg-center ring-1 ring-black/[0.04]"
+                      style={{
+                        backgroundImage: shouldLoadManageImages
+                          ? `url(${image})`
+                          : undefined,
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                        {member}
+                      </p>
+                      <p className="mt-0.5 text-[12px] font-medium text-black/40">
+                        참여 1명
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 px-4 py-3">
+                    <div className="rounded-[0.85rem] border border-black/[0.08] px-3 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                            입금자명 {depositor}
+                          </p>
+                          <p className="mt-0.5 text-[12px] font-medium text-black/40">
+                            {amount}
+                            {state === "sent"
+                              ? " · 보냈어요 8월 12일 21시"
+                              : " · 확인 8월 12일 09시"}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            state === "sent"
+                              ? "bg-[#D7FF5F] text-black"
+                              : "bg-black text-white"
+                          }`}
+                        >
+                          {state === "sent" ? "보냈어요" : "입금 확인"}
+                        </span>
+                      </div>
+
+                      {state === "sent" ? (
+                        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                          <div className="intro-confirm-pulse flex h-10 items-center justify-center rounded-full bg-black text-[13px] font-semibold text-[#D7FF5F]">
+                            입금 확인
+                          </div>
+                          <div className="flex h-10 items-center justify-center rounded-full border border-black/10 px-4 text-[13px] font-semibold text-black/50">
+                            반려
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-medium text-black/35">
+                            운송장 번호
+                          </p>
+                          <div className="mt-1.5 rounded-[0.7rem] border border-black/10 px-3 py-2.5 text-[13px] font-semibold text-black/70">
+                            <span className="intro-waybill-typing inline-block overflow-hidden whitespace-nowrap">
+                              CJ 5839 2047 1182
+                            </span>
+                          </div>
+                          <div className="intro-ship-complete-button mt-2 flex h-10 items-center justify-center rounded-full text-[13px] font-semibold tracking-[-0.04em]">
+                            운송장 등록
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ),
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );
+});
+
+const featureSlides: readonly FeatureSlide[] = [
+  {
+    body: "멤버별 가격과 남은 자리를 한 화면에서 확인해요.\n원하는 멤버가 여럿이면 각각 신청할 수 있어요.",
+    chips: ["멤버별 가격"],
+    title: "남은 자리가 한눈에",
+  },
+  {
+    body: "성사가 확정되면 계좌와 입금 기한이 안내돼요.\n송금 뒤 '보냈어요'만 누르면 끝.",
+    chips: ["24시간 기한"],
+    title: "입금은 확정된 뒤에",
+  },
+  {
+    body: "신청 현황과 입금 확인은 물론,\n참여자들이 고른 배송지도 한 화면에 모여요.",
+    chips: ["배송지 한눈에"],
+    title: "개최도 화면 하나로",
+  },
+] as const;
+
+const introFlowSteps = [
+  {
+    body: "원하는 멤버 자리를 잡아요. 이 단계에서는 입금하지 않아요.",
+    label: "신청",
+  },
+  {
+    body: "개최자가 성사를 확정하면 계좌와 24시간 입금 기한이 안내돼요.",
+    label: "입금 대기",
+  },
+  {
+    body: "송금 후 '보냈어요'를 누르면 개최자가 확인해 참여가 확정돼요.",
+    label: "입금 확인",
+  },
+  {
+    body: "최소 인원이 모이면 분철이 확정되고 굿즈 준비가 시작돼요.",
+    label: "진행 확정",
+  },
+  {
+    body: "운송장이 등록되면 배송 상태가 자동으로 따라붙어요.",
+    label: "배송 중",
+  },
+  {
+    body: "선택한 편의점에서 받고 수령을 확인하면 끝나요.",
+    label: "배송 완료",
+  },
+] as const;
+
+const introPainPoints = [
+  {
+    items: [
+      { after: "명단에서 버튼으로 한 번에", before: "입금 확인 DM 한 명씩" },
+      { after: "배송지가 한 화면에 모여요", before: "주소 하나씩 받아 적기" },
+      { after: "인원 미달이면 자동 취소·안내", before: "성사 여부 수동 공지" },
+    ],
+    role: "개최자",
+  },
+  {
+    items: [
+      { after: "버튼으로 신청, DM 0회", before: "처음 보는 사람에게 먼저 DM" },
+      { after: "남은 자리가 실시간으로 표시", before: "남은 멤버 물어보기" },
+      { after: "단계별 알림톡과 진행 바", before: "진행 상황은 깜깜이" },
+    ],
+    role: "참여자",
+  },
+] as const;
+
+const introSafetyPoints = [
+  {
+    body: "마감 때 최소 인원이 모자라면\n분철이 자동으로 취소돼요.\n참여자 전원에게 안내가 나가요.",
+    icon: UsersRoundIcon,
+    title: "인원 미달이면 자동 취소",
+  },
+  {
+    body: "입금 안내, 진행 확정, 운송장 등록까지\n단계마다 알림톡으로 알려드려요.",
+    icon: BellIcon,
+    title: "단계마다 알림톡",
+  },
+  {
+    body: "개인 DM 대신 참여 내역에 상태가 남아요.\n어디까지 왔는지 언제든 확인할 수 있어요.",
+    icon: ClipboardListIcon,
+    title: "모든 과정이 기록으로",
+  },
+  {
+    body: "택배가 도착하면 고른 편의점에서 받고,\n수령 확인까지 앱에서 남겨요.",
+    icon: PackageCheckIcon,
+    title: "편의점에서 받고 수령 확인",
+  },
+] as const;
+
+const introHostPoints = [
+  {
+    body: "멤버 자리와 가격, 마감일과 최소 인원만 정하면 등록이 끝나요.",
+    icon: ClipboardListIcon,
+    title: "정할 건 네 가지",
+  },
+  {
+    body: "신청 인원과 입금 현황이 자동으로 집계돼 확인 버튼만 누르면 돼요.",
+    icon: BanknoteIcon,
+    title: "입금 확인은 버튼 하나",
+  },
+  {
+    body: "참여자들이 고른 배송지가 한 화면에 모여 있어, 보고 그대로 보내면 돼요.",
+    icon: TruckIcon,
+    title: "배송지는 한 화면에",
+  },
+] as const;
+
+function ArrowRight() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-[1.05em] w-[1.05em]"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M5 12h13M13 6l6 6-6 6" />
+    </svg>
+  );
 }
 
-function FeatureBlock({ section, index }: { section: FeatureSection; index: number }) {
+// 폰이 화면에 고정된 채 설명만 넘어가는 구간. 슬라이드별 진행도로 목업 내부 스크롤·시트까지 함께 움직인다.
+// 스크롤 구독을 이 컴포넌트가 직접 들고 있어야 부모(IntroContent) 가 매 프레임 리렌더되지 않는다.
+function FeatureStack({
+  scrollContainerRef,
+}: {
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+}) {
+  const stackRef = useRef<HTMLDivElement | null>(null);
+  const [stackProgress, setStackProgress] = useState(0);
+
+  useLayoutEffect(() => {
+    const containerElement = scrollContainerRef.current;
+
+    if (!containerElement) {
+      return;
+    }
+
+    let scheduledFrameId = 0;
+
+    function syncStackProgress() {
+      const stackElement = stackRef.current;
+
+      if (!stackElement || !containerElement) {
+        return;
+      }
+
+      const stackRect = stackElement.getBoundingClientRect();
+      const containerRect = containerElement.getBoundingClientRect();
+      const travel = stackRect.height - containerRect.height;
+
+      if (travel <= 0) {
+        return;
+      }
+
+      const nextProgress = clamp(
+        (containerRect.top - stackRect.top) / travel,
+        0,
+        1,
+      );
+
+      setStackProgress((currentProgress) =>
+        Math.abs(currentProgress - nextProgress) < 0.002
+          ? currentProgress
+          : nextProgress,
+      );
+    }
+
+    function scheduleSync() {
+      if (scheduledFrameId) {
+        return;
+      }
+
+      scheduledFrameId = window.requestAnimationFrame(() => {
+        scheduledFrameId = 0;
+        syncStackProgress();
+      });
+    }
+
+    scheduleSync();
+    containerElement.addEventListener("scroll", scheduleSync, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleSync, { passive: true });
+
+    return () => {
+      window.cancelAnimationFrame(scheduledFrameId);
+      containerElement.removeEventListener("scroll", scheduleSync);
+      window.removeEventListener("resize", scheduleSync);
+    };
+  }, [scrollContainerRef]);
+
+  // 앞뒤 10% 는 첫·마지막 슬라이드가 고정된 채 머무는 구간 — 없으면 마지막 슬라이드를 보자마자 sticky 가 풀린다.
+  const slidePosition =
+    clamp((stackProgress - 0.1) / 0.8, 0, 1) * featureSlides.length;
+  const activeIndex = clamp(
+    Math.floor(slidePosition),
+    0,
+    featureSlides.length - 1,
+  );
+  const slideProgress = (index: number) => clamp(slidePosition - index, 0, 1);
+
   return (
-    <section className="relative px-5 py-20 text-black">
-      <Reveal direction={index % 2 === 0 ? "right" : "left"}>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-black/32">
-          {section.eyebrow}
-        </p>
-        <h2 className="mt-3 break-keep text-[36px] font-semibold leading-[1.04] tracking-[-0.08em]">
-          {section.title}
-        </h2>
-        <p className="mt-4 break-keep text-[15px] font-medium leading-6 tracking-[-0.04em] text-black/56">
-          {section.body}
-        </p>
-      </Reveal>
-      <Reveal className="mt-10" delay={160} direction="scale">
-        <MiniPhone
-          className={
-            index % 2 === 0 ? "rotate-[2deg]" : "rotate-[-2deg]"
-          }
-        >
-          {section.screen}
-        </MiniPhone>
-      </Reveal>
+    <section
+      className="relative"
+      ref={stackRef}
+      style={{
+        height: `calc(var(--intro-vh, 100dvh) * ${featureSlides.length + 0.4})`,
+      }}
+    >
+      <div className="sticky top-0 flex h-[var(--intro-vh,100dvh)] flex-col justify-center overflow-hidden px-6">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[26rem] w-[26rem] -translate-x-1/2 -translate-y-[38%] rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.34),transparent_66%)] blur-[64px]" />
+
+        <div className="relative h-[9.5rem]">
+          {featureSlides.map(({ body, chips, title }, index) => (
+            <div
+              className="absolute inset-x-0 top-0"
+              key={title}
+              style={{
+                opacity: index === activeIndex ? 1 : 0,
+                transform:
+                  index === activeIndex
+                    ? "translate3d(0,0,0)"
+                    : index < activeIndex
+                      ? "translate3d(0,-14px,0)"
+                      : "translate3d(0,14px,0)",
+                transition:
+                  "opacity 420ms cubic-bezier(0.16, 1, 0.3, 1), transform 420ms cubic-bezier(0.16, 1, 0.3, 1)",
+              }}
+            >
+              <p className="text-[13px] font-semibold tabular-nums tracking-[0.06em] text-[#A9AEB5]">
+                {String(index + 1).padStart(2, "0")}
+                <span className="text-[#C9CDD2]"> / 03</span>
+              </p>
+              <h2 className="mt-2 break-keep text-[30px] font-semibold leading-[1.18] tracking-[-0.045em]">
+                {title}
+              </h2>
+              <p className="mt-2.5 whitespace-pre-line break-keep text-[14px] font-medium leading-[1.66] tracking-[-0.02em] text-[#5A6069]">
+                {body}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {chips.map((chip) => (
+                  <span
+                    className="rounded-full border border-[#0A0B0D]/[0.06] bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.02em] text-[#5A6069]"
+                    key={chip}
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="relative mt-5 flex justify-center gap-1.5">
+          {featureSlides.map(({ title }, index) => (
+            <span
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                index === activeIndex
+                  ? "w-6 bg-[#0A0B0D]"
+                  : "w-1.5 bg-[#C9CDD2]"
+              }`}
+              key={title}
+            />
+          ))}
+        </div>
+
+        <div className="relative mt-5">
+          <MiniPhone widthClassName="w-[min(18rem,calc((var(--intro-vh,100dvh)-15rem)/2.42))]">
+            <div className="absolute inset-0">
+              {featureSlides.map(({ title }, index) => (
+                <div
+                  className="absolute inset-0"
+                  key={title}
+                  style={{
+                    opacity: index === activeIndex ? 1 : 0,
+                    transition: "opacity 380ms ease",
+                  }}
+                >
+                  {index === 0 ? (
+                    <DetailMiniScreen progress={slideProgress(0)} />
+                  ) : index === 1 ? (
+                    <PaymentMiniScreen progress={slideProgress(1)} />
+                  ) : (
+                    <ManageMiniScreen progress={slideProgress(2)} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </MiniPhone>
+        </div>
+      </div>
     </section>
   );
 }
 
-const featureSections: FeatureSection[] = [
-  {
-    body: "그룹과 멤버를 입력하는 순간, 맞는 후보와 분철 결과가 자연스럽게 이어져요.",
-    eyebrow: "Search",
-    screen: <SearchMiniScreen />,
-    title: "찾는 멤버까지 빠르게",
-  },
-  {
-    body: "대표 이미지, 옵션별 가격과 참여 상태를 한 화면에서 확인하고 바로 참여해요.",
-    eyebrow: "Detail",
-    screen: <DetailMiniScreen />,
-    title: "참여 조건은 선명하게",
-  },
-  {
-    body: "참여 후에는 계좌와 입금 마감 시각을 한 화면에서 확인해요.",
-    eyebrow: "Payment",
-    screen: <PaymentMiniScreen />,
-    title: "송금 흐름도 가볍게",
-  },
-  {
-    body: "개최자는 결제 대기 건을 확인하고, 운송장 등록까지 같은 화면에서 이어가요.",
-    eyebrow: "Manage",
-    screen: <ManageMiniScreen />,
-    title: "개최 관리까지 이어서",
-  },
-];
-
 export function IntroContent() {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const homeScrollOffsetRef = useRef(0);
-  const lastScrollTopRef = useRef(0);
-  const pageScrollTopRef = useRef(0);
   const [homeScrollOffset, setHomeScrollOffset] = useState(0);
-  const [pageScrollTop, setPageScrollTop] = useState(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isMarkerOn, setIsMarkerOn] = useState(false);
+  const [liveBuncheolTitle, setLiveBuncheolTitle] = useState<string | null>(
+    null,
+  );
   const [recentBuncheols, setRecentBuncheols] = useState(
     fallbackRecentBuncheols,
   );
-  const [scrollDirection, setScrollDirection] =
-    useState<ScrollDirection>("down");
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -1579,6 +1526,46 @@ export function IntroContent() {
     };
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsMarkerOn(true), 420);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // 100dvh 는 설치형 PWA 에서 실제 스크롤포트보다 크다 — main 이 safe-area inset 만큼
+  // padding 을 먹고 border-box 라 컨테이너 높이에서 그만큼 빠진다(globals.css 의 standalone 블록).
+  // sticky 패널·폰 크기·히어로 높이는 이 변수를 기준으로 잡는다.
+  useLayoutEffect(() => {
+    const scrollElement = scrollContainerRef.current;
+
+    if (!scrollElement) {
+      return;
+    }
+
+    const activeScrollElement: HTMLDivElement = scrollElement;
+
+    function syncViewportHeight() {
+      activeScrollElement.style.setProperty(
+        "--intro-vh",
+        `${activeScrollElement.clientHeight}px`,
+      );
+    }
+
+    syncViewportHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", syncViewportHeight);
+
+      return () => window.removeEventListener("resize", syncViewportHeight);
+    }
+
+    const resizeObserver = new ResizeObserver(syncViewportHeight);
+
+    resizeObserver.observe(activeScrollElement);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
   useLayoutEffect(() => {
     const scrollElement = scrollContainerRef.current;
 
@@ -1590,34 +1577,24 @@ export function IntroContent() {
 
     let scheduledFrameId = 0;
 
-    function syncScrollDirection() {
+    function syncScroll() {
       const documentScrollTop =
         document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
       const nextScrollTop = Math.max(
         activeScrollElement.scrollTop,
         documentScrollTop,
       );
-      const previousScrollTop = lastScrollTopRef.current;
 
-      if (pageScrollTopRef.current !== nextScrollTop) {
-        pageScrollTopRef.current = nextScrollTop;
-        setPageScrollTop(nextScrollTop);
-      }
-
-      const scrollLinkedOffset = Math.max(0, Math.round(nextScrollTop * 0.8));
+      // 히어로 목업 전용 오프셋이라 360px 에서 멈춘다 — 그 뒤로는 상태가 안 바뀌어
+      // 스크롤 내내 리렌더가 이어지지 않는다.
       const nextHomeScrollOffset = Math.min(
-        330,
-        scrollLinkedOffset,
+        360,
+        Math.max(0, Math.round(nextScrollTop * 0.8)),
       );
 
       if (homeScrollOffsetRef.current !== nextHomeScrollOffset) {
         homeScrollOffsetRef.current = nextHomeScrollOffset;
         setHomeScrollOffset(nextHomeScrollOffset);
-      }
-
-      if (Math.abs(nextScrollTop - previousScrollTop) > 3) {
-        setScrollDirection(nextScrollTop > previousScrollTop ? "down" : "up");
-        lastScrollTopRef.current = nextScrollTop;
       }
     }
 
@@ -1628,26 +1605,17 @@ export function IntroContent() {
 
       scheduledFrameId = window.requestAnimationFrame(() => {
         scheduledFrameId = 0;
-        syncScrollDirection();
+        syncScroll();
       });
     }
-
-    lastScrollTopRef.current = Math.max(
-      activeScrollElement.scrollTop,
-      document.scrollingElement?.scrollTop ?? window.scrollY ?? 0,
-    );
 
     scheduleScrollSync();
 
     activeScrollElement.addEventListener("scroll", scheduleScrollSync, {
       passive: true,
     });
-    window.addEventListener("scroll", scheduleScrollSync, {
-      passive: true,
-    });
-    window.addEventListener("resize", scheduleScrollSync, {
-      passive: true,
-    });
+    window.addEventListener("scroll", scheduleScrollSync, { passive: true });
+    window.addEventListener("resize", scheduleScrollSync, { passive: true });
     window.addEventListener("pageshow", scheduleScrollSync);
 
     return () => {
@@ -1662,13 +1630,21 @@ export function IntroContent() {
   useEffect(() => {
     let isActive = true;
 
-    requestBuncheols(undefined, { size: 2 })
+    // 목록 API 는 hideClosed·sort 파라미터를 받지 않고(BuncheolController#searchBuncheols)
+    // 모집중 → 진행확정 → 인원미달취소 순으로 이어 붙여 내려준다. "지금 열린 분철" 문구에 맞추려면
+    // 모집중만 클라에서 걸러야 해서, 앞 구간을 넉넉히 받아 필터링한다.
+    requestBuncheols(undefined, { size: 12 })
       .then((items) => {
-        if (!isActive || items.length === 0) {
+        const openItems = items.filter((item) =>
+          isBuncheolRecruitingStatus(item.status),
+        );
+
+        if (!isActive || openItems.length === 0) {
           return;
         }
 
-        setRecentBuncheols(items.slice(0, 2).map(toIntroRecentBuncheol));
+        setRecentBuncheols(openItems.slice(0, 2).map(toIntroRecentBuncheol));
+        setLiveBuncheolTitle(openItems[0]?.title ?? null);
       })
       .catch(() => {
         if (!isActive) {
@@ -1683,47 +1659,87 @@ export function IntroContent() {
     };
   }, []);
 
+  const motionContextValue = useMemo(
+    () => ({ homeScrollOffset, prefersReducedMotion }),
+    [homeScrollOffset, prefersReducedMotion],
+  );
+
   return (
-    <IntroMotionContext.Provider
-      value={{ homeScrollOffset, pageScrollTop, prefersReducedMotion, scrollDirection }}
-    >
-      <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] min-h-[100dvh] overflow-hidden bg-[#f7f3eb] text-black">
+    <IntroMotionContext.Provider value={motionContextValue}>
+      <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] min-h-[100dvh] overflow-hidden bg-white text-[#0A0B0D]">
         <div
-          className="mx-auto h-full w-full max-w-[430px] overflow-x-hidden overflow-y-auto overscroll-contain bg-[#f7f3eb]"
+          className="mx-auto h-full w-full max-w-[430px] overflow-x-hidden overflow-y-auto overscroll-contain bg-white"
           ref={scrollContainerRef}
         >
-          <section className="relative flex min-h-[100dvh] flex-col px-5 pb-9 pt-5">
-            <nav className="flex items-center justify-between">
-              <p className="text-[24px] font-semibold leading-none tracking-[-0.07em]">
+          <section className="relative flex min-h-[var(--intro-vh,100dvh)] flex-col overflow-hidden bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFCFC_62%,#F6F7F8_100%)] px-6 pb-10 pt-5">
+            <div className="pointer-events-none absolute -right-28 -top-10 h-[24rem] w-[24rem] rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.5),transparent_64%)] blur-[64px]" />
+            <div className="pointer-events-none absolute -left-24 top-[38%] h-[20rem] w-[20rem] rounded-full bg-[radial-gradient(circle,rgba(10,11,13,0.05),transparent_66%)] blur-[64px]" />
+
+            <nav className="relative flex items-center">
+              <p className="text-[23px] font-semibold leading-none tracking-[-0.05em]">
                 분철이지
               </p>
             </nav>
 
-            <div className="flex flex-1 flex-col justify-center py-9">
+            <div className="relative flex flex-1 flex-col justify-center py-8">
               <Reveal>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.22em] text-black/36">
-                  Bias Goods Split
-                </p>
-                <h1 className="mt-4 text-[46px] font-semibold leading-[0.96] tracking-[-0.085em]">
+                <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-[#0A0B0D]/8 bg-white/85 py-1.5 pl-2.5 pr-3.5 shadow-[0_1px_2px_rgba(10,11,13,0.04)] backdrop-blur">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="intro-live-ping absolute inline-flex h-full w-full rounded-full bg-[#A6D92B]/60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#A6D92B]" />
+                  </span>
+                  <span className="truncate text-[12.5px] font-semibold tracking-[-0.02em] text-[#5A6069]">
+                    {liveBuncheolTitle
+                      ? `방금 열린 분철 · ${liveBuncheolTitle}`
+                      : "지금도 분철이 열리고 있어요"}
+                  </span>
+                </span>
+
+                <h1 className="mt-6 text-[54px] font-semibold leading-[1.1] tracking-[-0.05em]">
                   최애 굿즈
                   <br />
                   분철을 더
                   <br />
-                  쉽게.
+                  {/* isolate 필수 — 형광펜이 -z-10 이라 stacking context 가 없으면 루트까지 올라가
+                      섹션 배경에 덮인다. Reveal 의 transform 은 reduced-motion 에서 none 이 되므로
+                      Reveal 에 기댈 수 없다. */}
+                  <span className="relative isolate inline-block">
+                    <span
+                      className={`intro-marker absolute inset-x-[-0.08em] bottom-[0.14em] top-[0.52em] -z-10 rounded-[0.1em] bg-[#d7ff5f] ${
+                        isMarkerOn ? "intro-marker-on" : ""
+                      }`}
+                    />
+                    쉽게.
+                  </span>
                 </h1>
-                <p className="mt-5 max-w-[20rem] text-[15px] font-medium leading-6 tracking-[-0.04em] text-black/54">
-                  찾고, 참여하고, 결제 확인까지. 분철에 필요한 흐름을 한
-                  화면 안에서 이어가요.
+
+                <p className="mt-6 max-w-[19.5rem] break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
+                  원하는 멤버만 골라 신청하세요.
+                  <br />
+                  입금 확인부터 편의점 수령까지 한 화면에서,
+                  <br />
+                  개최자와 DM 주고받을 일 없어요.
                 </p>
-                <p className="mt-4 max-w-[21rem] rounded-[1.1rem] bg-black/[0.04] px-4 py-3 text-[13px] font-medium leading-5 tracking-[-0.03em] text-black/62">
-                  분철이란? 앨범·굿즈에 들어 있는 포토카드 등 구성품을 여러
-                  팬이 멤버별로 나눠 구매하는 거래 방식이에요. 분철이지에서는
-                  진행 중인 분철을 찾아 원하는 멤버로 참여하고, 입금 확인부터
-                  편의점 택배 수령까지 한 화면에서 관리할 수 있어요.
-                </p>
+
+                <div className="mt-8 flex flex-wrap items-center gap-2.5">
+                  <Link
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#0A0B0D] px-6 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-white shadow-[0_1px_2px_rgba(10,11,13,0.24),0_16px_32px_-12px_rgba(10,11,13,0.45)]"
+                    href="/"
+                  >
+                    분철 둘러보기
+                    <ArrowRight />
+                  </Link>
+                  <a
+                    className="rounded-full border border-[#0A0B0D]/10 bg-white px-5 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-[#5A6069] shadow-[0_1px_2px_rgba(10,11,13,0.04)]"
+                    href="#what"
+                  >
+                    분철이 처음이에요
+                  </a>
+                </div>
               </Reveal>
 
-              <Reveal className="relative mt-10" delay={120} direction="scale">
+              <Reveal className="relative mt-12" delay={140} direction="scale">
+                <div className="pointer-events-none absolute inset-x-6 bottom-6 top-10 rounded-[3rem] bg-[radial-gradient(ellipse_at_center,rgba(10,11,13,0.14),transparent_70%)] blur-2xl" />
                 <MiniPhone>
                   <HomeMiniScreen />
                 </MiniPhone>
@@ -1731,92 +1747,308 @@ export function IntroContent() {
             </div>
           </section>
 
-          <section className="relative -mt-10 rounded-t-[2rem] bg-white px-5 pb-20 pt-16 text-black shadow-[0_-18px_48px_rgba(0,0,0,0.08)]">
+          <section
+            className="relative -mt-8 rounded-t-[2.5rem] bg-white px-6 pb-24 pt-28"
+            id="what"
+          >
             <Reveal>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-black/32">
-                Flow
-              </p>
-              <h2 className="mt-3 text-[36px] font-semibold leading-[1.02] tracking-[-0.08em]">
-                복잡한 분철을
+              <h2 className="break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
+                최애를 확률에
                 <br />
-                순서대로 가볍게.
+                맡기지 않는 방법.
               </h2>
+              <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
+                포토카드·특전은 대부분 멤버 랜덤이에요.
+                <br />
+                그런데 멤버 수만큼 세트를 사면, 판매처가 중복 없이 전 멤버를
+                보내줘요.
+                <br />
+                서로 다른 최애를 가진 팬들이 한 세트를 함께 사서 나누는 게
+                &lsquo;분철&rsquo;이에요.
+              </p>
             </Reveal>
 
-            <div className="mt-8 grid gap-3">
-              {["상품 탐색", "옵션 참여", "계좌 입금", "결제 확인"].map(
-                (item, index) => (
-                  <Reveal delay={index * 90} direction="up" key={item}>
-                    <div className="flex h-16 items-center justify-between rounded-[1.1rem] bg-[#f6f6f6] px-4">
-                      <span className="text-[17px] font-semibold tracking-[-0.06em]">
-                        {item}
-                      </span>
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black text-[12px] font-semibold text-white">
-                        {index + 1}
-                      </span>
+            <Reveal className="mt-10" delay={100}>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-[1.4rem] border border-[#0A0B0D]/[0.06] bg-[#F6F7F8] px-5 py-6">
+                  <p className="text-[13px] font-semibold tracking-[-0.02em] text-[#868C95]">
+                    혼자 사면
+                  </p>
+                  <p className="mt-4 text-[40px] font-semibold leading-none tracking-[-0.05em] text-[#A9AEB5]">
+                    1/10
+                  </p>
+                  <p className="mt-4 text-[13.5px] font-medium leading-[1.5] text-[#868C95]">
+                    최애가 나올 확률
+                  </p>
+                </div>
+                <div className="relative overflow-hidden rounded-[1.4rem] bg-[#0A0B0D] px-5 py-6 text-white shadow-[0_20px_44px_-18px_rgba(10,11,13,0.55)]">
+                  <span className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.32),transparent_65%)] blur-xl" />
+                  <p className="relative text-[13px] font-semibold tracking-[-0.02em] text-[#D7FF5F]">
+                    분철하면
+                  </p>
+                  <p className="relative mt-4 text-[40px] font-semibold leading-none tracking-[-0.05em]">
+                    100%
+                  </p>
+                  <p className="relative mt-4 text-[13.5px] font-medium leading-[1.5] text-white/55">
+                    고른 멤버만 확정으로
+                  </p>
+                </div>
+              </div>
+            </Reveal>
+          </section>
+
+          <section className="relative bg-white px-6 pb-28">
+            <Reveal>
+              <h2 className="break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
+                DM 100통 없이,
+                <br />
+                버튼 한 번으로.
+              </h2>
+              <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
+                지금까지 분철은 타임라인과 DM으로 굴러갔어요.
+                <br />
+                분철이지는 그 과정을 전부 화면 안에 넣었어요.
+              </p>
+            </Reveal>
+
+            <div className="mt-10 grid gap-10">
+              {introPainPoints.map(({ items, role }, roleIndex) => (
+                <Reveal delay={roleIndex * 80} key={role}>
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#A6D92B]" />
+                      <p className="text-[15px] font-semibold tracking-[-0.03em]">
+                        {role}
+                      </p>
                     </div>
-                  </Reveal>
-                ),
-              )}
+                    <div className="mt-4 border-t border-[#0A0B0D]/[0.07]">
+                      {items.map(({ after, before }) => (
+                        <div
+                          className="border-b border-[#0A0B0D]/[0.07] py-4"
+                          key={before}
+                        >
+                          <p className="text-[13px] font-medium leading-5 text-[#A9AEB5] line-through decoration-[#C9CDD2]">
+                            {before}
+                          </p>
+                          <p className="mt-1.5 break-keep text-[16.5px] font-semibold leading-[1.45] tracking-[-0.03em]">
+                            {after}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
             </div>
           </section>
 
-          <div className="relative -mt-10 rounded-t-[2rem] bg-[radial-gradient(circle_at_78%_6%,rgba(255,255,255,0.92),transparent_30%),radial-gradient(circle_at_14%_24%,rgba(202,225,230,0.58),transparent_32%),radial-gradient(circle_at_88%_70%,rgba(246,222,206,0.56),transparent_34%),linear-gradient(180deg,#faf7f0_0%,#e9f0f1_46%,#f7f1e9_100%)] pt-10">
-            {featureSections.map((section, index) => (
-              <FeatureBlock index={index} key={section.eyebrow} section={section} />
-            ))}
-          </div>
-
-          <section className="relative -mt-10 rounded-t-[2rem] bg-white px-5 pb-12 pt-14 text-black shadow-[0_-16px_40px_rgba(0,0,0,0.06)]">
+          <section className="intro-grain relative overflow-hidden rounded-t-[2.5rem] bg-[#0A0B0D] px-6 pb-28 pt-24 text-white">
+            <div className="pointer-events-none absolute -left-16 top-40 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.16),transparent_68%)] blur-2xl" />
             <Reveal>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-black/32">
-                Start
-              </p>
-              <h2 className="mt-3 text-[39px] font-semibold leading-[1] tracking-[-0.085em]">
-                열려 있는
+              <h2 className="relative z-10 break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
+                신청부터 수령까지
                 <br />
-                분철부터 확인해요.
+                여섯 단계.
               </h2>
-              <p className="mt-4 text-[15px] font-medium leading-6 tracking-[-0.04em] text-black/54">
-                필요한 건 빠르게 찾고, 진행 상황은 놓치지 않게. 분철이지에서
-                바로 시작할 수 있어요.
+              <p className="relative z-10 mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-white/52">
+                지금 내 참여가 어느 단계인지,
+                <br />
+                참여 내역의 진행 바에서 항상 보여요.
               </p>
             </Reveal>
 
-            <Reveal className="mt-8" delay={120}>
-              <div className="rounded-[1.5rem] bg-[#111111] px-5 py-5 text-white shadow-[0_22px_54px_rgba(0,0,0,0.22)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/38">
-                      Today
-                    </p>
-                    <p className="mt-2 text-[22px] font-semibold tracking-[-0.07em]">
-                      최근 열린 분철
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-2">
-                  {recentBuncheols.map(({ deadline, state, title }) => (
-                    <div
-                      className="flex items-center justify-between rounded-[0.85rem] bg-white px-3 py-3 text-black"
-                      key={title}
-                    >
-                      <div>
-                        <p className="text-[14px] font-semibold tracking-[-0.05em]">
-                          {title}
+            {/* ol 의 직계 자식은 li 여야 목록으로 인식된다 — Reveal(div) 은 li 안에 둔다. */}
+            <ol className="relative z-10 mt-12">
+              {introFlowSteps.map(({ body, label }, stepIndex) => (
+                <li className="relative" key={label}>
+                  <Reveal delay={stepIndex * 60}>
+                    <div className="relative grid grid-cols-[2.5rem_1fr] gap-4 pb-8">
+                      {stepIndex === introFlowSteps.length - 1 ? null : (
+                        <span className="absolute bottom-0 left-[1.25rem] top-10 w-px -translate-x-1/2 bg-gradient-to-b from-white/[0.14] to-white/[0.03]" />
+                      )}
+                      <span
+                        className={`flex h-10 w-10 items-center justify-center rounded-full text-[14px] font-semibold tabular-nums ${
+                          stepIndex === 0
+                            ? "bg-[#D7FF5F] text-[#0A0B0D] shadow-[0_0_28px_rgba(215,255,95,0.32)]"
+                            : "border border-white/[0.12] bg-white/[0.05] text-white/70"
+                        }`}
+                      >
+                        {stepIndex + 1}
+                      </span>
+                      <div className="pt-1.5">
+                        <p className="text-[20px] font-semibold tracking-[-0.04em]">
+                          {label}
                         </p>
-                        <p className="mt-1 text-[11px] font-semibold text-black/36">
-                          {state}
+                        <p className="mt-2 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-white/50">
+                          {body}
                         </p>
                       </div>
-                      <span className="rounded-full bg-black px-3 py-1 text-[11px] font-semibold text-white">
-                        {deadline}
-                      </span>
                     </div>
-                  ))}
-                </div>
+                  </Reveal>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <div className="relative -mt-8 rounded-t-[2.5rem] bg-[linear-gradient(180deg,#FFFFFF_0%,#F6F7F8_38%,#F6F7F8_70%,#FFFFFF_100%)]">
+            <FeatureStack scrollContainerRef={scrollContainerRef} />
+          </div>
+
+          <section className="relative bg-white px-6 pb-28 pt-24">
+            <Reveal>
+              <h2 className="break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
+                진행 상황은
+                <br />
+                전부 기록으로.
+              </h2>
+              <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
+                신청부터 수령까지 어디까지 왔는지,
+                <br />
+                참여 내역에서 언제든 확인할 수 있어요.
+              </p>
+            </Reveal>
+
+            <div className="mt-10">
+              {introSafetyPoints.map(({ body, icon: Icon, title }, index) => (
+                <Reveal delay={index * 70} key={title}>
+                  <div className="flex gap-4 border-b border-[#0A0B0D]/[0.07] py-6 first:border-t">
+                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A0B0D] text-[#D7FF5F]">
+                      <Icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[17px] font-semibold tracking-[-0.035em]">
+                        {title}
+                      </p>
+                      <p className="mt-2 whitespace-pre-line break-keep text-[14.5px] font-medium leading-[1.66] tracking-[-0.02em] text-[#5A6069]">
+                        {body}
+                      </p>
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </section>
+
+          <section className="relative -mt-8 rounded-t-[2.5rem] border-t border-[#0A0B0D]/[0.05] bg-[#F6F7F8] px-6 pb-28 pt-24">
+            <Reveal>
+              <h2 className="break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
+                분철,
+                <br />
+                직접 열어볼까요?
+              </h2>
+              <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
+                누구나 분철을 열 수 있어요.
+                <br />
+                모집 공지부터 입금 확인, 배송까지
+                <br />
+                번거로운 일은 분철이지가 이어받아요.
+              </p>
+            </Reveal>
+
+            <div className="mt-10 grid gap-3">
+              {introHostPoints.map(({ body, icon: Icon, title }, index) => (
+                <Reveal delay={index * 70} key={title}>
+                  <div className="rounded-[1.3rem] border border-[#0A0B0D]/[0.05] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(10,11,13,0.03),0_14px_30px_-20px_rgba(10,11,13,0.3)]">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#D7FF5F] text-[#0A0B0D]">
+                        <Icon className="h-[17px] w-[17px]" />
+                      </span>
+                      <p className="text-[16.5px] font-semibold tracking-[-0.035em]">
+                        {title}
+                      </p>
+                    </div>
+                    <p className="mt-3 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-[#5A6069]">
+                      {body}
+                    </p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+
+            <Reveal className="mt-7" delay={140}>
+              <Link
+                className="flex items-center justify-center gap-1.5 rounded-full border border-[#0A0B0D]/10 bg-white px-6 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-[#0A0B0D] shadow-[0_1px_2px_rgba(10,11,13,0.04)]"
+                href="/upload"
+              >
+                분철 열어보기
+                <ArrowRight />
+              </Link>
+            </Reveal>
+          </section>
+
+          <section className="intro-grain relative overflow-hidden rounded-t-[2.5rem] bg-[#0A0B0D] px-6 pb-16 pt-24 text-white">
+            <div className="pointer-events-none absolute -right-20 top-10 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.2),transparent_66%)] blur-2xl" />
+            <Reveal>
+              <h2 className="relative z-10 break-keep text-[40px] font-semibold leading-[1.16] tracking-[-0.05em]">
+                지금 열린
+                <br />
+                분철부터 확인해요.
+              </h2>
+              <p className="relative z-10 mt-6 text-[16px] font-medium leading-[1.68] tracking-[-0.02em] text-white/52">
+                원하는 멤버 자리가 남아 있는지 지금 바로 확인할 수 있어요.
+              </p>
+            </Reveal>
+
+            <Reveal className="relative z-10 mt-10" delay={100}>
+              <p className="text-[13px] font-semibold tracking-[-0.02em] text-white/40">
+                최근 열린 분철
+              </p>
+              <div className="mt-3 grid gap-2">
+                {recentBuncheols.map(({ deadline, state, title }) => (
+                  <div
+                    className="flex items-center justify-between gap-3 rounded-[1rem] border border-white/[0.08] bg-white/[0.04] px-4 py-3.5"
+                    key={title}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-semibold tracking-[-0.03em]">
+                        {title}
+                      </p>
+                      <p className="mt-1 text-[12px] font-medium text-white/40">
+                        {state}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold tabular-nums text-white/75">
+                      {deadline}
+                    </span>
+                  </div>
+                ))}
               </div>
+
+              <Link
+                className="mt-6 flex items-center justify-center gap-1.5 rounded-full bg-[#D7FF5F] py-4 text-[16px] font-semibold tracking-[-0.02em] text-[#0A0B0D] shadow-[0_0_44px_rgba(215,255,95,0.24)]"
+                href="/"
+              >
+                분철 둘러보기
+                <ArrowRight />
+              </Link>
+            </Reveal>
+
+            <Reveal className="relative z-10 mt-4" delay={180}>
+              {/* aria-label 을 주면 접근 이름이 통째로 덮여 가시 텍스트를 포함하지 않게 된다
+                  (WCAG 2.5.3). 여기는 아이콘 전용이 아니라 문구가 보이므로 가시 텍스트를
+                  그대로 이름으로 쓰고, 새 창 안내만 sr-only 로 덧붙인다. */}
+              <a
+                className="flex items-center gap-4 rounded-[1.5rem] border border-white/[0.1] bg-white/[0.04] px-5 py-4"
+                href={X_PROFILE_URL}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#0A0B0D]">
+                  <XLogoIcon className="h-[18px] w-[18px]" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[17px] font-semibold leading-none tracking-[-0.05em]">
+                    공식 X 계정 보러 가기
+                  </span>
+                  <span className="mt-2 block text-[12px] font-semibold leading-none tracking-[-0.02em] text-white/45">
+                    {X_HANDLE}
+                  </span>
+                  <span className="sr-only">(새 창에서 열림)</span>
+                </span>
+                <span aria-hidden="true" className="shrink-0 text-white/30">
+                  <ForwardIcon />
+                </span>
+              </a>
             </Reveal>
           </section>
 

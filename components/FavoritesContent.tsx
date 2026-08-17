@@ -16,12 +16,17 @@ import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { ChevronDownIcon } from "@/components/icons";
 import { SlidingTabs } from "@/components/SlidingTabs";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
+import { EmptyState } from "@/components/EmptyState";
 import { createLoginHref } from "@/lib/auth-navigation";
 import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import {
+  isBuncheolCancelledStatus,
+  isBuncheolDeletedStatus,
+} from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 
@@ -82,10 +87,9 @@ function isClosedByStatus(status: string | undefined) {
   return Boolean(status && status.toUpperCase() !== "RECRUITING");
 }
 
-function isDeletedProductStatus(status: string | undefined) {
-  const normalizedStatus = status?.toUpperCase();
-
-  return normalizedStatus === "CANCELLED" || normalizedStatus === "DELETED";
+// 취소(개최자 취소 HOST_CANCELLED 포함)·삭제된 분철은 찜 목록에서 숨긴다.
+function isCancelledOrDeletedProductStatus(status: string | undefined) {
+  return isBuncheolCancelledStatus(status) || isBuncheolDeletedStatus(status);
 }
 
 function shouldHideClosedProduct(product: ProductCardItem, now: Date) {
@@ -266,7 +270,7 @@ export function FavoritesContent({
 
     return sourceProducts
       .filter((product) => {
-        if (isDeletedProductStatus(product.status)) {
+        if (isCancelledOrDeletedProductStatus(product.status)) {
           return false;
         }
 
@@ -368,13 +372,21 @@ export function FavoritesContent({
       }`}
     >
       <header className="favorites-header shrink-0 px-4 py-3">
+        {/* 세로 가운데 정렬(justify-center)은 마이페이지·내 분철 헤더와 같은 규칙이다.
+            개수를 옆에 붙이려고 이 div 를 flex-row 로 바꿨더니 정렬 축이 가로로 넘어가면서
+            제목이 40px 박스 위쪽에 붙어, 이 화면만 제목이 위로 올라가 보였다.
+            바깥은 기존대로 두고 안쪽에 행을 하나 더 둔다. */}
         <div className="favorites-header__copy flex h-10 flex-col justify-center">
-          <p className="favorites-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-            Favorites
-          </p>
-          <h1 className="favorites-header__title mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
-            찜한 상품
-          </h1>
+          <div className="flex flex-row items-baseline gap-2">
+            <h1 className="favorites-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
+              찜한 분철
+            </h1>
+            {filteredProducts.length > 0 ? (
+              <p className="text-[13px] font-semibold leading-none text-black/35">
+                {filteredProducts.length}개
+              </p>
+            ) : null}
+          </div>
         </div>
 
         {FEATURES.favoriteArtists ? (
@@ -478,7 +490,8 @@ export function FavoritesContent({
           ) : null}
           {isFavoriteProductsLoading ? (
             <ProductGridSkeleton
-              ariaLabel="찜한 상품을 불러오는 중"
+              ariaLabel="찜한 분철을 불러오는 중"
+              memberRowVariant="text"
               variant="wide"
             />
           ) : filteredProducts.length > 0 ? (
@@ -486,13 +499,53 @@ export function FavoritesContent({
               <ProductGrid items={filteredProducts} variant="wide" />
             </div>
           ) : (
-            <div className="content-reveal rounded-[0.9rem] border border-[#E4F6A5]/80 bg-[#F7FAEE] px-4 py-6">
-              <p className="text-[14px] font-medium text-black/45">
-                {authState.isLoggedIn
-                  ? "조건에 맞는 찜 상품이 없어요."
-                  : "로그인 후 이용할 수 있어요."}
-              </p>
-            </div>
+            authState.isLoggedIn ? (
+              /*
+               * 필터에 걸려 안 보이는 것과 정말 하나도 없는 것은 다른 상황이다.
+               * 앞의 경우에 "찜한 분철이 없어요"라고 하면 사실과 다르고, 무엇을 끄면
+               * 다시 보이는지도 알 수 없다.
+               * 목록은 서버에서 이미 걸러져 오므로(hideClosed·onlyFavoriteGroups)
+               * "필터 밖에 몇 개가 있는지"는 클라에서 셀 수 없다 — 필터 상태만 보고 가른다.
+               */
+              filter === "favoriteArtist" ? (
+                <EmptyState
+                  action={{
+                    label: "전체 보기",
+                    onClick: () => setFilter("all"),
+                  }}
+                  description="최애로 등록한 아티스트의 분철만 골라 보는 중이에요."
+                  title="최애 아티스트의 찜한 분철이 없어요"
+                />
+              ) : hideClosed ? (
+                <EmptyState
+                  action={{
+                    label: "모집 종료된 분철도 보기",
+                    onClick: () => setHideClosed(false),
+                  }}
+                  description="모집이 끝난 분철을 숨겨 둔 상태예요."
+                  title="모집 중인 찜한 분철이 없어요"
+                />
+              ) : (
+                <EmptyState
+                  action={{ href: "/", label: "진행 중인 분철 둘러보기" }}
+                  description="분철 카드의 하트를 누르면 여기에 모여요."
+                  title="아직 찜한 분철이 없어요"
+                />
+              )
+            ) : (
+              <EmptyState
+                action={{
+                  href: createLoginHref({
+                    cancelTo: "/favorites",
+                    returnTo: "/favorites",
+                  }),
+                  label: "카카오로 시작하기",
+                }}
+                description="로그인하면 다른 기기에서도 이어서 볼 수 있어요."
+                secondaryAction={{ href: "/", label: "먼저 분철 둘러보기" }}
+                title="찜한 분철을 모아서 보여드려요"
+              />
+            )
           )}
         </div>
       </main>

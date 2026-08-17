@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
 import {
+  getArtistRestoreIndexKey,
+  getArtistScrollTopKey,
+  getArtistSelectedMemberKey,
+  isGroupIdShape,
+  PRODUCT_ARTIST_ENTRY_INDEX_KEY,
+} from "@/lib/artist-browse";
+import {
   addBuncheolBookmark,
   removeBuncheolBookmark,
 } from "@/lib/auth-api";
@@ -14,6 +21,13 @@ import {
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
+import {
+  isBuncheolCancelledStatus,
+  isBuncheolConfirmedStatus,
+  isBuncheolPaymentCollectingStatus,
+  isBuncheolPurchasableStatus,
+} from "@/lib/buncheol-states";
+import { getHistoryIndex } from "@/lib/history-index";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import { homeListingsQueryKey } from "@/lib/query-keys";
 
@@ -32,6 +46,8 @@ export type ProductCardItem = {
   optionCount?: number;
   targetMembers?: string[];
   uploadedAt?: string;
+  // 정렬용 원본 개최 시각. uploadedAt 은 표시용 포맷 문자열이라 비교에 쓸 수 없다.
+  createdAt?: string;
   era: string;
   price?: string;
   deadline: string;
@@ -63,10 +79,11 @@ function getTargetTags(item: ProductCardItem) {
 }
 
 function getUniqueMemberNames(names: string[]) {
+  // trim 전에 중복 제거하면 "리즈"/"리즈 " 가 둘 다 살아남아 중복 key 로 이어진다.
   return names
-    .filter((tag, index, tags) => tag && tags.indexOf(tag) === index)
     .map((tag) => tag.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((tag, index, tags) => tags.indexOf(tag) === index);
 }
 
 function parseKoreaDateTime(value: string) {
@@ -197,35 +214,6 @@ function getReadableDeadlineBadge(deadline: string) {
   };
 }
 
-function isPurchasableCardStatus(status: string | undefined) {
-  const normalizedStatus = status?.trim().toUpperCase();
-
-  if (!normalizedStatus) {
-    return true;
-  }
-
-  return normalizedStatus === "RECRUITING" || normalizedStatus === "PUBLIC_PREVIEW";
-}
-
-function isCancelledCardStatus(status: string | undefined) {
-  const normalizedStatus = status?.trim().toUpperCase();
-
-  return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
-}
-
-// 진행확정 이후 상태군. 조기 확정은 매진+전원 입금확인일 때만 일어나므로 "진행 확정 = 참여 불가"가 항상 성립한다.
-function isConfirmedCardStatus(status: string | undefined) {
-  const normalizedStatus = status?.trim().toUpperCase();
-
-  return [
-    "CONFIRMED",
-    "PAYMENT_CONFIRMED",
-    "PAID",
-    "SETTLING",
-    "FINISHED",
-  ].includes(normalizedStatus ?? "");
-}
-
 function isCardDeadlineOpen(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
@@ -235,32 +223,34 @@ function isCardDeadlineOpen(deadline: string) {
 }
 
 function isProductCardPurchasable(item: ProductCardItem) {
-  return isPurchasableCardStatus(item.status) && isCardDeadlineOpen(item.deadline);
+  return (
+    isBuncheolPurchasableStatus(item.status) && isCardDeadlineOpen(item.deadline)
+  );
 }
 
+// 취소(개최자 취소 HOST_CANCELLED 포함)·진행 확정 계열 판정은 중앙 모듈 기준.
+// 그 외 비구매 상태(마감 지남 등)는 "모집 종료"로 접는다.
 function getProductCardBadge(item: ProductCardItem) {
   if (!isProductCardPurchasable(item)) {
     return {
-      label: isCancelledCardStatus(item.status)
+      label: isBuncheolCancelledStatus(item.status)
         ? "분철 취소"
-        : isConfirmedCardStatus(item.status)
+        : isBuncheolConfirmedStatus(item.status)
           ? "진행 확정"
-          : "모집 종료",
+          : // C2C 입금 수집 구간 — 끝난 분철이 아니라 진행 중(추가 신청은 상세에서 가능).
+            isBuncheolPaymentCollectingStatus(item.status)
+            ? "입금 진행"
+            : "모집 종료",
       value: null,
     };
   }
 
-  return { label: "구매 가능", value: getReadableDeadlineBadge(item.deadline).value };
-}
-
-function getAvailableMemberNames(item: ProductCardItem) {
-  if (Array.isArray(item.availableMemberNames)) {
-    return getUniqueMemberNames(item.availableMemberNames);
-  }
-
-  return getUniqueMemberNames(
-    item.targetMembers ?? [item.member],
-  );
+  // 라벨은 상세·참여 내역과 같은 "모집 중"을 쓴다. 여기만 "구매 가능"이라
+  // 홈 카드 → 상세로 넘어갈 때 같은 상태를 다른 말로 부르고 있었다.
+  return {
+    label: "모집 중",
+    value: getReadableDeadlineBadge(item.deadline).value,
+  };
 }
 
 function getAvailableMemberSummary(memberNames: string[]) {
@@ -301,17 +291,20 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
   const isPurchasable = isProductCardPurchasable(item);
-  const hasAvailableMemberNames = Array.isArray(item.availableMemberNames);
-  const availableMemberNames = getAvailableMemberNames(item);
-  const shouldShowAvailableMembers =
-    hasAvailableMemberNames || availableMemberNames.length > 0;
-  const shouldPeekOptionRail = availableMemberNames.length > 3;
-  const availableMemberSummary =
-    availableMemberNames.length > 0
-      ? getAvailableMemberSummary(availableMemberNames)
-      : "";
+  // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
+  // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
+  const shouldDimCard =
+    !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
+  // 서버가 availableMemberNames 를 내려준 경우에만 남은 멤버로 취급한다(null = 데이터 없음).
+  // 데이터가 없는 카드(찜 목록 등)는 전체 멤버를 남은 멤버처럼 보여주는 대신 대상 멤버 태그로 대체한다.
+  const availableMemberNames = Array.isArray(item.availableMemberNames)
+    ? getUniqueMemberNames(item.availableMemberNames)
+    : null;
+  const shouldPeekOptionRail = (availableMemberNames?.length ?? 0) > 3;
+  const availableMemberSummary = availableMemberNames?.length
+    ? getAvailableMemberSummary(availableMemberNames)
+    : "";
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
-  const shouldShowBookmarkButton = item.isHostedByMe !== true;
 
   useEffect(() => {
     setIsLiked(item.liked === true);
@@ -327,12 +320,6 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     );
   }
 
-  function getHistoryIndex() {
-    const historyState = window.history.state as { idx?: unknown } | null;
-
-    return typeof historyState?.idx === "number" ? historyState.idx : null;
-  }
-
   function rememberFavoritesProductEntry() {
     const historyIndex = getHistoryIndex();
 
@@ -344,6 +331,43 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     window.sessionStorage.setItem(
       PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
       String(historyIndex + 1),
+    );
+  }
+
+  function rememberArtistProductEntry() {
+    const historyIndex = getHistoryIndex();
+
+    if (historyIndex === null) {
+      window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
+      String(historyIndex + 1),
+    );
+  }
+
+  // 스크롤과 멤버 필터는 한 쌍이다. 스크롤만 저장하면 복귀 시 "전체" 목록 위에 멤버 목록의
+  // 오프셋이 얹혀, 있지도 않은 위치로 튄다. 히스토리 인덱스까지 같이 저장해야 복원 쪽이
+  // "돌아온 마운트" 와 "새로 연 마운트" 를 가릴 수 있다.
+  function rememberArtistListState(
+    scrollContainer: HTMLElement,
+    groupId: string,
+  ) {
+    const historyIndex = getHistoryIndex();
+
+    window.sessionStorage.setItem(
+      getArtistScrollTopKey(groupId),
+      String(scrollContainer.scrollTop),
+    );
+    window.sessionStorage.setItem(
+      getArtistSelectedMemberKey(groupId),
+      scrollContainer.dataset.artistMemberId ?? "",
+    );
+    window.sessionStorage.setItem(
+      getArtistRestoreIndexKey(groupId),
+      historyIndex === null ? "" : String(historyIndex),
     );
   }
 
@@ -443,6 +467,30 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       return;
     }
 
+    // 그룹마다 경로가 달라 from 만으로는 복귀처를 못 정한다. 이 표기가 빠지면 상세의
+    // 뒤로가기 버튼이 어느 분기에도 안 걸려 홈으로 떨어진다(스와이프는 멀쩡해 눈치채기 어렵다).
+    if (pathname.startsWith("/artists/") && isPlainPrimaryClick(event)) {
+      const scrollContainer = event.currentTarget.closest<HTMLElement>(
+        "[data-product-scroll-container]",
+      );
+      // 서버가 준 group.id 를 우선한다. 주소창 조각은 표기가 달라도(`/artists/007`, 트레일링
+      // 슬래시) 그대로 실려, 복원 키가 어긋나고 isGroupIdShape 도 통과하지 못해 이번에 고친
+      // "뒤로가기가 홈으로" 가 그대로 재발한다. 형태가 어긋나면 아예 표기를 싣지 않는다.
+      const groupId =
+        scrollContainer?.dataset.artistGroupId ||
+        pathname.slice("/artists/".length);
+
+      if (scrollContainer && isGroupIdShape(groupId)) {
+        event.preventDefault();
+        rememberArtistListState(scrollContainer, groupId);
+        rememberArtistProductEntry();
+        router.push(
+          `/products/${productId}?from=artist&groupId=${encodeURIComponent(groupId)}`,
+        );
+        return;
+      }
+    }
+
     if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
       event.preventDefault();
       rememberProductListScrollPosition(event, FAVORITES_SCROLL_TOP_KEY);
@@ -475,9 +523,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : (
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
           )}
-          {isPurchasable ? null : (
+          {shouldDimCard ? (
             <div className="absolute inset-0 bg-black/45" />
-          )}
+          ) : null}
           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
             <div className="flex min-w-0 flex-col items-start gap-1.5">
               <span
@@ -495,21 +543,25 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
                 </span>
               ) : null}
             </div>
-            {shouldShowBookmarkButton ? (
-              <button
-                type="button"
-                aria-label={isLiked ? "찜 해제" : "찜하기"}
-                className={`motion-icon-button inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
-                  isLiked
-                    ? "bg-[#DDE7B8] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
-                    : "bg-white/95 text-black/45"
-                } disabled:opacity-60`}
-                disabled={isBookmarkPending}
-                onClick={handleBookmarkClick}
-              >
-                <HeartIcon filled={isLiked} />
-              </button>
-            ) : null}
+            {/*
+              개최자 분철에도 하트를 띄운다 — 상세와 같은 정책이다.
+              전에는 isHostedByMe 로 가렸는데, 목록·찜 응답에 그 필드가 아예 없어
+              사실상 늘 노출되던 죽은 가드였다. 서버가 필드를 내려주기 시작하는 날
+              찜 목록에서 내 분철만 해제 못 하는 상태로 바뀐다.
+            */}
+            <button
+              type="button"
+              aria-label={isLiked ? "찜 해제" : "찜하기"}
+              className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                isLiked
+                  ? "heart-on-image heart-on-image--active text-like"
+                  : "heart-on-image text-white"
+              } disabled:opacity-60`}
+              disabled={isBookmarkPending}
+              onClick={handleBookmarkClick}
+            >
+              <HeartIcon filled={isLiked} />
+            </button>
           </div>
           {deadlineBadge.value ? (
             <span className="absolute bottom-3 left-3 rounded-full bg-black/76 px-2.5 py-1 text-[13px] font-semibold tracking-[-0.04em] text-white backdrop-blur-sm">
@@ -519,9 +571,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         </div>
 
         <div
-          className={`px-3.5 py-3.5 ${isPurchasable ? "" : "opacity-60"}`}
+          className={`px-3.5 py-3.5 ${shouldDimCard ? "opacity-60" : ""}`}
         >
-          {shouldShowAvailableMembers ? (
+          {availableMemberNames !== null ? (
             <div>
               {availableMemberNames.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
@@ -544,7 +596,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               )}
             </div>
           ) : (
-            <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+            // 칩 행(24px)과 높이를 맞춰 데이터 유무에 따른 카드 높이 차이를 없앤다.
+            <p className="line-clamp-1 text-[12px] font-semibold leading-6 text-black/40">
               {targetTags.join(" ")}
             </p>
           )}
@@ -595,9 +648,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             신규
           </div>
         ) : null}
-        {isPurchasable ? null : (
+        {shouldDimCard ? (
           <div className="absolute inset-0 bg-black/45" />
-        )}
+        ) : null}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
           <p
             className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
@@ -614,30 +667,28 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             </p>
           ) : null}
         </div>
-        {shouldShowBookmarkButton ? (
-          <button
-            type="button"
-            aria-label={isLiked ? "찜 해제" : "찜하기"}
-            className={`motion-icon-button absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 shadow-[0_10px_22px_rgba(0,0,0,0.16)] ${
-              isLiked
-                ? "bg-[#DDE7B8] text-black shadow-[0_10px_24px_rgba(120,132,82,0.24)]"
-                : "bg-white/95 text-black/45"
-            } disabled:opacity-60`}
-            disabled={isBookmarkPending}
-            onClick={handleBookmarkClick}
-          >
-            <HeartIcon filled={isLiked} />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          aria-label={isLiked ? "찜 해제" : "찜하기"}
+          className={`absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full ${
+            isLiked
+              ? "heart-on-image heart-on-image--active text-like"
+              : "heart-on-image text-white"
+          } disabled:opacity-60`}
+          disabled={isBookmarkPending}
+          onClick={handleBookmarkClick}
+        >
+          <HeartIcon filled={isLiked} />
+        </button>
       </div>
 
-      <div className={isPurchasable ? "" : "opacity-60"}>
-        {shouldShowAvailableMembers ? (
+      <div className={shouldDimCard ? "opacity-60" : ""}>
+        {availableMemberNames !== null ? (
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (
               <>
                 <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
-                  가능 옵션
+                  가능 멤버
                 </span>
                 <span className="shrink-0 text-black/15">·</span>
                 <div className="relative min-w-0 flex-1">
@@ -669,12 +720,13 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
                     : "bg-black/5 text-black/38"
                 }`}
               >
-                남은 옵션 없음
+                남은 멤버 없음
               </span>
             )}
           </div>
         ) : (
-          <p className="line-clamp-2 text-[12px] font-semibold leading-5 text-black/40">
+          // 칩 행과 동일한 하단 여백·1줄 고정으로 2열 그리드의 카드 높이를 맞춘다.
+          <p className="mb-1.5 line-clamp-1 text-[12px] font-semibold leading-5 text-black/40">
             {targetTags.join(" ")}
           </p>
         )}

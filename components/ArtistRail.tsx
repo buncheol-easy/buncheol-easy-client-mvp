@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, HeartIcon, PlusIcon } from "@/components/icons";
 
 export type ArtistRailItem = {
@@ -37,6 +37,13 @@ const proxiedImageHosts = new Set([
   "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
   "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
 ]);
+
+// 대비색은 이미지 픽셀만으로 정해지니 URL 당 한 번이면 된다. /artists 는 검색어 한 글자마다
+// 카드가 통째로 리마운트돼, 캐시가 없으면 getImageData(GPU→CPU 동기 읽기)가 매번 카드 수만큼 돈다.
+const CONTRAST_COLOR_FALLBACK = "#f1f1f1";
+// 실패(색을 못 구했거나 canvas 가 tainted)도 같이 캐시한다. 실패를 비워 두면 그 이미지만
+// 리마운트마다 getImageData 를 다시 돌아, 이 캐시가 없애려던 비용이 그대로 남는다.
+const contrastColorCache = new Map<string, string>();
 
 function getContrastingColor(image: HTMLImageElement) {
   const canvas = document.createElement("canvas");
@@ -113,17 +120,64 @@ function getFallbackInitials(value: string) {
 
 export function ArtistImage({
   imageUrl,
+  loading = "eager",
   name,
   roundedClassName = "rounded-[1.1rem]",
 }: {
   imageUrl: string;
+  // 기본 eager. 한 번에 수백 장이 깔리는 아티스트 그리드에서만 lazy 로 넘긴다.
+  loading?: "eager" | "lazy";
   name: string;
   roundedClassName?: string;
 }) {
-  const [backgroundColor, setBackgroundColor] = useState("#f1f1f1");
+  // 캐시가 있으면 첫 렌더부터 제 색으로 — 리마운트 때 회색 깜빡임이 없다.
+  const [backgroundColor, setBackgroundColor] = useState(
+    () => contrastColorCache.get(imageUrl) ?? CONTRAST_COLOR_FALLBACK,
+  );
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const displayImageUrl = getProxiedImageUrl(imageUrl);
   const didImageFail = failedImageUrl === imageUrl;
+
+  const applyContrastingColor = useCallback(
+    (image: HTMLImageElement) => {
+      const cachedColor = contrastColorCache.get(imageUrl);
+
+      if (cachedColor) {
+        setBackgroundColor(cachedColor);
+        return;
+      }
+
+      try {
+        const color = getContrastingColor(image);
+
+        contrastColorCache.set(imageUrl, color || CONTRAST_COLOR_FALLBACK);
+
+        if (color) {
+          setBackgroundColor(color);
+        }
+      } catch {
+        contrastColorCache.set(imageUrl, CONTRAST_COLOR_FALLBACK);
+        setBackgroundColor(CONTRAST_COLOR_FALLBACK);
+      }
+    },
+    [imageUrl],
+  );
+
+  // 서버 렌더 페이지(/artists/[groupId])에서는 하이드레이션 전에 이미지 로딩이 끝나 onLoad 가
+  // 영영 발화하지 않는다. 그러면 배경이 초기값(#f1f1f1)에 멈춰 밝은 로고가 묻힌다.
+  // ref 콜백으로 마운트 시점에 이미 완료된 이미지를 직접 처리한다.
+  //
+  // useCallback 으로 identity 를 고정해야 한다 — 콜백 ref 는 identity 가 바뀌면 React 가 렌더마다
+  // ref(null) → ref(node) 를 다시 호출하고, 그때마다 drawImage + getImageData 가 커밋 단계에서
+  // 동기로 돈다. 홈 레일은 헤더 토글·배너 도트 전환마다 리렌더돼 그 비용이 계속 붙는다.
+  const handleImageRef = useCallback(
+    (image: HTMLImageElement | null) => {
+      if (image?.complete && image.naturalWidth > 0) {
+        applyContrastingColor(image);
+      }
+    },
+    [applyContrastingColor],
+  );
 
   if (didImageFail) {
     return (
@@ -151,18 +205,11 @@ export function ArtistImage({
         alt={name}
         className="relative h-full w-full object-contain p-2 [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.9))_drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]"
         crossOrigin="anonymous"
+        decoding="async"
+        loading={loading}
         onError={() => setFailedImageUrl(imageUrl)}
-        onLoad={(event) => {
-          try {
-            const color = getContrastingColor(event.currentTarget);
-
-            if (color) {
-              setBackgroundColor(color);
-            }
-          } catch {
-            setBackgroundColor("#f1f1f1");
-          }
-        }}
+        onLoad={(event) => applyContrastingColor(event.currentTarget)}
+        ref={handleImageRef}
         src={displayImageUrl}
       />
     </>
@@ -266,10 +313,10 @@ export function ArtistRail({
           </button>
           {onFavoriteToggle && item.type !== "member" ? (
             <button
-              className={`motion-icon-button absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.12)] ${
+              className={`absolute right-0.5 top-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full ${
                 item.favorited === true
-                  ? "bg-[#DDE7B8] text-black"
-                  : "bg-white/90 text-black"
+                  ? "heart-on-image heart-on-image--active text-like"
+                  : "heart-on-image text-white"
               }`}
               onClick={() => onFavoriteToggle(item)}
               type="button"
@@ -336,7 +383,11 @@ export function ArtistRail({
             </button>
           </div>
 
-          <div className="my-2 w-px self-stretch bg-black/10" />
+          {/* 구분선은 "추가 버튼"과 "담은 목록"을 가르는 선이라 가를 것이 있을 때만 그린다.
+              최애가 하나도 없으면 선 오른쪽이 통째로 비어, 선만 허공에 남아 있었다. */}
+          {items.length > 0 ? (
+            <div className="my-2 w-px self-stretch bg-black/10" />
+          ) : null}
         </>
       ) : null}
 

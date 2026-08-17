@@ -31,9 +31,16 @@ export type ShippingMethod = {
 
 export type ProductDetailItem = ProductCardItem & {
   buncheolId?: string;
+  // 개최자 취소 가능 여부·사유 — 개최 목록(GET /v1/buncheols/me)이 서버 판정을 그대로 내려준다 (docs/56 S-2).
+  // 없으면(구 응답·개최 목록이 아닌 경로) 판정 불가로 보고 삭제 버튼을 남긴다.
+  hostCancellability?: string | null;
   courier: string;
   description: string;
   deadline: string;
+  // 분철 flow_type — 없으면 LEGACY 취급(getFlowType). C2C 신청 플로우 분기 키.
+  flowType?: string | null;
+  // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
+  openChatUrl?: string | null;
   imageUrl?: string;
   imageUrls?: string[];
   /** 등록 순 이미지 목록(id·대표 여부 포함). 대표사진이 첫 번째가 아닐 수 있다. */

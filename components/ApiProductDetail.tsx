@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ProductDetail,
@@ -32,9 +33,12 @@ type ApiProductDetailProps = {
   // 서버에서 익명 조회한 상세 — 초기 HTML 에 상품 내용을 싣기 위한 값.
   // 마운트 후 기존 useEffect 가 토큰 포함 조회로 항상 덮어쓴다.
   initialProduct?: ProductDetailItem | null;
+  // 서버 렌더 시각(ms) — 카운트다운 첫 렌더를 SSR HTML 과 결정적으로 일치시킨다.
+  initialNowMs?: number;
   isHostedView?: boolean;
+  returnGroupId?: string;
   returnQuery?: string;
-  returnSource?: "home" | "bids" | "favorites" | "upload";
+  returnSource?: "home" | "bids" | "favorites" | "upload" | "artist";
 };
 
 function isInactivePurchaseStatus(status: string | undefined) {
@@ -120,7 +124,7 @@ function toPublicPreviewProduct(
   requiresLogin: boolean,
 ): ProductDetailItem {
   const productId = item.productId ?? item.id;
-  const optionLabel = item.member || item.targetMembers?.[0] || "옵션";
+  const optionLabel = item.member || item.targetMembers?.[0] || "멤버";
   const lockedLabel = requiresLogin ? "로그인 후 확인" : "확인 필요";
 
   return {
@@ -155,7 +159,9 @@ function toPublicPreviewProduct(
 export function ApiProductDetail({
   id,
   initialProduct = null,
+  initialNowMs,
   isHostedView = false,
+  returnGroupId,
   returnQuery,
   returnSource,
 }: ApiProductDetailProps) {
@@ -170,6 +176,8 @@ export function ApiProductDetail({
     initialProduct,
   );
   const [message, setMessage] = useState("분철 정보를 불러오고 있습니다.");
+  // 상세 조회 실패 시 안내 문구만 남는 막다른 길이 되지 않도록 홈 이동 버튼을 함께 노출한다.
+  const [hasLoadError, setHasLoadError] = useState(false);
   // 직접 진입(크롤러·URL 입력·외부 공유 링크)은 슬라이드 인 출발점이 없으므로
   // 셸 정착을 기다리지 않고 곧바로 상세를 그린다 — 이 경로가 있어야 서버 HTML 에
   // initialProduct 내용이 실제 렌더 텍스트로 실린다. (returnSource/returnQuery 는
@@ -209,6 +217,7 @@ export function ApiProductDetail({
       const frame = window.requestAnimationFrame(() => {
         setProduct(null);
         setMessage("분철 정보를 확인할 수 없어요.");
+        setHasLoadError(true);
       });
 
       return () => {
@@ -221,6 +230,7 @@ export function ApiProductDetail({
     const loadingFrame = window.requestAnimationFrame(() => {
       if (isActive) {
         setMessage("분철 정보를 불러오고 있습니다.");
+        setHasLoadError(false);
       }
     });
 
@@ -309,6 +319,7 @@ export function ApiProductDetail({
           isHostedByMe,
         });
         setMessage("");
+        setHasLoadError(false);
 
         if (viewedBuncheolIdRef.current !== id) {
           viewedBuncheolIdRef.current = id;
@@ -327,11 +338,11 @@ export function ApiProductDetail({
         }
 
         setProduct(null);
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "분철 정보를 불러오지 못했어요.",
-        );
+        // HTTP/2 는 statusText 가 빈 문자열이라 메시지가 비거나, 백엔드 영문 원문이
+        // 그대로 올 수 있어 비어 있으면 한국어 기본 문구로 대체한다.
+        const rawMessage = error instanceof Error ? error.message.trim() : "";
+        setMessage(rawMessage || "분철 정보를 불러오지 못했어요.");
+        setHasLoadError(true);
       });
 
     return () => {
@@ -356,6 +367,8 @@ export function ApiProductDetail({
           backHref={
             returnSource || returnQuery !== undefined ? undefined : "/"
           }
+          initialNowMs={initialNowMs}
+          initialReturnGroupId={returnGroupId}
           initialReturnQuery={returnQuery}
           initialReturnSource={returnSource}
           onExitingChange={setIsDetailExiting}
@@ -380,6 +393,14 @@ export function ApiProductDetail({
           <p className="text-center text-[15px] font-semibold text-black/45">
             {message}
           </p>
+          {hasLoadError ? (
+            <Link
+              className="mt-6 inline-flex h-12 items-center justify-center rounded-full bg-black px-8 text-[15px] font-semibold tracking-[-0.04em] text-white"
+              href="/"
+            >
+              홈으로 가기
+            </Link>
+          ) : null}
         </div>
       )}
     </main>

@@ -10,6 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ConfirmSheet,
+  type ConfirmSheetRequest,
+} from "@/components/ConfirmSheet";
 import { useQueryClient } from "@tanstack/react-query";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -20,24 +24,38 @@ import {
   PlusIcon,
   SearchIcon,
 } from "@/components/icons";
-import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   readUploadedProduct,
   writeUploadedProduct,
 } from "@/lib/hosted-products-store";
 import {
-  BuncheolHostPermissionError,
   createBuncheol,
   requestBuncheolDetail,
   requestGroupMembers,
   requestGroups,
   requestMyHostedBuncheols,
-  requestUserProfile,
   toProductDetailItem,
   updateBuncheol,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
+import { getSafeOpenChatHref } from "@/lib/open-chat-url";
+
+// 카카오에서 복사한 주소는 스킴 없이 오는 경우가 흔하다("open.kakao.com/o/...") —
+// 스킴이 없으면 https:// 를 붙여 한 번 더 검증한다.
+function getNormalizedOpenChatUrl(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  return (
+    getSafeOpenChatHref(trimmedValue) ??
+    getSafeOpenChatHref(`https://${trimmedValue}`)
+  );
+}
 import {
   getInitialAuthState,
   readAuthState,
@@ -84,7 +102,9 @@ type UploadProductFormProps = {
 
 const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
-const maxTitleLength = 200;
+// 제목 길이 상한(docs/56 H-02): 200자는 어느 화면에서도 전부 볼 수 없어 64자로 축소.
+// 서버 검증(@Size)도 같은 값으로 맞춘다 — FE 가 더 엄격해야 서버 400 이 나지 않는다.
+const maxTitleLength = 64;
 const maxDescriptionLength = 700;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
@@ -609,6 +629,18 @@ export function UploadProductForm({
     return loginReturnQuery ? `/upload?${loginReturnQuery}` : "/upload";
   })();
   const [photos, setPhotos] = useState<PhotoPreview[]>([]);
+  /*
+   * 작성 중 이탈 가드.
+   *
+   * 개최 폼은 사진·멤버·멤버별 금액까지 다 채우는 데 몇 분이 걸리는데, 지금까지는
+   * 뒤로가기 한 번에 아무 확인 없이 전부 사라졌다. 되돌릴 방법도 없다.
+   * 폼에 손댄 흔적이 있을 때만 확인 시트를 띄운다 — 빈 폼에서 나가는 건 그냥 보내준다.
+   *
+   * window.confirm 대신 ConfirmSheet 를 쓰는 이유는 카카오·네이버 인앱 브라우저가
+   * confirm 을 억제하고 즉시 false 를 반환하기 때문이다 (ConfirmSheet 주석 참고).
+   */
+  const [exitConfirmRequest, setExitConfirmRequest] =
+    useState<ConfirmSheetRequest | null>(null);
   const [photoLimitToast, setPhotoLimitToast] = useState("");
   const photoIdSeed = useRef(0);
   const formScrollRef = useRef<HTMLFormElement | null>(null);
@@ -637,6 +669,7 @@ export function UploadProductForm({
     useState(false);
   const [closingDate, setClosingDate] = useState("");
   const [description, setDescription] = useState("");
+  const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [memberToastMessage, setMemberToastMessage] = useState("");
   const [memberToastTargetId, setMemberToastTargetId] = useState<string | null>(
@@ -651,10 +684,78 @@ export function UploadProductForm({
   const [editingProduct, setEditingProduct] =
     useState<ProductDetailItem | null>(null);
   const [isApiEditLoading, setIsApiEditLoading] = useState(false);
-  const [isHostAccessResolved, setIsHostAccessResolved] = useState(false);
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
+
+  /*
+   * 폼에 사용자가 손댔는지 판정한다.
+   *
+   * 등록 모드는 빈 폼에서 시작하므로 "값이 하나라도 들어있으면 손댄 것"이다.
+   * 수정 모드는 처음부터 채워져 있어 같은 기준을 못 쓴다 — 불러오기가 끝난 시점의
+   * 값을 기준선으로 잡아 두고 그것과 달라졌을 때만 손댄 것으로 본다.
+   * (기준선은 아래 effect 에서 갱신한다. 렌더 중 ref 를 읽으므로 불러오기 직후 한 프레임은
+   *  dirty 로 보일 수 있는데, 이 값은 뒤로가기를 눌렀을 때만 읽혀서 화면에 드러나지 않는다.)
+   */
+  const formSignature = JSON.stringify({
+    closingDate,
+    description,
+    excludedMemberIds,
+    memberMinimumPrices,
+    minHeadcount,
+    openChatUrl,
+    photoIds: photos.map((photo) => photo.id),
+    purchaseSource,
+    selectedGroupId,
+    selectedShipping,
+    shippingPrices,
+    targetMemberIds,
+    title,
+  });
+  const emptyFormSignatureRef = useRef(formSignature);
+  const baselineFormSignatureRef = useRef<string | null>(null);
+  const isFormDirty = isEditMode
+    ? baselineFormSignatureRef.current !== null &&
+      formSignature !== baselineFormSignatureRef.current
+    : formSignature !== emptyFormSignatureRef.current;
+
+  // 수정 모드 기준선 — 불러오기가 끝나 editingProduct 가 채워진 시점의 폼 값을 기억한다.
+  useEffect(() => {
+    if (!isEditMode || !editingProduct) {
+      return;
+    }
+
+    baselineFormSignatureRef.current = formSignature;
+    // formSignature 를 의존성에 넣으면 입력할 때마다 기준선이 갱신돼 영영 dirty 가 되지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingProduct, isEditMode]);
+
+  /*
+   * 이탈 요청 — 폼에 손댄 흔적이 없으면 그대로 보내고, 있으면 확인 시트를 띄운다.
+   * 확인 시트의 기본 액션은 "계속 작성"(취소)이고, 파괴적인 쪽이 확인 버튼이다.
+   */
+  function requestExit(navigate: () => void) {
+    if (!isFormDirty) {
+      navigate();
+      return;
+    }
+
+    setExitConfirmRequest({
+      confirmLabel: "나가기",
+      description: isEditMode
+        ? "수정한 내용은 저장되지 않아요."
+        : "지금까지 작성한 사진과 내용이 모두 사라져요.",
+      onConfirm: () => {
+        setExitConfirmRequest(null);
+        navigate();
+      },
+      title: isEditMode ? "수정을 그만둘까요?" : "작성을 그만둘까요?",
+    });
+  }
+  // 가입 미완료(전화번호 미등록) 유저를 /upload 직접 진입에서도 보완 화면으로 보낸다(공용 가드,
+  // 홈 경유와 동일 동작). 개최 자격(연령대·상한)은 서버 게이트가 제출 시 판정한다.
+  useProfileCompletionGuard();
+
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -729,6 +830,9 @@ export function UploadProductForm({
   const canDecreaseMinHeadcount = !isApiEditMode && selectedMinHeadcount > 1;
   const canIncreaseMinHeadcount =
     !isApiEditMode && selectedMinHeadcount < targetMembers.length;
+  // maxLength 로 막히지 않는 경로(기존 제목 불러오기)로 상한을 넘길 수 있어,
+  // 카운터에서 초과 상태를 색으로 구분한다.
+  const isTitleOverLimit = title.trim().length > maxTitleLength;
   const submitBlockReason = (() => {
     if (photos.length === 0) {
       return "사진을 1장 이상 올려 주세요.";
@@ -736,6 +840,12 @@ export function UploadProductForm({
 
     if (!title.trim()) {
       return "상품명을 입력해 주세요.";
+    }
+
+    // input 의 maxLength 는 타이핑만 막고, 서버에서 불러온 기존 제목에는 적용되지 않는다.
+    // 상한을 넘긴 제목을 수정 저장하면 서버 검증에서 400 이 나므로 제출 자체를 막는다.
+    if (isTitleOverLimit) {
+      return `상품명은 ${maxTitleLength}자까지 입력할 수 있어요.`;
     }
 
     if (isApiEditMode) {
@@ -756,7 +866,7 @@ export function UploadProductForm({
           !isMemberMinimumPriceInput(memberMinimumPrices[member.id] ?? ""),
       )
     ) {
-      return "옵션 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)";
+      return "멤버 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)";
     }
 
     // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라
@@ -786,6 +896,15 @@ export function UploadProductForm({
       )
     ) {
       return "배송비를 100원 단위로 입력해 주세요.";
+    }
+
+    // 선택 입력(생성 모드 전용) — 값이 있으면 카카오 오픈채팅 주소만 허용한다.
+    if (
+      !isEditMode &&
+      openChatUrl.trim() &&
+      !getNormalizedOpenChatUrl(openChatUrl)
+    ) {
+      return "https://로 시작하는 open.kakao.com 주소만 입력할 수 있어요.";
     }
 
     return "";
@@ -839,51 +958,6 @@ export function UploadProductForm({
   ]);
 
   useEffect(() => {
-    if (isEditMode || !authState.isLoggedIn) {
-      return;
-    }
-
-    let isActive = true;
-
-    (async () => {
-      try {
-        const accessToken = await getFreshAccessToken();
-
-        if (!isActive) {
-          return;
-        }
-
-        if (!accessToken) {
-          setIsHostAccessResolved(true);
-          return;
-        }
-
-        const profile = await requestUserProfile(accessToken);
-
-        if (!isActive) {
-          return;
-        }
-
-        if (profile.canHost === false) {
-          router.replace("/upload/notice");
-          return;
-        }
-
-        setIsHostAccessResolved(true);
-      } catch {
-        // 권한 확인에 실패하면 양식을 열어준다. 권한 없는 개최는 서버가 403으로 막는다.
-        if (isActive) {
-          setIsHostAccessResolved(true);
-        }
-      }
-    })();
-
-    return () => {
-      isActive = false;
-    };
-  }, [authState.isLoggedIn, isEditMode, router]);
-
-  useEffect(() => {
     const query = idolQuery.trim();
     let isActive = true;
     let stateFrame: number | null = null;
@@ -925,7 +999,9 @@ export function UploadProductForm({
               id: group.id,
               name: group.name,
               label: group.name,
-              aliases: [group.name],
+              // 서버 별칭을 그대로 실어야 한다. 아래 idolResults 가 rankGroupSearchResults 로 한 번 더
+              // 거르기 때문에, 여기서 버리면 별칭으로만 걸린 그룹이 무매치 처리돼 조용히 사라진다.
+              aliases: group.aliases ?? [],
               members: members.map((member) => ({
                 id: member.id,
                 imageUrl: member.imageUrl,
@@ -1624,10 +1700,11 @@ export function UploadProductForm({
       editingProduct?.id.startsWith("uploaded-"),
     );
 
-    if (
-      !isLocalDraftEdit &&
-      (!authState.isLoggedIn || !authState.accessToken)
-    ) {
+    // 진입 시 선차단 제거로 이 파일의 유일한 토큰 갱신 지점이 사라졌다 — 폼을 다 채운 뒤
+    // 만료 토큰으로 401 나지 않게 액션 시점에 갱신한다(레포 관례: HostedBuncheolManage 등).
+    const accessToken = isLocalDraftEdit ? null : await getFreshAccessToken();
+
+    if (!isLocalDraftEdit && !accessToken) {
       router.push(
         createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
       );
@@ -1648,7 +1725,6 @@ export function UploadProductForm({
     );
     const orderedPhotos = photos;
     const orderedPhotoUrls = orderedPhotos.map((photo) => photo.url);
-    const accessToken = authState.accessToken;
     const apiGroupId = Number(selectedGroup.id);
     const apiMembers = targetMembers.map((member) => ({
       price: parsePriceInput(memberMinimumPrices[member.id] ?? "0"),
@@ -1752,7 +1828,7 @@ export function UploadProductForm({
           )));
 
     if (!isApiEditMode && hasInvalidMemberAmount) {
-      setSubmitError("옵션 가격은 100원 단위로 입력해 주세요.");
+      setSubmitError("멤버 가격은 100원 단위로 입력해 주세요.");
       return;
     }
 
@@ -1876,6 +1952,8 @@ export function UploadProductForm({
               description: product.description || undefined,
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
+              // 검증을 통과한 정규화 값(스킴 보정·호스트 소문자화)을 전송한다.
+              openChatUrl: getNormalizedOpenChatUrl(openChatUrl) ?? undefined,
               gs25ShippingFee: getStoreShippingFee(
                 selectedShipping,
                 shippingPrices,
@@ -1920,11 +1998,6 @@ export function UploadProductForm({
           return;
         }
       } catch (error) {
-        if (error instanceof BuncheolHostPermissionError) {
-          router.replace("/upload/notice");
-          return;
-        }
-
         setSubmitError(
           error instanceof Error ? error.message : "분철 저장에 실패했어요.",
         );
@@ -1993,86 +2066,46 @@ export function UploadProductForm({
     };
   });
 
-  if (!isEditMode && !isHostAccessResolved) {
-    return (
-      <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
-        <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
-            <div className="absolute inset-0 flex flex-col bg-white">
-              <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-                <div className="upload-header__inner flex h-10 items-center justify-between">
-                  <button
-                    aria-label="이전 화면"
-                    className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
-                    onClick={() => router.replace("/")}
-                    type="button"
-                  >
-                    <BackIcon />
-                  </button>
-
-                  <div className="upload-header__copy translate-y-0.5 text-right">
-                    <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                      Upload
-                    </p>
-                    <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
-                      상품 등록
-                    </h1>
-                  </div>
-                </div>
-              </header>
-
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
-                <p className="text-[18px] font-semibold tracking-[-0.05em]">
-                  개최하기 화면을 준비하고 있어요
-                </p>
-                <p className="mt-2 text-[13px] font-semibold text-black/40">
-                  잠시만 기다려 주세요.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <BottomNavigator activeLabel="Upload" />
-        </div>
-      </main>
-    );
+  // 비로그인 직접 진입(딥링크·PWA) 시 로그인 리다이렉트(rAF 이후)가 돌기 전까지
+  // 조작 가능한 폼이 한 프레임 그려지는 것을 가린다.
+  if (!isEditMode && !authState.isLoggedIn) {
+    return null;
   }
 
   if (isApiEditMode) {
     return (
-      <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+      <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
         <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
           <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
             <div className="absolute inset-0 flex flex-col bg-white">
-              <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-                <div className="upload-header__inner flex h-10 items-center justify-between">
+              <header className="upload-header shrink-0 border-b border-black/10 bg-white px-4 py-3 text-black">
+                <div className="upload-header__inner flex h-10 items-center gap-2">
                   <button
                     aria-label="이전 화면"
-                    className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
-                    onClick={() => {
-                      if (editProductId) {
-                        const returnSourceQuery = returnSource
-                          ? `?from=${returnSource}`
-                          : "";
+                    className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
+                    onClick={() =>
+                      requestExit(() => {
+                        if (editProductId) {
+                          const returnSourceQuery = returnSource
+                            ? `?from=${returnSource}`
+                            : "";
 
-                        router.replace(
-                          `/products/${editProductId}${returnSourceQuery}`,
-                        );
-                        return;
-                      }
+                          router.replace(
+                            `/products/${editProductId}${returnSourceQuery}`,
+                          );
+                          return;
+                        }
 
-                      router.replace("/");
-                    }}
+                        router.replace("/");
+                      })
+                    }
                     type="button"
                   >
                     <BackIcon />
                   </button>
 
-                  <div className="upload-header__copy translate-y-0.5 text-right">
-                    <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                      Edit
-                    </p>
-                    <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
+                  <div className="upload-header__copy min-w-0 flex-1">
+                    <h1 className="upload-header__title text-[20px] font-semibold leading-none tracking-[-0.05em]">
                       분철 수정
                     </h1>
                   </div>
@@ -2080,7 +2113,7 @@ export function UploadProductForm({
               </header>
 
               <form
-                className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-6"
+                className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handleSubmit();
@@ -2113,10 +2146,7 @@ export function UploadProductForm({
                             <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
                             <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
                             <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
-                                Photo Upload
-                              </p>
-                              <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
+                              <p className="text-[19px] font-semibold tracking-[-0.05em]">
                                 사진 업로드
                               </p>
                             </div>
@@ -2235,7 +2265,11 @@ export function UploadProductForm({
                           placeholder="분철 제목"
                           value={title}
                         />
-                        <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+                        <span
+                          className={`mt-1.5 block text-right text-[12px] font-semibold ${
+                            isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
+                          }`}
+                        >
                           {title.length}/{maxTitleLength}자
                         </span>
                       </label>
@@ -2370,61 +2404,74 @@ export function UploadProductForm({
                       >
                         수정 완료
                       </button>
+                      {/* 수정 모드에도 제출 차단 사유를 노출한다. 제목 길이 가드는
+                          서버에서 불러온 기존 제목을 겨냥하므로, 사유가 없으면
+                          개최자는 버튼이 왜 죽었는지 알 수 없다. */}
+                      {!canSubmit && submitBlockReason ? (
+                        <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/45">
+                          {submitBlockReason}
+                        </p>
+                      ) : null}
                     </section>
                   </>
                 )}
               </form>
             </div>
           </div>
-
-          <BottomNavigator />
         </div>
+
+          <ConfirmSheet
+            cancelLabel="계속 작성"
+            onCancel={() => setExitConfirmRequest(null)}
+            request={exitConfirmRequest}
+          />
       </main>
     );
   }
 
   return (
-    <main className="system-chrome-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
+    <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div className="absolute inset-0 flex flex-col bg-white">
-            <header className="upload-header shrink-0 border-b border-black bg-black px-4 py-3 text-white">
-              <div className="upload-header__inner flex h-10 items-center justify-between">
+            <header className="upload-header shrink-0 border-b border-black/10 bg-white px-4 py-3 text-black">
+              <div className="upload-header__inner flex h-10 items-center gap-2">
                 <button
                   aria-label="이전 화면"
-                  className="upload-header__back inline-flex h-10 w-10 items-center justify-center text-white"
-                  onClick={() => {
-                    if (editProductId) {
-                      const returnSourceQuery = returnSource
-                        ? `?from=${returnSource}`
-                        : "";
+                  className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
+                  onClick={() =>
+                    requestExit(() => {
+                      if (editProductId) {
+                        const returnSourceQuery = returnSource
+                          ? `?from=${returnSource}`
+                          : "";
 
-                      router.replace(
-                        `/products/${editProductId}${returnSourceQuery}`,
-                      );
-                      return;
-                    }
+                        router.replace(
+                          `/products/${editProductId}${returnSourceQuery}`,
+                        );
+                        return;
+                      }
 
-                    router.replace("/");
-                  }}
+                      router.replace("/");
+                    })
+                  }
                   type="button"
                 >
                   <BackIcon />
                 </button>
 
-                <div className="upload-header__copy translate-y-0.5 text-right">
-                  <p className="upload-header__eyebrow text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-white/45">
-                    {isEditMode ? "Edit" : "Upload"}
-                  </p>
-                  <h1 className="upload-header__title mt-1 text-[20px] leading-none tracking-[-0.05em]">
-                    {isEditMode ? "분철 수정" : "상품 등록"}
+                {/* "상품 등록" → "분철 개최": 하단 탭·안내 화면·페이지 타이틀이 모두 "개최"인데
+                    이 헤더만 "상품 등록"이라 같은 화면을 다른 이름으로 부르고 있었다. */}
+                <div className="upload-header__copy min-w-0 flex-1">
+                  <h1 className="upload-header__title text-[20px] font-semibold leading-none tracking-[-0.05em]">
+                    {isEditMode ? "분철 수정" : "분철 개최"}
                   </h1>
                 </div>
               </div>
             </header>
 
             <form
-              className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-6"
+              className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
               onSubmit={(event) => event.preventDefault()}
               ref={formScrollRef}
             >
@@ -2443,10 +2490,7 @@ export function UploadProductForm({
                   <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-[#D7FF5F]/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
                   <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-[#D7FF5F]/55 bg-white/92 shadow-[0_22px_50px_rgba(120,132,82,0.22)]" />
                   <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] border border-[#D7FF5F]/35 bg-[#F8FBEA]/92 px-4 py-3 shadow-[0_12px_30px_rgba(120,132,82,0.16)] backdrop-blur">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6E7E1E]">
-                      Photo Upload
-                    </p>
-                    <p className="mt-1 text-[19px] font-semibold tracking-[-0.05em]">
+                    <p className="text-[19px] font-semibold tracking-[-0.05em]">
                       사진 업로드
                     </p>
                   </div>
@@ -2565,7 +2609,11 @@ export function UploadProductForm({
                 placeholder="예: LOVE DIVE 원영 미공포 분철"
                 value={title}
               />
-              <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
+              <span
+                className={`mt-1.5 block text-right text-[12px] font-semibold ${
+                  isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
+                }`}
+              >
                 {title.length}/{maxTitleLength}자
               </span>
             </label>
@@ -2823,7 +2871,8 @@ export function UploadProductForm({
                       onChange={(event) =>
                         setIdolQuery(event.currentTarget.value)
                       }
-                      placeholder="아이돌, 그룹, 멤버 검색"
+                      // 그룹명·별칭으로만 매칭한다. 멤버명은 0건이니 문구에 "멤버" 를 넣지 말 것.
+                      placeholder="어떤 그룹의 분철인가요?"
                       value={idolQuery}
                     />
                     <SearchIcon />
@@ -3089,6 +3138,31 @@ export function UploadProductForm({
                   {description.length}/{maxDescriptionLength}자
                 </span>
               </label>
+
+              {/* 수정 요청(BuncheolModifyRequest)은 이 필드를 받지 않는다 — 입력이 조용히
+                  버려지지 않도록 생성 모드에서만 노출한다 (docs/46 §4.7-E4 서버 후속). */}
+              {isEditMode ? null : (
+                <label className="mt-6 block">
+                  <span className="text-[13px] font-semibold text-black/45">
+                    오픈채팅 링크 (선택)
+                  </span>
+                  <input
+                    className="mt-2 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    inputMode="url"
+                    maxLength={200}
+                    onChange={(event) =>
+                      setOpenChatUrl(event.currentTarget.value)
+                    }
+                    placeholder="https://open.kakao.com/o/..."
+                    type="url"
+                    value={openChatUrl}
+                  />
+                  <span className="mt-1.5 block text-[12px] font-medium leading-5 text-black/35">
+                    참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
+                    안내 화면에 노출돼요.
+                  </span>
+                </label>
+              )}
             </div>
 
             <button
@@ -3113,9 +3187,13 @@ export function UploadProductForm({
             </form>
           </div>
         </div>
-
-        <BottomNavigator activeLabel="Upload" />
       </div>
+
+          <ConfirmSheet
+            cancelLabel="계속 작성"
+            onCancel={() => setExitConfirmRequest(null)}
+            request={exitConfirmRequest}
+          />
     </main>
   );
 }

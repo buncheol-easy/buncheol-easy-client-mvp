@@ -55,10 +55,7 @@ export function PolicyPageContent({
               <BackIcon />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-                Policy
-              </p>
-              <h1 className="mt-1 truncate text-[24px] font-semibold leading-none tracking-[-0.05em]">
+              <h1 className="truncate text-[24px] font-semibold leading-none tracking-[-0.05em]">
                 {title}
               </h1>
             </div>

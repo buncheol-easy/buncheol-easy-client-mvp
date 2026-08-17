@@ -107,6 +107,8 @@ const brandFilterTabs = [
 ] as const;
 
 type CvsStoreSearchSheetProps = {
+  // 상품이 취급하는 브랜드로 검색·선택을 제한한다 — 미지정이면 전체 브랜드.
+  allowedBrands?: CvsStoreBrand[];
   onClose: () => void;
   onSelect: (store: CvsStore) => void;
 };
@@ -115,12 +117,26 @@ type CvsStoreSearchSheetProps = {
 // 카카오 지도 마커로 지점을 고른 뒤 "이 지점으로 선택"으로 확정한다.
 // 시트 트랜지션은 FeedbackSheet 의 bid-sheet-backdrop/panel 컨벤션을 따른다.
 export function CvsStoreSearchSheet({
+  allowedBrands,
   onClose,
   onSelect,
 }: CvsStoreSearchSheetProps) {
+  // 허용 브랜드가 하나뿐이면 필터를 그 브랜드로 고정한다 — 다른 브랜드 지점을 등록해
+  // 상품 배송 옵션과 어긋나는 것을 원천 차단 (체크아웃 내 등록 경로).
+  const limitedBrand =
+    allowedBrands && allowedBrands.length === 1 ? allowedBrands[0] : null;
+  const visibleBrandFilterTabs = allowedBrands
+    ? brandFilterTabs.filter(
+        (tab) =>
+          tab.value === "all" ||
+          allowedBrands.includes(tab.value as CvsStoreBrand),
+      )
+    : brandFilterTabs;
   const [isEntered, setIsEntered] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [brandFilter, setBrandFilter] = useState<CvsStoreBrandFilter>("all");
+  const [brandFilter, setBrandFilter] = useState<CvsStoreBrandFilter>(
+    limitedBrand ?? "all",
+  );
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [stores, setStores] = useState<CvsStore[]>([]);
@@ -149,7 +165,8 @@ export function CvsStoreSearchSheet({
   const markerImagesRef = useRef<Map<string, KakaoMarkerImage>>(new Map());
   // 줌 리스너(React 밖 클로저)에서도 최신 선택값을 읽도록 상태를 미러링한다.
   const selectedStoreIdRef = useRef<string | null>(null);
-  const listContainerRef = useRef<HTMLDivElement | null>(null);
+  // 지도와 목록을 함께 굴리는 스크롤러. 새 검색마다 맨 위로 돌려 지도부터 다시 보여준다.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const selectedStore = useMemo(
     () => stores.find((store) => store.id === selectedStoreId) ?? null,
@@ -321,7 +338,7 @@ export function CvsStoreSearchSheet({
   // 2자 미만은 검색하지 않는다 — 빈/한 글자 키워드는 전국 목록을 쏟아 정보가 없고 부하만 만든다.
   useEffect(() => {
     setSelectedStoreId(null);
-    listContainerRef.current?.scrollTo({ top: 0 });
+    scrollContainerRef.current?.scrollTo({ top: 0 });
 
     if (debouncedKeyword.trim().length < 2) {
       searchRequestIdRef.current += 1; // 진행 중이던 검색 무효화
@@ -558,53 +575,74 @@ export function CvsStoreSearchSheet({
           </button>
         </div>
 
-        <div className="mt-4 flex items-center gap-2 rounded-full bg-[#f4f4f4] px-4 py-1 ring-1 ring-black/5 transition focus-within:ring-black/25">
-          <SearchIcon className="h-[18px] w-[18px] shrink-0 text-black/35" />
-          <input
-            aria-label="지점 검색어"
-            className="h-10 w-full bg-transparent text-[14px] font-semibold outline-none placeholder:text-black/30"
-            maxLength={100}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="지점명 또는 주소 (예: 강남, 테헤란로)"
-            value={keyword}
-          />
-          {keyword ? (
-            <button
-              aria-label="검색어 지우기"
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black/10 text-black/45"
-              onClick={() => setKeyword("")}
-              type="button"
-            >
-              <CloseIcon />
-            </button>
-          ) : null}
-        </div>
-
-        <div className="mt-2.5">
-          <SlidingFilterChips
-            onChange={(value: CvsStoreBrandFilter) => setBrandFilter(value)}
-            tabs={brandFilterTabs}
-            value={brandFilter}
-          />
-        </div>
-
-        {mapNotice ? (
-          <p className="mt-2 rounded-[0.85rem] bg-[#f7f7f7] px-4 py-3 text-[12.5px] font-medium text-black/45">
-            {mapNotice}
-          </p>
-        ) : (
-          // 지도는 포인터 전용 보조 수단이라 스크린리더에서는 목록을 정본으로 삼는다.
-          <div
-            aria-hidden="true"
-            className="mt-2 h-[min(190px,26dvh)] w-full shrink-0 overflow-hidden rounded-[0.95rem] ring-1 ring-black/10 [@media(max-height:560px)]:hidden"
-            ref={mapContainerRef}
-          />
-        )}
-
+        {/*
+          지도와 목록을 한 스크롤러에 담는다.
+          지도를 고정해 두면 작은 화면에서 목록에 한 장 반밖에 안 남았다 (390×667 기준 약 110px).
+          지도를 위로 밀어 올릴 수 있게 하되, 검색창과 브랜드 칩은 sticky 로 남긴다 —
+          목록을 훑다가 브랜드를 바꾸려고 맨 위까지 되돌아가야 하면 그게 더 나쁘다.
+        */}
         <div
-          className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          ref={listContainerRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          ref={scrollContainerRef}
         >
+          <div className="sticky top-0 z-10 bg-white pb-2.5 pt-4">
+            <div className="flex items-center gap-2 rounded-full bg-[#f4f4f4] px-4 py-1 ring-1 ring-black/5 transition focus-within:ring-black/25">
+              <SearchIcon className="h-[18px] w-[18px] shrink-0 text-black/35" />
+              <input
+                aria-label="지점 검색어"
+                className="h-10 w-full bg-transparent text-[14px] font-semibold outline-none placeholder:text-black/30"
+                maxLength={100}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="지점명 또는 주소 (예: 강남, 테헤란로)"
+                value={keyword}
+              />
+              {keyword ? (
+                <button
+                  aria-label="검색어 지우기"
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black/10 text-black/45"
+                  onClick={() => setKeyword("")}
+                  type="button"
+                >
+                  <CloseIcon />
+                </button>
+              ) : null}
+            </div>
+
+            {limitedBrand ? (
+              <p className="mt-2.5 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 text-[12px] font-semibold text-black/55 ring-1 ring-[#E4F6A5]/60">
+                이 분철은 {limitedBrand} 지점으로만 받을 수 있어요.
+              </p>
+            ) : (
+              <div className="mt-2.5">
+                <SlidingFilterChips
+                  onChange={(value: CvsStoreBrandFilter) =>
+                    setBrandFilter(value)
+                  }
+                  tabs={visibleBrandFilterTabs}
+                  value={brandFilter}
+                />
+              </div>
+            )}
+          </div>
+
+          {mapNotice ? (
+            <p className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-3 text-[12.5px] font-medium text-black/45">
+              {mapNotice}
+            </p>
+          ) : (
+            // 지도는 포인터 전용 보조 수단이라 스크린리더에서는 목록을 정본으로 삼는다.
+            <div
+              aria-hidden="true"
+              /*
+               * relative z-0 은 지도가 자체 쌓임 맥락을 갖게 한다 — 카카오 SDK 가 내부 엘리먼트에
+               * 큰 z-index 를 붙이는데, 맥락을 가두지 않으면 그게 sticky 검색줄 위로 올라온다.
+               */
+              className="relative z-0 h-[min(190px,26dvh)] w-full overflow-hidden rounded-[0.95rem] ring-1 ring-black/10"
+              ref={mapContainerRef}
+            />
+          )}
+
+          <div className="mt-3 pb-2">
           {searchError ? (
             <p className="rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[13px] font-semibold leading-5 text-[#c03131]">
               {searchError}
@@ -693,6 +731,7 @@ export function CvsStoreSearchSheet({
               ) : null}
             </div>
           )}
+          </div>
         </div>
 
         <div className="shrink-0 border-t border-black/10 bg-white pt-3.5">

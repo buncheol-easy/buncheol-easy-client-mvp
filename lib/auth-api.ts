@@ -10,6 +10,10 @@ import {
 } from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { FEATURES } from "@/lib/feature-flags";
+import {
+  getBuncheolStatusBadgeLabel,
+  isBuncheolDeletedStatus,
+} from "@/lib/buncheol-states";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
 const defaultApiBaseUrl = "https://staging.buncheoleasy.com";
@@ -38,6 +42,33 @@ export type UserProfileStatus = {
   isProfileComplete: boolean;
 };
 
+// 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
+export const hostingEligibilityReasons = [
+  // 회원 개최 오픈 전 — 사용자가 무엇을 해도 해소되지 않는 유일한 사유다 (서버 USR-035).
+  // 배열 순서는 isHostingEligibilityReason 의 includes 에만 쓰여 동작에 영향이 없다.
+  "NOT_OPEN_YET",
+  // 가입 미완료(전화번호 미등록) — 서버 USR-018
+  "PHONE_REQUIRED",
+  // 연령대 미확인 — 카카오 재로그인 동의로 회복 가능 (서버 USR-032)
+  "AGE_UNVERIFIED",
+  // 미성년 확정 — 개최 불가 (서버 USR-033)
+  "NOT_ADULT",
+  // 활성 개최 수 상한 초과 — 서버 BCH-089
+  "LIMIT_EXCEEDED",
+  // 정산 계좌 미등록 — 서버 USR-025
+  "BANK_ACCOUNT_REQUIRED",
+] as const;
+
+// null 은 "사유를 모른다"는 뜻 — 서버가 사유를 추가해도 화면이 깨지지 않게 알 수 없는 값은 여기로 떨어뜨린다.
+export type HostingEligibilityReason =
+  | (typeof hostingEligibilityReasons)[number]
+  | null;
+
+export type HostingEligibility = {
+  eligible: boolean;
+  reason: HostingEligibilityReason;
+};
+
 export type BankAccountInfo = {
   account: string;
   bank: string;
@@ -53,6 +84,7 @@ export type UserProfile = {
   phoneNumber: string;
   bankAccount: BankAccountInfo | null;
   // 백엔드 개최 권한 제한 반영 전 응답에는 없는 필드라 undefined를 허용한다.
+  // 서버 게이트 위임(client#85) 이후 FE 미사용 — 선차단 재도입 금지, 서버 계약 문서화용으로만 유지.
   canHost?: boolean;
 };
 
@@ -127,6 +159,8 @@ export type CreateBuncheolRequest = {
   description?: string;
   groupId: number;
   gs25ShippingFee?: number;
+  /** C2C 참여자 소통 채널(카카오 오픈채팅) — 선택, 최대 200자 (docs/46 §7.1-10). */
+  openChatUrl?: string;
   purchaseSite: string;
   /** 대표사진으로 쓸 images 파트 내 인덱스(0-base, 필수). 이미지 순서는 업로드 순서 그대로 저장된다. */
   thumbnailIndex: number;
@@ -222,6 +256,11 @@ export type InboxMessagesParams = {
 };
 
 export type ApiGroup = {
+  /**
+   * 그룹의 대체 표기(한글/영문 표기·팬덤 축약어). 서버는 이름뿐 아니라 별칭으로도 매칭해 내려주므로,
+   * `rankGroupSearchResults` 가 이 값을 함께 봐야 별칭으로 걸린 그룹을 랭킹에서 탈락시키지 않는다.
+   */
+  aliases?: string[];
   favorited?: boolean;
   id: string;
   imageUrl?: string;
@@ -236,6 +275,10 @@ export type ApiGroupMember = {
 
 export type ApiGroupWithMembers = ApiGroup & {
   members: ApiGroupMember[];
+};
+
+export type ApiGroupDetail = ApiGroupWithMembers & {
+  recruitingBuncheolCount: number;
 };
 
 export type RecentSearchKeyword = {
@@ -300,6 +343,8 @@ export type BuncheolImageInfo = {
 export type BuncheolDetail = BuncheolSummary & {
   cuShippingFee?: number;
   description?: string;
+  // 분철 flow_type — 필드가 없는 구 응답은 LEGACY 로 취급한다 (getFlowType).
+  flowType?: string | null;
   gs25ShippingFee?: number;
   hostBankAccount?: BankAccountInfo | null;
   /** 등록 순(업로드 순) 이미지 목록. 이미지가 있으면 정확히 1장이 thumbnail=true */
@@ -307,6 +352,8 @@ export type BuncheolDetail = BuncheolSummary & {
   minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
+  // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
+  openChatUrl?: string | null;
   purchaseSite?: string;
   shippingOptions: BuncheolShippingOption[];
 };
@@ -319,7 +366,6 @@ export type BuncheolManagementWinner = {
   paymentAmount?: number | null;
   paymentConfirmedAt?: string;
   paymentDueAt?: string;
-  paymentReportedAt?: string;
   paymentStatus?: string;
   participationId?: string;
   receiverNickname?: string;
@@ -341,7 +387,10 @@ export type BuncheolManagementDelivery = {
 };
 
 export type BuncheolManagementParticipant = {
+  // amount 는 배송비를 포함한 입금 총액, shippingFee 는 그중 배송비.
+  // 다슬롯은 배송비가 묶음 첫 슬롯에만 붙어 같은 사람의 두 참여 금액이 달라진다 (docs/53 Q-22).
   amount: number;
+  shippingFee?: number | null;
   buncheolMemberId?: string;
   confirmedAt?: string | null;
   delivery?: BuncheolManagementDelivery | null;
@@ -349,6 +398,8 @@ export type BuncheolManagementParticipant = {
   memberName: string;
   participantNickname: string;
   participationId: string;
+  // C2C "보냈어요" 마킹 시각 — 개최자가 통장 대조 우선순위를 잡는 근거 (docs/46 §4.6).
+  paymentSentAt?: string | null;
   refundAccount?: BankAccountInfo | null;
   status: string;
 };
@@ -365,8 +416,13 @@ export type BuncheolManagementOption = {
 };
 
 export type BuncheolManagementDetail = {
+  // 취소된 참여(환불 계좌 확인용). participants 와 분리해 받는다 —
+  // 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
+  cancelledParticipants: BuncheolManagementParticipant[];
   confirmedCount?: number;
   deadline: string;
+  // 분철 flow_type — 없으면 LEGACY 취급 (getFlowType).
+  flowType?: string | null;
   groupName: string;
   id: string;
   memberCount?: number;
@@ -374,6 +430,8 @@ export type BuncheolManagementDetail = {
   optionCount: number;
   options: BuncheolManagementOption[];
   participants: BuncheolManagementParticipant[];
+  // C2C 일괄 입금 기한 — 성사 확정 시 산정 (docs/46 §4.1).
+  paymentDueAt?: string | null;
   purchaseSite?: string;
   status: BuncheolStatus;
   title: string;
@@ -403,18 +461,37 @@ export type MyParticipation = {
   buncheolStatus: string;
   buncheolTitle: string;
   cancelReason?: string | null;
+  // 서버가 취소 API 게이트와 같은 판정으로 내려주는 취소 가능 여부·사유 (docs/56 S-1).
+  // CANCELLABLE | BLOCKED_BY_STATUS | FLOW_NOT_SUPPORTED | BLOCKED_BY_HOST_CONFIRM.
+  // 필드가 없는 구 응답이면 null — 화면은 취소 버튼을 남기는 쪽으로 폴백한다.
+  cancellability?: string | null;
   closedRank?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
   thumbnailUrl?: string;
+  // 분철 flow_type — 필드가 없는 구 응답은 LEGACY 로 취급한다 (getFlowType).
+  flowType?: string | null;
   memberName: string;
+  // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
+  openChatUrl?: string | null;
   participationId: string;
   participationStatus: string;
   payback?: ShippingFeePaybackInfo | null;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
+  // C2C "보냈어요" 마킹 시각 — 마킹 안 했으면 null.
+  paymentSentAt?: string | null;
+  // 개최자가 "입금 못 찾음"으로 되돌린 시각. 서버가 입금 대기 구간에서만 값을 채워 주므로
+  // 값이 있으면 곧 "재확인이 필요한 상태"다 (docs/53 Q-03).
+  paymentRejectedAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
+  // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
+  // 나중에 계좌를 다시 열어본 사용자가 다른 이름으로 송금할 위험이 있었다 (docs/53 Q-17).
+  // 이름은 서버 응답 키(refundHolder) 그대로 둔다 — depositorName 은 이 코드베이스에서
+  // "환불계좌 예금주"(HostedBuncheolManage:1128)와 "참여자 닉네임"(auth-api:2914, HostedBuncheolManage:213)
+  // 두 의미로 이미 쓰이고 있어, 여기 합류시키면 어느 쪽인지 읽어봐야 알 수 있다.
+  refundHolder?: string | null;
   shippingAddress?: DeliveryAddress | null;
   shippingFee?: number | null;
   shippingOptions?: BuncheolShippingOption[];
@@ -423,18 +500,28 @@ export type MyParticipation = {
 
 export type MyHostedBuncheol = BuncheolSummary & {
   activeParticipationCount: number;
+  // 서버가 취소 API 게이트·CAS 와 같은 판정으로 내려주는 개최자 취소 가능 여부·사유 (docs/56 S-2).
+  // CANCELLABLE | BLOCKED_BY_STATUS | BLOCKED_BY_CONFIRMED_PAYMENT.
+  // 필드가 없는 구 응답이면 null — 화면은 삭제 버튼을 남기는 쪽으로 폴백한다.
+  cancellability?: string | null;
   createdAt: string;
   memberSlotCount: number;
 };
 
 export type ParticipationPaymentDetail = {
   bidAmount: number;
+  // 참여 목록과 같은 서버 취소 판정 (docs/56 S-1). paymentStatus 와 같은 응답에서 나오므로
+  // 상세로 상태를 보강할 때 판정도 함께 갱신해 둘이 어긋나지 않게 한다.
+  cancellability?: string | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
+  flowType?: string | null;
   hostBankAccount: BankAccountInfo | null;
+  openChatUrl?: string | null;
   participationId: string;
   paymentAmount: number | null;
   paymentDueAt?: string | null;
+  paymentSentAt?: string | null;
   paymentStatus: string;
   shippingAddress?: DeliveryAddress | null;
   shippingFee: number | null;
@@ -517,6 +604,24 @@ function getJsonHeaders(accessToken?: string) {
   };
 }
 
+/*
+ * 이 값은 대부분 그대로 사용자 화면에 뿌려진다. 빈 문자열이 나오면 안내가 통째로
+ * 사라지고, "메시지가 없으면 로딩 중"으로 분기하는 화면(개최 관리)에서는 끝나지 않는
+ * 로딩으로 보인다. statusText 는 HTTP/2 응답에서 항상 비어 있으므로 특히 위험하다.
+ * 어떤 경로로도 빈 문자열을 내보내지 않는다.
+ */
+const DEFAULT_ERROR_MESSAGE = "요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.";
+
+function getFirstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
 async function parseErrorMessage(response: Response) {
   try {
     const body = (await response.json()) as {
@@ -525,21 +630,18 @@ async function parseErrorMessage(response: Response) {
       title?: unknown;
     };
 
-    if (typeof body.message === "string") {
-      return body.message;
-    }
-
-    if (typeof body.detail === "string") {
-      return body.detail;
-    }
-
-    if (typeof body.title === "string") {
-      return body.title;
-    }
-
-    return response.statusText;
+    return (
+      getFirstNonEmptyString(
+        body.message,
+        body.detail,
+        body.title,
+        response.statusText,
+      ) || DEFAULT_ERROR_MESSAGE
+    );
   } catch {
-    return response.statusText;
+    return (
+      getFirstNonEmptyString(response.statusText) || DEFAULT_ERROR_MESSAGE
+    );
   }
 }
 
@@ -696,6 +798,23 @@ function getOptionalStringValue(body: Record<string, unknown>, keys: string[]) {
   const value = getStringValue(body, keys).trim();
 
   return value.length > 0 ? value : undefined;
+}
+
+function getStringArrayValue(body: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = body[key];
+
+    if (!Array.isArray(value)) {
+      continue;
+    }
+
+    return value
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return [];
 }
 
 const participationDeliveryIdKeys = [
@@ -1064,6 +1183,7 @@ function getParticipationPaymentDetailFromBody(
         "amount",
         "paymentAmount",
       ]) ?? 0,
+    cancellability: getOptionalStringValue(data, ["cancellability"]) ?? null,
     deliveryId:
       getOptionalStringValueFromRecords(
         lookupRecords,
@@ -1078,6 +1198,9 @@ function getParticipationPaymentDetailFromBody(
         : undefined) ??
       getOptionalStringValue(data, participationDeliveryStatusKeys) ??
       null,
+    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
+    openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
+    paymentSentAt: getOptionalStringValue(data, ["paymentSentAt"]) ?? null,
     hostBankAccount: getNestedBankAccountInfo(data, [
       "hostAccount",
       "hostBankAccount",
@@ -1450,6 +1573,56 @@ export async function requestTokenReissue() {
   }
 
   return (await response.json()) as AccessTokenResponse;
+}
+
+// 개최 자격 사전 조회 (server: GET /v1/buncheols/hosting-eligibility). 부적격이어도 200 + 사유로 내려온다.
+export async function requestHostingEligibility(
+  accessToken: string,
+): Promise<HostingEligibility> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/hosting-eligibility`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      await parseErrorMessage(response),
+      response.status,
+    );
+  }
+
+  const data = getNestedData((await response.json()) as unknown);
+  const eligible = getBooleanValue(data, [
+    "eligible",
+    "isEligible",
+    "hostingEligible",
+  ]);
+
+  if (eligible === null) {
+    throw new Error("개최 자격을 확인할 수 없어요.");
+  }
+
+  return { eligible, reason: getHostingEligibilityReason(data) };
+}
+
+function getHostingEligibilityReason(data: unknown): HostingEligibilityReason {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const reason = getStringValue(data, ["reason", "reasonCode", "code"]);
+
+  return isHostingEligibilityReason(reason) ? reason : null;
+}
+
+function isHostingEligibilityReason(
+  value: string,
+): value is NonNullable<HostingEligibilityReason> {
+  return (hostingEligibilityReasons as readonly string[]).includes(value);
 }
 
 export async function requestUserProfileStatus(accessToken: string) {
@@ -2774,6 +2947,8 @@ function getBuncheolDetailFromBody(body: unknown) {
           ])
         : undefined),
     description: getOptionalStringValue(data, ["description", "content"]),
+    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
+    openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
     gs25ShippingFee:
       getOptionalNumberValue(data, [
         "gs25ShippingFee",
@@ -2909,17 +3084,6 @@ function getBuncheolManagementWinnerFromRecord(
       "paymentDueAt",
       "paymentDeadline",
       "dueAt",
-    ]),
-    paymentReportedAt: getOptionalStringValue(record, [
-      "paymentReportedAt",
-      "paymentRequestedAt",
-      "paymentReportedTime",
-      "paymentRequestTime",
-      "confirmedAt",
-      "reportedAt",
-      "requestedAt",
-      "paidReportedAt",
-      "paidAt",
     ]),
     paymentStatus: getOptionalStringValue(record, [
       "paymentStatus",
@@ -3289,6 +3453,7 @@ function getBuncheolManagementParticipantFromRecord(
         "bidAmount",
         "price",
       ]) ?? 0,
+    shippingFee: getOptionalNumberValue(record, ["shippingFee", "deliveryFee"]),
     buncheolMemberId:
       getOptionalStringValue(record, [
         "buncheolMemberId",
@@ -3308,9 +3473,10 @@ function getBuncheolManagementParticipantFromRecord(
     memberName:
       getStringValue(record, ["memberName", "name", "label"]) ||
       fallback.memberName ||
-      "옵션",
+      "멤버",
     participantNickname,
     participationId,
+    paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
     refundAccount,
     status:
       getOptionalStringValue(record, [
@@ -3442,8 +3608,6 @@ function getBuncheolManagementOptionFromRecord(
             winner.paymentConfirmedAt ??
             fallbackWinnerFields.paymentConfirmedAt,
           paymentDueAt: winner.paymentDueAt ?? fallbackWinnerFields.paymentDueAt,
-          paymentReportedAt:
-            winner.paymentReportedAt ?? fallbackWinnerFields.paymentReportedAt,
           paymentStatus: winner.paymentStatus ?? fallbackWinnerFields.paymentStatus,
           receiverNickname:
             winner.receiverNickname ?? fallbackWinnerFields.receiverNickname,
@@ -3537,13 +3701,36 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     });
 
   const participants = [...participantsById.values()];
+  // 취소분은 참여 수 집계에 쓰이는 participants 와 절대 합치지 않는다.
+  // participants 와 같은 규칙으로 participationId 중복을 접는다 — sourceRecords 가 둘일 때 같은 배열을 두 번 집을 수 있다.
+  const cancelledById = new Map<string, BuncheolManagementParticipant>();
+
+  sourceRecords
+    .flatMap((sourceRecord) =>
+      // 서버가 새로 정의한 필드라 구 응답 alias 가 없다 — participants 계열과 달리 단일 키만 본다.
+      getNestedRecordListValue(sourceRecord, ["cancelledParticipants"]),
+    )
+    .map((participantRecord) =>
+      getBuncheolManagementParticipantFromRecord(participantRecord),
+    )
+    .filter(
+      (participant): participant is BuncheolManagementParticipant =>
+        participant !== null,
+    )
+    .forEach((participant) => {
+      cancelledById.set(participant.participationId, participant);
+    });
+
+  const cancelledParticipants = [...cancelledById.values()];
   const memberCount = getNumberValue(data, ["memberCount", "memberSlotCount"]);
 
   return {
+    cancelledParticipants,
     confirmedCount: getNumberValue(data, ["confirmedCount"]) ?? undefined,
     deadline:
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||
       getStringValue(responseData, ["deadline", "buncheolDeadline"]),
+    flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     groupName:
       getStringValue(data, ["groupName", "group"]) ||
       getStringValue(responseData, ["groupName", "group"]),
@@ -3555,6 +3742,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
       options.length,
     options,
     participants,
+    paymentDueAt: getOptionalStringValue(data, ["paymentDueAt"]) ?? null,
     purchaseSite: getOptionalStringValue(data, [
       "purchaseSite",
       "purchaseSource",
@@ -3639,28 +3827,6 @@ function getMemberLabel(memberNames: string[]) {
     : firstMember;
 }
 
-function getStatusBadge(status: string) {
-  const statusLabels: Record<string, string> = {
-    CANCELLED: "분철 취소",
-    CONFIRMED: "진행확정",
-    CLOSED: "모집종료",
-    FINISHED: "진행확정",
-    PAID: "진행확정",
-    RECRUITING: "모집중",
-    SETTLING: "진행확정",
-  };
-
-  return statusLabels[status] ?? status;
-}
-
-function isDeletedBuncheolStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
-function isRemovedBuncheolStatus(status: string | undefined) {
-  return status === "DELETED";
-}
-
 function getToneFromId(id: string) {
   const tones = [
     "from-black via-zinc-800 to-zinc-500",
@@ -3731,12 +3897,13 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     minHeadcount: summary.minHeadcount,
     targetMembers: summary.memberNames,
     uploadedAt: formatKoreaDateTime(summary.createdAt),
+    createdAt: summary.createdAt,
     era: summary.groupName,
     price: undefined,
     deadline: formatKoreaDateTime(summary.deadline),
     rating: "0.0",
     reviews: String(summary.activeParticipationCount ?? 0),
-    badge: getStatusBadge(summary.status),
+    badge: getBuncheolStatusBadgeLabel(summary.status),
     imageUrl: summary.thumbnailUrl,
     isHostedByMe: summary.isHostedByMe,
     liked: summary.bookmarked,
@@ -3770,7 +3937,7 @@ export function toProductDetailItem(
             bidMinPrice: 0,
             currentBidAmount: 0,
             id: `${detail.id}-member`,
-            name: "옵션",
+            name: "멤버",
             participantCount: 0,
             topBidAmounts: [],
           },
@@ -3814,6 +3981,8 @@ export function toProductDetailItem(
     description:
       detail.description?.trim() ||
       "판매자가 상품 설명을 작성하지 않았습니다.",
+    flowType: detail.flowType ?? null,
+    openChatUrl: detail.openChatUrl ?? null,
     // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 images(등록 순)를 그대로 쓴다.
     imageUrl: detail.thumbnailUrl ?? detail.images[0]?.url,
     imageUrls: detail.images.map((image) => image.url),
@@ -3862,7 +4031,7 @@ export async function requestBuncheols(
     .map(getBuncheolSummaryFromRecord)
     .filter(
       (item): item is BuncheolSummary =>
-        item !== null && !isDeletedBuncheolStatus(item.status),
+        item !== null && !isBuncheolDeletedStatus(item.status),
     );
 
   // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
@@ -3910,7 +4079,7 @@ export async function requestAllBuncheols(
       .map(getBuncheolSummaryFromRecord)
       .filter(
         (item): item is BuncheolSummary =>
-          item !== null && !isDeletedBuncheolStatus(item.status),
+          item !== null && !isBuncheolDeletedStatus(item.status),
       );
 
     allSummaries.push(...pageSummaries);
@@ -3947,7 +4116,8 @@ export async function requestBuncheolDetail(
   }
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    // 삭제·비공개(404)를 서버 렌더링에서 구분할 수 있도록 status 를 보존해 던진다.
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   const detail = getBuncheolDetailFromBody(await readJsonBody(response));
@@ -3987,24 +4157,6 @@ export async function requestBuncheolManagement(
   return detail;
 }
 
-export async function requestCloseBuncheol(
-  accessToken: string,
-  buncheolId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/close`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
-
 const buncheolHostPermissionErrorCode = "USR-031";
 
 export class BuncheolHostPermissionError extends Error {
@@ -4041,10 +4193,14 @@ export async function createBuncheol(
       errorBody = null;
     }
 
+    // parseErrorMessage 와 같은 규칙 — 빈 문자열이 화면에 그대로 나가면 안 된다.
     const errorMessage =
-      [errorBody?.message, errorBody?.detail, errorBody?.title].find(
-        (value): value is string => typeof value === "string",
-      ) ?? response.statusText;
+      getFirstNonEmptyString(
+        errorBody?.message,
+        errorBody?.detail,
+        errorBody?.title,
+        response.statusText,
+      ) || DEFAULT_ERROR_MESSAGE;
 
     if (errorBody?.code === buncheolHostPermissionErrorCode) {
       throw new BuncheolHostPermissionError(errorMessage);
@@ -4224,6 +4380,12 @@ export async function requestMyParticipations(accessToken: string) {
       const buncheolMember = isRecord(buncheolMemberRecord)
         ? buncheolMemberRecord
         : null;
+      // alias 폭은 인접 파서(getBuncheolManagementParticipantFromRecord·프로필 파서)와 맞춘다.
+      const refundAccountRecord = getNestedData(
+        record.refundAccount ??
+          record.refundBankAccount ??
+          record.refundBankAccountInfo,
+      );
       const shippingAddressRecord = getParticipationShippingAddressRecord(record);
       const shippingAddress = shippingAddressRecord
         ? getUserShippingAddress(shippingAddressRecord)
@@ -4292,6 +4454,8 @@ export async function requestMyParticipations(accessToken: string) {
           ]) || (buncheol ? getStringValue(buncheol, ["title"]) : ""),
         cancelReason:
           getOptionalStringValue(record, ["cancelReason"]) ?? null,
+        cancellability:
+          getOptionalStringValue(record, ["cancellability"]) ?? null,
         closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(
@@ -4338,6 +4502,46 @@ export async function requestMyParticipations(accessToken: string) {
             "paymentDeadline",
             "dueAt",
           ]) ??
+          null,
+        flowType:
+          getOptionalStringValue(record, ["flowType"]) ??
+          (buncheol ? getOptionalStringValue(buncheol, ["flowType"]) : null) ??
+          null,
+        openChatUrl:
+          getOptionalStringValue(record, ["openChatUrl"]) ??
+          (buncheol
+            ? getOptionalStringValue(buncheol, ["openChatUrl"])
+            : null) ??
+          null,
+        paymentSentAt:
+          getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
+        paymentRejectedAt:
+          getOptionalStringValue(record, ["paymentRejectedAt"]) ?? null,
+        // 서버는 refundHolder 로 내려주지만, 환불계좌 객체째 실려오는 응답도 대비한다.
+        // ⚠️ getNestedBankAccountInfo 를 쓰면 안 된다 — 키에서 못 찾을 때 최상위 record 를 스캔하고,
+        // 그 후보 키에 hostAccountHolder·sellerAccountHolder 가 있어 개최자 예금주를 입금자명으로
+        // 집어올 수 있다. 입금자명이 어긋나면 자동 입금확인·개최자 대조가 실패해, 값이 없어 안 보이는
+        // 것보다 나쁘다. 환불계좌 객체 안에서만 좁게 읽는다.
+        refundHolder:
+          getOptionalStringValue(record, [
+            "refundHolder",
+            "refundAccountHolder",
+          ]) ??
+          (isRecord(refundAccountRecord)
+            ? // 이미 환불계좌 객체 안으로 스코프가 좁혀졌으므로 인접 파서(getBankAccountInfoFromRecord)와
+              // 같은 폭으로 본다. 단 host*/seller* 접두 키는 넣지 않는다 — 환불계좌 객체 안에 있을 이유가
+              // 없고, 있다면 그건 개최자 계좌가 잘못 실린 응답이다.
+              getOptionalStringValue(refundAccountRecord, [
+                "holder",
+                "holderName",
+                "accountHolder",
+                "accountOwner",
+                "accountOwnerName",
+                "depositor",
+                "depositorName",
+                "name",
+              ])
+            : undefined) ??
           null,
         createdAt:
           getOptionalStringValue(record, [
@@ -4450,6 +4654,8 @@ export async function requestMyHostedBuncheols(accessToken: string) {
           summary.activeParticipationCount ??
           getNumberValue(record, ["activeParticipationCount"]) ??
           0,
+        cancellability:
+          getOptionalStringValue(record, ["cancellability"]) ?? null,
         createdAt: summary.createdAt ?? "",
         memberSlotCount:
           summary.memberSlotCount ??
@@ -4462,7 +4668,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
     );
 
   return buncheols.filter(
-    (buncheol) => !isRemovedBuncheolStatus(buncheol.status),
+    (buncheol) => !isBuncheolDeletedStatus(buncheol.status),
   );
 }
 
@@ -4529,7 +4735,7 @@ export async function requestBookmarkedBuncheols(
     }, []);
 
   return summaries.filter(
-    (summary) => !isDeletedBuncheolStatus(summary.status),
+    (summary) => !isBuncheolDeletedStatus(summary.status),
   );
 }
 
@@ -4630,6 +4836,137 @@ export async function requestPaymentConfirmation(
     throw new Error(await parseErrorMessage(response));
   }
 }
+
+// C2C 개최자 성사 확정 — 신청(APPLIED) 전원을 일괄 입금 기한(24h)과 함께 입금 대기로
+// 전이하고 입금 안내 알림톡이 발송된다 (docs/46 §4.1). 정원 미달 재량·조기 확정 허용.
+export async function confirmBuncheolRecruitment(
+  accessToken: string,
+  buncheolId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/confirm`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const data = getNestedData(await readJsonBody(response));
+
+  return {
+    awaitingCount: isRecord(data)
+      ? getOptionalNumberValue(data, ["awaitingCount"]) ?? null
+      : null,
+    paymentDueAt: isRecord(data)
+      ? getOptionalStringValue(data, ["paymentDueAt"]) ?? null
+      : null,
+  };
+}
+
+// C2C 입금 수집 종료(부분 확정) — 기한 경과로 미입금 슬롯이 정리된 뒤 확정 참여만으로
+// 진행을 확정한다. 미입금 활성 참여가 남아 있으면 서버가 거부한다 (docs/46 §7.1-6).
+export async function finalizeBuncheolCollected(
+  accessToken: string,
+  buncheolId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/finalize-collected`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C 개최자 미입금 반려 — 입금 내역을 찾지 못한 "보냈어요"를 입금 대기로 되돌리고
+// 기한을 +24h 연장하며 참여자에게 재확인 안내가 발송된다 (docs/46 §4.5).
+export async function rejectParticipationPaymentSent(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/reject-payment`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C "보냈어요" 마킹 — 입금 후 참여자가 표시(AWAITING_PAYMENT → PAYMENT_SENT).
+// 서버가 멱등 처리하므로(docs/46 §4.2) 이미 마킹된 참여에 다시 호출해도 성공한다.
+export async function requestParticipationPaymentSent(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C "보냈어요" 마킹 철회 — 오마킹 셀프 수정(PAYMENT_SENT → AWAITING_PAYMENT 복귀).
+export async function revertParticipationPaymentSent(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// C2C 참여자 자발 취소 — APPLIED(자유)·AWAITING_PAYMENT(허용)에서만 성공한다.
+// PAYMENT_SENT·CONFIRMED 는 서버가 거부(BCH-087)하며 FE 는 문의 안내로 유도한다 (docs/46 §4.4).
+export async function cancelParticipation(
+  accessToken: string,
+  participationId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
 // 배송비 돌려받기 신청 (재신청 포함). 검증 실패는 서버가 400(URL 형식)·409(대상 아님/이미 신청/트윗 중복)로
 // 구분해 내려주므로 status 를 보존한 ApiRequestError 로 던진다.
 export async function requestShippingFeePayback(
@@ -5072,6 +5409,7 @@ function getApiGroupFromRecord(record: Record<string, unknown>): ApiGroup | null
   return {
     id,
     name,
+    aliases: getStringArrayValue(groupRecord, ["aliases", "alias"]),
     favorited:
       getBooleanValue(record, [
         "favorited",
@@ -5265,6 +5603,12 @@ export async function requestFavoriteGroups(
     .map((group) => ({ ...group, favorited: true }));
 }
 
+// 최애 등록이 409 로 실패하는 경우는 두 가지이고 처리가 정반대다.
+//   GRP-003 이미 등록됨 → 원하는 상태가 이미 만족됐으니 성공으로 접는다 (UI 는 등록됨으로 수렴).
+//   GRP-005 5개 한도 초과 → 등록되지 않았으므로 롤백하고 사용자에게 이유를 보여줘야 한다.
+// 둘을 구분하지 않으면 한도 초과인데 하트가 켜졌다가 새로고침하면 풀린다.
+const FAVORITE_GROUP_ALREADY_EXISTS_CODE = "GRP-003";
+
 export async function addFavoriteGroup(accessToken: string, groupId: string) {
   const response = await fetch(
     `${getVersionedApiBaseUrl()}/groups/${groupId}/favorite`,
@@ -5276,7 +5620,20 @@ export async function addFavoriteGroup(accessToken: string, groupId: string) {
   );
 
   if (response.status === 409) {
-    return { alreadyExists: true };
+    const errorBody = await readJsonBody(response);
+    const code = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["code"])
+      : undefined;
+
+    if (code === FAVORITE_GROUP_ALREADY_EXISTS_CODE) {
+      return { alreadyExists: true };
+    }
+
+    const detail = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["message", "detail", "title"])
+      : undefined;
+
+    throw new Error(detail ?? "최애 그룹을 등록하지 못했어요.");
   }
 
   if (!response.ok) {
@@ -5302,6 +5659,47 @@ export async function removeFavoriteGroup(
   if (!response.ok && response.status !== 404) {
     throw new Error(await parseErrorMessage(response));
   }
+}
+
+/**
+ * 그룹 단위 브라우즈(아티스트) 화면용 상세. 그룹 본문 + 전 멤버 + 모집중 분철 수를 한 번에 받는다.
+ * 상태 코드를 구분해야 하는 호출 측을 위해 `ApiRequestError` 를 그대로 던진다 —
+ * `/artists/[groupId]` 는 404(없는 그룹)와 400(id 형태 불일치)을 모두 `notFound()` 로 접는다.
+ * 서버 선배포 전이거나 롤백되면 이 엔드포인트가 404 라 아티스트 페이지 전체가 404 가 된다(폴백 없음).
+ */
+export async function requestGroupDetail(
+  groupId: string,
+): Promise<ApiGroupDetail> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/groups/${encodeURIComponent(groupId)}`,
+    {
+      credentials: "omit",
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+
+  const body = await readJsonBody(response);
+  const record = isRecord(getNestedData(body)) ? getNestedData(body) : body;
+
+  if (!isRecord(record)) {
+    throw new ApiRequestError("그룹 정보를 불러오지 못했어요.", response.status);
+  }
+
+  const group = getApiGroupWithMembersFromRecord(record);
+
+  if (!group) {
+    throw new ApiRequestError("그룹 정보를 불러오지 못했어요.", response.status);
+  }
+
+  return {
+    ...group,
+    recruitingBuncheolCount:
+      getNumberValue(record, ["recruitingBuncheolCount"]) ?? 0,
+  };
 }
 
 export async function requestGroupMembers(groupId: string) {
@@ -5851,6 +6249,47 @@ export async function requestAdminPaymentConfirmation(
   }>(response);
 
   return getAdminBulkResult(body);
+}
+
+export type AdminImpersonationToken = {
+  targetUserId: string;
+  accessToken: string;
+  expiresInSeconds: number;
+};
+
+// 관리자가 문의 재현용으로 대상 유저의 짧은 수명 유저 토큰(ROLE_USER)을 발급받는다.
+// 반환 토큰은 유저 auth-store 에 넣으면 그 유저 세션이 재현된다. 사유(reason)는 서버 감사 로그에 남는다.
+export async function requestAdminImpersonationToken(
+  accessToken: string,
+  userId: string,
+  reason: string,
+): Promise<AdminImpersonationToken> {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/users/${userId}/impersonation-token`,
+    {
+      body: JSON.stringify({ reason }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+    "재현용 토큰 발급이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const body = await parseAdminResponse<{
+    targetUserId?: unknown;
+    accessToken?: unknown;
+    expiresInSeconds?: unknown;
+  }>(response);
+
+  if (typeof body.accessToken !== "string") {
+    throw new Error("재현용 토큰을 확인할 수 없어요.");
+  }
+
+  return {
+    accessToken: body.accessToken,
+    expiresInSeconds:
+      typeof body.expiresInSeconds === "number" ? body.expiresInSeconds : 0,
+    targetUserId: getOptionalIdString(body.targetUserId) ?? userId,
+  };
 }
 
 export async function requestAdminTrackingRegistration(

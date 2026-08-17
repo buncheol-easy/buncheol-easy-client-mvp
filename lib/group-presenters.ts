@@ -65,11 +65,19 @@ export function toMemberRailItem(
   };
 }
 
+/**
+ * 그룹·멤버 이름 비교용 정규화. 서버의 `SearchText.normalize` / `search_name` 생성 컬럼과 같은 규칙을
+ * 유지해야 한다 — 서버가 매칭해 내려준 그룹을 여기서 다르게 정규화하면 랭킹에서 탈락시켜 버린다.
+ * (`·` 누락으로 "NCT · DREAM" 이 사라지던 문제가 그 사례다.)
+ *
+ * 서버가 지우지 않는 `{}`, 전각 괄호 `（）` 까지 지우는 차이는 남겨 둔다. 실제 그룹명에 쓰이지 않는
+ * 문자라 더 지워도 매칭이 줄지 않고, 지우는 쪽이 사용자 오타에 관대하다.
+ */
 export function normalizeGroupSearchText(value: string) {
   return value
     .trim()
     .toLowerCase()
-    .replace(/[\s._\-()（）[\]{}]+/g, "");
+    .replace(/[\s._\-()（）[\]{}·]+/g, "");
 }
 
 function getSearchValues(group: SearchableGroup) {
@@ -90,12 +98,23 @@ export function rankGroupSearchResults<T extends SearchableGroup>(
     return groups.slice(0, limit);
   }
 
-  const exactMatch = groups.find((group) =>
-    getSearchValues(group).some((value) => value === normalizedQuery),
+  // 정확일치는 전부 돌려준다. 예전엔 첫 1건만 반환했는데, getSearchValues 에 별칭이 들어오면서
+  // 서로 다른 그룹이 같은 별칭을 가질 수 있게 됐다(서버 UNIQUE 가 (group_id, search_alias) 라
+  // 그룹 간 중복을 허용한다). 1건만 반환하면 나머지가 배열 순서에 따라 조용히 사라진다.
+  const nameExactMatches = groups.filter(
+    (group) => normalizeGroupSearchText(group.name) === normalizedQuery,
   );
+  // 이름 정확일치가 별칭 정확일치보다 항상 우선한다 — "IU" 를 친 사람이 찾는 건 별칭이 IU 인
+  // 다른 그룹이 아니라 이름이 IU 인 그룹이다.
+  const exactMatches =
+    nameExactMatches.length > 0
+      ? nameExactMatches
+      : groups.filter((group) =>
+          getSearchValues(group).some((value) => value === normalizedQuery),
+        );
 
-  if (exactMatch) {
-    return [exactMatch];
+  if (exactMatches.length > 0) {
+    return exactMatches.slice(0, limit);
   }
 
   return groups

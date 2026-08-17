@@ -11,6 +11,7 @@ import {
 } from "react";
 import dynamic from "next/dynamic";
 import { BackIcon, CloseIcon, SearchIcon } from "@/components/icons";
+import { getHistoryIndex } from "@/lib/history-index";
 import { lastAddedDeliveryAddressIdKey } from "@/lib/address-return-state";
 import {
   ApiRequestError,
@@ -78,12 +79,6 @@ function getDeliveryAddressDeleteErrorMessage(error: unknown) {
   return error instanceof Error
     ? error.message
     : "배송지를 삭제하지 못했어요.";
-}
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
 export function AddressManagementContent({
@@ -537,11 +532,10 @@ export function AddressManagementContent({
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 flex-1 text-right">
-            <p className="text-[10px] font-semibold uppercase leading-none tracking-[0.18em] text-black/35">
-              My Page
-            </p>
-            <h1 className="mt-1 text-[22px] font-semibold leading-none tracking-[-0.06em]">
+          {/* 하위 화면 제목은 뒤로가기 옆(좌측)에 둔다 — 우측 정렬이면 시선이 좌(뒤로가기)에서
+              우(제목)로 튀어 화면을 훑기 어렵다. */}
+          <div className="min-w-0 flex-1 text-left">
+            <h1 className="text-[22px] font-semibold leading-none tracking-[-0.06em]">
               배송지 관리
             </h1>
           </div>
@@ -609,9 +603,11 @@ export function AddressManagementContent({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1 pr-1">
+                      {/* 배지는 줄바꿈하지 않는다 — 좁은 폭에서 두 글자 별칭이
+                          "회 / 사" 처럼 쪼개졌다. 별칭이 길면 말줄임으로 처리한다. */}
                       <div className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                             isDefault
                               ? "bg-[#DDE7B8] text-black"
                               : "bg-white text-black/55"
@@ -620,7 +616,7 @@ export function AddressManagementContent({
                           {getConvenienceStoreLabel(address.storeType)}
                         </span>
                         {displayAlias ? (
-                          <span className="rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                          <span className="min-w-0 truncate whitespace-nowrap rounded-full bg-black/10 px-2.5 py-1 text-[11px] font-semibold text-black/60">
                             {displayAlias}
                           </span>
                         ) : null}

@@ -16,16 +16,12 @@ import {
 } from "@/lib/auth-api";
 import {
   authProfileSetupReturnHrefStorageKey,
-  clearAuthCookies,
-  clearAuthState,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
-import { clearDeliveryAddressState } from "@/lib/delivery-address-store";
 import { FEATURES } from "@/lib/feature-flags";
-import { clearHostedProducts } from "@/lib/hosted-products-store";
-import { clearSettlementAccountState } from "@/lib/settlement-account-store";
+import { clearUserSessionState } from "@/lib/user-session";
 
 type ProfileAccountContentProps = {
   onBack?: () => void;
@@ -101,11 +97,7 @@ function getProviderKind(provider: string | undefined) {
 }
 
 function clearSessionState() {
-  clearAuthCookies();
-  clearAuthState();
-  clearDeliveryAddressState();
-  clearHostedProducts();
-  clearSettlementAccountState();
+  clearUserSessionState();
 }
 
 function ProviderIconBadge({ provider }: { provider: string | undefined }) {
@@ -423,11 +415,8 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
           >
             <BackIcon />
           </button>
-          <div className="min-w-0 text-right">
-            <p className="text-[11px] font-semibold uppercase leading-none tracking-[0.2em] text-black/35">
-              Account
-            </p>
-            <h1 className="mt-1 text-[28px] font-semibold leading-none tracking-[-0.07em]">
+          <div className="min-w-0 flex-1 self-center text-left">
+            <h1 className="text-[24px] font-semibold leading-none tracking-[-0.06em]">
               회원 정보
             </h1>
           </div>
@@ -573,8 +562,13 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                     계정 정보가 삭제되고 다시 되돌릴 수 없어요.
                   </p>
                 </div>
+                {/*
+                  솔리드 빨강 + 빨간 글로우는 이 화면에서 가장 강한 시각 강조라,
+                  바로 위 "저장"(라임 CTA)보다 탈퇴가 더 눈에 띄었다.
+                  되돌릴 수 없는 행동은 낮은 강조로 두고, 경고는 확인 모달이 맡는다.
+                */}
                 <button
-                  className="h-9 shrink-0 rounded-full bg-[#E53935] px-3.5 text-[12px] font-semibold text-white shadow-[0_10px_24px_rgba(229,57,53,0.24)] transition-colors hover:bg-[#D32F2F] disabled:bg-[#F3B5B3] disabled:text-white/70"
+                  className="h-9 shrink-0 rounded-full px-3.5 text-[13px] font-semibold text-danger-base underline underline-offset-4 transition-colors hover:bg-danger-soft disabled:text-black/25 disabled:no-underline"
                   disabled={isDeleting}
                   onClick={() => {
                     setMessage("");

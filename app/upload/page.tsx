@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { UploadProductForm } from "@/components/UploadProductForm";
-import { blackChromeViewport } from "@/lib/system-chrome";
+import { UploadEntry } from "@/components/UploadEntry";
+import { whiteChromeViewport } from "@/lib/system-chrome";
 
-export const viewport = blackChromeViewport;
+export const viewport = whiteChromeViewport;
 
 export const metadata: Metadata = {
   title: "분철 개최",
@@ -25,7 +25,7 @@ export default async function UploadPage({ searchParams }: UploadPageProps) {
   const returnSource = getFirstSearchParam(from);
 
   return (
-    <UploadProductForm
+    <UploadEntry
       editProductId={getFirstSearchParam(edit)}
       returnSource={
         returnSource === "home" ||

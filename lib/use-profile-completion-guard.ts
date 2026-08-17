@@ -11,8 +11,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
-
-const profileCompleteCacheKey = "buncheol-profile-complete";
+import { profileCompleteCacheKey } from "@/lib/user-session";
 
 // 로그인 상태에서 프로필(추가정보) 미완료 유저를 /signup/profile 로 강제 이동시키는 공용 가드.
 // 완료 판정만 sessionStorage 에 캐시한다 — 완료는 되돌아가지 않는 단방향 전이라 안전하고,

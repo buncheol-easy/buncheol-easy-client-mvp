@@ -3,6 +3,9 @@ type ProductGridSkeletonProps = {
   count?: number;
   className?: string;
   variant?: "grid" | "wide";
+  // 멤버 줄 자리 표시 — 남은 멤버 칩을 그리는 목록은 "chips",
+  // availableMemberNames 없이 대상 멤버 태그 한 줄을 그리는 목록(찜 등)은 "text".
+  memberRowVariant?: "chips" | "text";
 };
 
 export function ProductGridSkeleton({
@@ -10,6 +13,7 @@ export function ProductGridSkeleton({
   count = 4,
   className = "",
   variant = "grid",
+  memberRowVariant = "chips",
 }: ProductGridSkeletonProps) {
   if (variant === "wide") {
     return (
@@ -29,12 +33,18 @@ export function ProductGridSkeleton({
               <div className="absolute bottom-3 left-3 h-7 w-12 rounded-full bg-white/45" />
             </div>
             <div className="px-3.5 py-3.5">
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                <div className="skeleton-surface h-6 w-16 rounded-full bg-black/8" />
-                <div className="skeleton-surface h-6 w-14 rounded-full bg-black/8" />
-                <div className="skeleton-surface h-6 w-14 rounded-full bg-black/8" />
-                <div className="skeleton-surface h-6 w-14 rounded-full bg-black/8" />
-              </div>
+              {memberRowVariant === "chips" ? (
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  <div className="skeleton-surface h-6 w-16 rounded-full bg-black/8" />
+                  <div className="skeleton-surface h-6 w-14 rounded-full bg-black/8" />
+                  <div className="skeleton-surface h-6 w-14 rounded-full bg-black/8" />
+                  <div className="skeleton-surface h-6 w-14 rounded-full bg-black/8" />
+                </div>
+              ) : (
+                <div className="mb-2 flex items-center">
+                  <div className="skeleton-surface h-5 w-3/5 rounded-full bg-black/8" />
+                </div>
+              )}
               <div className="skeleton-surface h-5 w-3/4 rounded-full bg-black/8" />
               <div className="skeleton-surface mt-2 h-4 w-1/2 rounded-full bg-black/8" />
             </div>
