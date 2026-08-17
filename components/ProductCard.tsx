@@ -61,6 +61,9 @@ export type ProductCardItem = {
   status?: string;
   // 오픈 이벤트 배송비 돌려받기 대상 분철(전 슬롯 0원) 배지. 서버 판정 + 플래그가 모두 켜졌을 때만 true 로 내려온다.
   isShippingFeePaybackEvent?: boolean;
+  // 배송비 0원 이벤트 대상(운영진 개최 + 배송비 전액 0원) 분철 배지. 서버 판정값이라 사용자 개최(C2C) 분철이
+  // 배송비를 0원으로 잡아도 false 로 내려온다. 필드가 없는 구 응답이면 배지를 띄우지 않는다.
+  isFreeShippingEvent?: boolean;
 };
 
 type ProductCardProps = {
@@ -305,6 +308,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     ? getAvailableMemberSummary(availableMemberNames)
     : "";
   const isNewProduct = isRecentlyUploaded(item.uploadedAt);
+  // 구매 유인 배지라 아직 참여할 수 있는 카드에만 띄운다(마감·취소 카드에선 소음).
+  // 환급 이벤트 배지도 배송비 이야기라, 한 카드에 둘 다 띄우면 어느 쪽이 무료인지 흐려진다.
+  const showFreeShippingBadge =
+    item.isFreeShippingEvent === true &&
+    !item.isShippingFeePaybackEvent &&
+    !shouldDimCard;
 
   useEffect(() => {
     setIsLiked(item.liked === true);
@@ -542,6 +551,11 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
                   배송비 돌려받는 무료 분철
                 </span>
               ) : null}
+              {showFreeShippingBadge ? (
+                <span className="inline-flex rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
+                  배송비 0원 이벤트
+                </span>
+              ) : null}
             </div>
             {/*
               개최자 분철에도 하트를 띄운다 — 상세와 같은 정책이다.
@@ -639,13 +653,23 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
         )}
-        {item.isShippingFeePaybackEvent ? (
-          <div className="absolute left-3 top-3 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
-            배송비 돌려받는 무료 분철
-          </div>
-        ) : isNewProduct ? (
-          <div className="absolute left-3 top-3 rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
-            신규
+        {item.isShippingFeePaybackEvent || showFreeShippingBadge || isNewProduct ? (
+          <div className="absolute left-3 top-3 flex flex-col items-start gap-1">
+            {item.isShippingFeePaybackEvent ? (
+              <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
+                배송비 돌려받는 무료 분철
+              </span>
+            ) : null}
+            {showFreeShippingBadge ? (
+              <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
+                배송비 0원 이벤트
+              </span>
+            ) : null}
+            {isNewProduct ? (
+              <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-white">
+                신규
+              </span>
+            ) : null}
           </div>
         ) : null}
         {shouldDimCard ? (
