@@ -45,6 +45,9 @@ type ArtistBrowseContentProps = {
 // 서버 렌더 초기 목록과 같은 크기로 맞춰, 멤버 선택 전후 목록 길이 기준이 어긋나지 않게 한다.
 const ARTIST_PAGE_SIZE = 30;
 
+// 홈 목록과 같은 값. 없으면 화면 진입·탭 복귀마다 목록을 다시 받는다(refetchOnWindowFocus 기본값).
+const ARTIST_LISTINGS_STALE_MS = 60 * 1000;
+
 // 5열 × 2행 - "전체" 칸 = 멤버 9명. 전체 그룹의 97%가 9명 이하라 대부분 접힘 없이 다 보인다.
 // 바꾸면 아래 `grid-cols-5` 도 같이 고칠 것 — Tailwind 가 리터럴을 요구해 상수를 못 끼운다.
 const MEMBER_GRID_COLUMNS = 5;
@@ -186,18 +189,21 @@ export function ArtistBrowseContent({
 
       return summaries.map(toProductCardItem).map(mergeCachedProductImage);
     },
+    staleTime: ARTIST_LISTINGS_STALE_MS,
   });
 
   const isMemberSelected = selectedMemberId !== null;
-  // 전체 탭의 재조회는 이미 그려 둔 목록을 대체할 뿐이라, 응답 전까지는 initialItems 를 그대로 둔다.
-  //
   // 취소 계열(미성사·개최자 취소)은 아티스트 페이지에서 감춘다. 이 화면은 색인 대상 유입
   // 랜딩이라(sitemap 도 같은 기준으로 취소분을 제외한다) 취소된 분철만 남으면 "이 그룹은
   // 분철이 없다"는 인상만 준다. 마감된 진행확정 분철은 그룹이 활성이라는 신호라 남긴다.
   const items: ProductCardItem[] = (
     listingsQuery.data ?? (isMemberSelected ? [] : initialItems)
   ).filter((item) => !isBuncheolCancelledStatus(item.status));
-  const isLoading = isMemberSelected && listingsQuery.isPending;
+  // 전체 탭에서도 보여줄 목록이 없으면(서버 렌더 조회 실패) 스켈레톤을 띄운다. 그냥 두면
+  // 재조회가 끝나기 전에 "분철이 아직 없어요" 가 떴다가 목록이 뒤늦게 나타난다.
+  const isLoading =
+    listingsQuery.isPending &&
+    (isMemberSelected || (authState.isLoggedIn && initialItems.length === 0));
   // 전체 탭의 재조회 실패는 알리지 않는다 — 보여줄 목록이 이미 있고, 빠진 건 하트뿐이다.
   const message =
     isMemberSelected && listingsQuery.isError

@@ -17,6 +17,12 @@ export function artistListingsQueryKey(
   return [...buncheolsQueryKey, "artist", groupId, memberId, loggedIn] as const;
 }
 
+// 목록 키의 로그인 여부는 마지막 조각이다. 이 판별을 키 정의와 떼어 놓으면, 키에 조각이
+// 하나 더 붙었을 때 타입 에러 없이 찜 동기화만 조용히 끊긴다.
+export function isLoggedInListingQueryKey(queryKey: readonly unknown[]) {
+  return queryKey.at(-1) === true;
+}
+
 export const bannersQueryKey = ["banners"] as const;
 
 // 아이돌 그룹 계열. 홈 레일과 /artists 가 같은 데이터를 보므로 캐시를 공유해야 한다 —
