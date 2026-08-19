@@ -856,25 +856,8 @@ export function UploadProductForm({
    * (포커스 대상 표시)가 같은 함수를 봐야 한다 — 한쪽만 바뀌면 "차단은 되는데 포커스는
    * 엉뚱한 칸"이 되고 타입은 그걸 못 잡는다.
    */
-  const memberPriceValues = targetMembers.map((member) =>
-    parsePriceInput(memberMinimumPrices[member.id] ?? ""),
-  );
-  // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라
-  // 하나라도 0원이면 전 슬롯이 0원이어야 한다. 혼합되면 이벤트 배지·환급 대상 판정이 어긋난다.
-  const hasMixedFreeAndPaidMembers =
-    memberPriceValues.some((value) => value === 0) &&
-    memberPriceValues.some((value) => value > 0);
-
   function isMemberPriceSlotInvalid(memberId: string) {
-    const rawInput = memberMinimumPrices[memberId] ?? "";
-
-    if (!isMemberMinimumPriceInput(rawInput)) {
-      return true;
-    }
-
-    // 혼합 구성에서는 각 칸이 개별적으로 유효해서 잘못된 칸이 하나도 표시되지 않는다.
-    // 0원 칸을 고쳐야 풀리는 규칙이므로 그쪽을 짚는다.
-    return hasMixedFreeAndPaidMembers && parsePriceInput(rawInput) === 0;
+    return !isMemberMinimumPriceInput(memberMinimumPrices[memberId] ?? "");
   }
 
   function isShippingFeeSlotInvalid(option: string) {
@@ -925,13 +908,6 @@ export function UploadProductForm({
       return {
         field: "memberPrices",
         message: "멤버 가격을 100원 단위로 입력해 주세요.",
-      };
-    }
-
-    if (hasMixedFreeAndPaidMembers) {
-      return {
-        field: "memberPrices",
-        message: "무료(0원) 멤버와 유료 멤버는 함께 구성할 수 없어요.",
       };
     }
 
