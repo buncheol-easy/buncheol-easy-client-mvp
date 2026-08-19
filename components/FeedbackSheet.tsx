@@ -169,7 +169,7 @@ export function FeedbackSheet({ onClose }: FeedbackSheetProps) {
           </div>
         ) : (
           <>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 sheet-scroll">
               <div className="mt-5 rounded-[0.9rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-3">
                 <p className="text-[12px] font-semibold text-black/40">
                   먼저 알려드려요

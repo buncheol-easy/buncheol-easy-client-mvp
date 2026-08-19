@@ -355,7 +355,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
               </p>
             </div>
           </div>
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1 rail-scroll">
             {favoriteGroups.map((group) => {
               const isPending = pendingGroupId === group.id;
 
@@ -385,7 +385,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
+      <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
         <div className="flex min-h-full flex-col">
         {visibleMessage ? (
           <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">

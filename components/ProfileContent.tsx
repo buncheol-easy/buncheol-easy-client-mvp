@@ -719,7 +719,7 @@ export function ProfileContent({
       </header>
 
       <main
-        className="min-h-0 flex-1 overflow-y-auto bg-[#f7f7f7] px-4 pb-6 pt-4"
+        className="app-page-scroll min-h-0 flex-1 overflow-y-auto bg-[#f7f7f7] px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
         <div className="flex min-h-full flex-col">
