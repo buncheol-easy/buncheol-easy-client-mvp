@@ -1195,6 +1195,18 @@ body.is-pwa-standalone {
   aspect-ratio: 4 / 3;
 }
 
+/* 캐러셀 좌우 버튼은 마우스 환경 전용이다. 터치에서는 스와이프가 자연스럽고,
+   화면 좌우 끝에 버튼이 깔리면 스와이프 시작 지점을 그대로 잡아먹는다. */
+.carousel-arrow {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .carousel-arrow {
+    display: inline-flex;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settlement-account-panel-enter,
   .settlement-account-panel-exit,

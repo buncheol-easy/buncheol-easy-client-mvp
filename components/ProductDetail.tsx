@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type MouseEvent,
   type PointerEvent,
 } from "react";
 import dynamic from "next/dynamic";
@@ -972,6 +973,85 @@ function mergeManagementOptionPurchaseStates(
   });
 }
 
+/*
+ * 캐러셀 조작 단서. 좌우 버튼은 마우스 환경(`carousel-arrow`)에서만 켜진다 —
+ * 터치에서는 스와이프가 자연스럽고, 버튼이 뜨면 스와이프 시작 지점을 가로챈다.
+ * 도트는 장수가 많아지면 읽히지 않으므로 그때만 n/N 배지로 돌아간다.
+ */
+const CAROUSEL_DOTS_MAX = 8;
+
+type ProductImageCarouselControlsProps = {
+  imageCount: number;
+  onStep: (delta: number) => void;
+  showIndicator?: boolean;
+  tone: "light" | "dark";
+  visibleIndex: number;
+};
+
+function ProductImageCarouselControls({
+  imageCount,
+  onStep,
+  showIndicator = true,
+  tone,
+  visibleIndex,
+}: ProductImageCarouselControlsProps) {
+  if (imageCount <= 1) {
+    return null;
+  }
+
+  const arrowClassName =
+    tone === "dark"
+      ? "bg-white/15 text-white hover:bg-white/25"
+      : "bg-black/55 text-white backdrop-blur hover:bg-black/70";
+
+  function handleStep(delta: number, event: MouseEvent<HTMLButtonElement>) {
+    // 히어로는 탭하면 확대 뷰어가, 뷰어는 탭하면 닫기가 걸려 있다.
+    event.stopPropagation();
+    onStep(delta);
+  }
+
+  return (
+    <>
+      <button
+        aria-label="이전 사진"
+        className={`carousel-arrow absolute left-3 top-1/2 h-9 w-9 z-10 -translate-y-1/2 items-center justify-center rounded-full transition disabled:opacity-30 ${arrowClassName}`}
+        disabled={visibleIndex === 0}
+        onClick={(event) => handleStep(-1, event)}
+        type="button"
+      >
+        <BackIcon className="h-5 w-5" />
+      </button>
+      <button
+        aria-label="다음 사진"
+        className={`carousel-arrow absolute right-3 top-1/2 h-9 w-9 z-10 -translate-y-1/2 items-center justify-center rounded-full transition disabled:opacity-30 ${arrowClassName}`}
+        disabled={visibleIndex === imageCount - 1}
+        onClick={(event) => handleStep(1, event)}
+        type="button"
+      >
+        <ForwardIcon className="h-5 w-5" />
+      </button>
+      {!showIndicator ? null : imageCount <= CAROUSEL_DOTS_MAX ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center gap-1.5">
+          {Array.from({ length: imageCount }, (_, dotIndex) => (
+            <span
+              className={`h-1.5 rounded-full transition-all duration-200 ${
+                dotIndex === visibleIndex
+                  ? "w-4 bg-white"
+                  : "w-1.5 bg-white/45"
+              }`}
+              key={dotIndex}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="pointer-events-none absolute bottom-4 right-4 z-10 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
+          {visibleIndex + 1}/{imageCount}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function ProductDetail({
   backHref,
   product,
@@ -1569,6 +1649,32 @@ export function ProductDetail({
   const productImageTrackOffset = `calc(-${
     visibleProductImageIndex * 100
   }% + ${productImageDragOffset}px)`;
+  const productImageCount = productImages.length;
+
+  // 확대 뷰어는 전체 화면이라 방향키가 다른 데로 갈 곳이 없다. 데스크탑에서
+  // 좌우 버튼을 찾아 누르는 것보다 방향키가 빠르다.
+  useEffect(() => {
+    if (!isImageViewerOpen || productImageCount <= 1) {
+      return;
+    }
+
+    function handleArrowKey(event: KeyboardEvent) {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+
+      const delta = event.key === "ArrowRight" ? 1 : -1;
+
+      setCurrentProductImageIndex((current) =>
+        Math.max(0, Math.min(productImageCount - 1, current + delta)),
+      );
+    }
+
+    window.addEventListener("keydown", handleArrowKey);
+
+    return () => window.removeEventListener("keydown", handleArrowKey);
+  }, [isImageViewerOpen, productImageCount]);
+
   const isPublicPreview = product.isPublicPreview === true;
   const isBidUnavailable = product.isBidUnavailable === true;
   const isDeadlinePassed = isDeadlineClosed(product.deadline, deadlineTick);
@@ -3178,6 +3284,12 @@ export function ProductDetail({
     setProductImageDragOffset(0);
   }
 
+  function stepProductImage(delta: number) {
+    setCurrentProductImageIndex((current) =>
+      Math.max(0, Math.min(productImages.length - 1, current + delta)),
+    );
+  }
+
   // 스와이프 후 발생하는 click 을 탭으로 오인하지 않도록 걸러낸다.
   function consumeProductImageTap() {
     if (wasProductImageDraggedRef.current) {
@@ -3681,11 +3793,12 @@ export function ProductDetail({
                   {shouldDimProductMedia ? (
                     <div className="pointer-events-none absolute inset-0 bg-black/35" />
                   ) : null}
-                  {productImages.length > 1 ? (
-                    <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
-                      {visibleProductImageIndex + 1}/{productImages.length}
-                    </div>
-                  ) : null}
+                  <ProductImageCarouselControls
+                    imageCount={productImages.length}
+                    onStep={stepProductImage}
+                    tone="light"
+                    visibleIndex={visibleProductImageIndex}
+                  />
                 </>
               ) : (
                 <>
@@ -4940,7 +5053,7 @@ export function ProductDetail({
               </button>
             </div>
             <div
-              className="min-h-0 flex-1 touch-none select-none overflow-hidden"
+              className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"
               onClick={() => {
                 if (consumeProductImageTap()) {
                   setIsImageViewerOpen(false);
@@ -4951,6 +5064,13 @@ export function ProductDetail({
               onPointerMove={moveProductImageSwipe}
               onPointerUp={finishProductImageSwipe}
             >
+              <ProductImageCarouselControls
+                imageCount={productImages.length}
+                onStep={stepProductImage}
+                showIndicator={false}
+                tone="dark"
+                visibleIndex={visibleProductImageIndex}
+              />
               <div
                 className={`flex h-full ${
                   isProductImageDragging
