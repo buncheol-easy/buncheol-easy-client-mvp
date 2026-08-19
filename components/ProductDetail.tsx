@@ -87,11 +87,8 @@ import {
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ProductCardItem } from "@/components/ProductCard";
-import {
-  buncheolsQueryKey,
-  homeListingsQueryKey,
-} from "@/lib/query-keys";
+import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
+import { buncheolsQueryKey } from "@/lib/query-keys";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
 import {
   FAVORITES_SKIP_ENTER_KEY,
@@ -3059,17 +3056,8 @@ export function ProductDetail({
         await removeBuncheolBookmark(accessToken, buncheolId);
       }
 
-      // 내 찜 변경을 홈 카드에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
-      // 찜은 로그인 상태에서만 가능하므로 로그인 목록 캐시만 갱신하면 된다.
-      queryClient.setQueryData<ProductCardItem[]>(
-        homeListingsQueryKey(true),
-        (current) =>
-          current?.map((item) =>
-            (item.productId ?? item.id) === buncheolId
-              ? { ...item, liked: nextLiked }
-              : item,
-          ),
-      );
+      // 내 찜 변경을 목록 카드(홈·아티스트)에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
+      updateListingCachesLiked(queryClient, buncheolId, nextLiked);
     } catch {
       setIsLiked(!nextLiked);
     } finally {

@@ -8,6 +8,7 @@ import {
 } from "@/lib/bank-account";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -208,6 +209,7 @@ export function ProfileContent({
   skipEnterAnimation = false,
 }: ProfileContentProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(() => {
     if (skipEnterAnimation || typeof window === "undefined") {
@@ -669,7 +671,7 @@ export function ProfileContent({
 
   function clearUserSessionState() {
     invalidateAddressSyncRequests();
-    clearUserSession();
+    clearUserSession(queryClient);
     setIsEditingSettlementAccount(false);
     setUserProfile(null);
     setSettlementAccountForm(getEmptySettlementAccountState());

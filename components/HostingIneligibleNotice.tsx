@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BackIcon } from "@/components/icons";
 import { requestLogout, type HostingEligibilityReason } from "@/lib/auth-api";
@@ -251,6 +252,7 @@ export function HostingIneligibleNotice({
   variant = "blocked",
 }: HostingIneligibleNoticeProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [isRelogging, setIsRelogging] = useState(false);
   const copy = getNoticeCopy(reason, variant);
   // 좁힌 타입이 콜백 안에서도 유지되도록 지역 상수로 뽑는다.
@@ -286,7 +288,7 @@ export function HostingIneligibleNotice({
     } finally {
       // 토큰만 지우면 정산 계좌·배송지 같은 계정 스코프 캐시가 남아, 다른 카카오 계정으로 갈아탔을 때
       // 이전 사용자 정보가 화면에 보인다 — 연령대 미동의 계정은 계정 전환이 잦은 경로다.
-      clearUserSessionState();
+      clearUserSessionState(queryClient);
       router.replace(createLoginHref({ cancelTo: "/", returnTo: "/upload" }));
     }
   }
