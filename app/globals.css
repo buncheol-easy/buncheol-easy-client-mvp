@@ -130,44 +130,65 @@ html {
     scrollbar-width: none;
   }
 
-  /* scrollbar-width 미지원 엔진(사파리 18.2 미만) 폴백. display: none 은 폭이 0이라
-     맥의 오버레이 스크롤바를 레거시(폭 점유)로 바꾸는 부작용이 없다. */
-  ::-webkit-scrollbar {
-    display: none;
-  }
-
   /*
-   * 예외 — 숨겨서 얻을 게 없는 두 곳.
+   * 예외 — 숨겨서 얻을 게 없는 두 곳. OS 기본값(auto)으로 되돌려 "항상 표시" 설정을
+   * 그대로 따르게 한다. thin 을 쓰면 오버레이 환경에서도 상시 폭을 점유해, 예외를 두려던
+   * 곳에 없던 변화를 만든다.
    * 어드민 콘솔은 폰 프레임(main.system-chrome-*) 밖이라 430px 셸 폭 손실이 애초에 없고,
    * 가로 테이블은 휠이 기본 입력이 아니라 썸 드래그가 사실상 유일한 조작 수단이다.
    * textarea 는 방금 입력한 내용이 위로 밀렸다는 걸 알릴 수단이 스크롤바뿐이고, 셸 안쪽
    * 요소라 스크롤바가 생겨도 셸 폭에는 영향이 없다.
+   *
+   * ⚠️ :has() 셀렉터는 반드시 별도 규칙으로 분리한다. 셀렉터 목록은 forgiving 하지 않아
+   *    :has() 미지원 엔진(파이어폭스 121 미만 등)에서는 같은 목록의 나머지 예외까지 통째로
+   *    버려진다 — 예외를 두기로 한 곳이 조용히 예외가 아니게 된다.
    */
-  html:has(.admin-console),
-  body:has(.admin-console),
   .admin-console,
   .admin-console *,
   textarea {
-    scrollbar-width: thin;
+    scrollbar-width: auto;
   }
 
-  html:has(.admin-console)::-webkit-scrollbar,
-  body:has(.admin-console)::-webkit-scrollbar,
-  .admin-console::-webkit-scrollbar,
-  .admin-console *::-webkit-scrollbar,
-  textarea::-webkit-scrollbar {
-    display: block;
-    height: 8px;
-    width: 8px;
+  html:has(.admin-console) {
+    scrollbar-width: auto;
   }
 
-  html:has(.admin-console)::-webkit-scrollbar-thumb,
-  body:has(.admin-console)::-webkit-scrollbar-thumb,
-  .admin-console::-webkit-scrollbar-thumb,
-  .admin-console *::-webkit-scrollbar-thumb,
-  textarea::-webkit-scrollbar-thumb {
-    background: rgba(17, 17, 17, 0.22);
-    border-radius: 999px;
+  /*
+   * scrollbar-width 미지원 엔진(사파리 18.2 미만) 폴백.
+   * @supports 로 가두는 게 핵심이다 — 크롬은 scrollbar-width 가 auto 일 때만
+   * ::-webkit-scrollbar 커스터마이즈를 따르므로, 조건 없이 두면 전역 display: none 이
+   * 위 예외까지 도로 숨겨 버린다. 지원 엔진에서는 표준 속성만으로 끝낸다.
+   */
+  @supports not (scrollbar-width: none) {
+    ::-webkit-scrollbar {
+      display: none;
+    }
+
+    .admin-console::-webkit-scrollbar,
+    .admin-console *::-webkit-scrollbar,
+    textarea::-webkit-scrollbar {
+      display: block;
+      height: 8px;
+      width: 8px;
+    }
+
+    html:has(.admin-console)::-webkit-scrollbar {
+      display: block;
+      height: 8px;
+      width: 8px;
+    }
+
+    .admin-console::-webkit-scrollbar-thumb,
+    .admin-console *::-webkit-scrollbar-thumb,
+    textarea::-webkit-scrollbar-thumb {
+      background: rgba(17, 17, 17, 0.22);
+      border-radius: 999px;
+    }
+
+    html:has(.admin-console)::-webkit-scrollbar-thumb {
+      background: rgba(17, 17, 17, 0.22);
+      border-radius: 999px;
+    }
   }
 }
 
