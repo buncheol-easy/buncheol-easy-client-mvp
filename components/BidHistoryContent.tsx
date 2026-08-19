@@ -3838,10 +3838,6 @@ export function BidHistoryContent({
                       확인할 수 있어요.
                     </p>
                   ) : null}
-                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
-                    동시에 열 수 있는 분철은 5개예요. 모집·입금 수집이 끝나면
-                    새로 개최할 수 있어요.
-                  </p>
                 </>
               ) : (
                 <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
