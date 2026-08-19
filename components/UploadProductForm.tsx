@@ -121,6 +121,16 @@ const emptyProductDescriptionPlaceholders = new Set([
 
 type ScheduleField = "closing";
 type SchedulePart = "year" | "month" | "day" | "hour";
+type SubmitFieldKey =
+  | "photos"
+  | "title"
+  | "purchaseSource"
+  | "members"
+  | "memberPrices"
+  | "minHeadcount"
+  | "shipping"
+  | "closingDate"
+  | "openChatUrl";
 
 function padNumber(value: number) {
   return String(value).padStart(2, "0");
@@ -688,6 +698,13 @@ export function UploadProductForm({
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
+  // 제출을 눌렀을 때 안내한 항목. 사용자가 그 항목을 채우면 submitBlock 이 다음 항목으로
+  // 넘어가므로, 인라인 에러는 highlightedSubmitField 와 submitBlock.field 가 같을 때만 뜬다.
+  const [highlightedSubmitField, setHighlightedSubmitField] =
+    useState<SubmitFieldKey | null>(null);
+  const submitFieldRefs = useRef<Partial<Record<SubmitFieldKey, HTMLElement>>>(
+    {},
+  );
 
   /*
    * 폼에 사용자가 손댔는지 판정한다.
@@ -834,31 +851,36 @@ export function UploadProductForm({
   // maxLength 로 막히지 않는 경로(기존 제목 불러오기)로 상한을 넘길 수 있어,
   // 카운터에서 초과 상태를 색으로 구분한다.
   const isTitleOverLimit = title.trim().length > maxTitleLength;
-  const submitBlockReason = (() => {
+  // 제출을 막는 첫 항목. 순서는 폼의 위에서 아래 순이고, 제출 버튼은 이 순서대로
+  // 한 항목씩 스크롤·포커스로 안내한다 — 버튼을 죽이면 "어디를" 채워야 하는지가 안 보인다.
+  const submitBlock = ((): { field: SubmitFieldKey; message: string } | null => {
     if (photos.length === 0) {
-      return "사진을 1장 이상 올려 주세요.";
+      return { field: "photos", message: "사진을 1장 이상 올려 주세요." };
     }
 
     if (!title.trim()) {
-      return "상품명을 입력해 주세요.";
+      return { field: "title", message: "상품명을 입력해 주세요." };
     }
 
     // input 의 maxLength 는 타이핑만 막고, 서버에서 불러온 기존 제목에는 적용되지 않는다.
     // 상한을 넘긴 제목을 수정 저장하면 서버 검증에서 400 이 나므로 제출 자체를 막는다.
     if (isTitleOverLimit) {
-      return `상품명은 ${maxTitleLength}자까지 입력할 수 있어요.`;
+      return {
+        field: "title",
+        message: `상품명은 ${maxTitleLength}자까지 입력할 수 있어요.`,
+      };
     }
 
     if (isApiEditMode) {
-      return "";
+      return null;
     }
 
     if (!purchaseSource.trim()) {
-      return "구매처를 입력해 주세요.";
+      return { field: "purchaseSource", message: "구매처를 입력해 주세요." };
     }
 
     if (targetMembers.length === 0) {
-      return "그룹과 멤버를 선택해 주세요.";
+      return { field: "members", message: "그룹과 멤버를 선택해 주세요." };
     }
 
     if (
@@ -867,7 +889,10 @@ export function UploadProductForm({
           !isMemberMinimumPriceInput(memberMinimumPrices[member.id] ?? ""),
       )
     ) {
-      return "멤버 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)";
+      return {
+        field: "memberPrices",
+        message: "멤버 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)",
+      };
     }
 
     // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라
@@ -880,15 +905,21 @@ export function UploadProductForm({
       memberPriceValues.some((value) => value === 0) &&
       memberPriceValues.some((value) => value > 0)
     ) {
-      return "무료(0원) 멤버와 유료 멤버는 함께 구성할 수 없어요.";
+      return {
+        field: "memberPrices",
+        message: "무료(0원) 멤버와 유료 멤버는 함께 구성할 수 없어요.",
+      };
     }
 
     if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
-      return `최소 진행 인원을 1-${targetMembers.length}명으로 입력해 주세요.`;
+      return {
+        field: "minHeadcount",
+        message: `최소 진행 인원을 1-${targetMembers.length}명으로 입력해 주세요.`,
+      };
     }
 
     if (selectedShipping.length === 0) {
-      return "배송 방법을 선택해 주세요.";
+      return { field: "shipping", message: "배송 방법을 선택해 주세요." };
     }
 
     if (
@@ -896,7 +927,16 @@ export function UploadProductForm({
         (option) => !isShippingFeeInput(shippingPrices[option] ?? ""),
       )
     ) {
-      return "배송비를 100원 단위로 입력해 주세요.";
+      return {
+        field: "shipping",
+        message: "배송비를 100원 단위로 입력해 주세요.",
+      };
+    }
+
+    // handleSubmit 의 API 경로가 이미 막던 항목이다. 여기로 올려야 "마감 기한을 다시
+    // 확인해 주세요"가 폼 맨 아래 문구가 아니라 해당 항목 옆에 붙는다.
+    if (Number.isNaN(new Date(closingDate).getTime())) {
+      return { field: "closingDate", message: "마감 기한을 선택해 주세요." };
     }
 
     // 선택 입력(생성 모드 전용) — 값이 있으면 카카오 오픈채팅 주소만 허용한다.
@@ -905,12 +945,63 @@ export function UploadProductForm({
       openChatUrl.trim() &&
       !getNormalizedOpenChatUrl(openChatUrl)
     ) {
-      return "https://로 시작하는 open.kakao.com 주소만 입력할 수 있어요.";
+      return {
+        field: "openChatUrl",
+        message: "https://로 시작하는 open.kakao.com 주소만 입력할 수 있어요.",
+      };
     }
 
-    return "";
+    return null;
   })();
-  const canSubmit = submitBlockReason === "";
+  function registerSubmitField(field: SubmitFieldKey) {
+    return (element: HTMLElement | null) => {
+      if (element) {
+        submitFieldRefs.current[field] = element;
+        return;
+      }
+
+      delete submitFieldRefs.current[field];
+    };
+  }
+
+  // 제출을 막는 첫 항목으로 데려간다. block: "center" 라 상단 헤더·하단 버튼에 가리지 않는다.
+  function revealSubmitBlock(field: SubmitFieldKey) {
+    setHighlightedSubmitField(field);
+
+    const anchor = submitFieldRefs.current[field];
+
+    if (!anchor) {
+      return;
+    }
+
+    anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // 멤버 가격·배송비처럼 같은 종류의 입력이 여러 개인 항목은 그중 값이 잘못된 칸을 집는다.
+    const focusTarget =
+      anchor.querySelector<HTMLElement>("[data-submit-invalid='true']") ??
+      anchor.querySelector<HTMLElement>(
+        "input:not([disabled]):not([type='file']), textarea:not([disabled]), button:not([disabled])",
+      );
+
+    // 스크롤은 위에서 이미 걸었다 — 포커스가 그걸 덮어써서 위치가 튀지 않게 한다.
+    focusTarget?.focus({ preventScroll: true });
+  }
+
+  function renderSubmitFieldError(field: SubmitFieldKey) {
+    if (highlightedSubmitField !== field || submitBlock?.field !== field) {
+      return null;
+    }
+
+    return (
+      <p
+        aria-live="polite"
+        className="mt-2 text-[13px] font-semibold leading-5 text-[#c03131]"
+        role="status"
+      >
+        {submitBlock.message}
+      </p>
+    );
+  }
   useEffect(() => {
     return () => {
       if (photoLimitToastTimeoutRef.current) {
@@ -1711,9 +1802,17 @@ export function UploadProductForm({
   }
 
   async function handleSubmit() {
-    if (!canSubmit || !selectedGroup || !coverPhoto) {
+    // 버튼이 살아 있으므로 제출 경로에서 다시 막는다 — 버튼 활성화가 곧 제출 허용이 아니다.
+    if (submitBlock) {
+      revealSubmitBlock(submitBlock.field);
       return;
     }
+
+    if (!selectedGroup || !coverPhoto) {
+      return;
+    }
+
+    setHighlightedSubmitField(null);
 
     const isLocalDraftEdit = Boolean(
       editingProduct?.id.startsWith("uploaded-"),
@@ -2150,7 +2249,10 @@ export function UploadProductForm({
                   </div>
                 ) : (
                   <>
-                    <section className="px-4 pt-4">
+                    <section
+                      className="px-4 pt-4"
+                      ref={registerSubmitField("photos")}
+                    >
                       {!coverPhoto ? (
                         <>
                           <p className="text-[14px] font-semibold tracking-[-0.045em]">
@@ -2177,6 +2279,7 @@ export function UploadProductForm({
                             대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과
                             구성품이 잘 보이는 사진이 좋아요.
                           </p>
+                          {renderSubmitFieldError("photos")}
                           {renderPhotoLimitToast("mt-3")}
                         </>
                       ) : (
@@ -2282,7 +2385,10 @@ export function UploadProductForm({
                     </section>
 
                     <section className="px-5 pt-6">
-                      <label className="block">
+                      <label
+                        className="block"
+                        ref={registerSubmitField("title")}
+                      >
                         <span className="text-[13px] font-semibold text-black/45">
                           제목
                         </span>
@@ -2302,6 +2408,7 @@ export function UploadProductForm({
                         >
                           {title.length}/{maxTitleLength}자
                         </span>
+                        {renderSubmitFieldError("title")}
                       </label>
 
                       <div className="mt-7">
@@ -2428,20 +2535,11 @@ export function UploadProductForm({
                       ) : null}
 
                       <button
-                        className="mt-6 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.05em] text-white disabled:bg-black/20 disabled:text-white"
-                        disabled={!canSubmit}
+                        className="mt-6 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.05em] text-white"
                         type="submit"
                       >
                         수정 완료
                       </button>
-                      {/* 수정 모드에도 제출 차단 사유를 노출한다. 제목 길이 가드는
-                          서버에서 불러온 기존 제목을 겨냥하므로, 사유가 없으면
-                          개최자는 버튼이 왜 죽었는지 알 수 없다. */}
-                      {!canSubmit && submitBlockReason ? (
-                        <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/45">
-                          {submitBlockReason}
-                        </p>
-                      ) : null}
                     </section>
                   </>
                 )}
@@ -2505,7 +2603,7 @@ export function UploadProductForm({
               onSubmit={(event) => event.preventDefault()}
               ref={formScrollRef}
             >
-          <section className="px-4 pt-4">
+          <section className="px-4 pt-4" ref={registerSubmitField("photos")}>
             {/* 사진이 없을 때 4:3 히어로를 띄우면 첫 화면을 전부 먹어 폼이 "사진 올리는 화면"으로만
                 읽힌다. 0장은 카메라 타일 한 칸으로 줄이고, 대표 사진이 생긴 뒤에만 히어로를 연다.
                 coverPhoto 는 사진이 1장 이상이면 항상 있으므로(위 fallback) 이 조건이 곧 0장 여부다. */}
@@ -2535,6 +2633,7 @@ export function UploadProductForm({
                   대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과 구성품이 잘
                   보이는 사진이 좋아요.
                 </p>
+                {renderSubmitFieldError("photos")}
                 {renderPhotoLimitToast("mt-3")}
               </>
             ) : (
@@ -2642,7 +2741,7 @@ export function UploadProductForm({
           </section>
 
           <section className="px-5 pt-6">
-            <label className="block">
+            <label className="block" ref={registerSubmitField("title")}>
               <span className="text-[13px] font-semibold text-black/45">
                 상품 제목
               </span>
@@ -2660,9 +2759,13 @@ export function UploadProductForm({
               >
                 {title.length}/{maxTitleLength}자
               </span>
+              {renderSubmitFieldError("title")}
             </label>
 
-            <label className="mt-5 block">
+            <label
+              className="mt-5 block"
+              ref={registerSubmitField("purchaseSource")}
+            >
               <span className="text-[13px] font-semibold text-black/45">
                 구매처
               </span>
@@ -2675,12 +2778,17 @@ export function UploadProductForm({
                 placeholder="위버스샵, 스타쉽 스퀘어, 양도자 구매처 등"
                 value={purchaseSource}
               />
+              {renderSubmitFieldError("purchaseSource")}
             </label>
 
-            <div className="mt-7 border-t border-black/10 pt-6">
+            <div
+              className="mt-7 border-t border-black/10 pt-6"
+              ref={registerSubmitField("members")}
+            >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 아이돌 선택
               </h2>
+              {renderSubmitFieldError("members")}
               {selectedGroup ? (
                 <div
                   className="idol-selection-enter mt-3 rounded-[0.9rem] border border-black/10 px-4 py-4"
@@ -2715,7 +2823,10 @@ export function UploadProductForm({
                   </div>
 
                   {allTargetMembers.length > 0 ? (
-                    <div className="mt-4">
+                    <div
+                      className="mt-4"
+                      ref={registerSubmitField("memberPrices")}
+                    >
                       <div className="space-y-2">
                         {allTargetMembers.map((member, index) => {
                           const isExcluded = excludedMemberIds.includes(
@@ -2760,6 +2871,14 @@ export function UploadProductForm({
                                   <input
                                     aria-label={`${member.name} 가격`}
                                     className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
+                                    data-submit-invalid={
+                                      !isExcluded &&
+                                      !isMemberMinimumPriceInput(
+                                        memberMinimumPrices[member.id] ?? "",
+                                      )
+                                        ? "true"
+                                        : undefined
+                                    }
                                     disabled={isApiEditMode || isExcluded}
                                     inputMode="numeric"
                                     onBlur={() =>
@@ -2854,6 +2973,7 @@ export function UploadProductForm({
                           );
                         })}
                       </div>
+                      {renderSubmitFieldError("memberPrices")}
                     </div>
                   ) : (
                     <p className="mt-4 rounded-[0.8rem] bg-[#f7f7f7] px-4 py-5 text-[14px] font-medium text-black/45">
@@ -2861,7 +2981,10 @@ export function UploadProductForm({
                     </p>
                   )}
                 {targetMembers.length > 0 ? (
-                  <label className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
+                  <label
+                    className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4"
+                    ref={registerSubmitField("minHeadcount")}
+                  >
                     <span className="text-[13px] font-semibold text-black/45">
                       최소 진행 인원
                     </span>
@@ -2900,6 +3023,7 @@ export function UploadProductForm({
                         <PlusIcon />
                       </button>
                     </div>
+                    {renderSubmitFieldError("minHeadcount")}
                   </label>
                 ) : null}
                 </div>
@@ -2961,10 +3085,14 @@ export function UploadProductForm({
               )}
             </div>
 
-            <div className="mt-7 border-t border-black/10 pt-6">
+            <div
+              className="mt-7 border-t border-black/10 pt-6"
+              ref={registerSubmitField("shipping")}
+            >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 배송 방법
               </h2>
+              {renderSubmitFieldError("shipping")}
               <div className="mt-3 space-y-2">
                 {shippingOptions.map((option) => {
                   const isSelected = selectedShipping.includes(option);
@@ -3004,6 +3132,12 @@ export function UploadProductForm({
                             <input
                               aria-label={`${option} 배송비`}
                               className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/55"
+                              data-submit-invalid={
+                                isSelected &&
+                                !isShippingFeeInput(shippingPrices[option] ?? "")
+                                  ? "true"
+                                  : undefined
+                              }
                               disabled={isApiEditMode}
                               inputMode="numeric"
                               onChange={(event) =>
@@ -3028,10 +3162,14 @@ export function UploadProductForm({
               </div>
             </div>
 
-            <div className="mt-7 border-t border-black/10 pt-6">
+            <div
+              className="mt-7 border-t border-black/10 pt-6"
+              ref={registerSubmitField("closingDate")}
+            >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 일정
               </h2>
+              {renderSubmitFieldError("closingDate")}
               <div className="mt-3 grid gap-3">
                 {(
                   [["closing", "마감 기한", closingDate]] as const
@@ -3186,7 +3324,10 @@ export function UploadProductForm({
               {/* 수정 요청(BuncheolModifyRequest)은 이 필드를 받지 않는다 — 입력이 조용히
                   버려지지 않도록 생성 모드에서만 노출한다 (docs/46 §4.7-E4 서버 후속). */}
               {isEditMode ? null : (
-                <label className="mt-6 block">
+                <label
+                  className="mt-6 block"
+                  ref={registerSubmitField("openChatUrl")}
+                >
                   <span className="text-[13px] font-semibold text-black/45">
                     오픈채팅 링크 (선택)
                   </span>
@@ -3205,23 +3346,20 @@ export function UploadProductForm({
                     참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
                     안내 화면에 노출돼요.
                   </span>
+                  {renderSubmitFieldError("openChatUrl")}
                 </label>
               )}
             </div>
 
             <button
-              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
-              disabled={!canSubmit}
+              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
               onClick={handleSubmit}
               type="button"
             >
               {isEditMode ? "수정 완료" : "등록하기"}
             </button>
-            {!canSubmit && submitBlockReason ? (
-              <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/45">
-                {submitBlockReason}
-              </p>
-            ) : null}
+            {/* 버튼을 죽이지 않으므로 상시 사유 문구도 뺀다. 누르면 그 항목으로 데려가
+                인라인 에러를 띄우는 쪽이 "어디를" 채워야 하는지를 직접 알려준다. */}
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
                 {submitError}
