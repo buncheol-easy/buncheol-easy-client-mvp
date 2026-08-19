@@ -2349,8 +2349,6 @@ function getBuncheolSummaryFromRecord(
       "liked",
     ]) ?? undefined,
     createdAt: getOptionalStringValue(record, ["createdAt", "uploadedAt"]),
-    // 검색 목록·내 개최 목록 모두 서버가 내려주는 값이다 (MyHostedBuncheolResponse.flowType).
-    // 없으면 null 로 두고 getFlowType 이 LEGACY 로 떨어뜨린다 — 상태로 추정하지 않는다.
     flowType: getOptionalStringValue(record, ["flowType"]) ?? null,
     memberSlotCount: getOptionalNumberValue(record, [
       "memberSlotCount",

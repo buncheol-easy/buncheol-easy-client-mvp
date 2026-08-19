@@ -145,8 +145,6 @@ const HOME_BANNERS: HomeBanner[] = [
   },
 ];
 
-// 회원 개최(C2C) 기준 안내. 분철이지 직접 개최(LEGACY)는 신청 없이 참여 즉시 30분 입금이라
-// 순서가 다르지만, 지금 열리는 분철 대부분이 회원 개최라 그쪽을 본문으로 두고 예외는 아래 각주로 뺀다.
 const homeUsageGuide = [
   {
     icon: SearchIcon,

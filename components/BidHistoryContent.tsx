@@ -331,9 +331,8 @@ const c2cProgressStepLabels = [
 // 라벨은 진행바(bidProgressStepLabels / c2cProgressStepLabels)와 같은 문자열을 재사용한다 —
 // 두 곳이 어긋나면 안내 시트와 진행바가 서로 다른 단계 이름을 보여주게 된다.
 //
-// 회원 개최(C2C)와 분철이지 직접 개최(LEGACY)는 단계 수·입금 시점·입금 확인 주체가 모두 달라
-// 안내도 두 벌이다. 한 벌로 합치면 "참여 즉시 30분 입금"(LEGACY)과 "확정 뒤 24시간 입금"(C2C)
-// 중 한쪽이 반드시 오안내가 된다.
+// 안내가 두 벌인 이유: 입금 시점이 달라(LEGACY 즉시 30분 / C2C 확정 뒤 24시간) 한 벌로 합치면
+// 한쪽이 반드시 오안내가 된다.
 type StatusGuideItem = {
   icon: typeof BanknoteIcon;
   label: string;
@@ -350,8 +349,7 @@ const c2cParticipationStatusGuide = [
   {
     icon: BanknoteIcon,
     label: c2cProgressStepLabels[1],
-    // 재확인 요청(개최자 "입금 못 찾음")은 이 단계에서만 일어난다 — 반려된 참여는 카드에서도
-    // 여기(paymentRejectedAt 문구·진행바 index 1)에 머문다. 다음 단계에 적으면 시트와 카드가 어긋난다.
+    // 재확인 요청은 이 단계에서만 일어난다 — 반려된 참여도 카드·진행바에선 여기 머문다.
     description:
       "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요. 개최자가 입금 내역을 못 찾으면 재확인을 요청하고, 이때 기한이 24시간 연장돼요.",
   },
@@ -412,10 +410,7 @@ const legacyParticipationStatusGuide = [
   },
 ] as const satisfies readonly StatusGuideItem[];
 
-// 개최 탭 안내. 서버가 회원 개최를 C2C 로 강제하므로(HoldBuncheolRequest — 일반 유저의 LEGACY
-// 요청은 USR-031 거부) 이 순서는 C2C 기준 한 벌만 둔다. 다만 운영진(can_host) 계정은 LEGACY 도
-// 열 수 있어 이 탭에 LEGACY 가 섞일 수 있다 — 개최자 귀책이 되는 문장(직접 환불)은
-// hasC2CHostedProduct 로 가린다.
+// 개최 탭 안내. 회원 개최는 서버가 C2C 로 강제하므로 한 벌만 둔다.
 const hostingStatusGuide = [
   {
     icon: ClipboardListIcon,
@@ -1438,8 +1433,6 @@ function getHostedProductFromBuncheol(
     courier: "배송 방법 확인 필요",
     deadline: formatApiDateTime(buncheol.deadline),
     description: "",
-    // 개최 안내에서 C2C 전용 문장을 가리는 데 쓴다. 필드 없는 구 응답은 getFlowType 이
-    // LEGACY 로 떨어뜨려, 확신이 없으면 그 문장을 감추는 쪽으로 폴백한다.
     flowType: buncheol.flowType ?? null,
     imageUrl,
     imageUrls: imageUrl ? [imageUrl] : [],
@@ -1628,18 +1621,14 @@ export function BidHistoryContent({
   const actionablePaybackRecords = paymentBidRecords.filter(
     (bid) => isPaybackRequestable(bid) && !isHiddenCancelledBidRecord(bid),
   );
-  // 안내 시트는 화면에 실제로 보이는 참여의 흐름만 보여준다 — 회원 개최 분철만 참여한 사람에게
-  // "30분 안에 입금"(분철이지 직접 개최)이 함께 뜨면 그게 자기 기한인 줄 알고 문의가 온다.
-  // 감춘 자발 취소(항상 C2C)까지 세면 카드가 한 장도 없는 흐름의 안내가 뜨므로, 위 배너와 같은
-  // 가시 목록을 쓴다. 목록이 비면(빈 목록·로그인 전) 지금 열리는 분철의 기본값인 C2C 기준.
+  // 감춘 자발 취소(항상 C2C)까지 세면 카드가 한 장도 없는 흐름의 안내가 뜬다.
   const visibleBidRecords = paymentBidRecords.filter(
     (bid) => !isHiddenCancelledBidRecord(bid),
   );
   const isStatusGuideC2C =
     visibleBidRecords.length === 0 || visibleBidRecords.some(isC2CBidRecord);
   const isHostingHelpSheet = mode === "hosted";
-  // 개최 안내의 C2C 전용 문장(대금 직접 수령·직접 환불) 노출 조건. 운영진의 LEGACY 개최만 있는
-  // 계정에서는 이 문장이 없는 의무를 만든다 — 확신이 있을 때만 보여주는 쪽으로 폴백한다.
+  // 운영진의 LEGACY 개최만 있는 계정에 "직접 환불" 을 보여주면 없는 의무를 만든다.
   const hasC2CHostedProduct = (apiHostedProducts ?? []).some(
     (product) => getFlowType(product.flowType) === "C2C",
   );
