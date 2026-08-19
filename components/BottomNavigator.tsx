@@ -129,7 +129,12 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
       <div className="bottom-navigator__grid grid grid-cols-5 items-center">
         {navItems.map((item) => {
           const isActive = item.key === activeLabel;
-          const className = `bottom-navigator__item flex min-w-0 flex-col items-center justify-center gap-0.5 px-1 ${
+          /*
+           * 간격 8px 은 알약 기준이다. 나머지 탭은 24px 글리프가 36px 박스 안에 있어
+           * 위아래 6px 이 이미 비지만, 알약은 박스를 꽉 채워 이 간격이 곧 보이는 여백이다.
+           * 줄이면 개최만 라벨에 붙어 보인다.
+           */
+          const className = `bottom-navigator__item flex min-w-0 flex-col items-center justify-center gap-2 px-1 ${
             isActive ? "text-white" : "text-white/55"
           }`;
           /*
