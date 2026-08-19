@@ -4107,7 +4107,7 @@ export function BidHistoryContent({
             </div>
 
             <div
-              className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
+              className="sheet-scroll mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
             >
               {eligiblePaymentAddresses.map((address) => {
                 const isDefault =

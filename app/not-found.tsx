@@ -18,7 +18,7 @@ export default function NotFound() {
     <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-white text-[#111111]">
       <NotFoundChromeColorSync />
       {/* 가용 높이가 콘텐츠보다 낮은 환경(가로 모드 등)에서도 버튼이 잘리지 않게 스크롤을 허용한다 */}
-      <div className="mx-auto flex h-full w-full max-w-[430px] flex-col overflow-y-auto bg-white">
+      <div className="app-page-scroll mx-auto flex h-full w-full max-w-[430px] flex-col overflow-y-auto bg-white">
         <div className="m-auto flex flex-col items-center px-6 py-10 text-center">
           {/* 로고 에셋(1200×675)은 여백 포함 OG 캔버스라 고정 박스 + object-contain 으로 맞춘다 */}
           <div className="relative h-32 w-80 max-w-full">
