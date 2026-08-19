@@ -51,6 +51,13 @@ const navItems: NavItem[] = [
   { href: "/profile", key: "Profile", label: "마이페이지" },
 ];
 
+/*
+ * 탭 아이콘은 28px 로 통일한다. 공용 기본값을 쓰면 HeartIcon 만 20px 이라 찜만 작아 보이고,
+ * 탭바가 70px 로 높아진 뒤에는 24px 도 바 대비 작게 읽힌다.
+ * 알약(개최) 안 글리프는 예외 — 채워진 면 안에서는 24px 이 맞다.
+ */
+const navIconClassName = "h-7 w-7";
+
 type BottomNavigatorProps = {
   activeLabel?: string | null;
 };
@@ -153,15 +160,17 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
                 className={`motion-icon-button inline-flex h-9 w-9 items-center justify-center rounded-full ${emphasisClassName}`}
               >
                 {item.key === "Home" ? (
-                  <HomeIcon />
+                  <HomeIcon className={navIconClassName} />
                 ) : item.key === "Upload" ? (
+                  /* 알약 안에서는 키우지 않는다 — 채워진 36px 면을 글리프가 다 먹으면
+                     알약이 아니라 뭉개진 사각형으로 보인다. */
                   <PlusIcon />
                 ) : item.key === "Bids" ? (
-                  <BidIcon />
+                  <BidIcon className={navIconClassName} />
                 ) : item.key === "Favorites" ? (
-                  <HeartIcon />
+                  <HeartIcon className={navIconClassName} />
                 ) : (
-                  <ProfileIcon />
+                  <ProfileIcon className={navIconClassName} />
                 )}
               </span>
               {/* 아이콘만 있는 탭바는 "＋(개최)"·"영수증(참여 내역)"이 무엇인지 알 수 없어
