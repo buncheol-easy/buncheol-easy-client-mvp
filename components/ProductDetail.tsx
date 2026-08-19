@@ -78,6 +78,7 @@ import {
 import { writeSettlementAccountState } from "@/lib/settlement-account-store";
 import {
   BackIcon,
+  CarouselArrowIcon,
   CloseIcon,
   EditIcon,
   ForwardIcon,
@@ -984,7 +985,6 @@ type ProductImageCarouselControlsProps = {
   imageCount: number;
   onStep: (delta: number) => void;
   showIndicator?: boolean;
-  tone: "light" | "dark";
   visibleIndex: number;
 };
 
@@ -992,17 +992,19 @@ function ProductImageCarouselControls({
   imageCount,
   onStep,
   showIndicator = true,
-  tone,
   visibleIndex,
 }: ProductImageCarouselControlsProps) {
   if (imageCount <= 1) {
     return null;
   }
 
+  /*
+   * 흰 원 + 진한 셰브론. 사진 위에 얹히는 버튼이라 사진 색을 타지 않는 쪽을 쓴다 —
+   * 반투명 검정은 어두운 사진에서 통째로 묻히고 밝은 사진에서는 얼룩처럼 보인다.
+   * 끝에서는 흐리게 두지 않고 아예 감춘다(비활성 버튼이 사진 위 얼룩이 된다).
+   */
   const arrowClassName =
-    tone === "dark"
-      ? "bg-white/15 text-white hover:bg-white/25"
-      : "bg-black/55 text-white backdrop-blur hover:bg-black/70";
+    "carousel-arrow absolute top-1/2 z-10 h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white text-black shadow-[0_2px_10px_rgba(0,0,0,0.3)] ring-1 ring-black/5 transition hover:bg-white";
 
   function handleStep(delta: number, event: MouseEvent<HTMLButtonElement>) {
     // 히어로는 탭하면 확대 뷰어가, 뷰어는 탭하면 닫기가 걸려 있다.
@@ -1012,32 +1014,33 @@ function ProductImageCarouselControls({
 
   return (
     <>
-      <button
-        aria-label="이전 사진"
-        className={`carousel-arrow absolute left-3 top-1/2 h-9 w-9 z-10 -translate-y-1/2 items-center justify-center rounded-full transition disabled:opacity-30 ${arrowClassName}`}
-        disabled={visibleIndex === 0}
-        onClick={(event) => handleStep(-1, event)}
-        type="button"
-      >
-        <BackIcon className="h-5 w-5" />
-      </button>
-      <button
-        aria-label="다음 사진"
-        className={`carousel-arrow absolute right-3 top-1/2 h-9 w-9 z-10 -translate-y-1/2 items-center justify-center rounded-full transition disabled:opacity-30 ${arrowClassName}`}
-        disabled={visibleIndex === imageCount - 1}
-        onClick={(event) => handleStep(1, event)}
-        type="button"
-      >
-        <ForwardIcon className="h-5 w-5" />
-      </button>
+      {visibleIndex > 0 ? (
+        <button
+          aria-label="이전 사진"
+          className={`${arrowClassName} left-3`}
+          onClick={(event) => handleStep(-1, event)}
+          type="button"
+        >
+          <CarouselArrowIcon direction="prev" />
+        </button>
+      ) : null}
+      {visibleIndex < imageCount - 1 ? (
+        <button
+          aria-label="다음 사진"
+          className={`${arrowClassName} right-3`}
+          onClick={(event) => handleStep(1, event)}
+          type="button"
+        >
+          <CarouselArrowIcon direction="next" />
+        </button>
+      ) : null}
       {!showIndicator ? null : imageCount <= CAROUSEL_DOTS_MAX ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center gap-1.5">
+        // 도트는 밝은 사진 위에서 흰색만으로는 안 보인다. 그림자로 윤곽을 준다.
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center gap-1.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
           {Array.from({ length: imageCount }, (_, dotIndex) => (
             <span
               className={`h-1.5 rounded-full transition-all duration-200 ${
-                dotIndex === visibleIndex
-                  ? "w-4 bg-white"
-                  : "w-1.5 bg-white/45"
+                dotIndex === visibleIndex ? "w-4 bg-white" : "w-1.5 bg-white/55"
               }`}
               key={dotIndex}
             />
@@ -3796,7 +3799,6 @@ export function ProductDetail({
                   <ProductImageCarouselControls
                     imageCount={productImages.length}
                     onStep={stepProductImage}
-                    tone="light"
                     visibleIndex={visibleProductImageIndex}
                   />
                 </>
@@ -5068,7 +5070,6 @@ export function ProductDetail({
                 imageCount={productImages.length}
                 onStep={stepProductImage}
                 showIndicator={false}
-                tone="dark"
                 visibleIndex={visibleProductImageIndex}
               />
               <div

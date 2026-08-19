@@ -61,6 +61,19 @@ export const CameraIcon = createIcon(Camera, "h-6 w-6");
 export const MinusIcon = createIcon(Minus, "h-6 w-6");
 export const ProfileIcon = createIcon(UserRound, "h-6 w-6");
 export const ChevronDownIcon = createIcon(ChevronDown, "h-3.5 w-3.5");
+
+/* 캐러셀 좌우 버튼 전용. 공용 스트로크(1.75)는 32px 원 안에서 획이 너무 얇아
+   아이콘이 아니라 "<" 글자처럼 보인다. 여기서만 굵게 쓴다. */
+export function CarouselArrowIcon({
+  className = "h-4 w-4",
+  direction,
+}: IconProps & { direction: "prev" | "next" }) {
+  const Icon = direction === "prev" ? ChevronLeft : ChevronRight;
+
+  return (
+    <Icon aria-hidden="true" className={className} strokeWidth={2.75} />
+  );
+}
 export const BanknoteIcon = createIcon(Banknote, "h-3.5 w-3.5");
 export const ClipboardListIcon = createIcon(ClipboardList, "h-3.5 w-3.5");
 export const TruckIcon = createIcon(Truck, "h-3.5 w-3.5");
