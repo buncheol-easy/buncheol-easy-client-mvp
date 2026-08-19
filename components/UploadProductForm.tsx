@@ -698,13 +698,13 @@ export function UploadProductForm({
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
-  // 제출을 눌렀을 때 안내한 항목. 사용자가 그 항목을 채우면 submitBlock 이 다음 항목으로
-  // 넘어가므로, 인라인 에러는 highlightedSubmitField 와 submitBlock.field 가 같을 때만 뜬다.
+  // 제출을 눌렀을 때 안내한 항목.
   const [highlightedSubmitField, setHighlightedSubmitField] =
     useState<SubmitFieldKey | null>(null);
   const submitFieldRefs = useRef<Partial<Record<SubmitFieldKey, HTMLElement>>>(
     {},
   );
+  const isSubmittingRef = useRef(false);
 
   /*
    * 폼에 사용자가 손댔는지 판정한다.
@@ -851,8 +851,41 @@ export function UploadProductForm({
   // maxLength 로 막히지 않는 경로(기존 제목 불러오기)로 상한을 넘길 수 있어,
   // 카운터에서 초과 상태를 색으로 구분한다.
   const isTitleOverLimit = title.trim().length > maxTitleLength;
-  // 제출을 막는 첫 항목. 순서는 폼의 위에서 아래 순이고, 제출 버튼은 이 순서대로
-  // 한 항목씩 스크롤·포커스로 안내한다 — 버튼을 죽이면 "어디를" 채워야 하는지가 안 보인다.
+  /*
+   * 어느 칸이 잘못됐는지 판정하는 술어. submitBlock(제출 차단)과 data-submit-invalid
+   * (포커스 대상 표시)가 같은 함수를 봐야 한다 — 한쪽만 바뀌면 "차단은 되는데 포커스는
+   * 엉뚱한 칸"이 되고 타입은 그걸 못 잡는다.
+   */
+  const memberPriceValues = targetMembers.map((member) =>
+    parsePriceInput(memberMinimumPrices[member.id] ?? ""),
+  );
+  // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라
+  // 하나라도 0원이면 전 슬롯이 0원이어야 한다. 혼합되면 이벤트 배지·환급 대상 판정이 어긋난다.
+  const hasMixedFreeAndPaidMembers =
+    memberPriceValues.some((value) => value === 0) &&
+    memberPriceValues.some((value) => value > 0);
+
+  function isMemberPriceSlotInvalid(memberId: string) {
+    const rawInput = memberMinimumPrices[memberId] ?? "";
+
+    if (!isMemberMinimumPriceInput(rawInput)) {
+      return true;
+    }
+
+    // 혼합 구성에서는 각 칸이 개별적으로 유효해서 잘못된 칸이 하나도 표시되지 않는다.
+    // 0원 칸을 고쳐야 풀리는 규칙이므로 그쪽을 짚는다.
+    return hasMixedFreeAndPaidMembers && parsePriceInput(rawInput) === 0;
+  }
+
+  function isShippingFeeSlotInvalid(option: string) {
+    return (
+      selectedShipping.includes(option) &&
+      !isShippingFeeInput(shippingPrices[option] ?? "")
+    );
+  }
+
+  // 제출을 막는 첫 항목. 순서는 폼의 위에서 아래 순이다 —
+  // 버튼을 죽이면 "어디를" 채워야 하는지가 안 보이므로 이 순서대로 한 항목씩 안내한다.
   const submitBlock = ((): { field: SubmitFieldKey; message: string } | null => {
     if (photos.length === 0) {
       return { field: "photos", message: "사진을 1장 이상 올려 주세요." };
@@ -895,16 +928,7 @@ export function UploadProductForm({
       };
     }
 
-    // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라
-    // 하나라도 0원이면 전 슬롯이 0원이어야 한다. 혼합되면 이벤트 배지·환급 대상 판정이 어긋난다.
-    const memberPriceValues = targetMembers.map((member) =>
-      parsePriceInput(memberMinimumPrices[member.id] ?? ""),
-    );
-
-    if (
-      memberPriceValues.some((value) => value === 0) &&
-      memberPriceValues.some((value) => value > 0)
-    ) {
+    if (hasMixedFreeAndPaidMembers) {
       return {
         field: "memberPrices",
         message: "무료(0원) 멤버와 유료 멤버는 함께 구성할 수 없어요.",
@@ -922,19 +946,15 @@ export function UploadProductForm({
       return { field: "shipping", message: "배송 방법을 선택해 주세요." };
     }
 
-    if (
-      selectedShipping.some(
-        (option) => !isShippingFeeInput(shippingPrices[option] ?? ""),
-      )
-    ) {
+    if (selectedShipping.some(isShippingFeeSlotInvalid)) {
       return {
         field: "shipping",
         message: "배송비를 100원 단위로 입력해 주세요.",
       };
     }
 
-    // handleSubmit 의 API 경로가 이미 막던 항목이다. 여기로 올려야 "마감 기한을 다시
-    // 확인해 주세요"가 폼 맨 아래 문구가 아니라 해당 항목 옆에 붙는다.
+    // handleSubmit 안에 있던 검증을 여기로 옮겼다. 그래야 "마감 기한" 안내가
+    // 폼 맨 아래 문구가 아니라 해당 항목 옆에 붙는다.
     if (Number.isNaN(new Date(closingDate).getTime())) {
       return { field: "closingDate", message: "마감 기한을 선택해 주세요." };
     }
@@ -953,6 +973,18 @@ export function UploadProductForm({
 
     return null;
   })();
+  /*
+   * 안내한 항목을 사용자가 채우면 표시를 즉시 내린다. 붙잡고 있으면, 그 항목을 다시
+   * 비웠을 때 버튼을 누르지도 않았는데 에러가 되살아난다 (사진 추가 → 삭제 등).
+   */
+  const submitBlockField = submitBlock?.field ?? null;
+
+  useEffect(() => {
+    if (highlightedSubmitField && submitBlockField !== highlightedSubmitField) {
+      setHighlightedSubmitField(null);
+    }
+  }, [highlightedSubmitField, submitBlockField]);
+
   function registerSubmitField(field: SubmitFieldKey) {
     return (element: HTMLElement | null) => {
       if (element) {
@@ -964,7 +996,6 @@ export function UploadProductForm({
     };
   }
 
-  // 제출을 막는 첫 항목으로 데려간다. block: "center" 라 상단 헤더·하단 버튼에 가리지 않는다.
   function revealSubmitBlock(field: SubmitFieldKey) {
     setHighlightedSubmitField(field);
 
@@ -974,29 +1005,61 @@ export function UploadProductForm({
       return;
     }
 
-    anchor.scrollIntoView({ behavior: "smooth", block: "center" });
-
-    // 멤버 가격·배송비처럼 같은 종류의 입력이 여러 개인 항목은 그중 값이 잘못된 칸을 집는다.
+    /*
+     * 멤버 가격·배송비처럼 같은 종류의 입력이 여러 개인 항목은 그중 값이 잘못된 칸을 집는다.
+     * 파일 input 은 제외하지 않는다 — 사진 0장 화면에는 그것뿐이라 빼면 포커스가 갈 곳이 없다
+     * (포커스만으로 파일 선택창이 열리지는 않고, 감싼 label 의 focus-within 링이 살아난다).
+     * data-submit-focus="skip" 은 "변경"처럼 누르면 입력이 날아가는 버튼을 빼기 위한 표시다.
+     */
     const focusTarget =
-      anchor.querySelector<HTMLElement>("[data-submit-invalid='true']") ??
       anchor.querySelector<HTMLElement>(
-        "input:not([disabled]):not([type='file']), textarea:not([disabled]), button:not([disabled])",
+        "[data-submit-invalid='true']:not([disabled])",
+      ) ??
+      anchor.querySelector<HTMLElement>(
+        "input:not([disabled]), textarea:not([disabled]), button:not([disabled]):not([data-submit-focus='skip'])",
       );
 
-    // 스크롤은 위에서 이미 걸었다 — 포커스가 그걸 덮어써서 위치가 튀지 않게 한다.
+    /*
+     * 앵커가 아니라 포커스 대상을 기준으로 스크롤한다. 멤버가 많으면 앵커(전 멤버 목록)가
+     * 스크롤포트보다 커서, 앵커를 중앙에 맞추면 정작 문제의 칸이 화면 밖에 남는다.
+     * preventScroll 은 브라우저의 "포커스 요소 보이게" 보정까지 막으므로 여기서 직접 맞춘다.
+     */
+    (focusTarget ?? anchor).scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
     focusTarget?.focus({ preventScroll: true });
   }
 
+  function getSubmitFieldErrorId(field: SubmitFieldKey) {
+    return `submit-error-${field}`;
+  }
+
+  function isSubmitFieldErrorShown(field: SubmitFieldKey) {
+    return highlightedSubmitField === field && submitBlockField === field;
+  }
+
+  // 인라인 에러를 띄운 항목의 입력에 붙인다 — 스크린리더가 포커스 시 사유를 읽어준다.
+  function getSubmitFieldErrorProps(field: SubmitFieldKey) {
+    const isShown = isSubmitFieldErrorShown(field);
+
+    return {
+      "aria-describedby": isShown ? getSubmitFieldErrorId(field) : undefined,
+      "aria-invalid": isShown,
+    };
+  }
+
   function renderSubmitFieldError(field: SubmitFieldKey) {
-    if (highlightedSubmitField !== field || submitBlock?.field !== field) {
+    if (!isSubmitFieldErrorShown(field) || !submitBlock) {
       return null;
     }
 
+    // role="alert" 단독 — 이 레포의 폼 제출 에러 관례이고, 삽입 시점에 낭독된다.
     return (
       <p
-        aria-live="polite"
         className="mt-2 text-[13px] font-semibold leading-5 text-[#c03131]"
-        role="status"
+        id={getSubmitFieldErrorId(field)}
+        role="alert"
       >
         {submitBlock.message}
       </p>
@@ -1804,10 +1867,30 @@ export function UploadProductForm({
   async function handleSubmit() {
     // 버튼이 살아 있으므로 제출 경로에서 다시 막는다 — 버튼 활성화가 곧 제출 허용이 아니다.
     if (submitBlock) {
+      // 이전 서버 에러가 남아 있으면 인라인 안내와 하단 문구가 서로 다른 말을 한다.
+      setSubmitError("");
       revealSubmitBlock(submitBlock.field);
       return;
     }
 
+    /*
+     * 버튼이 항상 눌리게 되면서 연타로 createBuncheol 이 두 번 나가는 경로가 넓어졌다.
+     * state 가 아니라 ref 로 막는다 — 같은 틱에 두 번 눌리면 두 호출 모두 갱신 전 state 를 본다.
+     */
+    if (isSubmittingRef.current) {
+      return;
+    }
+
+    isSubmittingRef.current = true;
+
+    try {
+      await submitForm();
+    } finally {
+      isSubmittingRef.current = false;
+    }
+  }
+
+  async function submitForm() {
     if (!selectedGroup || !coverPhoto) {
       return;
     }
@@ -1971,13 +2054,6 @@ export function UploadProductForm({
     }
 
     if (canUseBuncheolApi && accessToken) {
-      const deadlineDate = new Date(closingDate);
-
-      if (Number.isNaN(deadlineDate.getTime())) {
-        setSubmitError("마감 기한을 다시 확인해 주세요.");
-        return;
-      }
-
       const keepImageIds = isApiEditMode
         ? orderedPhotos
             .map((photo) => photo.existingImageId)
@@ -2066,7 +2142,8 @@ export function UploadProductForm({
                 shippingPrices,
                 "CU",
               ),
-              deadline: deadlineDate.toISOString(),
+              // 이 경로의 closingDate 유효성은 submitBlock 이 이미 보장한다.
+              deadline: new Date(closingDate).toISOString(),
               description: product.description || undefined,
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
@@ -2385,31 +2462,35 @@ export function UploadProductForm({
                     </section>
 
                     <section className="px-5 pt-6">
-                      <label
-                        className="block"
-                        ref={registerSubmitField("title")}
-                      >
-                        <span className="text-[13px] font-semibold text-black/45">
-                          제목
-                        </span>
-                        <input
-                          className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
-                          maxLength={maxTitleLength}
-                          onChange={(event) =>
-                            setTitle(event.currentTarget.value)
-                          }
-                          placeholder="분철 제목"
-                          value={title}
-                        />
-                        <span
-                          className={`mt-1.5 block text-right text-[12px] font-semibold ${
-                            isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
-                          }`}
-                        >
-                          {title.length}/{maxTitleLength}자
-                        </span>
+                      {/* 에러 <p> 는 label 밖에 둔다 — 안에 넣으면 마크업이 무효가 되고
+                          (label 은 phrasing content 만 받는다) 문구가 input 의 접근명에 합쳐진다. */}
+                      <div ref={registerSubmitField("title")}>
+                        <label className="block">
+                          <span className="text-[13px] font-semibold text-black/45">
+                            제목
+                          </span>
+                          <input
+                            {...getSubmitFieldErrorProps("title")}
+                            className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                            maxLength={maxTitleLength}
+                            onChange={(event) =>
+                              setTitle(event.currentTarget.value)
+                            }
+                            placeholder="분철 제목"
+                            value={title}
+                          />
+                          <span
+                            className={`mt-1.5 block text-right text-[12px] font-semibold ${
+                              isTitleOverLimit
+                                ? "text-[#c03131]"
+                                : "text-black/35"
+                            }`}
+                          >
+                            {title.length}/{maxTitleLength}자
+                          </span>
+                        </label>
                         {renderSubmitFieldError("title")}
-                      </label>
+                      </div>
 
                       <div className="mt-7">
                         <p className="text-[20px] font-semibold tracking-[-0.06em]">
@@ -2741,45 +2822,50 @@ export function UploadProductForm({
           </section>
 
           <section className="px-5 pt-6">
-            <label className="block" ref={registerSubmitField("title")}>
-              <span className="text-[13px] font-semibold text-black/45">
-                상품 제목
-              </span>
-              <input
-                className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
-                maxLength={maxTitleLength}
-                onChange={(event) => setTitle(event.currentTarget.value)}
-                placeholder="예: LOVE DIVE 원영 미공포 분철"
-                value={title}
-              />
-              <span
-                className={`mt-1.5 block text-right text-[12px] font-semibold ${
-                  isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
-                }`}
-              >
-                {title.length}/{maxTitleLength}자
-              </span>
+            {/* 에러 <p> 는 label 밖에 둔다 — 안에 넣으면 마크업이 무효가 되고
+                (label 은 phrasing content 만 받는다) 문구가 input 의 접근명에 합쳐진다. */}
+            <div ref={registerSubmitField("title")}>
+              <label className="block">
+                <span className="text-[13px] font-semibold text-black/45">
+                  상품 제목
+                </span>
+                <input
+                  {...getSubmitFieldErrorProps("title")}
+                  className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                  maxLength={maxTitleLength}
+                  onChange={(event) => setTitle(event.currentTarget.value)}
+                  placeholder="예: LOVE DIVE 원영 미공포 분철"
+                  value={title}
+                />
+                <span
+                  className={`mt-1.5 block text-right text-[12px] font-semibold ${
+                    isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
+                  }`}
+                >
+                  {title.length}/{maxTitleLength}자
+                </span>
+              </label>
               {renderSubmitFieldError("title")}
-            </label>
+            </div>
 
-            <label
-              className="mt-5 block"
-              ref={registerSubmitField("purchaseSource")}
-            >
-              <span className="text-[13px] font-semibold text-black/45">
-                구매처
-              </span>
-              <input
-                className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/55"
-                disabled={isApiEditMode}
-                onChange={(event) =>
-                  setPurchaseSource(event.currentTarget.value)
-                }
-                placeholder="위버스샵, 스타쉽 스퀘어, 양도자 구매처 등"
-                value={purchaseSource}
-              />
+            <div className="mt-5" ref={registerSubmitField("purchaseSource")}>
+              <label className="block">
+                <span className="text-[13px] font-semibold text-black/45">
+                  구매처
+                </span>
+                <input
+                  {...getSubmitFieldErrorProps("purchaseSource")}
+                  className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/55"
+                  disabled={isApiEditMode}
+                  onChange={(event) =>
+                    setPurchaseSource(event.currentTarget.value)
+                  }
+                  placeholder="위버스샵, 스타쉽 스퀘어, 양도자 구매처 등"
+                  value={purchaseSource}
+                />
+              </label>
               {renderSubmitFieldError("purchaseSource")}
-            </label>
+            </div>
 
             <div
               className="mt-7 border-t border-black/10 pt-6"
@@ -2805,6 +2891,8 @@ export function UploadProductForm({
                     </span>
                     <button
                       className="shrink-0 rounded-full bg-[#f7f7f7] px-4 py-2 text-[13px] font-semibold text-black/60 ring-1 ring-black/10"
+                      // 미입력 안내가 이 버튼에 포커스하면 Enter 한 번에 그룹 선택이 날아간다.
+                      data-submit-focus="skip"
                       disabled={isApiEditMode}
                       onClick={clearSelectedGroup}
                       type="button"
@@ -2827,7 +2915,14 @@ export function UploadProductForm({
                       className="mt-4"
                       ref={registerSubmitField("memberPrices")}
                     >
-                      <div className="space-y-2">
+                      {/* 목록 아래가 아니라 위에 둔다 — 멤버가 많으면 목록이 스크롤포트보다
+                          길어서, 아래에 두면 문제의 칸으로 스크롤했을 때 문구가 화면 밖이다. */}
+                      {renderSubmitFieldError("memberPrices")}
+                      <div
+                        className={`space-y-2 ${
+                          isSubmitFieldErrorShown("memberPrices") ? "mt-2" : ""
+                        }`}
+                      >
                         {allTargetMembers.map((member, index) => {
                           const isExcluded = excludedMemberIds.includes(
                             member.id,
@@ -2869,13 +2964,15 @@ export function UploadProductForm({
                                 </p>
                                 <label className="flex h-9 w-24 shrink-0 items-center rounded-[0.65rem] bg-white px-2 ring-1 ring-black/10 focus-within:ring-black">
                                   <input
+                                    aria-invalid={
+                                      !isExcluded &&
+                                      isMemberPriceSlotInvalid(member.id)
+                                    }
                                     aria-label={`${member.name} 가격`}
                                     className="min-w-0 flex-1 bg-transparent text-right text-[13px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/40"
                                     data-submit-invalid={
                                       !isExcluded &&
-                                      !isMemberMinimumPriceInput(
-                                        memberMinimumPrices[member.id] ?? "",
-                                      )
+                                      isMemberPriceSlotInvalid(member.id)
                                         ? "true"
                                         : undefined
                                     }
@@ -2973,7 +3070,6 @@ export function UploadProductForm({
                           );
                         })}
                       </div>
-                      {renderSubmitFieldError("memberPrices")}
                     </div>
                   ) : (
                     <p className="mt-4 rounded-[0.8rem] bg-[#f7f7f7] px-4 py-5 text-[14px] font-medium text-black/45">
@@ -2981,13 +3077,11 @@ export function UploadProductForm({
                     </p>
                   )}
                 {targetMembers.length > 0 ? (
-                  <label
-                    className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4"
-                    ref={registerSubmitField("minHeadcount")}
-                  >
-                    <span className="text-[13px] font-semibold text-black/45">
-                      최소 진행 인원
-                    </span>
+                  <div ref={registerSubmitField("minHeadcount")}>
+                    <label className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
+                      <span className="text-[13px] font-semibold text-black/45">
+                        최소 진행 인원
+                      </span>
                     <div className="mt-4 grid grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] p-2">
                       <button
                         aria-label="최소 진행 인원 줄이기"
@@ -3022,9 +3116,10 @@ export function UploadProductForm({
                       >
                         <PlusIcon />
                       </button>
-                    </div>
+                      </div>
+                    </label>
                     {renderSubmitFieldError("minHeadcount")}
-                  </label>
+                  </div>
                 ) : null}
                 </div>
               ) : (
@@ -3130,11 +3225,11 @@ export function UploadProductForm({
                           </span>
                           <div className="mt-2 flex h-13 items-center rounded-[0.85rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
                             <input
+                              aria-invalid={isShippingFeeSlotInvalid(option)}
                               aria-label={`${option} 배송비`}
                               className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/55"
                               data-submit-invalid={
-                                isSelected &&
-                                !isShippingFeeInput(shippingPrices[option] ?? "")
+                                isShippingFeeSlotInvalid(option)
                                   ? "true"
                                   : undefined
                               }
@@ -3324,30 +3419,30 @@ export function UploadProductForm({
               {/* 수정 요청(BuncheolModifyRequest)은 이 필드를 받지 않는다 — 입력이 조용히
                   버려지지 않도록 생성 모드에서만 노출한다 (docs/46 §4.7-E4 서버 후속). */}
               {isEditMode ? null : (
-                <label
-                  className="mt-6 block"
-                  ref={registerSubmitField("openChatUrl")}
-                >
-                  <span className="text-[13px] font-semibold text-black/45">
-                    오픈채팅 링크 (선택)
-                  </span>
-                  <input
-                    className="mt-2 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
-                    inputMode="url"
-                    maxLength={200}
-                    onChange={(event) =>
-                      setOpenChatUrl(event.currentTarget.value)
-                    }
-                    placeholder="https://open.kakao.com/o/..."
-                    type="url"
-                    value={openChatUrl}
-                  />
-                  <span className="mt-1.5 block text-[12px] font-medium leading-5 text-black/35">
-                    참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
-                    안내 화면에 노출돼요.
-                  </span>
+                <div className="mt-6" ref={registerSubmitField("openChatUrl")}>
+                  <label className="block">
+                    <span className="text-[13px] font-semibold text-black/45">
+                      오픈채팅 링크 (선택)
+                    </span>
+                    <input
+                      {...getSubmitFieldErrorProps("openChatUrl")}
+                      className="mt-2 h-12 w-full rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                      inputMode="url"
+                      maxLength={200}
+                      onChange={(event) =>
+                        setOpenChatUrl(event.currentTarget.value)
+                      }
+                      placeholder="https://open.kakao.com/o/..."
+                      type="url"
+                      value={openChatUrl}
+                    />
+                    <span className="mt-1.5 block text-[12px] font-medium leading-5 text-black/35">
+                      참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
+                      안내 화면에 노출돼요.
+                    </span>
+                  </label>
                   {renderSubmitFieldError("openChatUrl")}
-                </label>
+                </div>
               )}
             </div>
 
@@ -3358,8 +3453,6 @@ export function UploadProductForm({
             >
               {isEditMode ? "수정 완료" : "등록하기"}
             </button>
-            {/* 버튼을 죽이지 않으므로 상시 사유 문구도 뺀다. 누르면 그 항목으로 데려가
-                인라인 에러를 띄우는 쪽이 "어디를" 채워야 하는지를 직접 알려준다. */}
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
                 {submitError}
