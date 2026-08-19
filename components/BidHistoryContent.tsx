@@ -334,6 +334,12 @@ const c2cProgressStepLabels = [
 // 회원 개최(C2C)와 분철이지 직접 개최(LEGACY)는 단계 수·입금 시점·입금 확인 주체가 모두 달라
 // 안내도 두 벌이다. 한 벌로 합치면 "참여 즉시 30분 입금"(LEGACY)과 "확정 뒤 24시간 입금"(C2C)
 // 중 한쪽이 반드시 오안내가 된다.
+type StatusGuideItem = {
+  icon: typeof BanknoteIcon;
+  label: string;
+  description: string;
+};
+
 const c2cParticipationStatusGuide = [
   {
     icon: ClipboardListIcon,
@@ -344,20 +350,22 @@ const c2cParticipationStatusGuide = [
   {
     icon: BanknoteIcon,
     label: c2cProgressStepLabels[1],
+    // 재확인 요청(개최자 "입금 못 찾음")은 이 단계에서만 일어난다 — 반려된 참여는 카드에서도
+    // 여기(paymentRejectedAt 문구·진행바 index 1)에 머문다. 다음 단계에 적으면 시트와 카드가 어긋난다.
     description:
-      "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요.",
+      "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요. 개최자가 입금 내역을 못 찾으면 재확인을 요청하고, 이때 기한이 24시간 연장돼요.",
   },
   {
     icon: CheckIcon,
     label: c2cProgressStepLabels[2],
     description:
-      "개최자가 입금을 확인한 상태예요. 개최자가 입금 내역을 못 찾으면 재확인을 요청할 수 있고, 이때 기한이 24시간 연장돼요.",
+      "개최자가 입금을 확인한 상태예요. 이제 진행 확정을 기다리면 돼요.",
   },
   {
     icon: UsersRoundIcon,
     label: c2cProgressStepLabels[3],
     description:
-      "참여자 입금이 모두 확인돼 분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
+      "입금이 확인된 참여자로 분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
   },
   {
     icon: TruckIcon,
@@ -370,7 +378,7 @@ const c2cParticipationStatusGuide = [
     label: c2cProgressStepLabels[5],
     description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
   },
-] as const;
+] as const satisfies readonly StatusGuideItem[];
 
 const legacyParticipationStatusGuide = [
   {
@@ -389,7 +397,7 @@ const legacyParticipationStatusGuide = [
     icon: UsersRoundIcon,
     label: bidProgressStepLabels[2],
     description:
-      "최소 인원이 모여 분철 진행이 확정된 상태예요. 굿즈를 준비해 배송을 시작해요.",
+      "최소 인원이 모여 분철 진행이 확정된 상태예요. 굿즈 준비 후 배송이 시작돼요.",
   },
   {
     icon: TruckIcon,
@@ -402,9 +410,12 @@ const legacyParticipationStatusGuide = [
     label: bidProgressStepLabels[4],
     description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
   },
-] as const;
+] as const satisfies readonly StatusGuideItem[];
 
-// 개최 탭 안내. 참여자 쪽과 달리 LEGACY 분기가 없다 — 분철이지 직접 개최는 이 탭에 뜨지 않는다.
+// 개최 탭 안내. 서버가 회원 개최를 C2C 로 강제하므로(HoldBuncheolRequest — 일반 유저의 LEGACY
+// 요청은 USR-031 거부) 이 순서는 C2C 기준 한 벌만 둔다. 다만 운영진(can_host) 계정은 LEGACY 도
+// 열 수 있어 이 탭에 LEGACY 가 섞일 수 있다 — 개최자 귀책이 되는 문장(직접 환불)은
+// hasC2CHostedProduct 로 가린다.
 const hostingStatusGuide = [
   {
     icon: ClipboardListIcon,
@@ -441,7 +452,7 @@ const hostingStatusGuide = [
     label: "배송 완료",
     description: "참여자가 편의점에서 받고 수령을 확인하면 분철이 끝나요.",
   },
-] as const;
+] as const satisfies readonly StatusGuideItem[];
 
 const bidHistoryModes: BidHistoryMode[] = ["joined", "hosted"];
 const bidHistoryFilters: BidHistoryFilter[] = ["all", "payment", "confirmed"];
@@ -1427,6 +1438,9 @@ function getHostedProductFromBuncheol(
     courier: "배송 방법 확인 필요",
     deadline: formatApiDateTime(buncheol.deadline),
     description: "",
+    // 개최 안내에서 C2C 전용 문장을 가리는 데 쓴다. 필드 없는 구 응답은 getFlowType 이
+    // LEGACY 로 떨어뜨려, 확신이 없으면 그 문장을 감추는 쪽으로 폴백한다.
+    flowType: buncheol.flowType ?? null,
     imageUrl,
     imageUrls: imageUrl ? [imageUrl] : [],
     isApiProduct: true,
@@ -1614,20 +1628,22 @@ export function BidHistoryContent({
   const actionablePaybackRecords = paymentBidRecords.filter(
     (bid) => isPaybackRequestable(bid) && !isHiddenCancelledBidRecord(bid),
   );
-  // 안내 시트는 내 목록에 실제로 있는 흐름만 보여준다 — 회원 개최 분철만 참여한 사람에게
+  // 안내 시트는 화면에 실제로 보이는 참여의 흐름만 보여준다 — 회원 개최 분철만 참여한 사람에게
   // "30분 안에 입금"(분철이지 직접 개최)이 함께 뜨면 그게 자기 기한인 줄 알고 문의가 온다.
-  // 참여가 없을 땐(빈 목록·로그인 전) 지금 열리는 분철의 기본값인 회원 개최 기준으로 보여준다.
-  const hasLegacyBidRecord = paymentBidRecords.some(
-    (bid) => !isC2CBidRecord(bid),
+  // 감춘 자발 취소(항상 C2C)까지 세면 카드가 한 장도 없는 흐름의 안내가 뜨므로, 위 배너와 같은
+  // 가시 목록을 쓴다. 목록이 비면(빈 목록·로그인 전) 지금 열리는 분철의 기본값인 C2C 기준.
+  const visibleBidRecords = paymentBidRecords.filter(
+    (bid) => !isHiddenCancelledBidRecord(bid),
   );
-  const hasC2CBidRecord = paymentBidRecords.some(isC2CBidRecord);
-  const isStatusGuideC2C = hasC2CBidRecord || !hasLegacyBidRecord;
+  const isStatusGuideC2C =
+    visibleBidRecords.length === 0 || visibleBidRecords.some(isC2CBidRecord);
   const isHostingHelpSheet = mode === "hosted";
-  const statusHelpSheetGuide: readonly {
-    icon: typeof BanknoteIcon;
-    label: string;
-    description: string;
-  }[] = isHostingHelpSheet
+  // 개최 안내의 C2C 전용 문장(대금 직접 수령·직접 환불) 노출 조건. 운영진의 LEGACY 개최만 있는
+  // 계정에서는 이 문장이 없는 의무를 만든다 — 확신이 있을 때만 보여주는 쪽으로 폴백한다.
+  const hasC2CHostedProduct = (apiHostedProducts ?? []).some(
+    (product) => getFlowType(product.flowType) === "C2C",
+  );
+  const statusHelpSheetGuide: readonly StatusGuideItem[] = isHostingHelpSheet
     ? hostingStatusGuide
     : isStatusGuideC2C
       ? c2cParticipationStatusGuide
@@ -3825,15 +3841,17 @@ export function BidHistoryContent({
                     각 단계의 버튼은 분철 카드의 &lsquo;관리하기&rsquo; 안에
                     있어요. 참여자에게는 단계가 바뀔 때마다 알림톡이 나가요.
                   </p>
+                  {hasC2CHostedProduct ? (
+                    <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                      대금은 분철이지를 거치지 않고 내 계좌로 바로 들어와요.
+                      입금한 참여자가 취소되면 환불은 개최자가 직접 해야 하고,
+                      &lsquo;관리하기&rsquo;에서 환불이 필요한 참여와 계좌를
+                      확인할 수 있어요.
+                    </p>
+                  ) : null}
                   <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
-                    대금은 분철이지를 거치지 않고 내 계좌로 바로 들어와요.
-                    입금한 참여자가 취소되면 환불은 개최자가 직접 해야 하고,
-                    &lsquo;관리하기&rsquo;에서 환불이 필요한 참여와 계좌를
-                    확인할 수 있어요.
-                  </p>
-                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
-                    진행 중인 분철은 동시에 5개까지 열 수 있어요. 마무리된
-                    분철이 생기면 새로 개최할 수 있어요.
+                    동시에 열 수 있는 분철은 5개예요. 모집·입금 수집이 끝나면
+                    새로 개최할 수 있어요.
                   </p>
                 </>
               ) : (
