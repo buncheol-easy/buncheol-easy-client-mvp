@@ -364,16 +364,18 @@ const introHomeProducts = [
 function MiniBottomNav() {
   return (
     <div className="absolute inset-x-0 bottom-0 z-10 grid h-16 grid-cols-5 items-center bg-black px-3 text-white/55">
-      <span className="flex justify-center">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]">
-          <HomeIcon />
-        </span>
-      </span>
-      <span className="flex justify-center">
-        <PlusIcon />
+      {/* 순서·알약 위치는 BottomNavigator 와 같이 움직인다 — 알약은 활성 탭이 아니라
+          가운데 개최 버튼의 상시 강조다. */}
+      <span className="flex justify-center text-white">
+        <HomeIcon />
       </span>
       <span className="flex justify-center">
         <BidIcon />
+      </span>
+      <span className="flex justify-center">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]">
+          <PlusIcon />
+        </span>
       </span>
       <span className="flex justify-center">
         <HeartIcon />
