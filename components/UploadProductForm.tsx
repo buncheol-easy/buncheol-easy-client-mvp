@@ -924,7 +924,7 @@ export function UploadProductForm({
     ) {
       return {
         field: "memberPrices",
-        message: "멤버 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)",
+        message: "멤버 가격을 100원 단위로 입력해 주세요.",
       };
     }
 
