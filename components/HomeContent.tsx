@@ -145,6 +145,8 @@ const HOME_BANNERS: HomeBanner[] = [
   },
 ];
 
+// 회원 개최(C2C) 기준 안내. 분철이지 직접 개최(LEGACY)는 신청 없이 참여 즉시 30분 입금이라
+// 순서가 다르지만, 지금 열리는 분철 대부분이 회원 개최라 그쪽을 본문으로 두고 예외는 아래 각주로 뺀다.
 const homeUsageGuide = [
   {
     icon: SearchIcon,
@@ -154,15 +156,15 @@ const homeUsageGuide = [
   },
   {
     icon: ClipboardListIcon,
-    label: "멤버 골라 참여",
+    label: "멤버 골라 신청",
     description:
-      "분철에 들어가 원하는 멤버를 고르고, 택배 받을 편의점을 정해 참여해요.",
+      "분철에 들어가 원하는 멤버를 고르고, 택배 받을 편의점을 정해 신청해요. 이 단계에서는 아직 입금하지 않아요.",
   },
   {
     icon: BanknoteIcon,
-    label: "30분 안에 입금",
+    label: "확정되면 입금",
     description:
-      "참여하면 개최자 계좌가 보여요. 30분 안에 입금과 개최자 확인까지 끝나야 참여가 확정돼요.",
+      "개최자가 성사를 확정하면 알림톡으로 계좌와 24시간 입금 기한을 알려드려요. 송금 뒤 '보냈어요'를 누르면 개최자가 확인해요.",
   },
   {
     icon: BidIcon,
@@ -1097,7 +1099,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   분철이지 사용법 가이드
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  분철 참여는 이 순서로 진행돼요.
+                  회원이 개최한 분철은 이 순서로 진행돼요.
                 </p>
               </div>
               <button
@@ -1130,8 +1132,20 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 </div>
               ))}
               <p className="px-1 pt-1 text-[12px] font-medium leading-5 text-black/40">
+                분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 30분 안에
+                입금하면 돼요. 분철이지는 통신판매중개자이며, 회원 개최 분철의
+                대금은 개최자 계좌로 직접 입금돼요.
+              </p>
+              <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
                 마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 원하는 분철이
-                없다면 하단 &lsquo;개최&rsquo; 탭에서 직접 열 수도 있어요.
+                없다면 하단 &lsquo;개최&rsquo; 탭에서 직접 열 수 있어요 —{" "}
+                <Link
+                  className="font-semibold text-black/60 underline underline-offset-2"
+                  href="/upload/notice"
+                  onClick={closeUsageHelpSheet}
+                >
+                  개최 자격 조건 보기
+                </Link>
               </p>
             </div>
 
