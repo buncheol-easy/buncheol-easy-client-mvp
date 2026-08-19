@@ -1,6 +1,11 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArtistImage } from "@/components/ArtistRail";
@@ -21,10 +26,16 @@ import {
   toProductCardItem,
   type ApiGroupDetail,
 } from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
+import {
+  getInitialAuthState,
+  readAuthState,
+  subscribeAuthState,
+} from "@/lib/auth-store";
 import { isBuncheolCancelledStatus } from "@/lib/buncheol-states";
 import { getInitials, getGroupTone } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
-import { artistMemberListingsQueryKey } from "@/lib/query-keys";
+import { artistListingsQueryKey } from "@/lib/query-keys";
 
 type ArtistBrowseContentProps = {
   group: ApiGroupDetail;
@@ -131,6 +142,11 @@ export function ArtistBrowseContent({
   const [isMemberListExpanded, setIsMemberListExpanded] = useState(false);
   const [didRestoreSelectedMember, setDidRestoreSelectedMember] =
     useState(false);
+  const authState = useSyncExternalStore(
+    subscribeAuthState,
+    readAuthState,
+    getInitialAuthState,
+  );
 
   const hiddenMemberCount = Math.max(
     group.members.length - COLLAPSED_MEMBER_LIMIT,
@@ -147,11 +163,22 @@ export function ArtistBrowseContent({
   // 멤버 칩은 서버가 내려준 첫 페이지를 클라이언트에서 거르는 대신 재조회한다.
   // 초기 목록에는 size 상한이 걸려 있어, 해당 멤버 분철이 첫 페이지 밖에 있으면
   // 클라이언트 필터로는 "없음"으로 잘못 보인다.
-  const memberListingsQuery = useQuery({
-    enabled: selectedMemberId !== null,
-    queryKey: artistMemberListingsQueryKey(group.id, selectedMemberId ?? ""),
+  //
+  // 전체 탭은 서버 렌더 목록(initialItems)을 쓰지만, 그건 사용자 구분 없는 ISR 캐시라
+  // 찜 여부(bookmarked)가 전부 false 다. 로그인 상태일 때만 토큰을 실어 한 번 더 받아
+  // 카드 하트를 실제 찜 상태로 채운다.
+  const listingsQuery = useQuery({
+    enabled: selectedMemberId !== null || authState.isLoggedIn,
+    queryKey: artistListingsQueryKey(
+      group.id,
+      selectedMemberId ?? "",
+      authState.isLoggedIn,
+    ),
     queryFn: async () => {
-      const summaries = await requestBuncheols(undefined, {
+      const accessToken = authState.isLoggedIn
+        ? await getFreshAccessToken().catch(() => null)
+        : null;
+      const summaries = await requestBuncheols(accessToken ?? undefined, {
         groupId: group.id,
         memberId: selectedMemberId ?? "",
         size: ARTIST_PAGE_SIZE,
@@ -162,17 +189,20 @@ export function ArtistBrowseContent({
   });
 
   const isMemberSelected = selectedMemberId !== null;
+  // 전체 탭의 재조회는 이미 그려 둔 목록을 대체할 뿐이라, 응답 전까지는 initialItems 를 그대로 둔다.
+  //
   // 취소 계열(미성사·개최자 취소)은 아티스트 페이지에서 감춘다. 이 화면은 색인 대상 유입
   // 랜딩이라(sitemap 도 같은 기준으로 취소분을 제외한다) 취소된 분철만 남으면 "이 그룹은
   // 분철이 없다"는 인상만 준다. 마감된 진행확정 분철은 그룹이 활성이라는 신호라 남긴다.
   const items: ProductCardItem[] = (
-    isMemberSelected ? memberListingsQuery.data ?? [] : initialItems
+    listingsQuery.data ?? (isMemberSelected ? [] : initialItems)
   ).filter((item) => !isBuncheolCancelledStatus(item.status));
-  const isLoading = isMemberSelected && memberListingsQuery.isPending;
+  const isLoading = isMemberSelected && listingsQuery.isPending;
+  // 전체 탭의 재조회 실패는 알리지 않는다 — 보여줄 목록이 이미 있고, 빠진 건 하트뿐이다.
   const message =
-    isMemberSelected && memberListingsQuery.isError
-      ? memberListingsQuery.error instanceof Error
-        ? memberListingsQuery.error.message
+    isMemberSelected && listingsQuery.isError
+      ? listingsQuery.error instanceof Error
+        ? listingsQuery.error.message
         : "분철을 불러오지 못했어요."
       : "";
 
