@@ -288,7 +288,7 @@ export function ArtistBrowseContent({
           group.id 를 같이 싣는 이유는 저장·복원이 같은 값을 써야 하기 때문이다 — 주소창 표기(`/artists/007`)
           에서 잘라 쓰면 키가 어긋나 복원이 조용히 실패하고, 복귀 링크도 홈으로 떨어진다. */}
       <div
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="app-page-scroll min-h-0 flex-1 overflow-y-auto"
         data-artist-group-id={group.id}
         data-artist-member-id={selectedMemberId ?? ""}
         data-product-scroll-container="artist"

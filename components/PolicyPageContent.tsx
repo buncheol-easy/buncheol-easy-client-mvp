@@ -62,7 +62,7 @@ export function PolicyPageContent({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-2">
+        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-2">
           <div className="flex min-h-full flex-col">
           <section className="border-b border-black/10 pb-5">
             {effectiveDate ? (

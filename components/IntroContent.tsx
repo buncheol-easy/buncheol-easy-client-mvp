@@ -1670,7 +1670,7 @@ export function IntroContent() {
     <IntroMotionContext.Provider value={motionContextValue}>
       <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] min-h-[100dvh] overflow-hidden bg-white text-[#0A0B0D]">
         <div
-          className="mx-auto h-full w-full max-w-[430px] overflow-x-hidden overflow-y-auto overscroll-contain bg-white"
+          className="app-page-scroll mx-auto h-full w-full max-w-[430px] overflow-x-hidden overflow-y-auto overscroll-contain bg-white"
           ref={scrollContainerRef}
         >
           <section className="relative flex min-h-[var(--intro-vh,100dvh)] flex-col overflow-hidden bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFCFC_62%,#F6F7F8_100%)] px-6 pb-10 pt-5">

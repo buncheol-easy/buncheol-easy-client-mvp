@@ -3631,7 +3631,7 @@ export function ProductDetail({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-32">
+        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32">
           <section className="px-4">
             <div
               className={`product-hero-media product-detail-media relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
@@ -4103,7 +4103,7 @@ export function ProductDetail({
 
               {checkoutStep === "options" ? (
                 <>
-                  <div className="mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="sheet-scroll mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const isSelected = bidAmounts[option.id] === "selected";
                       const overlayLabel =
@@ -4206,7 +4206,7 @@ export function ProductDetail({
 
               {checkoutStep === "confirm" ? (
                 <>
-                  <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                       <p className="text-[12px] font-semibold text-black/40">선택 멤버</p>
                       <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
@@ -4366,7 +4366,7 @@ export function ProductDetail({
               {checkoutStep === "payment" ? (
                 checkoutPaymentSummary ? (
                   <>
-                    <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                    <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                         <div className="flex items-start justify-between gap-4">
                           <div>
@@ -4550,7 +4550,7 @@ export function ProductDetail({
 
               {checkoutStep === "applied" && checkoutPaymentSummary ? (
                 <>
-                  <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                       <p className="text-[12px] font-semibold text-[#DDE7B8]">
                         신청 완료
@@ -4656,7 +4656,7 @@ export function ProductDetail({
               type="button"
             />
             <section
-              className={`bid-sheet-panel relative mx-auto flex max-h-[72dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              className={`sheet-scroll bid-sheet-panel relative mx-auto flex max-h-[72dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isCheckoutAddressSheetEntered && !isCheckoutAddressSheetClosing
                   ? "bid-sheet-panel-active"
                   : ""
@@ -4691,7 +4691,7 @@ export function ProductDetail({
                 </button>
               </div>
 
-              <div className="mt-4 max-h-[42dvh] space-y-2 overflow-y-auto pr-1">
+              <div className="sheet-scroll mt-4 max-h-[42dvh] space-y-2 overflow-y-auto pr-1">
                 {checkoutEligibleDeliveryAddresses.map((address) => {
                   const displayAlias = getDeliveryAddressDisplayAlias(address);
                   const displayBranchName =
@@ -4800,7 +4800,7 @@ export function ProductDetail({
               type="button"
             />
             <section
-              className={`bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              className={`sheet-scroll bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isRefundAccountSheetEntered ? "bid-sheet-panel-active" : ""
               }`}
             >

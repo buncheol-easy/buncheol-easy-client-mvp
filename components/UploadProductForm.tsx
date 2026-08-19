@@ -2132,7 +2132,7 @@ export function UploadProductForm({
               </header>
 
               <form
-                className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+                className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handleSubmit();
@@ -2501,7 +2501,7 @@ export function UploadProductForm({
             </header>
 
             <form
-              className="tab-content-enter min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+              className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
               onSubmit={(event) => event.preventDefault()}
               ref={formScrollRef}
             >

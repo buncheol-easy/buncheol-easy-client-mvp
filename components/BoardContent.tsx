@@ -322,7 +322,7 @@ export function BoardContent({
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+      <main className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <section
           className={`flex min-h-full flex-col ${
             shouldSkipEnterAnimation ? "" : "tab-content-enter"
