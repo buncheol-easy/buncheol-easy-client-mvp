@@ -30,10 +30,14 @@ type NavItem = {
   label: string;
 };
 
+/*
+ * 개최는 서비스의 핵심 행동이라 가운데 칸에 두고 알약 배경으로 상시 강조한다.
+ * 나머지 네 개의 상대 순서는 근육 기억을 지키려고 그대로 둔다.
+ */
 const navItems: NavItem[] = [
   { href: "/", key: "Home", label: "홈" },
-  { authRequired: true, href: "/upload", key: "Upload", label: "개최" },
   { authRequired: true, href: "/profile/bids", key: "Bids", label: "참여 내역" },
+  { authRequired: true, href: "/upload", key: "Upload", label: "개최" },
   { authRequired: true, href: "/favorites", key: "Favorites", label: "찜" },
   { href: "/profile", key: "Profile", label: "마이페이지" },
 ];
@@ -116,6 +120,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
       <div className="bottom-navigator__grid grid grid-cols-5 items-center">
         {navItems.map((item) => {
           const isActive = item.key === activeLabel;
+          const isHosting = item.key === "Upload";
           const className = `bottom-navigator__item flex min-w-0 flex-col items-center justify-center gap-0.5 px-1 ${
             isActive ? "text-white" : "text-white/55"
           }`;
@@ -123,7 +128,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
             <>
               <span
                 className={`motion-icon-button inline-flex h-9 w-9 items-center justify-center rounded-full ${
-                  isActive
+                  isHosting
                     ? "bg-brand-soft text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]"
                     : "bg-transparent"
                 }`}
@@ -142,7 +147,11 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
               </span>
               {/* 아이콘만 있는 탭바는 "＋(개최)"·"영수증(참여 내역)"이 무엇인지 알 수 없어
                   첫 사용자의 탐색이 막힌다. 라벨은 브라우저에서도 항상 노출한다. */}
-              <span className="bottom-navigator__label max-w-full truncate text-[10px] font-semibold leading-none tracking-[-0.02em]">
+              <span
+                className={`bottom-navigator__label max-w-full truncate text-[10px] leading-none tracking-[-0.02em] ${
+                  isActive ? "font-bold" : "font-medium"
+                }`}
+              >
                 {item.label}
               </span>
             </>
