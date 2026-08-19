@@ -717,7 +717,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
                 <span className="shrink-0 text-black/15">·</span>
                 <div className="relative min-w-0 flex-1">
                   <div
-                    className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+                    className={`overflow-x-auto whitespace-nowrap pb-0.5 pr-7 rail-scroll ${
                       shouldPeekOptionRail ? "product-card-option-rail" : ""
                     }`}
                   >

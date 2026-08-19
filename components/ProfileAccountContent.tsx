@@ -423,7 +423,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
+      <main className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
         {!authState.isLoggedIn ? (
           <div className="rounded-[1.15rem] bg-white px-5 py-6 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
             <p className="text-[17px] font-semibold tracking-[-0.05em]">

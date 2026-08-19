@@ -192,7 +192,7 @@ export function ShippingFeePaybackSheet({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 sheet-scroll">
           <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[12px] font-semibold text-black/40">

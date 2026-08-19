@@ -2987,7 +2987,7 @@ export function BidHistoryContent({
       <main
         // 도움말 버튼(absolute bottom-5, h-12)이 스크롤 맨 아래에서 마지막 카드를 덮었다.
         // 버튼이 뜨는 모드에서만 하단 여백을 버튼 높이(48px)+오프셋(20px) 이상으로 넓힌다 (docs/53 Q-21).
-        className={`min-h-0 flex-1 overflow-y-auto px-4 ${
+        className={`app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 ${
           mode === "joined" ? "pb-24" : "pb-6"
         }`}
         ref={scrollContainerRef}
@@ -3690,7 +3690,7 @@ export function BidHistoryContent({
               </button>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 sheet-scroll">
               <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                 {participationStatusGuide.map((item, index) => (
                   <div className="flex gap-3" key={item.label}>
@@ -3798,7 +3798,7 @@ export function BidHistoryContent({
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 sheet-scroll">
             <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}

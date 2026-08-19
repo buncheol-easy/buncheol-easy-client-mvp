@@ -3631,7 +3631,7 @@ export function ProductDetail({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-32">
+        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32">
           <section className="px-4">
             <div
               className={`product-hero-media product-detail-media relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}

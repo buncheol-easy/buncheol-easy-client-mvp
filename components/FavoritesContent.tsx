@@ -472,7 +472,7 @@ export function FavoritesContent({
       </header>
 
       <main
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6"
+        className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6"
         data-product-scroll-container="favorites"
         onClickCapture={rememberFavoritesReturnState}
         ref={scrollContainerRef}

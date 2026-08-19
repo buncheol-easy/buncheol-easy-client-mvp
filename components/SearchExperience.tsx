@@ -1020,7 +1020,7 @@ export function SearchExperience({
                 inputReadOnly
                 onBack={() => undefined}
               />
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
+              <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-8">
                 <div className="flex min-h-full flex-col">
                   {renderPreviousSearchResultsContent()}
                 </div>
@@ -1093,7 +1093,7 @@ export function SearchExperience({
             </div>
 
             <div
-              className="scroll-reactive-content scroll-reactive-content--search min-h-0 flex-1 overflow-y-auto px-5"
+              className="scroll-reactive-content scroll-reactive-content--search app-page-scroll min-h-0 flex-1 overflow-y-auto px-5"
               data-product-scroll-container="search"
               onScroll={handleResultScroll}
               ref={resultScrollContainerRef}
@@ -1236,7 +1236,7 @@ export function SearchExperience({
               onSearch={handleSearch}
             />
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-8">
+            <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-8">
               <section>
                 <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
                   최근 검색어

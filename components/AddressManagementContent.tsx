@@ -543,7 +543,7 @@ export function AddressManagementContent({
       </header>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4"
+        className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4"
         ref={scrollContainerRef}
       >
         <section className="rounded-[1.2rem] border border-black/10 bg-white p-4 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">

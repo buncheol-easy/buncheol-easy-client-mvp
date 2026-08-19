@@ -399,7 +399,7 @@ export function ArtistRail({
       ) : null}
 
       <div
-        className="motion-carousel flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="motion-carousel flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 rail-scroll"
         ref={scrollContainerRef}
       >
         {scrollItems.map(renderItem)}
