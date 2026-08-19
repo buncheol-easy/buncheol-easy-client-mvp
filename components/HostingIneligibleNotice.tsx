@@ -329,7 +329,7 @@ export function HostingIneligibleNotice({
               </div>
             </header>
 
-            <div className="tab-content-enter min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
+            <div className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
               <section className="relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] px-5 py-7 text-white shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.5),transparent_26%),radial-gradient(circle_at_14%_82%,rgba(255,255,255,0.18),transparent_30%)]" />
                 <div className="relative">

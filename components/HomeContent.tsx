@@ -900,7 +900,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       </div>
 
       <div
-        className={`scroll-reactive-content scroll-reactive-content--home min-h-0 flex-1 overflow-y-auto ${
+        className={`scroll-reactive-content scroll-reactive-content--home app-page-scroll min-h-0 flex-1 overflow-y-auto ${
           shouldSkipEnterAnimation ? "" : "tab-content-enter"
         }`}
         data-product-scroll-container="home"
@@ -914,7 +914,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           <div
             className={`home-banner-carousel motion-carousel ${
               shouldSkipEnterAnimation ? "motion-carousel--skip-enter" : ""
-            } flex snap-x snap-mandatory overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
+            } flex snap-x snap-mandatory overflow-x-auto rail-scroll`}
             onPointerDown={releaseBannerScrollTarget}
             onScroll={handleBannerScroll}
             onWheel={releaseBannerScrollTarget}
@@ -1110,7 +1110,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               </button>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pb-1 sheet-scroll">
               {homeUsageGuide.map((item) => (
                 <div
                   className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-3"

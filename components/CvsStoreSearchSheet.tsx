@@ -582,7 +582,7 @@ export function CvsStoreSearchSheet({
           목록을 훑다가 브랜드를 바꾸려고 맨 위까지 되돌아가야 하면 그게 더 나쁘다.
         */}
         <div
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain sheet-scroll"
           ref={scrollContainerRef}
         >
           <div className="sticky top-0 z-10 bg-white pb-2.5 pt-4">
