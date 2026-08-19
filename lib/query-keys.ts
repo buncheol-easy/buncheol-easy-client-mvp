@@ -17,8 +17,8 @@ export function artistListingsQueryKey(
   return [...buncheolsQueryKey, "artist", groupId, memberId, loggedIn] as const;
 }
 
-// 목록 키의 로그인 여부는 마지막 조각이다. 이 판별을 키 정의와 떼어 놓으면, 키에 조각이
-// 하나 더 붙었을 때 타입 에러 없이 찜 동기화만 조용히 끊긴다.
+// 목록 키의 로그인 여부는 마지막 조각이다 — 키에 조각을 더 붙일 땐 이 판별도 같이 고쳐야 한다.
+// (어긋나도 타입 에러가 나지 않으므로, 판별을 키 정의 옆에 둬 눈에 걸리게 한다.)
 export function isLoggedInListingQueryKey(queryKey: readonly unknown[]) {
   return queryKey.at(-1) === true;
 }

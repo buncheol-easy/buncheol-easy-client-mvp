@@ -204,9 +204,10 @@ export function ArtistBrowseContent({
   const isLoading =
     listingsQuery.isPending &&
     (isMemberSelected || (authState.isLoggedIn && initialItems.length === 0));
-  // 전체 탭의 재조회 실패는 알리지 않는다 — 보여줄 목록이 이미 있고, 빠진 건 하트뿐이다.
+  // 전체 탭의 재조회 실패는 보여줄 목록이 이미 있으면 알리지 않는다 — 빠진 건 하트뿐이다.
+  // 서버 렌더 조회까지 실패해 목록이 아예 없을 때만, 빈 상태 대신 실패를 알린다.
   const message =
-    isMemberSelected && listingsQuery.isError
+    (isMemberSelected || initialItems.length === 0) && listingsQuery.isError
       ? listingsQuery.error instanceof Error
         ? listingsQuery.error.message
         : "분철을 불러오지 못했어요."

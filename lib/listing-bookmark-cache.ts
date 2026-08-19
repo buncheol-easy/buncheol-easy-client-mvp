@@ -21,9 +21,15 @@ export function updateListingCachesLiked(
       queryKey: buncheolsQueryKey,
       predicate: (query) => isLoggedInListingQueryKey(query.queryKey),
     },
+    // 필터가 prefix 라, 목록이 아닌 캐시가 이 prefix 아래 생기면 map 이 던진다. 그 호출은
+    // 찜 토글의 try 안이라 실패로 읽혀, 요청은 성공했는데 하트만 도로 풀리는 모양이 된다.
     (current) =>
-      current?.map((item) =>
-        (item.productId ?? item.id) === buncheolId ? { ...item, liked } : item,
-      ),
+      Array.isArray(current)
+        ? current.map((item) =>
+            (item.productId ?? item.id) === buncheolId
+              ? { ...item, liked }
+              : item,
+          )
+        : current,
   );
 }
