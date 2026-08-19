@@ -870,19 +870,6 @@ export function UploadProductForm({
       return "멤버 가격을 100원 단위로 입력해 주세요. (무료 분철은 0)";
     }
 
-    // 서버(BUNCHEOL_MEMBER_FREE_PRICE_MIXED)와 동일 규칙: 0원(무료) 슬롯은 무료 분철 전용이라
-    // 하나라도 0원이면 전 슬롯이 0원이어야 한다. 혼합되면 이벤트 배지·환급 대상 판정이 어긋난다.
-    const memberPriceValues = targetMembers.map((member) =>
-      parsePriceInput(memberMinimumPrices[member.id] ?? ""),
-    );
-
-    if (
-      memberPriceValues.some((value) => value === 0) &&
-      memberPriceValues.some((value) => value > 0)
-    ) {
-      return "무료(0원) 멤버와 유료 멤버는 함께 구성할 수 없어요.";
-    }
-
     if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
       return `최소 진행 인원을 1-${targetMembers.length}명으로 입력해 주세요.`;
     }
