@@ -1403,7 +1403,7 @@ export function AdminPaymentsDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f6f8] px-6 py-4 text-[#111111]">
+    <main className="admin-console min-h-screen bg-[#f4f6f8] px-6 py-4 text-[#111111]">
       <div className="mx-auto flex max-w-[1380px] flex-col gap-4">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
