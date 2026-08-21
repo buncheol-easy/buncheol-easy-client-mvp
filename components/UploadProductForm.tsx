@@ -106,6 +106,9 @@ const maxPhotos = 5;
 // 제목 길이 상한(docs/56 H-02): 200자는 어느 화면에서도 전부 볼 수 없어 64자로 축소.
 // 서버 검증(@Size)도 같은 값으로 맞춘다 — FE 가 더 엄격해야 서버 400 이 나지 않는다.
 const maxTitleLength = 64;
+// 구매처는 분철 상세 정보 카드의 좁은 칸(텍스트 폭 111px)에 두 줄로 들어간다.
+// 서버는 200자까지 받지만 그 이상은 어느 화면에서도 전부 볼 수 없다.
+const maxPurchaseSourceLength = 20;
 const maxDescriptionLength = 700;
 const scheduleYearOptionCount = 5;
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
@@ -851,6 +854,8 @@ export function UploadProductForm({
   // maxLength 로 막히지 않는 경로(기존 제목 불러오기)로 상한을 넘길 수 있어,
   // 카운터에서 초과 상태를 색으로 구분한다.
   const isTitleOverLimit = title.trim().length > maxTitleLength;
+  const isPurchaseSourceOverLimit =
+    purchaseSource.trim().length > maxPurchaseSourceLength;
   /*
    * 어느 칸이 잘못됐는지 판정하는 술어. submitBlock(제출 차단)과 data-submit-invalid
    * (포커스 대상 표시)가 같은 함수를 봐야 한다 — 한쪽만 바뀌면 "차단은 되는데 포커스는
@@ -893,6 +898,13 @@ export function UploadProductForm({
 
     if (!purchaseSource.trim()) {
       return { field: "purchaseSource", message: "구매처를 입력해 주세요." };
+    }
+
+    if (isPurchaseSourceOverLimit) {
+      return {
+        field: "purchaseSource",
+        message: `구매처는 ${maxPurchaseSourceLength}자까지 입력할 수 있어요.`,
+      };
     }
 
     if (targetMembers.length === 0) {
@@ -2833,12 +2845,22 @@ export function UploadProductForm({
                   {...getSubmitFieldErrorProps("purchaseSource")}
                   className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/55"
                   disabled={isApiEditMode}
+                  maxLength={maxPurchaseSourceLength}
                   onChange={(event) =>
                     setPurchaseSource(event.currentTarget.value)
                   }
                   placeholder="위버스샵, 스타쉽 스퀘어, 양도자 구매처 등"
                   value={purchaseSource}
                 />
+                <span
+                  className={`mt-1.5 block text-right text-[12px] font-semibold ${
+                    isPurchaseSourceOverLimit
+                      ? "text-[#c03131]"
+                      : "text-black/35"
+                  }`}
+                >
+                  {purchaseSource.length}/{maxPurchaseSourceLength}자
+                </span>
               </label>
               {renderSubmitFieldError("purchaseSource")}
             </div>

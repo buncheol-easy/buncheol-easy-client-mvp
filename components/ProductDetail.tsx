@@ -3723,7 +3723,7 @@ export function ProductDetail({
               <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
                 <div className="min-w-0 px-4 py-3.5">
                   <p className="text-[12px] font-medium text-black/45">구매처</p>
-                  <p className="mt-1 truncate text-[16px] font-semibold tracking-[-0.04em]">
+                  <p className="mt-1 break-keep break-words text-[16px] font-semibold tracking-[-0.04em]">
                     {product.purchaseSource ?? "공식 판매처"}
                   </p>
                 </div>
