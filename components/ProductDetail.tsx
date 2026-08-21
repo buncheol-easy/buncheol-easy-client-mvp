@@ -3996,31 +3996,31 @@ export function ProductDetail({
               내 분철 관리하기
             </button>
           ) : (
-          <button
-            type="button"
-            className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
-            disabled={isMainBidButtonDisabled}
-            onClick={
-              isMainBidButtonDisabled ? undefined : handleBidButtonClick
-            }
-          >
-            {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
-                반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
-                같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
-            {isPublicPreview
-              ? isC2CProduct
-                ? "로그인하고 신청하기"
-                : "로그인하고 참여하기"
-              : isBidUnavailable
+            <button
+              type="button"
+              className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+              disabled={isMainBidButtonDisabled}
+              onClick={
+                isMainBidButtonDisabled ? undefined : handleBidButtonClick
+              }
+            >
+              {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
+                  반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
+                  같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
+              {isPublicPreview
                 ? isC2CProduct
-                  ? "신청하기"
-                  : "참여하기"
-                : canBidProduct
-                  ? isC2CProduct && !isC2CCollectingProduct
+                  ? "로그인하고 신청하기"
+                  : "로그인하고 참여하기"
+                : isBidUnavailable
+                  ? isC2CProduct
                     ? "신청하기"
                     : "참여하기"
-                  : getBidUnavailableMessage()}
-          </button>
+                  : canBidProduct
+                    ? isC2CProduct && !isC2CCollectingProduct
+                      ? "신청하기"
+                      : "참여하기"
+                    : getBidUnavailableMessage()}
+            </button>
           )}
         </div>
 
@@ -4905,12 +4905,13 @@ export function ProductDetail({
           // ⚠️ 이 래퍼가 새 스태킹 컨텍스트라, 이 시트 위에 무언가를 띄우려면
           // z-index 를 래퍼 기준으로 계산해야 한다.
           //
-          // ⚠️ 래퍼는 반드시 화면을 채우는 크기여야 한다(fixed inset-0). `relative` 만 주면
-          // 높이 0 인 상자가 되는데, 데스크톱에서는 globals.css 의 폰 프레임 규칙이 프레임 안
-          // `.fixed` 를 `position: absolute` 로 바꾸므로(`main .fixed`) 시트의 `inset-0` 이
-          // 뷰포트가 아니라 이 높이 0 래퍼를 기준으로 풀려 시트가 32px 조각으로 접힌다.
-          // 모바일은 `fixed` 가 조상을 무시하고 뷰포트를 기준 삼아 증상이 없어, 데스크톱에서만
-          // 재현됐다. 크기를 준 래퍼는 두 경우 모두 올바른 기준 상자가 된다.
+          // ⚠️ 래퍼는 반드시 화면을 채우는 크기여야 한다(fixed inset-0). `relative` 만 주면 높이 0 인
+          // 상자가 되는데, `position: relative` 는 `fixed` 자손의 기준 상자를 만들지 못하는 반면
+          // (그건 transform·filter·will-change·contain 의 몫이다) `absolute` 자손에게는 기준 상자가 된다.
+          // 데스크톱에서는 globals.css 의 폰 프레임 규칙이 프레임 안 `.fixed` 를 `absolute` 로 바꾸므로
+          // (`main .fixed`) 그 순간 높이 0 래퍼가 기준 자격을 얻어 시트가 32px 조각으로 접혔다.
+          // 모바일은 시트가 `fixed` 그대로라 이 래퍼를 건너뛰고 `.product-page-panel`(transform 보유)을
+          // 기준 삼아 멀쩡했다 — 그래서 데스크톱에서만 재현됐다. 크기를 준 래퍼는 두 경우 모두 옳다.
           <div className="fixed inset-0 z-[60]">
             <CvsStoreSearchSheet
               allowedBrands={checkoutAllowedCvsBrands}

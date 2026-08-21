@@ -61,6 +61,12 @@ function formatWonAmount(value: number | null | undefined) {
   return `${value.toLocaleString("ko-KR")}원`;
 }
 
+// 입금자명 표기 규칙. 개최자가 통장에서 대조하는 이름이라 확인 시트 문구와 목록 행이 반드시 같은 값을
+// 써야 한다 — 세 곳에 흩어져 있던 같은 식을 모았다(한쪽만 바뀌면 시트와 행의 이름이 조용히 갈린다).
+function getDepositorName(participant: BuncheolManagementParticipant) {
+  return participant.refundAccount?.holder || participant.participantNickname;
+}
+
 function formatKoreaDateTime(value: string | undefined) {
   if (!value) {
     return "-";
@@ -741,12 +747,16 @@ export function HostedBuncheolManage({
     }
 
     // 개최자가 통장에서 대조하는 값 그대로를 보여준다 — 입금자명(환불계좌 예금주)과 입금 총액.
-    const depositorName =
-      participant.refundAccount?.holder || participant.participantNickname;
+    const depositorName = getDepositorName(participant);
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
-      description: `${depositorName}님의 ${participant.memberName} 슬롯 ${formatWonAmount(participant.amount)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`,
+      // formatWonAmount 는 0 이하를 "-" 로 돌려줘 문장 안에서는 "슬롯 -을 받으셨나요" 가 된다.
+      // 0원 슬롯 + 배송비 0원 조합에서 실제로 도달할 수 있어, 금액을 못 쓰면 절을 통째로 뺀다.
+      description:
+        participant.amount > 0
+          ? `${depositorName}님의 ${participant.memberName} 슬롯 ${formatWonAmount(participant.amount)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
+          : `${depositorName}님의 ${participant.memberName} 슬롯 입금을 받으셨나요? 확인하면 되돌릴 수 없어요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runConfirmC2CPayment(participant);
@@ -797,8 +807,7 @@ export function HostedBuncheolManage({
       return;
     }
 
-    const depositorName =
-      participant.refundAccount?.holder || participant.participantNickname;
+    const depositorName = getDepositorName(participant);
 
     setConfirmSheetRequest({
       confirmLabel: "표시 해제",
@@ -1322,9 +1331,7 @@ export function HostedBuncheolManage({
                       ) : (
                         <div className="space-y-2 px-4 py-3">
                           {optionParticipants.map((participant) => {
-                            const depositorName =
-                              participant.refundAccount?.holder ||
-                              participant.participantNickname;
+                            const depositorName = getDepositorName(participant);
                             const isRowConfirmed =
                               isParticipationConfirmedStatus(
                                 participant.status,
