@@ -1618,6 +1618,11 @@ export function ProductDetail({
   );
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
+  // 개최자가 자기 분철 상세를 열면 참여 CTA 자리가 "내가 연 분철은 참여할 수 없어요" 회색
+  // 버튼으로 죽는다. 개최자가 이 화면에서 원하는 다음 행동은 참여가 아니라 신청자 확인·성사
+  // 확정이므로, 화면에서 가장 강조된 그 자리를 개최 관리 진입으로 바꾼다. 관리 화면은 서버
+  // 분철에만 있어 목업 상품은 제외하고 기존 안내 버튼을 그대로 둔다.
+  const canManageHostedProduct = isHostedProduct && product.isApiProduct === true;
   // 오픈 이벤트 무료 분철(전 슬롯 0원) 판정. 참여 전 화면이라 서버 payback 상태가 없어
   // 옵션 가격으로 판정하고, 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
   const isShippingFeePaybackProduct =
@@ -3980,6 +3985,17 @@ export function ProductDetail({
                 : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
             </p>
           ) : null}
+          {canManageHostedProduct ? (
+            <button
+              className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+              onClick={() =>
+                router.push(`/products/${encodeURIComponent(buncheolId)}/manage`)
+              }
+              type="button"
+            >
+              내 분철 관리하기
+            </button>
+          ) : (
           <button
             type="button"
             className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
@@ -4005,6 +4021,7 @@ export function ProductDetail({
                     : "참여하기"
                   : getBidUnavailableMessage()}
           </button>
+          )}
         </div>
 
         {isSheetOpen ? (
@@ -4887,7 +4904,14 @@ export function ProductDetail({
           // 컨텍스트로 감싼다 — DOM 순서가 아닌 명시적 레이어로 위에 띄운다.
           // ⚠️ 이 래퍼가 새 스태킹 컨텍스트라, 이 시트 위에 무언가를 띄우려면
           // z-index 를 래퍼 기준으로 계산해야 한다.
-          <div className="relative z-[60]">
+          //
+          // ⚠️ 래퍼는 반드시 화면을 채우는 크기여야 한다(fixed inset-0). `relative` 만 주면
+          // 높이 0 인 상자가 되는데, 데스크톱에서는 globals.css 의 폰 프레임 규칙이 프레임 안
+          // `.fixed` 를 `position: absolute` 로 바꾸므로(`main .fixed`) 시트의 `inset-0` 이
+          // 뷰포트가 아니라 이 높이 0 래퍼를 기준으로 풀려 시트가 32px 조각으로 접힌다.
+          // 모바일은 `fixed` 가 조상을 무시하고 뷰포트를 기준 삼아 증상이 없어, 데스크톱에서만
+          // 재현됐다. 크기를 준 래퍼는 두 경우 모두 올바른 기준 상자가 된다.
+          <div className="fixed inset-0 z-[60]">
             <CvsStoreSearchSheet
               allowedBrands={checkoutAllowedCvsBrands}
               onClose={() => setIsCvsStoreSearchOpen(false)}

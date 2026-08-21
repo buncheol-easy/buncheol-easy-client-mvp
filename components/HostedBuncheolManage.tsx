@@ -730,8 +730,33 @@ export function HostedBuncheolManage({
     }
   }
 
+  // C2C 참여 단위 입금확인 확인 요청. 입금확인은 되돌릴 수 없고(참여가 CONFIRMED 로 확정되며
+  // 참여자에게 알림톡이 나간다) 전원 확인 시 분철까지 진행확정으로 넘어가므로, 성사 확정·부분
+  // 확정·반려와 같은 확인 시트를 태운다 — 여기만 확인 없이 즉시 실행되고 있었다.
+  function requestConfirmC2CPayment(
+    participant: BuncheolManagementParticipant,
+  ) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    // 개최자가 통장에서 대조하는 값 그대로를 보여준다 — 입금자명(환불계좌 예금주)과 입금 총액.
+    const depositorName =
+      participant.refundAccount?.holder || participant.participantNickname;
+
+    setConfirmSheetRequest({
+      confirmLabel: "입금 확인",
+      description: `${depositorName}님의 ${participant.memberName} 슬롯 ${formatWonAmount(participant.amount)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`,
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runConfirmC2CPayment(participant);
+      },
+      title: "입금을 확인할까요?",
+    });
+  }
+
   // C2C 참여 단위 입금확인 — 입금 대기·보냈어요 모두 대상 (docs/46 §4.3).
-  async function handleConfirmC2CPayment(
+  async function runConfirmC2CPayment(
     participant: BuncheolManagementParticipant,
   ) {
     if (pendingC2CAction) {
@@ -1413,9 +1438,7 @@ export function HostedBuncheolManage({
                                       className="h-9 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
                                       disabled={pendingC2CAction !== null}
                                       onClick={() =>
-                                        void handleConfirmC2CPayment(
-                                          participant,
-                                        )
+                                        requestConfirmC2CPayment(participant)
                                       }
                                       type="button"
                                     >
