@@ -606,7 +606,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
             <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
               <div className="min-w-0 px-4 py-3.5">
                 <p className="text-[12px] font-medium text-black/45">구매처</p>
-                <p className="mt-1 line-clamp-2 break-keep break-words text-[16px] font-semibold leading-[1.28] tracking-[-0.04em]">
+                <p className="mt-1 break-keep break-words text-[16px] font-semibold tracking-[-0.04em]">
                   공식 판매처
                 </p>
               </div>
