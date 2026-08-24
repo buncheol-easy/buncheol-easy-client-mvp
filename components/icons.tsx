@@ -1,6 +1,7 @@
 import {
   Banknote,
   Bell,
+  Camera,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -56,6 +57,7 @@ export const TrashIcon = createIcon(Trash2, "h-5 w-5");
 export const BidIcon = createIcon(ReceiptText, "h-6 w-6");
 export const HomeIcon = createIcon(House, "h-6 w-6");
 export const PlusIcon = createIcon(Plus, "h-6 w-6");
+export const CameraIcon = createIcon(Camera, "h-6 w-6");
 export const MinusIcon = createIcon(Minus, "h-6 w-6");
 export const ProfileIcon = createIcon(UserRound, "h-6 w-6");
 export const ChevronDownIcon = createIcon(ChevronDown, "h-3.5 w-3.5");

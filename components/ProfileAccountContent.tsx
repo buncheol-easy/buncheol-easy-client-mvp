@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { BackIcon, CheckIcon, ProfileIcon } from "@/components/icons";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
@@ -96,10 +97,6 @@ function getProviderKind(provider: string | undefined) {
   return "unknown";
 }
 
-function clearSessionState() {
-  clearUserSessionState();
-}
-
 function ProviderIconBadge({ provider }: { provider: string | undefined }) {
   const providerKind = getProviderKind(provider);
 
@@ -143,6 +140,7 @@ function ProviderIconBadge({ provider }: { provider: string | undefined }) {
 
 export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const authState = useSyncExternalStore(
     subscribeAuthState,
     readAuthState,
@@ -391,7 +389,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
 
       await deleteUserProfile(accessToken);
       setIsDeleteConfirmOpen(false);
-      clearSessionState();
+      clearUserSessionState(queryClient);
       router.replace("/profile");
     } catch (error: unknown) {
       setIsDeleteConfirmOpen(false);
@@ -423,7 +421,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
+      <main className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
         {!authState.isLoggedIn ? (
           <div className="rounded-[1.15rem] bg-white px-5 py-6 shadow-[0_14px_34px_rgba(0,0,0,0.04)]">
             <p className="text-[17px] font-semibold tracking-[-0.05em]">

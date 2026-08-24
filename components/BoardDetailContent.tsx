@@ -85,7 +85,7 @@ export function BoardDetailContent({
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+      <main className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {!post ? (
           <section className="tab-content-enter rounded-[1.15rem] bg-[#f7f7f7] px-4 py-8 text-center">
             <p className="text-[14px] font-semibold text-black/40">

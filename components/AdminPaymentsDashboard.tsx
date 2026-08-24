@@ -882,7 +882,7 @@ function AdminLoginPanel({ notice }: { notice: string }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f4f6f8] px-6 text-[#111111]">
+    <main className="admin-console flex min-h-screen items-center justify-center bg-[#f4f6f8] px-6 text-[#111111]">
       <section className="w-full max-w-[380px] rounded-[1.15rem] bg-white p-6 shadow-[0_18px_50px_rgba(0,0,0,0.08)]">
         <p className="text-[12px] font-semibold uppercase text-black/35">
           Admin
@@ -1393,7 +1393,7 @@ export function AdminPaymentsDashboard() {
   if (!adminLoginId) {
     if (isSessionChecking) {
       return (
-        <main className="flex min-h-screen items-center justify-center bg-[#f4f6f8] text-[14px] font-semibold text-black/35">
+        <main className="admin-console flex min-h-screen items-center justify-center bg-[#f4f6f8] text-[14px] font-semibold text-black/35">
           관리자 세션을 확인하고 있어요.
         </main>
       );
@@ -1403,7 +1403,7 @@ export function AdminPaymentsDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f6f8] px-6 py-4 text-[#111111]">
+    <main className="admin-console min-h-screen bg-[#f4f6f8] px-6 py-4 text-[#111111]">
       <div className="mx-auto flex max-w-[1380px] flex-col gap-4">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>

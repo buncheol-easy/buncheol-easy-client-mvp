@@ -161,7 +161,7 @@ export function SlidingFilterChips<Value extends string>({
 
   return (
     <div
-      className="relative flex justify-end gap-2 overflow-x-auto pb-1"
+      className="rail-scroll relative flex justify-end gap-2 overflow-x-auto pb-1"
       ref={containerRef}
     >
       <span

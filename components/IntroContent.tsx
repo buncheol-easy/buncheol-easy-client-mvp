@@ -364,16 +364,18 @@ const introHomeProducts = [
 function MiniBottomNav() {
   return (
     <div className="absolute inset-x-0 bottom-0 z-10 grid h-16 grid-cols-5 items-center bg-black px-3 text-white/55">
-      <span className="flex justify-center">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]">
-          <HomeIcon />
-        </span>
-      </span>
-      <span className="flex justify-center">
-        <PlusIcon />
+      {/* 순서·알약 위치는 BottomNavigator 와 같이 움직인다 — 알약은 활성 탭이 아니라
+          가운데 개최 버튼의 상시 강조다. */}
+      <span className="flex justify-center text-white">
+        <HomeIcon />
       </span>
       <span className="flex justify-center">
         <BidIcon />
+      </span>
+      <span className="flex justify-center">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#DDE7B8] text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]">
+          <PlusIcon />
+        </span>
       </span>
       <span className="flex justify-center">
         <HeartIcon />
@@ -604,7 +606,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
             <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
               <div className="min-w-0 px-4 py-3.5">
                 <p className="text-[12px] font-medium text-black/45">구매처</p>
-                <p className="mt-1 truncate text-[16px] font-semibold tracking-[-0.04em]">
+                <p className="mt-1 break-keep break-words text-[16px] font-semibold tracking-[-0.04em]">
                   공식 판매처
                 </p>
               </div>
@@ -1668,7 +1670,7 @@ export function IntroContent() {
     <IntroMotionContext.Provider value={motionContextValue}>
       <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] min-h-[100dvh] overflow-hidden bg-white text-[#0A0B0D]">
         <div
-          className="mx-auto h-full w-full max-w-[430px] overflow-x-hidden overflow-y-auto overscroll-contain bg-white"
+          className="app-page-scroll mx-auto h-full w-full max-w-[430px] overflow-x-hidden overflow-y-auto overscroll-contain bg-white"
           ref={scrollContainerRef}
         >
           <section className="relative flex min-h-[var(--intro-vh,100dvh)] flex-col overflow-hidden bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFCFC_62%,#F6F7F8_100%)] px-6 pb-10 pt-5">

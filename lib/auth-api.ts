@@ -293,6 +293,11 @@ export type BuncheolSummary = {
   bookmarked?: boolean;
   createdAt?: string;
   deadline: string;
+  // 배송비 0원 이벤트 대상(운영진 개최 + 이용 가능한 배송수단이 모두 0원) 여부. 목록 카드엔 배송비가
+  // 없어 상세에 들어가야 알 수 있던 정보라 서버가 판정해 내려준다. 구 응답이면 undefined → 배지 미노출.
+  freeShippingEventTarget?: boolean;
+  // 분철 flow_type. 필드가 없는 구 응답은 null 이고 getFlowType 이 LEGACY 로 떨어뜨린다.
+  flowType?: string | null;
   groupName: string;
   id: string;
   isHostedByMe?: boolean;
@@ -2344,12 +2349,18 @@ function getBuncheolSummaryFromRecord(
       "liked",
     ]) ?? undefined,
     createdAt: getOptionalStringValue(record, ["createdAt", "uploadedAt"]),
+    flowType: getOptionalStringValue(record, ["flowType"]) ?? null,
     memberSlotCount: getOptionalNumberValue(record, [
       "memberSlotCount",
       "buncheolMemberCount",
       "memberCount",
     ]),
     minHeadcount: getOptionalNumberValue(record, ["minHeadcount"]),
+    freeShippingEventTarget:
+      getBooleanValue(record, [
+        "freeShippingEventTarget",
+        "isFreeShippingEventTarget",
+      ]) ?? undefined,
     shippingFeePaybackTarget:
       getBooleanValue(record, [
         "shippingFeePaybackTarget",
@@ -3912,6 +3923,7 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     isShippingFeePaybackEvent:
       FEATURES.shippingFeePayback &&
       summary.shippingFeePaybackTarget === true,
+    isFreeShippingEvent: summary.freeShippingEventTarget === true,
   };
 }
 

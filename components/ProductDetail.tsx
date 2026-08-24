@@ -87,11 +87,8 @@ import {
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ProductCardItem } from "@/components/ProductCard";
-import {
-  buncheolsQueryKey,
-  homeListingsQueryKey,
-} from "@/lib/query-keys";
+import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
+import { buncheolsQueryKey } from "@/lib/query-keys";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
 import {
   FAVORITES_SKIP_ENTER_KEY,
@@ -1621,6 +1618,11 @@ export function ProductDetail({
   );
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
+  // 개최자가 자기 분철 상세를 열면 참여 CTA 자리가 "내가 연 분철은 참여할 수 없어요" 회색
+  // 버튼으로 죽는다. 개최자가 이 화면에서 원하는 다음 행동은 참여가 아니라 신청자 확인·성사
+  // 확정이므로, 화면에서 가장 강조된 그 자리를 개최 관리 진입으로 바꾼다. 관리 화면은 서버
+  // 분철에만 있어 목업 상품은 제외하고 기존 안내 버튼을 그대로 둔다.
+  const canManageHostedProduct = isHostedProduct && product.isApiProduct === true;
   // 오픈 이벤트 무료 분철(전 슬롯 0원) 판정. 참여 전 화면이라 서버 payback 상태가 없어
   // 옵션 가격으로 판정하고, 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
   const isShippingFeePaybackProduct =
@@ -3059,17 +3061,8 @@ export function ProductDetail({
         await removeBuncheolBookmark(accessToken, buncheolId);
       }
 
-      // 내 찜 변경을 홈 카드에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
-      // 찜은 로그인 상태에서만 가능하므로 로그인 목록 캐시만 갱신하면 된다.
-      queryClient.setQueryData<ProductCardItem[]>(
-        homeListingsQueryKey(true),
-        (current) =>
-          current?.map((item) =>
-            (item.productId ?? item.id) === buncheolId
-              ? { ...item, liked: nextLiked }
-              : item,
-          ),
-      );
+      // 내 찜 변경을 목록 카드(홈·아티스트)에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
+      updateListingCachesLiked(queryClient, buncheolId, nextLiked);
     } catch {
       setIsLiked(!nextLiked);
     } finally {
@@ -3631,7 +3624,7 @@ export function ProductDetail({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-32">
+        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32">
           <section className="px-4">
             <div
               className={`product-hero-media product-detail-media relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
@@ -3730,7 +3723,7 @@ export function ProductDetail({
               <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
                 <div className="min-w-0 px-4 py-3.5">
                   <p className="text-[12px] font-medium text-black/45">구매처</p>
-                  <p className="mt-1 truncate text-[16px] font-semibold tracking-[-0.04em]">
+                  <p className="mt-1 break-keep break-words text-[16px] font-semibold tracking-[-0.04em]">
                     {product.purchaseSource ?? "공식 판매처"}
                   </p>
                 </div>
@@ -3992,31 +3985,43 @@ export function ProductDetail({
                 : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
             </p>
           ) : null}
-          <button
-            type="button"
-            className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
-            disabled={isMainBidButtonDisabled}
-            onClick={
-              isMainBidButtonDisabled ? undefined : handleBidButtonClick
-            }
-          >
-            {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
-                반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
-                같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
-            {isPublicPreview
-              ? isC2CProduct
-                ? "로그인하고 신청하기"
-                : "로그인하고 참여하기"
-              : isBidUnavailable
+          {canManageHostedProduct ? (
+            <button
+              className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+              onClick={() =>
+                router.push(`/products/${encodeURIComponent(buncheolId)}/manage`)
+              }
+              type="button"
+            >
+              내 분철 관리하기
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+              disabled={isMainBidButtonDisabled}
+              onClick={
+                isMainBidButtonDisabled ? undefined : handleBidButtonClick
+              }
+            >
+              {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
+                  반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
+                  같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
+              {isPublicPreview
                 ? isC2CProduct
-                  ? "신청하기"
-                  : "참여하기"
-                : canBidProduct
-                  ? isC2CProduct && !isC2CCollectingProduct
+                  ? "로그인하고 신청하기"
+                  : "로그인하고 참여하기"
+                : isBidUnavailable
+                  ? isC2CProduct
                     ? "신청하기"
                     : "참여하기"
-                  : getBidUnavailableMessage()}
-          </button>
+                  : canBidProduct
+                    ? isC2CProduct && !isC2CCollectingProduct
+                      ? "신청하기"
+                      : "참여하기"
+                    : getBidUnavailableMessage()}
+            </button>
+          )}
         </div>
 
         {isSheetOpen ? (
@@ -4103,7 +4108,7 @@ export function ProductDetail({
 
               {checkoutStep === "options" ? (
                 <>
-                  <div className="mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="sheet-scroll mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const isSelected = bidAmounts[option.id] === "selected";
                       const overlayLabel =
@@ -4206,7 +4211,7 @@ export function ProductDetail({
 
               {checkoutStep === "confirm" ? (
                 <>
-                  <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                       <p className="text-[12px] font-semibold text-black/40">선택 멤버</p>
                       <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
@@ -4366,7 +4371,7 @@ export function ProductDetail({
               {checkoutStep === "payment" ? (
                 checkoutPaymentSummary ? (
                   <>
-                    <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                    <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                         <div className="flex items-start justify-between gap-4">
                           <div>
@@ -4550,7 +4555,7 @@ export function ProductDetail({
 
               {checkoutStep === "applied" && checkoutPaymentSummary ? (
                 <>
-                  <div className="mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                  <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                       <p className="text-[12px] font-semibold text-[#DDE7B8]">
                         신청 완료
@@ -4656,7 +4661,7 @@ export function ProductDetail({
               type="button"
             />
             <section
-              className={`bid-sheet-panel relative mx-auto flex max-h-[72dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              className={`sheet-scroll bid-sheet-panel relative mx-auto flex max-h-[72dvh] w-full max-w-[430px] flex-col rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isCheckoutAddressSheetEntered && !isCheckoutAddressSheetClosing
                   ? "bid-sheet-panel-active"
                   : ""
@@ -4691,7 +4696,7 @@ export function ProductDetail({
                 </button>
               </div>
 
-              <div className="mt-4 max-h-[42dvh] space-y-2 overflow-y-auto pr-1">
+              <div className="sheet-scroll mt-4 max-h-[42dvh] space-y-2 overflow-y-auto pr-1">
                 {checkoutEligibleDeliveryAddresses.map((address) => {
                   const displayAlias = getDeliveryAddressDisplayAlias(address);
                   const displayBranchName =
@@ -4800,7 +4805,7 @@ export function ProductDetail({
               type="button"
             />
             <section
-              className={`bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              className={`sheet-scroll bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isRefundAccountSheetEntered ? "bid-sheet-panel-active" : ""
               }`}
             >
@@ -4899,7 +4904,15 @@ export function ProductDetail({
           // 컨텍스트로 감싼다 — DOM 순서가 아닌 명시적 레이어로 위에 띄운다.
           // ⚠️ 이 래퍼가 새 스태킹 컨텍스트라, 이 시트 위에 무언가를 띄우려면
           // z-index 를 래퍼 기준으로 계산해야 한다.
-          <div className="relative z-[60]">
+          //
+          // ⚠️ 래퍼는 반드시 화면을 채우는 크기여야 한다(fixed inset-0). `relative` 만 주면 높이 0 인
+          // 상자가 되는데, `position: relative` 는 `fixed` 자손의 기준 상자를 만들지 못하는 반면
+          // (그건 transform·filter·will-change·contain 의 몫이다) `absolute` 자손에게는 기준 상자가 된다.
+          // 데스크톱에서는 globals.css 의 폰 프레임 규칙이 프레임 안 `.fixed` 를 `absolute` 로 바꾸므로
+          // (`main .fixed`) 그 순간 높이 0 래퍼가 기준 자격을 얻어 시트가 32px 조각으로 접혔다.
+          // 모바일은 시트가 `fixed` 그대로라 이 래퍼를 건너뛰고 `.product-page-panel`(transform 보유)을
+          // 기준 삼아 멀쩡했다 — 그래서 데스크톱에서만 재현됐다. 크기를 준 래퍼는 두 경우 모두 옳다.
+          <div className="fixed inset-0 z-[60]">
             <CvsStoreSearchSheet
               allowedBrands={checkoutAllowedCvsBrands}
               onClose={() => setIsCvsStoreSearchOpen(false)}

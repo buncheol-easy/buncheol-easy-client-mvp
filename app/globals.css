@@ -107,6 +107,91 @@ html {
     linear-gradient(180deg, #f6f5f1 0%, #f1efea 100%);
 }
 
+/*
+ * ── 스크롤바 노출 정책 ──────────────────────────────────────────
+ * 스크롤바는 어디서도 보이지 않는다. 맥의 "스크롤 막대 항상 표시"·윈도우·리눅스에서는
+ * 스크롤바가 폭을 점유해(약 15px) 430px 폰 셸의 우측 라인이 헤더·하단탭과 어긋나고,
+ * 목록 길이에 따라 스크롤바가 생겼다 없어지면 카드 폭까지 흔들린다. 폭이 0이면 예약분도
+ * 0이라 두 증상이 같이 사라진다.
+ *
+ * 대신 "여기 더 있다"는 콘텐츠가 말해야 한다 — 세로 피드는 접히는 지점에서 카드가 잘리고,
+ * 가로 레일은 다음 카드가, 배너는 도트 인디케이터가, 날짜 피커(.schedule-wheel)는 위아래
+ * 페이드 마스크가 그 역할을 한다. 잘림이 안 보이는 스크롤 영역을 새로 만들면 인디케이터를
+ * 따로 붙일 것.
+ *
+ * 마크업의 .app-page-scroll / .sheet-scroll / .rail-scroll 은 스크롤 컨테이너 표시용으로만
+ * 남아 있다 — 더 이상 스타일을 갖지 않는다.
+ *
+ * ⚠️ @layer base 안에 둔다. 레이어 밖 선언은 특정도와 무관하게 모든 레이어드 규칙을 이겨서,
+ *    나중에 유틸리티 클래스로 예외를 주려 해도 조용히 무시된다.
+ */
+@layer base {
+  * {
+    scrollbar-width: none;
+  }
+
+  /*
+   * 예외 — 숨겨서 얻을 게 없는 두 곳. OS 기본값(auto)으로 되돌려 "항상 표시" 설정을
+   * 그대로 따르게 한다. thin 을 쓰면 오버레이 환경에서도 상시 폭을 점유해, 예외를 두려던
+   * 곳에 없던 변화를 만든다.
+   * 어드민 콘솔은 폰 프레임(main.system-chrome-*) 밖이라 430px 셸 폭 손실이 애초에 없고,
+   * 가로 테이블은 휠이 기본 입력이 아니라 썸 드래그가 사실상 유일한 조작 수단이다.
+   * textarea 는 방금 입력한 내용이 위로 밀렸다는 걸 알릴 수단이 스크롤바뿐이고, 셸 안쪽
+   * 요소라 스크롤바가 생겨도 셸 폭에는 영향이 없다.
+   *
+   * ⚠️ :has() 셀렉터는 반드시 별도 규칙으로 분리한다. 셀렉터 목록은 forgiving 하지 않아
+   *    :has() 미지원 엔진(파이어폭스 121 미만 등)에서는 같은 목록의 나머지 예외까지 통째로
+   *    버려진다 — 예외를 두기로 한 곳이 조용히 예외가 아니게 된다.
+   */
+  .admin-console,
+  .admin-console *,
+  textarea {
+    scrollbar-width: auto;
+  }
+
+  html:has(.admin-console) {
+    scrollbar-width: auto;
+  }
+
+  /*
+   * scrollbar-width 미지원 엔진(사파리 18.2 미만) 폴백.
+   * @supports 로 가두는 게 핵심이다 — 크롬은 scrollbar-width 가 auto 일 때만
+   * ::-webkit-scrollbar 커스터마이즈를 따르므로, 조건 없이 두면 전역 display: none 이
+   * 위 예외까지 도로 숨겨 버린다. 지원 엔진에서는 표준 속성만으로 끝낸다.
+   */
+  @supports not (scrollbar-width: none) {
+    ::-webkit-scrollbar {
+      display: none;
+    }
+
+    .admin-console::-webkit-scrollbar,
+    .admin-console *::-webkit-scrollbar,
+    textarea::-webkit-scrollbar {
+      display: block;
+      height: 8px;
+      width: 8px;
+    }
+
+    html:has(.admin-console)::-webkit-scrollbar {
+      display: block;
+      height: 8px;
+      width: 8px;
+    }
+
+    .admin-console::-webkit-scrollbar-thumb,
+    .admin-console *::-webkit-scrollbar-thumb,
+    textarea::-webkit-scrollbar-thumb {
+      background: rgba(17, 17, 17, 0.22);
+      border-radius: 999px;
+    }
+
+    html:has(.admin-console)::-webkit-scrollbar-thumb {
+      background: rgba(17, 17, 17, 0.22);
+      border-radius: 999px;
+    }
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -1373,7 +1458,7 @@ body.is-pwa-standalone {
 
   .bottom-navigator__item {
     flex-direction: column;
-    gap: 0.375rem;
+    gap: 0.5rem;
     font-size: 11px;
   }
 
@@ -1577,9 +1662,10 @@ body.is-pwa-standalone .bottom-navigator__grid {
   align-items: flex-start;
 }
 
+/* 간격은 JSX 의 gap-2(8px)와 맞춘다 — 개최 알약이 라벨에 붙어 보이지 않게 하는 값이다. */
 body.is-pwa-standalone .bottom-navigator__item {
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.5rem;
   font-size: 11px;
 }
 
@@ -1745,7 +1831,6 @@ body.is-pwa-standalone .bid-sheet-panel {
 }
 
 .schedule-wheel {
-  scrollbar-width: none;
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent,
@@ -1761,10 +1846,6 @@ body.is-pwa-standalone .bid-sheet-panel {
     transparent
   );
   overscroll-behavior: contain;
-}
-
-.schedule-wheel::-webkit-scrollbar {
-  display: none;
 }
 
 .search-panel {

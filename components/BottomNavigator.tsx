@@ -25,18 +25,38 @@ import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
  */
 type NavItem = {
   authRequired?: boolean;
+  /* 알약 배경을 상시 두르는 항목. 활성 상태가 아니라 그 항목의 성질이다. */
+  emphasized?: boolean;
   href?: string;
   key: string;
   label: string;
 };
 
+/*
+ * 개최는 서비스의 핵심 행동이라 가운데 칸에 두고 알약 배경으로 상시 강조한다.
+ * 나머지 네 개의 상대 순서는 근육 기억을 지키려고 그대로 둔다.
+ * 이 순서·알약 위치는 /intro 의 목업 탭바(IntroContent 의 MiniBottomNav)와 같이 움직인다.
+ */
 const navItems: NavItem[] = [
   { href: "/", key: "Home", label: "홈" },
-  { authRequired: true, href: "/upload", key: "Upload", label: "개최" },
   { authRequired: true, href: "/profile/bids", key: "Bids", label: "참여 내역" },
+  {
+    authRequired: true,
+    emphasized: true,
+    href: "/upload",
+    key: "Upload",
+    label: "개최",
+  },
   { authRequired: true, href: "/favorites", key: "Favorites", label: "찜" },
   { href: "/profile", key: "Profile", label: "마이페이지" },
 ];
+
+/*
+ * 탭 아이콘은 28px 로 통일한다. 공용 기본값을 쓰면 HeartIcon 만 20px 이라 찜만 작아 보이고,
+ * 탭바가 70px 로 높아진 뒤에는 24px 도 바 대비 작게 읽힌다.
+ * 알약(개최) 안 글리프는 예외 — 채워진 면 안에서는 24px 이 맞다.
+ */
+const navIconClassName = "h-7 w-7";
 
 type BottomNavigatorProps = {
   activeLabel?: string | null;
@@ -116,33 +136,50 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
       <div className="bottom-navigator__grid grid grid-cols-5 items-center">
         {navItems.map((item) => {
           const isActive = item.key === activeLabel;
-          const className = `bottom-navigator__item flex min-w-0 flex-col items-center justify-center gap-0.5 px-1 ${
+          /*
+           * 간격 8px 은 알약 기준이다. 나머지 탭은 24px 글리프가 36px 박스 안에 있어
+           * 위아래 6px 이 이미 비지만, 알약은 박스를 꽉 채워 이 간격이 곧 보이는 여백이다.
+           * 줄이면 개최만 라벨에 붙어 보인다.
+           */
+          const className = `bottom-navigator__item flex min-w-0 flex-col items-center justify-center gap-2 px-1 ${
             isActive ? "text-white" : "text-white/55"
           }`;
+          /*
+           * 강조 항목은 아이콘이 알약 안에서 text-black 로 고정이라, 활성이 돼도
+           * 다른 탭처럼 아이콘이 밝아지지 않는다. 라벨 굵기만으로는 신호가 약해
+           * 활성일 때 알약에 링을 하나 더 얹는다.
+           */
+          const emphasisClassName = item.emphasized
+            ? `bg-brand-soft text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]${
+                isActive ? " ring-2 ring-white/70" : ""
+              }`
+            : "bg-transparent";
           const content = (
             <>
               <span
-                className={`motion-icon-button inline-flex h-9 w-9 items-center justify-center rounded-full ${
-                  isActive
-                    ? "bg-brand-soft text-black shadow-[0_8px_24px_rgba(120,132,82,0.22)]"
-                    : "bg-transparent"
-                }`}
+                className={`motion-icon-button inline-flex h-9 w-9 items-center justify-center rounded-full ${emphasisClassName}`}
               >
                 {item.key === "Home" ? (
-                  <HomeIcon />
+                  <HomeIcon className={navIconClassName} />
                 ) : item.key === "Upload" ? (
+                  /* 알약 안에서는 키우지 않는다 — 채워진 36px 면을 글리프가 다 먹으면
+                     알약이 아니라 뭉개진 사각형으로 보인다. */
                   <PlusIcon />
                 ) : item.key === "Bids" ? (
-                  <BidIcon />
+                  <BidIcon className={navIconClassName} />
                 ) : item.key === "Favorites" ? (
-                  <HeartIcon />
+                  <HeartIcon className={navIconClassName} />
                 ) : (
-                  <ProfileIcon />
+                  <ProfileIcon className={navIconClassName} />
                 )}
               </span>
               {/* 아이콘만 있는 탭바는 "＋(개최)"·"영수증(참여 내역)"이 무엇인지 알 수 없어
                   첫 사용자의 탐색이 막힌다. 라벨은 브라우저에서도 항상 노출한다. */}
-              <span className="bottom-navigator__label max-w-full truncate text-[10px] font-semibold leading-none tracking-[-0.02em]">
+              <span
+                className={`bottom-navigator__label max-w-full truncate text-[10px] leading-none tracking-[-0.02em] ${
+                  isActive ? "font-bold" : "font-medium"
+                }`}
+              >
                 {item.label}
               </span>
             </>

@@ -15,6 +15,7 @@ import type { MouseEvent } from "react";
 import {
   BanknoteIcon,
   CheckIcon,
+  ClipboardListIcon,
   CloseIcon,
   PackageCheckIcon,
   TruckIcon,
@@ -327,14 +328,62 @@ const c2cProgressStepLabels = [
   "배송 완료",
 ] as const;
 
-// 라벨은 진행바(bidProgressStepLabels)와 같은 문자열을 재사용한다 — 두 곳이 어긋나면
-// 안내 시트와 진행바가 서로 다른 단계 이름을 보여주게 된다.
-const participationStatusGuide = [
+// 라벨은 진행바(bidProgressStepLabels / c2cProgressStepLabels)와 같은 문자열을 재사용한다 —
+// 두 곳이 어긋나면 안내 시트와 진행바가 서로 다른 단계 이름을 보여주게 된다.
+//
+// 안내가 두 벌인 이유: 입금 시점이 달라(LEGACY 즉시 30분 / C2C 확정 뒤 24시간) 한 벌로 합치면
+// 한쪽이 반드시 오안내가 된다.
+type StatusGuideItem = {
+  icon: typeof BanknoteIcon;
+  label: string;
+  description: string;
+};
+
+const c2cParticipationStatusGuide = [
+  {
+    icon: ClipboardListIcon,
+    label: c2cProgressStepLabels[0],
+    description:
+      "원하는 멤버 자리를 잡아둔 단계예요. 아직 입금하지 않아요 — 개최자가 성사를 확정하면 알림톡으로 입금 안내를 보내드려요.",
+  },
+  {
+    icon: BanknoteIcon,
+    label: c2cProgressStepLabels[1],
+    // 재확인 요청은 이 단계에서만 일어난다 — 반려된 참여도 카드·진행바에선 여기 머문다.
+    description:
+      "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요. 개최자가 입금 내역을 못 찾으면 재확인을 요청하고, 이때 기한이 24시간 연장돼요.",
+  },
+  {
+    icon: CheckIcon,
+    label: c2cProgressStepLabels[2],
+    description:
+      "개최자가 입금을 확인한 상태예요. 이제 진행 확정을 기다리면 돼요.",
+  },
+  {
+    icon: UsersRoundIcon,
+    label: c2cProgressStepLabels[3],
+    description:
+      "입금이 확인된 참여자로 분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
+  },
+  {
+    icon: TruckIcon,
+    label: c2cProgressStepLabels[4],
+    description:
+      "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
+  },
+  {
+    icon: PackageCheckIcon,
+    label: c2cProgressStepLabels[5],
+    description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
+  },
+] as const satisfies readonly StatusGuideItem[];
+
+const legacyParticipationStatusGuide = [
   {
     icon: BanknoteIcon,
     label: bidProgressStepLabels[0],
     description:
-      "참여 후 30분 안에 꼭 입금해야 하는 단계예요. 개최자의 계좌번호는 입금 정보 버튼에서 확인할 수 있어요.",
+      "참여 후 30분 안에 꼭 입금해야 하는 단계예요. 계좌번호는 입금 정보 버튼에서 확인할 수 있어요.",
   },
   {
     icon: CheckIcon,
@@ -346,20 +395,59 @@ const participationStatusGuide = [
     icon: UsersRoundIcon,
     label: bidProgressStepLabels[2],
     description:
-      "최소 인원이 모여 분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
+      "최소 인원이 모여 분철 진행이 확정된 상태예요. 굿즈 준비 후 배송이 시작돼요.",
   },
   {
     icon: TruckIcon,
     label: bidProgressStepLabels[3],
     description:
-      "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
+      "내가 지정한 배송지로 택배가 발송돼 운송장이 등록된 상태예요.",
   },
   {
     icon: PackageCheckIcon,
     label: bidProgressStepLabels[4],
     description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
   },
-] as const;
+] as const satisfies readonly StatusGuideItem[];
+
+// 개최 탭 안내. 회원 개최는 서버가 C2C 로 강제하므로 한 벌만 둔다.
+const hostingStatusGuide = [
+  {
+    icon: ClipboardListIcon,
+    label: "신청 모으기",
+    description:
+      "모집 기한까지 신청이 쌓여요. 이 동안에는 아무도 입금하지 않고, 신청자와 배송지는 '관리하기'에서 볼 수 있어요.",
+  },
+  {
+    icon: CheckIcon,
+    label: "성사 확정",
+    description:
+      "진행하기로 마음먹었다면 성사 확정을 눌러요. 신청자 전원에게 내 정산 계좌와 24시간 입금 기한이 알림톡으로 나가요.",
+  },
+  {
+    icon: BanknoteIcon,
+    label: "입금 확인",
+    description:
+      "통장을 보고 명단에서 한 명씩 입금 확인을 눌러요. 내역을 못 찾으면 재확인을 요청할 수 있고, 그 참여자의 기한이 24시간 연장돼요.",
+  },
+  {
+    icon: UsersRoundIcon,
+    label: "진행 확정",
+    description:
+      "전원 입금이 확인되면 자동으로 진행 확정돼요. 미입금 참여가 기한 만료·취소로 정리되면 입금한 인원만으로 확정할 수도 있어요.",
+  },
+  {
+    icon: TruckIcon,
+    label: "운송장 등록",
+    description:
+      "진행 확정 후 참여자가 고른 편의점으로 발송하고, 참여자별로 운송장 번호를 등록해요.",
+  },
+  {
+    icon: PackageCheckIcon,
+    label: "배송 완료",
+    description: "참여자가 편의점에서 받고 수령을 확인하면 분철이 끝나요.",
+  },
+] as const satisfies readonly StatusGuideItem[];
 
 const bidHistoryModes: BidHistoryMode[] = ["joined", "hosted"];
 const bidHistoryFilters: BidHistoryFilter[] = ["all", "payment", "confirmed"];
@@ -1345,6 +1433,7 @@ function getHostedProductFromBuncheol(
     courier: "배송 방법 확인 필요",
     deadline: formatApiDateTime(buncheol.deadline),
     description: "",
+    flowType: buncheol.flowType ?? null,
     imageUrl,
     imageUrls: imageUrl ? [imageUrl] : [],
     isApiProduct: true,
@@ -1532,6 +1621,22 @@ export function BidHistoryContent({
   const actionablePaybackRecords = paymentBidRecords.filter(
     (bid) => isPaybackRequestable(bid) && !isHiddenCancelledBidRecord(bid),
   );
+  // 감춘 자발 취소(항상 C2C)까지 세면 카드가 한 장도 없는 흐름의 안내가 뜬다.
+  const visibleBidRecords = paymentBidRecords.filter(
+    (bid) => !isHiddenCancelledBidRecord(bid),
+  );
+  const isStatusGuideC2C =
+    visibleBidRecords.length === 0 || visibleBidRecords.some(isC2CBidRecord);
+  const isHostingHelpSheet = mode === "hosted";
+  // 운영진의 LEGACY 개최만 있는 계정에 "직접 환불" 을 보여주면 없는 의무를 만든다.
+  const hasC2CHostedProduct = (apiHostedProducts ?? []).some(
+    (product) => getFlowType(product.flowType) === "C2C",
+  );
+  const statusHelpSheetGuide: readonly StatusGuideItem[] = isHostingHelpSheet
+    ? hostingStatusGuide
+    : isStatusGuideC2C
+      ? c2cParticipationStatusGuide
+      : legacyParticipationStatusGuide;
   // 입금 대기(기한 압박 구간)는 15초 주기로 빠르게 갱신한다.
   const hasUrgentPaymentPolling = paymentBidRecords.some((bid) =>
     isBidRecordPaymentReady(bid, now),
@@ -2985,11 +3090,9 @@ export function BidHistoryContent({
       </div>
 
       <main
-        // 도움말 버튼(absolute bottom-5, h-12)이 스크롤 맨 아래에서 마지막 카드를 덮었다.
-        // 버튼이 뜨는 모드에서만 하단 여백을 버튼 높이(48px)+오프셋(20px) 이상으로 넓힌다 (docs/53 Q-21).
-        className={`min-h-0 flex-1 overflow-y-auto px-4 ${
-          mode === "joined" ? "pb-24" : "pb-6"
-        }`}
+        // 도움말 버튼(absolute bottom-5, h-12)이 스크롤 맨 아래에서 마지막 카드를 덮는다 —
+        // 하단 여백을 버튼 높이(48px)+오프셋(20px) 이상으로 잡는다 (docs/53 Q-21).
+        className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-24"
         ref={scrollContainerRef}
       >
         {/* 필터 칩 전환은 모션 없이 즉시 반영 — key 는 참여↔개최 전환에만 걸어 재생한다. */}
@@ -3636,18 +3739,16 @@ export function BidHistoryContent({
         </div>
       </main>
 
-      {mode === "joined" ? (
-        <button
-          aria-label="참여 상태 안내 보기"
-          className={`motion-icon-button floating-help-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)] ${
-            isChromeScrolledAway ? "floating-help-button--scrolled-away" : ""
-          }`}
-          onClick={openStatusHelpSheet}
-          type="button"
-        >
-          ?
-        </button>
-      ) : null}
+      <button
+        aria-label={isHostingHelpSheet ? "개최 진행 안내 보기" : "참여 상태 안내 보기"}
+        className={`motion-icon-button floating-help-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)] ${
+          isChromeScrolledAway ? "floating-help-button--scrolled-away" : ""
+        }`}
+        onClick={openStatusHelpSheet}
+        type="button"
+      >
+        ?
+      </button>
 
       {isStatusHelpSheetOpen ? (
         <div
@@ -3658,7 +3759,9 @@ export function BidHistoryContent({
           }`}
         >
           <button
-            aria-label="참여 상태 안내 닫기"
+            aria-label={
+              isHostingHelpSheet ? "개최 진행 안내 닫기" : "참여 상태 안내 닫기"
+            }
             className="absolute inset-0 cursor-default"
             onClick={closeStatusHelpSheet}
             type="button"
@@ -3674,10 +3777,14 @@ export function BidHistoryContent({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
-                  참여 상태 안내
+                  {isHostingHelpSheet ? "개최 진행 안내" : "참여 상태 안내"}
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  참여한 분철은 이런 순서로 진행돼요.
+                  {isHostingHelpSheet
+                    ? "내가 연 분철은 이런 순서로 진행돼요."
+                    : isStatusGuideC2C
+                      ? "회원이 개최한 분철은 이런 순서로 진행돼요."
+                      : "참여한 분철은 이런 순서로 진행돼요."}
                 </p>
               </div>
               <button
@@ -3690,23 +3797,21 @@ export function BidHistoryContent({
               </button>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 sheet-scroll">
               <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                {participationStatusGuide.map((item, index) => (
+                {statusHelpSheetGuide.map((item, index) => (
                   <div className="flex gap-3" key={item.label}>
                     <div className="flex flex-col items-center">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-[#CFE86B] bg-[#D7FF5F]">
                         <item.icon className="h-3.5 w-3.5" />
                       </span>
-                      {index < participationStatusGuide.length - 1 ? (
+                      {index < statusHelpSheetGuide.length - 1 ? (
                         <span className="w-px flex-1 bg-[#CAD6A0]" />
                       ) : null}
                     </div>
                     <div
                       className={
-                        index < participationStatusGuide.length - 1
-                          ? "pb-4"
-                          : ""
+                        index < statusHelpSheetGuide.length - 1 ? "pb-4" : ""
                       }
                     >
                       <p className="text-[13px] font-semibold tracking-[-0.04em]">
@@ -3719,20 +3824,59 @@ export function BidHistoryContent({
                   </div>
                 ))}
               </div>
-              <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
-                사진 아래 칩은 분철 자체의 상태예요. 모집 중에는 마감까지 남은
-                날(D-day)을, 마감 후에는 진행 확정·취소 여부를 보여줘요.
-              </p>
-              <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
-                마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
-                취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.
-              </p>
-              <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
-                일반 사용자가 개최한 분철은 신청(무입금) 후 개최자가 성사를
-                확정하면 입금 안내를 받아요. 입금 후에는 &lsquo;보냈어요&rsquo;를
-                꼭 눌러주세요. 분철이지는 통신판매중개자이며, 대금은 개최자
-                계좌로 직접 입금돼요.
-              </p>
+              {isHostingHelpSheet ? (
+                <>
+                  <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
+                    각 단계의 버튼은 분철 카드의 &lsquo;관리하기&rsquo; 안에
+                    있어요. 참여자에게는 단계가 바뀔 때마다 알림톡이 나가요.
+                  </p>
+                  {hasC2CHostedProduct ? (
+                    <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                      대금은 분철이지를 거치지 않고 내 계좌로 바로 들어와요.
+                      입금한 참여자가 취소되면 환불은 개최자가 직접 해야 하고,
+                      &lsquo;관리하기&rsquo;에서 환불이 필요한 참여와 계좌를
+                      확인할 수 있어요.
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
+                  사진 아래 칩은 분철 자체의 상태예요. 모집 중에는 마감까지 남은
+                  날(D-day)을, 마감 후에는 진행 확정·취소 여부를 보여줘요.
+                </p>
+              )}
+              {isHostingHelpSheet ? null : isStatusGuideC2C ? (
+                <>
+                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                    성사가 확정되지 않거나 입금 기한이 지나면 참여가 취소될 수
+                    있어요. 입금 전이었다면 돌려받을 금액이 없고, 이미
+                    입금했다면 분철이지로 문의해 주세요.
+                  </p>
+                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                    성사 확정 전까지는 참여를 직접 취소할 수 있어요. 확정된
+                    뒤에는 개최자에게 먼저 알려 주세요.
+                  </p>
+                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                    분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
+                    입금돼요. 분철이지가 직접 개최한 분철은 신청 단계 없이 참여
+                    즉시 30분 안에 입금하면 돼요.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                    마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
+                    취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로
+                    환불돼요.
+                  </p>
+                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                    위 순서는 분철이지가 직접 개최한 분철 기준이에요. 회원이
+                    개최한 분철은 신청(무입금) 후 개최자가 성사를 확정하면 24시간
+                    입금 안내를 받고, 송금 뒤 &lsquo;보냈어요&rsquo;를 눌러야
+                    해요.
+                  </p>
+                </>
+              )}
             </div>
 
             <button
@@ -3798,7 +3942,7 @@ export function BidHistoryContent({
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 sheet-scroll">
             <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
@@ -4107,7 +4251,7 @@ export function BidHistoryContent({
             </div>
 
             <div
-              className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
+              className="sheet-scroll mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
             >
               {eligiblePaymentAddresses.map((address) => {
                 const isDefault =

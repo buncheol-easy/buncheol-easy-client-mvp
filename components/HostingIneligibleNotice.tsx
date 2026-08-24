@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BackIcon } from "@/components/icons";
 import { requestLogout, type HostingEligibilityReason } from "@/lib/auth-api";
@@ -55,9 +56,9 @@ const hostingRequirementItems = [
       "참여자가 입금할 계좌라, 마이페이지에서 정산 계좌를 등록해야 개최할 수 있어요.",
   },
   {
-    title: "동시에 5개까지 열 수 있어요",
+    title: "동시에 열 수 있는 개수가 정해져 있어요",
     description:
-      "진행 중인 분철이 마무리되면 새로 개최할 수 있어요. 참여는 개수 제한 없이 자유롭게 하실 수 있어요.",
+      "모집·입금 수집이 진행 중인 분철이 한도를 채우면 새로 개최할 수 없어요. 입금을 확인해 진행 확정하면 자리가 비어요. 참여는 개수 제한 없이 자유롭게 하실 수 있어요.",
   },
 ];
 
@@ -205,13 +206,13 @@ function getNoticeCopy(
     return {
       headline: "동시에 열 수 있는 분철을 다 채웠어요",
       description:
-        "모집중·입금 수집중인 분철이 5개예요. 진행 중인 분철이 마무리되면 새로 개최할 수 있어요.",
+        "모집·입금 수집이 진행 중인 분철이 한도를 채워 새로 열 수 없어요. 진행 확정하거나 정리하면 다시 개최할 수 있어요.",
       sectionTitle: "이렇게 하면 돼요",
       items: [
         {
           title: "지금 할 수 있는 것",
           description:
-            "개최 기록에서 진행 중인 분철의 입금을 확인하거나, 마감된 분철을 확정해 정리해 주세요.",
+            "개최 기록에서 입금을 확인해 진행 확정하면 자리가 비어요. 신청자가 없는 분철은 삭제해 정리할 수 있어요.",
         },
         {
           title: "왜 제한하나요",
@@ -251,6 +252,7 @@ export function HostingIneligibleNotice({
   variant = "blocked",
 }: HostingIneligibleNoticeProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [isRelogging, setIsRelogging] = useState(false);
   const copy = getNoticeCopy(reason, variant);
   // 좁힌 타입이 콜백 안에서도 유지되도록 지역 상수로 뽑는다.
@@ -286,7 +288,7 @@ export function HostingIneligibleNotice({
     } finally {
       // 토큰만 지우면 정산 계좌·배송지 같은 계정 스코프 캐시가 남아, 다른 카카오 계정으로 갈아탔을 때
       // 이전 사용자 정보가 화면에 보인다 — 연령대 미동의 계정은 계정 전환이 잦은 경로다.
-      clearUserSessionState();
+      clearUserSessionState(queryClient);
       router.replace(createLoginHref({ cancelTo: "/", returnTo: "/upload" }));
     }
   }
@@ -329,7 +331,7 @@ export function HostingIneligibleNotice({
               </div>
             </header>
 
-            <div className="tab-content-enter min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
+            <div className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
               <section className="relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] px-5 py-7 text-white shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.5),transparent_26%),radial-gradient(circle_at_14%_82%,rgba(255,255,255,0.18),transparent_30%)]" />
                 <div className="relative">
