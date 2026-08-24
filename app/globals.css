@@ -1945,12 +1945,17 @@ body.is-pwa-standalone .bid-sheet-panel {
  */
 .product-image-nav {
   position: absolute;
-  top: 50%;
+  /*
+   * ⚠️ transform 으로 중앙을 잡지 않는다. 위 `button:not(:disabled):active` 가 (0,2,1) 로
+   * 이 클래스(0,1,0)를 이기는데 transform 은 합쳐지지 않고 선언째 교체돼, 누르는 순간
+   * 중앙 정렬이 풀려 높이 절반(22px)만큼 미끄러져 내려간다. 높이가 고정이라 top 으로 뺀다.
+   */
+  top: calc(50% - 22px);
   z-index: 2;
   display: none;
   height: 44px;
   width: 44px;
-  transform: translateY(-50%);
+  cursor: pointer;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
@@ -1959,7 +1964,13 @@ body.is-pwa-standalone .bid-sheet-panel {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.26);
 }
 
+.product-image-nav:is(:hover, :focus-visible):not(:disabled) {
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
 .product-image-nav:disabled {
+  cursor: default;
   opacity: 0.3;
 }
 
