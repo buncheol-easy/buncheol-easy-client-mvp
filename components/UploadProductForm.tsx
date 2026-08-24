@@ -2485,19 +2485,19 @@ export function UploadProductForm({
                           잠긴 정보
                         </p>
                         <div className="mt-3 grid grid-cols-2 gap-3">
-                          <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
+                          <div className="min-w-0 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
                             <p className="text-[12px] font-semibold text-black/35">
                               구매처
                             </p>
-                            <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
+                            <p className="mt-2 break-keep break-words text-[16px] font-semibold tracking-[-0.05em]">
                               {purchaseSource || "-"}
                             </p>
                           </div>
-                          <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
+                          <div className="min-w-0 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
                             <p className="text-[12px] font-semibold text-black/35">
                               아이돌 그룹
                             </p>
-                            <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
+                            <p className="mt-2 break-keep break-words text-[16px] font-semibold tracking-[-0.05em]">
                               {selectedGroup?.name ?? editingProduct?.era ?? "-"}
                             </p>
                           </div>
