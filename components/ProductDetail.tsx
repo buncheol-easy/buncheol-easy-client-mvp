@@ -116,6 +116,47 @@ type ProductDetailProps = {
   onExitingChange?: (isExiting: boolean) => void;
 };
 
+type ProductImageNavProps = {
+  index: number;
+  onStep: (step: number) => void;
+  total: number;
+};
+
+/**
+ * 사진 좌우 이동 버튼. 데스크톱에서는 스와이프를 시도하지 않아 드래그만으로는 다음 장에 닿지 못한다.
+ *
+ * <p>⚠️ 스와이프 영역의 형제로 두어야 한다 — 자식으로 넣으면 버튼 클릭이 그 영역의 onClick(크게 보기
+ * 열기·닫기)까지 타고 올라간다.
+ */
+function ProductImageNav({ index, onStep, total }: ProductImageNavProps) {
+  if (total <= 1) {
+    return null;
+  }
+
+  return (
+    <>
+      <button
+        aria-label="이전 사진"
+        className="product-image-nav product-image-nav--prev"
+        disabled={index === 0}
+        onClick={() => onStep(-1)}
+        type="button"
+      >
+        <BackIcon />
+      </button>
+      <button
+        aria-label="다음 사진"
+        className="product-image-nav product-image-nav--next"
+        disabled={index === total - 1}
+        onClick={() => onStep(1)}
+        type="button"
+      >
+        <ForwardIcon />
+      </button>
+    </>
+  );
+}
+
 export const productDetailShellClassName =
   "product-detail-shell system-chrome-white system-chrome-bottom-white relative h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]";
 
@@ -3171,6 +3212,14 @@ export function ProductDetail({
     setProductImageDragOffset(0);
   }
 
+  // 데스크톱 좌우 이동 — 스와이프와 같은 클램프를 쓴다. 노출 조건은 CSS 가 쥔다
+  // (app/globals.css 의 .product-image-nav, 폰 프레임 미디어 블록에서만 표시).
+  function stepProductImage(step: number) {
+    setCurrentProductImageIndex((current) =>
+      Math.max(0, Math.min(productImages.length - 1, current + step)),
+    );
+  }
+
   // 스와이프 후 발생하는 click 을 탭으로 오인하지 않도록 걸러낸다.
   function consumeProductImageTap() {
     if (wasProductImageDraggedRef.current) {
@@ -3674,6 +3723,11 @@ export function ProductDetail({
                   {shouldDimProductMedia ? (
                     <div className="pointer-events-none absolute inset-0 bg-black/35" />
                   ) : null}
+                  <ProductImageNav
+                    index={visibleProductImageIndex}
+                    onStep={stepProductImage}
+                    total={productImages.length}
+                  />
                   {productImages.length > 1 ? (
                     <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
                       {visibleProductImageIndex + 1}/{productImages.length}
@@ -4990,6 +5044,11 @@ export function ProductDetail({
                 ))}
               </div>
             </div>
+            <ProductImageNav
+              index={visibleProductImageIndex}
+              onStep={stepProductImage}
+              total={productImages.length}
+            />
             <div className="pb-[calc(env(safe-area-inset-bottom)+16px)]" />
           </div>
         ) : null}

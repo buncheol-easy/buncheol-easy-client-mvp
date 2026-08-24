@@ -444,6 +444,16 @@ body.is-pwa-standalone {
   body.desktop-web-shell:has(> main.system-chrome-white) > main .fixed {
     position: absolute;
   }
+
+  /*
+   * 사진 좌우 이동 버튼은 프레임이 뜨는 이 조건에서만 노출한다 — 조건을 새로 만들지 않고
+   * 이 블록에 얹는 이유는, 위 주석대로 같은 조건이 이미 두 벌 복제돼 있어 세 번째가 늘면
+   * 서로 어긋나기 때문이다. 터치 환경은 스와이프로 넘긴다.
+   */
+  body.desktop-web-shell:has(> main.system-chrome-black) > main .product-image-nav,
+  body.desktop-web-shell:has(> main.system-chrome-white) > main .product-image-nav {
+    display: flex;
+  }
 }
 
 /*
@@ -1927,6 +1937,49 @@ body.is-pwa-standalone .bid-sheet-panel {
     both;
   overflow: hidden;
   will-change: border-radius, opacity, transform;
+}
+
+/*
+ * 분철 사진 좌우 이동 버튼. 기본은 숨김이고 데스크톱 폰 프레임 조건에서만 켜진다
+ * (위 min-width:768px 블록). 터치는 스와이프로 넘기므로 노출하지 않는다.
+ */
+.product-image-nav {
+  position: absolute;
+  /*
+   * ⚠️ transform 으로 중앙을 잡지 않는다. 위 `button:not(:disabled):active` 가 (0,2,1) 로
+   * 이 클래스(0,1,0)를 이기는데 transform 은 합쳐지지 않고 선언째 교체돼, 누르는 순간
+   * 중앙 정렬이 풀려 높이 절반(22px)만큼 미끄러져 내려간다. 높이가 고정이라 top 으로 뺀다.
+   */
+  top: calc(50% - 22px);
+  z-index: 2;
+  display: none;
+  height: 44px;
+  width: 44px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111111;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.26);
+}
+
+.product-image-nav:is(:hover, :focus-visible):not(:disabled) {
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+.product-image-nav:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.product-image-nav--prev {
+  left: 12px;
+}
+
+.product-image-nav--next {
+  right: 12px;
 }
 
 .product-page-panel {
