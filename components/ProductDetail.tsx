@@ -45,6 +45,7 @@ import {
   isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
+  isBuncheolRecruitingStatus,
 } from "@/lib/buncheol-states";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
@@ -1672,8 +1673,15 @@ export function ProductDetail({
     auctionOptions.every(
       (option) => priceToNumber(getBidBaseline(option)) === 0,
     );
+  // 서버 수정 가드(validateRecruiting)와 같은 조건으로 맞춘다 — 모집중이고 마감 전일 때만 저장이 통한다.
+  // 상태를 안 보면 성사 확정 뒤에도 버튼이 떠서, 개최자가 다 고친 뒤 저장에서야 거부당한다.
+  // 로컬 임시 분철(uploaded-)은 서버 가드 대상이 아니라 그대로 둔다.
+  // ⚠️ 오픈채팅 링크는 여기서 막혀도 개최 관리 화면에서 상태와 무관하게 고칠 수 있다.
   const canEditProduct =
-    product.id.startsWith("uploaded-") || isHostedProduct;
+    product.id.startsWith("uploaded-") ||
+    (isHostedProduct &&
+      isBuncheolRecruitingStatus(product.status) &&
+      !isDeadlinePassed);
   // 입금 확인(확정)된 참여가 1건이라도 있으면 개최자 취소를 막는다 (docs/56 §14-3).
   // 서버 CAS(hostCancelIfCollectingAndNoConfirmed, BCH-093)와 같은 범위로 맞춘다 —
   // C2C + 입금 수집중(PAYMENT_COLLECTING) + 확정(CONFIRMED) 참여 ≥1건.

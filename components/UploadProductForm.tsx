@@ -41,22 +41,7 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
-import { getSafeOpenChatHref } from "@/lib/open-chat-url";
-
-// 카카오에서 복사한 주소는 스킴 없이 오는 경우가 흔하다("open.kakao.com/o/...") —
-// 스킴이 없으면 https:// 를 붙여 한 번 더 검증한다.
-function getNormalizedOpenChatUrl(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!trimmedValue) {
-    return null;
-  }
-
-  return (
-    getSafeOpenChatHref(trimmedValue) ??
-    getSafeOpenChatHref(`https://${trimmedValue}`)
-  );
-}
+import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
 import {
   getInitialAuthState,
   readAuthState,
@@ -951,7 +936,7 @@ export function UploadProductForm({
     if (
       !isEditMode &&
       openChatUrl.trim() &&
-      !getNormalizedOpenChatUrl(openChatUrl)
+      !normalizeOpenChatUrlInput(openChatUrl)
     ) {
       return {
         field: "openChatUrl",
@@ -2136,7 +2121,7 @@ export function UploadProductForm({
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
               // 검증을 통과한 정규화 값(스킴 보정·호스트 소문자화)을 전송한다.
-              openChatUrl: getNormalizedOpenChatUrl(openChatUrl) ?? undefined,
+              openChatUrl: normalizeOpenChatUrlInput(openChatUrl) ?? undefined,
               gs25ShippingFee: getStoreShippingFee(
                 selectedShipping,
                 shippingPrices,
