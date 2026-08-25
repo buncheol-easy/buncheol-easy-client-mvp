@@ -27,6 +27,7 @@ import {
   getBuncheolStatusBadgeLabel,
   getDeliveryStatusLabel as getCentralDeliveryStatusLabel,
   getFlowType,
+  isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
@@ -663,16 +664,26 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        // 스토어를 지우지 않고 null 이 돌아오는 경로가 있어 안내가 없으면 눌러도 아무 일이 없다 (다른 C2C 액션과 같은 문구).
+        setOpenChatUrlError("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
       await updateBuncheolOpenChatUrl(accessToken, id, normalizedUrl);
-      await reloadManagementDetail(accessToken);
+
+      // 저장 성공 처리를 재조회보다 먼저 한다 — 순서를 바꾸면 GET 이 흔들릴 때
+      // 이미 반영된 저장이 "저장 실패" 로 보이고 개최자가 다시 누른다.
       setOpenChatUrlDraft(null);
       setOpenChatUrlError("");
       setMessage(
         normalizedUrl ? "오픈채팅 링크를 저장했어요." : "오픈채팅 링크를 지웠어요.",
       );
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        setMessage("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
     } catch (error: unknown) {
       setOpenChatUrlError(
         error instanceof Error ? error.message : "오픈채팅 링크를 저장하지 못했어요.",
@@ -1180,7 +1191,12 @@ export function HostedBuncheolManage({
             오픈채팅 링크는 전체 수정(모집중 전용)과 달리 상태와 무관하게 여기서 고친다 —
             링크가 가장 필요한 구간이 입금·문의가 몰리는 성사 확정 이후이기 때문이다.
             비어 있을 때 등록을 유도할 자리가 필요해 검정 카드 안이 아니라 독립 카드로 뒀다.
+
+            C2C 전용이다 — 링크를 실제로 보여주는 세 화면(분철 상세·참여 내역·입금 안내 시트)이
+            전부 C2C 게이트라, LEGACY 에 노출하면 "상세와 입금 안내에 보여요" 가 거짓이 되고
+            등록해도 아무 데도 뜨지 않는다. 취소된 분철은 링크 등록을 권할 자리가 아니라 함께 접는다.
           */}
+          {isC2C && !isBuncheolCancelledStatus(detail.status) ? (
           <section
             className={`mt-4 rounded-[1.05rem] border px-4 py-4 ${
               detail.openChatUrl
@@ -1217,6 +1233,7 @@ export function HostedBuncheolManage({
               </button>
             )}
           </section>
+          ) : null}
 
           {isC2C && isBuncheolRecruitingStatus(detail.status) ? (
             <section className="mt-4 rounded-[1.05rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-4">

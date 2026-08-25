@@ -42,9 +42,6 @@ import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
-
-// 카카오에서 복사한 주소는 스킴 없이 오는 경우가 흔하다("open.kakao.com/o/...") —
-// 스킴이 없으면 https:// 를 붙여 한 번 더 검증한다.
 import {
   getInitialAuthState,
   readAuthState,
