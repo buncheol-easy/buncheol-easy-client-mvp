@@ -432,6 +432,8 @@ export type BuncheolManagementDetail = {
   id: string;
   memberCount?: number;
   minHeadcount?: number;
+  // 참여자 소통용 오픈채팅 링크 — 등록하지 않았으면 null. 개최 관리 화면에서 바로 수정한다.
+  openChatUrl?: string | null;
   optionCount: number;
   options: BuncheolManagementOption[];
   participants: BuncheolManagementParticipant[];
@@ -3752,6 +3754,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
       getNumberValue(data, ["optionCount", "memberSlotCount", "memberCount"]) ??
       options.length,
     options,
+    openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
     participants,
     paymentDueAt: getOptionalStringValue(data, ["paymentDueAt"]) ?? null,
     purchaseSite: getOptionalStringValue(data, [
@@ -4167,6 +4170,33 @@ export async function requestBuncheolManagement(
   }
 
   return detail;
+}
+
+/**
+ * 오픈채팅 링크만 수정한다. 전체 수정(updateBuncheol)은 모집중에만 통하지만 이 경로는 입금 수집중·진행확정에서도 열린다.
+ * 빈 문자열을 보내면 링크가 제거된다.
+ */
+export async function updateBuncheolOpenChatUrl(
+  accessToken: string,
+  buncheolId: string,
+  openChatUrl: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/open-chat-url`,
+    {
+      body: JSON.stringify({ openChatUrl }),
+      credentials: "include",
+      headers: {
+        ...getAuthHeaders(accessToken),
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
 }
 
 const buncheolHostPermissionErrorCode = "USR-031";

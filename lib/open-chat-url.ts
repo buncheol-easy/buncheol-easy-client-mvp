@@ -19,3 +19,18 @@ export function getSafeOpenChatHref(value: string | null | undefined) {
     return null;
   }
 }
+
+// 개최자가 입력한 값을 저장 가능한 형태로 다듬는다. 스킴을 빼고 적는 경우가 흔해
+// (open.kakao.com/o/...) https 를 한 번 보정해 본다. 통과하지 못하면 null — 호출부가 안내를 띄운다.
+export function normalizeOpenChatUrlInput(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  return (
+    getSafeOpenChatHref(trimmedValue) ??
+    getSafeOpenChatHref(`https://${trimmedValue}`)
+  );
+}
