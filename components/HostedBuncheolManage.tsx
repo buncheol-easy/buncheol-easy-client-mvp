@@ -64,7 +64,13 @@ function formatWonAmount(value: number | null | undefined) {
 // 입금자명 표기 규칙. 개최자가 통장에서 대조하는 이름이라 확인 시트 문구와 목록 행이 반드시 같은 값을
 // 써야 한다 — 세 곳에 흩어져 있던 같은 식을 모았다(한쪽만 바뀌면 시트와 행의 이름이 조용히 갈린다).
 function getDepositorName(participant: BuncheolManagementParticipant) {
-  return participant.refundAccount?.holder || participant.participantNickname;
+  // depositorName 이 정본이다 — 서버가 평시에 계좌를 내리지 않으므로 refundAccount 는 대개 비어 있다.
+  // 빈 문자열일 수 있어 ?? 가 아니라 || 로 폴백한다.
+  return (
+    participant.depositorName ||
+    participant.refundAccount?.holder ||
+    participant.participantNickname
+  );
 }
 
 function formatKoreaDateTime(value: string | undefined) {
@@ -1589,6 +1595,11 @@ export function HostedBuncheolManage({
                 // "입금자명"에 찍힌다 — 대조를 틀리게 만들 뿐 아니라 실명 노출이다.
                 // holder 는 빈 문자열일 수 있어 ?? 가 아니라 || 로 폴백한다.
                 const optionDepositorName =
+                  option.participants?.find(
+                    (participant) =>
+                      participant.participationId ===
+                      option.winner?.participationId,
+                  )?.depositorName ||
                   option.participants?.find(
                     (participant) =>
                       participant.participationId ===
