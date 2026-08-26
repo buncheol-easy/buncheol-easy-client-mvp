@@ -3894,12 +3894,15 @@ export function ProductDetail({
               */}
               <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
                 {sortedAuctionOptions.map((option) => {
+                  // 분철이 닫힌 구간에서는 분철 상태를 우선한다 — 코드 슬롯만 "배정"으로 남으면
+                  // 취소된 분철에서 아직 자리가 있는 것처럼 보인다.
                   const overlayLabel =
+                    productOptionBlockLabel ??
                     getOptionPurchaseOverlayLabel(
                       option,
                       myBids[option.id],
                       product.isApiProduct === true,
-                    ) ?? productOptionBlockLabel;
+                    );
                   const isMine = isOptionParticipatedByMe(
                     option,
                     myBids[option.id],
@@ -4162,11 +4165,12 @@ export function ProductDetail({
                     {sortedAuctionOptions.map((option) => {
                       const isSelected = bidAmounts[option.id] === "selected";
                       const overlayLabel =
+                        productOptionBlockLabel ??
                         getOptionPurchaseOverlayLabel(
                           option,
                           myBids[option.id],
                           product.isApiProduct === true,
-                        ) ?? productOptionBlockLabel;
+                        );
                       const displayedOverlayLabel =
                         getOptionPurchaseBlockChipLabel(
                           overlayLabel,

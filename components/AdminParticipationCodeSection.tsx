@@ -104,6 +104,8 @@ export function AdminParticipationCodeSection({
 
         if (successMessage) {
           setMessage(successMessage);
+        } else if (nextSlots.length === 0) {
+          setMessage("슬롯을 찾지 못했어요. 분철 ID를 확인해 주세요.");
         } else if (nextSlots.every((slot) => slot.accessType === "OPEN")) {
           setMessage(
             "아직 코드 참여 슬롯이 없어요. 아래에서 배정할 슬롯을 코드 참여로 전환해 주세요.",
@@ -464,11 +466,12 @@ export function AdminParticipationCodeSection({
                   <p className="mt-0.5 text-[12px] font-medium text-black/45">
                     {formatPrice(slot.price)}
                     {slot.taken ? " · 참여자 있음" : ""}
+                    {!slot.taken && slot.price > 0 ? " · 0원 슬롯만 전환 가능" : ""}
                   </p>
                 </div>
                 <button
                   className="h-9 rounded-full bg-white px-3 text-[12px] font-semibold text-black/60 ring-1 ring-black/10 disabled:text-black/25"
-                  disabled={slot.taken}
+                  disabled={slot.taken || slot.price > 0}
                   onClick={() => void handleAccessTypeChange(slot, "CODE_ONLY")}
                   type="button"
                 >
