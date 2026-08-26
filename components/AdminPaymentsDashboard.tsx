@@ -38,6 +38,7 @@ import {
   writeAdminAccessToken,
 } from "@/lib/admin-auth-store";
 import { FEATURES } from "@/lib/feature-flags";
+import { AdminParticipationCodeSection } from "@/components/AdminParticipationCodeSection";
 import { AdminShippingFeePaybackSection } from "@/components/AdminShippingFeePaybackSection";
 
 type AdminPaymentStatus =
@@ -987,9 +988,9 @@ export function AdminPaymentsDashboard() {
   const [loginNotice, setLoginNotice] = useState("");
   const [records, setRecords] = useState<AdminPaymentRecord[]>([]);
   const [summary, setSummary] = useState<AdminPaymentSummary | null>(null);
-  const [dashboardMode, setDashboardMode] = useState<"payments" | "payback">(
-    "payments",
-  );
+  const [dashboardMode, setDashboardMode] = useState<
+    "payments" | "payback" | "codes"
+  >("payments");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [isNoticeOpen, setIsNoticeOpen] = useState(false);
@@ -1443,12 +1444,15 @@ export function AdminPaymentsDashboard() {
           </div>
         </header>
 
-        {FEATURES.shippingFeePayback ? (
+        {
           <div className="flex gap-2">
             {(
               [
                 { key: "payments", label: "결제 확인" },
-                { key: "payback", label: "배송비 돌려받기" },
+                ...(FEATURES.shippingFeePayback
+                  ? ([{ key: "payback", label: "배송비 돌려받기" }] as const)
+                  : []),
+                { key: "codes", label: "참여 코드" },
               ] as const
             ).map((tab) => (
               <button
@@ -1466,9 +1470,13 @@ export function AdminPaymentsDashboard() {
               </button>
             ))}
           </div>
-        ) : null}
+        }
 
-        {dashboardMode === "payback" && FEATURES.shippingFeePayback ? (
+        {dashboardMode === "codes" ? (
+          <AdminParticipationCodeSection
+            onSessionExpired={handleSessionExpired}
+          />
+        ) : dashboardMode === "payback" && FEATURES.shippingFeePayback ? (
           <AdminShippingFeePaybackSection
             onSessionExpired={handleSessionExpired}
           />
