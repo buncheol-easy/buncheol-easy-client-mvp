@@ -219,7 +219,13 @@ const sheetDragCloseThreshold = 72;
 const kstOffsetHours = 9;
 
 // applied 는 C2C 신청(무입금) 완료 화면 — 계좌·기한 없이 확정 대기를 안내한다.
-type CheckoutSheetStep = "options" | "confirm" | "payment" | "applied";
+type CheckoutSheetStep =
+  | "options"
+  | "confirm"
+  | "payment"
+  | "applied"
+  // 코드 참여 확정 — 결제가 없어 입금 안내("payment")를 태우면 안 된다.
+  | "codeConfirmed";
 
 type CheckoutDraftItem = {
   bidAmount: number;
@@ -582,6 +588,7 @@ function clampPaymentDueAt(
 
 const PURCHASE_OPTION_LABELS = {
   applied: "신청이 완료된 멤버예요",
+  codeOnly: "서포터즈에게 배정된 멤버예요",
   complete: "참여가 완료됐어요",
   paymentWaiting: "입금 대기중",
   unavailable: "선택할 수 없는 멤버예요",
@@ -595,6 +602,7 @@ const MEMBER_STATUS_CHIP_LABELS = {
   otherApplied: "다른 사람이 신청했어요",
   otherComplete: "매진",
   otherPaymentWaiting: "다른 사람이 참여 진행 중이에요",
+  codeOnly: "서포터즈 배정 · 코드 참여",
 } as const;
 
 // "내 참여" 칩 스타일 — 참여 내역으로 가는 버튼이라 눌리는 것으로 읽혀야 한다.
@@ -832,6 +840,10 @@ function getOptionPurchaseOverlayLabel(
     return PURCHASE_OPTION_LABELS.complete;
   }
 
+  if (saleStatus === "CODE_ONLY") {
+    return PURCHASE_OPTION_LABELS.codeOnly;
+  }
+
   if (saleStatus === "AVAILABLE") {
     return null;
   }
@@ -865,6 +877,21 @@ function getOptionPurchaseOverlayLabel(
   return null;
 }
 
+/** 코드 참여 슬롯은 상태 문구가 붙지만 공석이라 고를 수 있다 — 자격은 체크아웃의 코드 입력이 가른다. */
+function isOptionSelectable(
+  option: ProductOption,
+  myBid?: number,
+  shouldUseParticipantCount = false,
+) {
+  const overlayLabel = getOptionPurchaseOverlayLabel(
+    option,
+    myBid,
+    shouldUseParticipantCount,
+  );
+
+  return !overlayLabel || overlayLabel === PURCHASE_OPTION_LABELS.codeOnly;
+}
+
 function getOptionPurchaseBlockChipLabel(
   overlayLabel: string | null,
   option?: ProductOption,
@@ -878,6 +905,10 @@ function getOptionPurchaseBlockChipLabel(
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.unavailable) {
     return "참여 불가";
+  }
+
+  if (overlayLabel === PURCHASE_OPTION_LABELS.codeOnly) {
+    return MEMBER_STATUS_CHIP_LABELS.codeOnly;
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.applied) {
@@ -1029,6 +1060,7 @@ export function ProductDetail({
     useState(false);
   const [checkoutRefundAccount, setCheckoutRefundAccount] =
     useState<BankAccountInfo | null>(null);
+  const [checkoutCodeInput, setCheckoutCodeInput] = useState("");
   // 체크아웃 이탈 없는 계좌 등록 시트 — 마이페이지 왕복(복원 로직 포함)을 대체한다.
   const [isRefundAccountSheetOpen, setIsRefundAccountSheetOpen] =
     useState(false);
@@ -1087,7 +1119,7 @@ export function ProductDetail({
       .filter(
         (option) =>
           bidAmounts[option.id] === "selected" &&
-          !getOptionPurchaseOverlayLabel(
+          isOptionSelectable(
             option,
             myBids[option.id],
             product.isApiProduct === true,
@@ -1100,6 +1132,11 @@ export function ProductDetail({
   }, [auctionOptions, bidAmounts, myBids, product.isApiProduct]);
 
   const activeBidCount = selectedCheckoutItems.length;
+
+  // 참이면 보증금 관련 UI(결제 금액·환불 계좌·전환 동의)를 전부 감춘다 — 코드 참여에는 없는 조건이다.
+  const isCodeCheckout = selectedCheckoutItems.some(
+    ({ option }) => option.requiresCode === true,
+  );
 
   const totalBidAmount = useMemo(() => {
     return selectedCheckoutItems.reduce(
@@ -1115,7 +1152,7 @@ export function ProductDetail({
       .filter(
         (option) =>
           amounts[option.id] === "selected" &&
-          !getOptionPurchaseOverlayLabel(
+          isOptionSelectable(
             option,
             myBids[option.id],
             product.isApiProduct === true,
@@ -1152,7 +1189,7 @@ export function ProductDetail({
 
       if (
         isSelected &&
-        !getOptionPurchaseOverlayLabel(
+        isOptionSelectable(
           option,
           myBids[option.id],
           product.isApiProduct === true,
@@ -1207,15 +1244,7 @@ export function ProductDetail({
    * 매진 멤버는 "누가 이미 나갔는지"가 정보라 숨기지 않고 아래에 그대로 둔다.
    */
   function getOptionSortRank(option: ProductOption) {
-    const hasOverlay = Boolean(
-      getOptionPurchaseOverlayLabel(
-        option,
-        myBids[option.id],
-        product.isApiProduct === true,
-      ),
-    );
-
-    if (!hasOverlay) {
+    if (isOptionSelectable(option, myBids[option.id], product.isApiProduct === true)) {
       return 0;
     }
 
@@ -1608,13 +1637,8 @@ export function ProductDetail({
           : !isPurchasableStatus || isBidUnavailable
             ? "참여 불가"
             : null;
-  const hasSelectableOption = auctionOptions.some(
-    (option) =>
-      !getOptionPurchaseOverlayLabel(
-        option,
-        myBids[option.id],
-        product.isApiProduct === true,
-      ),
+  const hasSelectableOption = auctionOptions.some((option) =>
+    isOptionSelectable(option, myBids[option.id], product.isApiProduct === true),
   );
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
@@ -2001,7 +2025,7 @@ export function ProductDetail({
 
         if (
           isSelected &&
-          !getOptionPurchaseOverlayLabel(
+          isOptionSelectable(
             option,
             myBids[option.id],
             product.isApiProduct === true,
@@ -2186,7 +2210,7 @@ export function ProductDetail({
           (nextAmounts, option) => {
             if (
               current[option.id] === "selected" &&
-              !getOptionPurchaseOverlayLabel(
+              isOptionSelectable(
                 option,
                 refreshedMyBids[option.id],
                 product.isApiProduct === true,
@@ -2288,11 +2312,7 @@ export function ProductDetail({
 
     if (
       !option ||
-      getOptionPurchaseOverlayLabel(
-        option,
-        myBids[optionId],
-        product.isApiProduct === true,
-      )
+      !isOptionSelectable(option, myBids[optionId], product.isApiProduct === true)
     ) {
       return;
     }
@@ -2444,9 +2464,10 @@ export function ProductDetail({
         return;
       }
 
-      let refundAccount = checkoutRefundAccount;
+      // 코드 참여는 0원이라 계좌를 묻지 않는다.
+      let refundAccount = isCodeCheckout ? null : checkoutRefundAccount;
 
-      if (!refundAccount) {
+      if (!isCodeCheckout && !refundAccount) {
         try {
           const profile = await requestUserProfile(accessToken);
 
@@ -2457,7 +2478,10 @@ export function ProductDetail({
         }
       }
 
-      if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
+      if (
+        !isCodeCheckout &&
+        (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder)
+      ) {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
         setIsRefundAccountSheetOpen(true);
@@ -2553,9 +2577,10 @@ export function ProductDetail({
         return;
       }
 
-      let refundAccount = checkoutRefundAccount;
+      // 코드 참여는 0원이라 계좌를 묻지 않는다.
+      let refundAccount = isCodeCheckout ? null : checkoutRefundAccount;
 
-      if (!refundAccount) {
+      if (!isCodeCheckout && !refundAccount) {
         try {
           const profile = await requestUserProfile(accessToken);
 
@@ -2566,7 +2591,10 @@ export function ProductDetail({
         }
       }
 
-      if (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder) {
+      if (
+        !isCodeCheckout &&
+        (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder)
+      ) {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
         setIsRefundAccountSheetOpen(true);
@@ -2599,6 +2627,9 @@ export function ProductDetail({
           buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
           refundAccount,
           shippingAddressId,
+          participationCode: isCodeCheckout
+            ? checkoutCodeInput.trim()
+            : null,
         });
 
         // 내 참여로 슬롯 상태가 바뀌었다 — 목록 쿼리를 무효화해 복귀 시 fresh 로 가져온다.
@@ -2620,12 +2651,15 @@ export function ProductDetail({
         // 와도 신청 완료로 오판하지 않도록 제외한다 — 입금 안내 경로(보충 조회 포함)를 태운다.
         const isC2CAppliedResult =
           isC2CProduct && !isC2CCollectingProduct && !result.paymentDueAt;
+        // 계좌·기한이 없는 게 정상이라 결제 상세 보충 조회를 태우면 빈 응답을 입금 안내로 오인한다.
+        const isCodeConfirmedResult = isCodeCheckout;
         let paymentDetail:
           | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
           | null = null;
 
         if (
           !isC2CAppliedResult &&
+          !isCodeConfirmedResult &&
           firstParticipationId &&
           (!result.hostBankAccount ||
             result.paymentAmount === null ||
@@ -2673,9 +2707,11 @@ export function ProductDetail({
         // C2C 신청은 APPLIED 로 바로잡는다 (dueAt 부재 = 확정 전 신청).
         const sharedParticipationStatus = isC2CAppliedResult
           ? "APPLIED"
-          : result.participationStatus ||
-            paymentDetail?.paymentStatus ||
-            "AWAITING_PAYMENT";
+          : isCodeConfirmedResult
+            ? "CONFIRMED"
+            : result.participationStatus ||
+              paymentDetail?.paymentStatus ||
+              "AWAITING_PAYMENT";
 
         checkoutRequestItems.forEach(({ bidAmount, option }, index) => {
           const participationId = resultParticipationIds[index] ?? "";
@@ -2781,9 +2817,11 @@ export function ProductDetail({
       pendingCheckoutRestoreRef.current = null;
       // C2C 신청은 입금 안내 대신 신청 완료 화면으로 — 계좌·기한이 아직 없다.
       setCheckoutStep(
-        paymentItems.some((item) => item.participationStatus === "APPLIED")
-          ? "applied"
-          : "payment",
+        isCodeCheckout
+          ? "codeConfirmed"
+          : paymentItems.some((item) => item.participationStatus === "APPLIED")
+            ? "applied"
+            : "payment",
       );
       setIsBidSubmitPending(false);
       return;
@@ -3267,9 +3305,13 @@ export function ProductDetail({
       finishCloseSheet();
     }, 260);
 
-    // payment·applied 단계 = 참여가 서버에 반영된 상태. 닫는 즉시 재조회해
+    // payment·applied·codeConfirmed 단계 = 참여가 서버에 반영된 상태. 닫는 즉시 재조회해
     // 슬롯 점유 상태(saleStatus)를 맞춘다 — C2C 신청(APPLIED)도 슬롯을 선점한다.
-    if (checkoutStep === "payment" || checkoutStep === "applied") {
+    if (
+      checkoutStep === "payment" ||
+      checkoutStep === "applied" ||
+      checkoutStep === "codeConfirmed"
+    ) {
       void refreshDetailOptions();
     }
   }
@@ -4076,22 +4118,30 @@ export function ProductDetail({
                       ? "입금 안내"
                       : checkoutStep === "applied"
                         ? "신청 완료"
-                        : checkoutStep === "confirm"
-                          ? isC2CProduct && !isC2CCollectingProduct
-                            ? "신청 확인"
-                            : "참여 확인"
-                          : "멤버 선택"}
+                        : checkoutStep === "codeConfirmed"
+                          ? "참여 확정"
+                          : checkoutStep === "confirm"
+                            ? isCodeCheckout
+                              ? "코드 참여 확인"
+                              : isC2CProduct && !isC2CCollectingProduct
+                                ? "신청 확인"
+                                : "참여 확인"
+                            : "멤버 선택"}
                   </h2>
                   <p className="mt-1 text-[13px] font-medium text-black/45">
                     {checkoutStep === "payment"
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "applied"
                         ? "개최자가 성사를 확정하면 입금 안내를 드려요."
-                        : checkoutStep === "confirm"
-                          ? isC2CProduct && !isC2CCollectingProduct
-                            ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
-                            : "참여하면 입금 계좌와 마감 시각이 안내돼요."
-                          : isC2CProduct
+                        : checkoutStep === "codeConfirmed"
+                          ? "코드가 확인돼 슬롯이 확정됐어요."
+                          : checkoutStep === "confirm"
+                            ? isCodeCheckout
+                              ? "전달받은 참여 코드를 입력하면 슬롯이 확정돼요."
+                              : isC2CProduct && !isC2CCollectingProduct
+                                ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
+                                : "참여하면 입금 계좌와 마감 시각이 안내돼요."
+                            : isC2CProduct
                             ? "신청할 멤버를 선택해 주세요. 여러 멤버에 각각 신청할 수 있어요."
                             : "참여할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                   </p>
@@ -4125,18 +4175,21 @@ export function ProductDetail({
                           isOptionParticipatedByMe(option, myBids[option.id]),
                           isC2CProduct ? c2cPaymentWindowMs : paymentWindowMs,
                         );
+                      const isCodeOnlyOption =
+                        overlayLabel === PURCHASE_OPTION_LABELS.codeOnly;
+                      const isBlocked = Boolean(overlayLabel) && !isCodeOnlyOption;
 
                       return (
                         <button
                           key={option.id}
                           className={`relative w-full overflow-hidden rounded-[0.85rem] border px-3 py-1.5 text-left transition-colors disabled:cursor-default ${
-                            overlayLabel
+                            isBlocked
                               ? "border-black/10 bg-[#f7f7f7]"
                               : isSelected
                               ? "border-[#C8D4A5] bg-[#F3F5EA]"
                               : "border-black/10 bg-white"
                           }`}
-                          disabled={Boolean(overlayLabel)}
+                          disabled={isBlocked}
                           onClick={() => togglePurchaseOption(option.id)}
                           type="button"
                         >
@@ -4149,7 +4202,7 @@ export function ProductDetail({
                           */}
                           <div
                             className={`flex items-center justify-between gap-2.5 ${
-                              overlayLabel ? "opacity-60" : ""
+                              isBlocked ? "opacity-60" : ""
                             }`}
                           >
                             <div className="flex min-w-0 items-center gap-2.5">
@@ -4169,7 +4222,7 @@ export function ProductDetail({
                               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                                 {getBidBaseline(option)}
                               </p>
-                              {overlayLabel ? null : (
+                              {isBlocked ? null : (
                                 <span
                                   className={`inline-flex h-7 min-w-[52px] items-center justify-center rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
                                     isSelected
@@ -4274,6 +4327,49 @@ export function ProductDetail({
                       </p>
                     </div>
 
+                    {isCodeCheckout ? (
+                      <>
+                        <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
+                          <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                            서포터즈 배정 슬롯
+                          </p>
+                          <div className="mt-3 flex items-center justify-between">
+                            <span className="text-[14px] font-semibold text-white/70">
+                              결제 금액
+                            </span>
+                            <span className="text-[22px] font-semibold tracking-[-0.05em] text-[#DDE7B8]">
+                              0원
+                            </span>
+                          </div>
+                          <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-medium leading-5 text-white/60">
+                            서포터즈에게는 배송비까지 분철 참여 전액이 지원돼요.
+                            안내받은 코드를 입력하면 바로 참여가 확정돼요.
+                          </p>
+                        </div>
+
+                        <div className="rounded-[0.95rem] border border-black/10 px-4 py-4">
+                          <p className="text-[12px] font-semibold text-black/40">
+                            참여 코드
+                          </p>
+                          <input
+                            autoCapitalize="characters"
+                            autoComplete="off"
+                            className="mt-2 h-12 w-full rounded-[0.75rem] border border-black/10 bg-white px-3 text-[16px] font-semibold uppercase tracking-[0.12em] outline-none focus:border-black/30"
+                            inputMode="text"
+                            maxLength={16}
+                            onChange={(event) =>
+                              setCheckoutCodeInput(event.target.value)
+                            }
+                            placeholder="ABCD2345"
+                            value={checkoutCodeInput}
+                          />
+                          <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                            전달받은 코드를 그대로 입력해 주세요. 대소문자와
+                            하이픈은 구분하지 않아요.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
                     <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                       <div className="flex items-center justify-between text-[13px] font-semibold text-white/60">
                         <span>상품 금액</span>
@@ -4309,9 +4405,25 @@ export function ProductDetail({
                         </p>
                       ) : null}
                     </div>
+                    )}
+
+                    {isCodeCheckout ? null : (
+                      <div className="rounded-[0.95rem] border border-black/10 bg-[#fbfbf7] px-4 py-4">
+                        <p className="text-[12px] font-semibold text-black/45">
+                          보증금 환불 조건
+                        </p>
+                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/55">
+                          앨범 수령 후 14일 이내에 후기를 인증하면 보증금 전액을
+                          등록한 환불 계좌로 돌려드려요. 기한 내 후기를 인증하지
+                          않으면 보증금은 환불되지 않으며 일반 구매로 전환돼요.
+                        </p>
+                      </div>
+                    )}
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
-                      {isC2CProduct && !isC2CCollectingProduct
+                      {isCodeCheckout
+                        ? "코드가 확인되면 바로 참여가 확정돼요. 입금 단계는 없어요."
+                        : isC2CProduct && !isC2CCollectingProduct
                         ? "신청 단계에서는 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 드리고, 확정 전에는 언제든 무료로 취소할 수 있어요."
                         : isC2CCollectingProduct
                           ? "신청하면 24시간 입금 기한이 정해져요. 기한 내에 입금하지 않으면 신청이 자동 취소돼요."
@@ -4351,18 +4463,23 @@ export function ProductDetail({
                         isBidSubmitPending ||
                         activeBidCount === 0 ||
                         !canBidProduct ||
-                        !checkoutDeliveryAddress
+                        !checkoutDeliveryAddress ||
+                        (isCodeCheckout && checkoutCodeInput.trim().length === 0)
                       }
                       onClick={() => void handleSubmitBids()}
                       type="button"
                     >
-                      {isC2CProduct && !isC2CCollectingProduct
+                      {isCodeCheckout
                         ? isBidSubmitPending
-                          ? "신청 접수 중"
-                          : "이대로 신청할게요!"
-                        : isBidSubmitPending
-                          ? "참여 접수 중"
-                          : "이대로 참여할게요!"}
+                          ? "코드 확인 중"
+                          : "코드 입력하고 참여하기"
+                        : isC2CProduct && !isC2CCollectingProduct
+                          ? isBidSubmitPending
+                            ? "신청 접수 중"
+                            : "이대로 신청할게요!"
+                          : isBidSubmitPending
+                            ? "참여 접수 중"
+                            : "이대로 참여할게요!"}
                     </button>
                   </div>
                 </>
@@ -4622,6 +4739,74 @@ export function ProductDetail({
                         </span>
                       ) : null}
                     </p>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
+                    <button
+                      className="h-14 rounded-full bg-[#CFE86B] text-[16px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
+                      onClick={closeSheet}
+                      type="button"
+                    >
+                      확인했어요
+                    </button>
+                    <button
+                      className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
+                      onClick={openBidHistory}
+                      type="button"
+                    >
+                      참여 내역 보기
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {checkoutStep === "codeConfirmed" && checkoutPaymentSummary ? (
+                <>
+                  <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
+                    <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
+                      <p className="text-[12px] font-semibold text-[#DDE7B8]">
+                        참여 확정
+                      </p>
+                      <p className="mt-1 text-[20px] font-semibold tracking-[-0.05em] text-white">
+                        슬롯이 확정됐어요!
+                      </p>
+                      <p className="mt-3 text-[12px] font-medium leading-5 text-white/60">
+                        입금할 금액은 없어요. 분철이 진행되면 운송장 번호를
+                        참여 내역에서 확인할 수 있어요.
+                      </p>
+                    </div>
+
+                    <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                      <p className="text-[12px] font-semibold text-black/40">
+                        확정된 멤버
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {checkoutPaymentSummary.items.map((item) => (
+                          <div
+                            className="flex items-center justify-between gap-3 rounded-[0.75rem] bg-white px-3 py-2"
+                            key={item.participationId}
+                          >
+                            <p className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.04em]">
+                              {item.option.label}
+                            </p>
+                            <span className="shrink-0 text-[13px] font-semibold tracking-[-0.04em] text-black/45">
+                              0원
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
+                      <p className="text-[12px] font-semibold text-black/40">
+                        수령 지점
+                      </p>
+                      <p className="mt-1 text-[15px] font-semibold tracking-[-0.04em]">
+                        {checkoutPaymentSummary.deliveryAddress
+                          ? `${getConvenienceStoreLabel(checkoutPaymentSummary.deliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutPaymentSummary.deliveryAddress)}`
+                          : "-"}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">

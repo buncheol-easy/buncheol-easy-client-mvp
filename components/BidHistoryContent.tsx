@@ -790,6 +790,15 @@ const buncheolChipToneClasses: Record<BuncheolChipTone, string> = {
 
 // 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
 // (CANCELLED = 최소 인원 미달 자동 취소, HOST_CANCELLED = 개최자 취소 — 워딩은 "개최자 사정"으로 완곡하게).
+// 낼 돈이 없었던 참여(코드 참여 등)에는 환불 안내를 띄우지 않는다 — 가리킬 계좌 자체가 없다.
+function isFreeBidRecord(bid: BidRecord) {
+  if (typeof bid.paymentAmount === "number") {
+    return bid.paymentAmount === 0;
+  }
+
+  return bid.amount === 0 && (bid.shippingFee ?? 0) === 0;
+}
+
 function getBidRecordCancellationNotice(bid: BidRecord) {
   const cancellationKind = getBidRecordCancellationKind(bid);
 
@@ -811,9 +820,11 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     return {
       label: "참여 취소됨",
       // C2C 는 돈이 개최자에게 직접 가므로 "환불 계좌로 환불" 안내가 오안내다 (docs/46 §6.2).
-      description: isC2C
-        ? "입금 기한이 지나 참여가 취소됐어요. 이미 입금했다면 분철이지로 문의해 주세요."
-        : "입금 기한이 지나 참여가 취소됐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.",
+      description: isFreeBidRecord(bid)
+        ? "입금 기한이 지나 참여가 취소됐어요."
+        : isC2C
+          ? "입금 기한이 지나 참여가 취소됐어요. 이미 입금했다면 분철이지로 문의해 주세요."
+          : "입금 기한이 지나 참여가 취소됐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.",
     };
   }
 
@@ -829,9 +840,11 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
 
   return {
     label: "분철 취소됨",
-    description: isC2C
-      ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 입금했다면 분철이지로 문의해 주세요.`
-      : `${buncheolCancelDescription} 이미 입금했다면 등록한 환불 계좌로 환불돼요.`,
+    description: isFreeBidRecord(bid)
+      ? buncheolCancelDescription
+      : isC2C
+        ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 입금했다면 분철이지로 문의해 주세요.`
+        : `${buncheolCancelDescription} 이미 입금했다면 등록한 환불 계좌로 환불돼요.`,
   };
 }
 
@@ -1023,7 +1036,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordCancelled(bid)) {
     return (
       getBidRecordCancellationNotice(bid)?.description ??
-      (isC2C
+      (isC2C || isFreeBidRecord(bid)
         ? "취소된 참여예요."
         : "취소된 참여예요. 이미 입금했다면 등록한 환불 계좌로 환불돼요.")
     );
