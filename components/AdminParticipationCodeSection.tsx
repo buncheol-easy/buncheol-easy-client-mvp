@@ -407,7 +407,8 @@ export function AdminParticipationCodeSection({
                         {isPending ? "재발급 중" : "재발급"}
                       </button>
                       <button
-                        className="h-11 rounded-full bg-[#fff1f0] px-4 text-[14px] font-semibold text-[#c03131]"
+                        className="h-11 rounded-full bg-[#fff1f0] px-4 text-[14px] font-semibold text-[#c03131] disabled:bg-[#f3f3f3] disabled:text-black/25"
+                        disabled={isPending || activeCode.status !== "ACTIVE"}
                         onClick={() => void handleRevoke(activeCode)}
                         type="button"
                       >

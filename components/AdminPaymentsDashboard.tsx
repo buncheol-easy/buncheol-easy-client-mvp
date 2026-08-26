@@ -1444,8 +1444,7 @@ export function AdminPaymentsDashboard() {
           </div>
         </header>
 
-        {
-          <div className="flex gap-2">
+        <div className="flex gap-2">
             {(
               [
                 { key: "payments", label: "결제 확인" },
@@ -1469,8 +1468,7 @@ export function AdminPaymentsDashboard() {
                 {tab.label}
               </button>
             ))}
-          </div>
-        }
+        </div>
 
         {dashboardMode === "codes" ? (
           <AdminParticipationCodeSection

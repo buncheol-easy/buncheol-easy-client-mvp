@@ -1006,7 +1006,7 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
   }
 
   if (isBidRecordPaymentConfirmed(bid)) {
-    return "입금 확인";
+    return isFreeBidRecord(bid) ? "참여 확정" : "입금 확인";
   }
 
   if (isC2CBidRecord(bid)) {
@@ -1043,6 +1043,9 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   }
 
   if (isBidRecordPaymentConfirmed(bid)) {
+    if (isFreeBidRecord(bid)) {
+      return "참여가 확정됐어요. 입금할 금액은 없어요.";
+    }
     return isC2C
       ? "개최자가 입금을 확인했어요."
       : "관리자가 입금을 확인했어요.";

@@ -878,6 +878,28 @@ function getOptionPurchaseOverlayLabel(
 }
 
 /** 코드 참여 슬롯은 상태 문구가 붙지만 공석이라 고를 수 있다 — 자격은 체크아웃의 코드 입력이 가른다. */
+/**
+ * 화면에 띄울 상태 문구. 분철이 닫힌 구간에서는 <b>공석·코드 배정 슬롯만</b> 분철 상태로 덮는다 —
+ * 매진·내 참여 라벨까지 덮으면 참여 내역으로 가는 칩이 사라진다.
+ */
+function resolveOptionOverlayLabel(
+  option: ProductOption,
+  myBid: number | undefined,
+  shouldUseParticipantCount: boolean,
+  blockLabel: string | null,
+) {
+  const optionLabel = getOptionPurchaseOverlayLabel(
+    option,
+    myBid,
+    shouldUseParticipantCount,
+  );
+
+  if (optionLabel === null || optionLabel === PURCHASE_OPTION_LABELS.codeOnly) {
+    return blockLabel ?? optionLabel;
+  }
+
+  return optionLabel;
+}
 function isOptionSelectable(
   option: ProductOption,
   myBid?: number,
@@ -1917,6 +1939,7 @@ export function ProductDetail({
     setCheckoutStep("options");
     setCheckoutDeliveryAddress(null);
     setCheckoutRefundAccount(null);
+    setCheckoutCodeInput("");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
     setCheckoutCopyToast("");
@@ -2689,11 +2712,14 @@ export function ProductDetail({
         );
         // 다슬롯 추가 신청은 배송비가 첫 참여에 귀속돼 0 이다 (docs/46 §4.7-A2) —
         // 확인 스텝 표기와 동일하게 폴백 금액에서도 배송비를 더하지 않는다.
-        const totalPaymentAmount =
-          result.paymentAmount ??
-          paymentDetail?.paymentAmount ??
-          totalBidAmount +
-            (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
+        // 코드 참여는 서버가 0원을 확정해 내려준다. 폴백을 열어 두면 배송비가 캐시에 굳어
+        // 참여 내역이 "0원 참여"를 유상으로 표시한다.
+        const totalPaymentAmount = isCodeConfirmedResult
+          ? 0
+          : result.paymentAmount ??
+            paymentDetail?.paymentAmount ??
+            totalBidAmount +
+              (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
         const sharedShippingFee = Math.max(
           totalPaymentAmount - totalBidAmount,
           0,
@@ -3231,6 +3257,7 @@ export function ProductDetail({
 
     setCheckoutStep("options");
     setCheckoutPaymentSummary(null);
+    setCheckoutCodeInput("");
     setCheckoutError("");
     setCheckoutCopyToast("");
     setIsSheetOpen(true);
@@ -3894,15 +3921,12 @@ export function ProductDetail({
               */}
               <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-black/10 bg-white">
                 {sortedAuctionOptions.map((option) => {
-                  // 분철이 닫힌 구간에서는 분철 상태를 우선한다 — 코드 슬롯만 "배정"으로 남으면
-                  // 취소된 분철에서 아직 자리가 있는 것처럼 보인다.
-                  const overlayLabel =
-                    productOptionBlockLabel ??
-                    getOptionPurchaseOverlayLabel(
-                      option,
-                      myBids[option.id],
-                      product.isApiProduct === true,
-                    );
+                  const overlayLabel = resolveOptionOverlayLabel(
+                    option,
+                    myBids[option.id],
+                    product.isApiProduct === true,
+                    productOptionBlockLabel,
+                  );
                   const isMine = isOptionParticipatedByMe(
                     option,
                     myBids[option.id],
@@ -4164,13 +4188,12 @@ export function ProductDetail({
                   <div className="sheet-scroll mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const isSelected = bidAmounts[option.id] === "selected";
-                      const overlayLabel =
-                        productOptionBlockLabel ??
-                        getOptionPurchaseOverlayLabel(
-                          option,
-                          myBids[option.id],
-                          product.isApiProduct === true,
-                        );
+                      const overlayLabel = resolveOptionOverlayLabel(
+                        option,
+                        myBids[option.id],
+                        product.isApiProduct === true,
+                        productOptionBlockLabel,
+                      );
                       const displayedOverlayLabel =
                         getOptionPurchaseBlockChipLabel(
                           overlayLabel,
@@ -4356,6 +4379,7 @@ export function ProductDetail({
                             참여 코드
                           </p>
                           <input
+                            aria-label="참여 코드"
                             autoCapitalize="characters"
                             autoComplete="off"
                             className="mt-2 h-12 w-full rounded-[0.75rem] border border-black/10 bg-white px-3 text-[16px] font-semibold uppercase tracking-[0.12em] outline-none focus:border-black/30"
