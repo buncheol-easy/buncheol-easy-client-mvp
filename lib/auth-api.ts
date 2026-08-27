@@ -6345,7 +6345,7 @@ export async function requestAdminBuncheolMembers(
   buncheolId: string,
 ): Promise<AdminBuncheolMemberItem[]> {
   const response = await fetchWithTimeout(
-    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/members`,
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/members`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
@@ -6354,12 +6354,15 @@ export async function requestAdminBuncheolMembers(
     "슬롯 목록을 불러오지 못했어요.",
   );
   const body = await parseAdminResponse<unknown>(response);
-
-  return Array.isArray(body)
+  const rows = Array.isArray(body)
     ? body
-        .map(getAdminBuncheolMemberItem)
-        .filter((item): item is AdminBuncheolMemberItem => item !== null)
-    : [];
+    : isRecord(body)
+      ? getNestedRecordListValue(body, ["items", "content", "list", "data"])
+      : [];
+
+  return rows
+    .map(getAdminBuncheolMemberItem)
+    .filter((item): item is AdminBuncheolMemberItem => item !== null);
 }
 
 export async function requestAdminParticipationCodes(
@@ -6367,7 +6370,7 @@ export async function requestAdminParticipationCodes(
   buncheolId: string,
 ): Promise<AdminParticipationCodeItem[]> {
   const response = await fetchWithTimeout(
-    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/participation-codes`,
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/participation-codes`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
@@ -6376,12 +6379,15 @@ export async function requestAdminParticipationCodes(
     "발급 이력을 불러오지 못했어요.",
   );
   const body = await parseAdminResponse<unknown>(response);
-
-  return Array.isArray(body)
+  const rows = Array.isArray(body)
     ? body
-        .map(getAdminParticipationCodeItem)
-        .filter((item): item is AdminParticipationCodeItem => item !== null)
-    : [];
+    : isRecord(body)
+      ? getNestedRecordListValue(body, ["items", "content", "list", "data"])
+      : [];
+
+  return rows
+    .map(getAdminParticipationCodeItem)
+    .filter((item): item is AdminParticipationCodeItem => item !== null);
 }
 
 export async function requestAdminParticipationCodeIssue(
@@ -6395,7 +6401,7 @@ export async function requestAdminParticipationCodeIssue(
   },
 ): Promise<AdminParticipationCodeItem> {
   const response = await fetchWithTimeout(
-    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/participation-codes`,
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/participation-codes`,
     {
       body: JSON.stringify({
         buncheolMemberId: body.buncheolMemberId,
@@ -6428,7 +6434,7 @@ export async function requestAdminMemberAccessTypeChange(
   accessType: "OPEN" | "CODE_ONLY",
 ) {
   const response = await fetchWithTimeout(
-    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/members/${buncheolMemberId}`,
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/members/${encodeURIComponent(buncheolMemberId)}`,
     {
       body: JSON.stringify({ accessType }),
       credentials: "include",
@@ -6448,7 +6454,7 @@ export async function requestAdminParticipationCodeRevoke(
   codeId: string,
 ) {
   const response = await fetchWithTimeout(
-    `${getVersionedApiBaseUrl()}/admin/participation-codes/${codeId}`,
+    `${getVersionedApiBaseUrl()}/admin/participation-codes/${encodeURIComponent(codeId)}`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),

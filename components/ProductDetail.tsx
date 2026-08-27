@@ -877,9 +877,8 @@ function getOptionPurchaseOverlayLabel(
   return null;
 }
 
-/** 코드 참여 슬롯은 상태 문구가 붙지만 공석이라 고를 수 있다 — 자격은 체크아웃의 코드 입력이 가른다. */
 /**
- * 화면에 띄울 상태 문구. 분철이 닫힌 구간에서는 <b>공석·코드 배정 슬롯만</b> 분철 상태로 덮는다 —
+ * 화면에 띄울 상태 문구. 분철이 닫힌 구간에서는 공석·코드 배정 슬롯만 분철 상태로 덮는다 —
  * 매진·내 참여 라벨까지 덮으면 참여 내역으로 가는 칩이 사라진다.
  */
 function resolveOptionOverlayLabel(
@@ -900,6 +899,8 @@ function resolveOptionOverlayLabel(
 
   return optionLabel;
 }
+
+/** 코드 참여 슬롯은 상태 문구가 붙지만 공석이라 고를 수 있다 — 자격은 체크아웃의 코드 입력이 가른다. */
 function isOptionSelectable(
   option: ProductOption,
   myBid?: number,
@@ -4387,7 +4388,9 @@ export function ProductDetail({
                             inputMode="text"
                             maxLength={16}
                             onChange={(event) =>
-                              setCheckoutCodeInput(event.target.value)
+                              setCheckoutCodeInput(
+                                event.target.value.toUpperCase(),
+                              )
                             }
                             placeholder="ABCD2345"
                             value={checkoutCodeInput}
@@ -4434,19 +4437,6 @@ export function ProductDetail({
                         </p>
                       ) : null}
                     </div>
-                    )}
-
-                    {isCodeCheckout ? null : (
-                      <div className="rounded-[0.95rem] border border-black/10 bg-[#fbfbf7] px-4 py-4">
-                        <p className="text-[12px] font-semibold text-black/45">
-                          보증금 환불 조건
-                        </p>
-                        <p className="mt-2 text-[12px] font-medium leading-5 text-black/55">
-                          앨범 수령 후 14일 이내에 후기를 인증하면 보증금 전액을
-                          등록한 환불 계좌로 돌려드려요. 기한 내 후기를 인증하지
-                          않으면 보증금은 환불되지 않으며 일반 구매로 전환돼요.
-                        </p>
-                      </div>
                     )}
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">

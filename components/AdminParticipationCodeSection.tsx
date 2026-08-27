@@ -82,6 +82,7 @@ export function AdminParticipationCodeSection({
     Record<string, string>
   >({});
   const [pendingSlotId, setPendingSlotId] = useState<string | null>(null);
+  const [pendingCodeId, setPendingCodeId] = useState<string | null>(null);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
   const load = useCallback(
@@ -102,18 +103,26 @@ export function AdminParticipationCodeSection({
 
         setSlots(nextSlots);
         setCodes(nextCodes);
-        setLoadedBuncheolId(buncheolId);
+        // 슬롯 키는 분철 안에서만 유효하다 — 남겨두면 다른 분철의 같은 번호 슬롯에 발급 계정이 프리필된다.
+        setLoadedBuncheolId((previous) => {
+          if (previous !== buncheolId) {
+            setIssuedToBySlot({});
+            setValidHoursBySlot({});
+          }
+
+          return buncheolId;
+        });
 
         if (successMessage) {
           setMessage(successMessage);
         } else if (nextSlots.length === 0) {
           setMessage("슬롯을 찾지 못했어요. 분철 ID를 확인해 주세요.");
-        } else if (nextSlots.every((slot) => slot.accessType === "OPEN")) {
+        } else if (nextSlots.some((slot) => slot.accessType === "CODE_ONLY")) {
+          setMessage("");
+        } else {
           setMessage(
             "아직 코드 참여 슬롯이 없어요. 아래에서 배정할 슬롯을 코드 참여로 전환해 주세요.",
           );
-        } else {
-          setMessage("");
         }
       } catch (error: unknown) {
         if (isAdminSessionError(error)) {
@@ -212,9 +221,11 @@ export function AdminParticipationCodeSection({
   ) {
     const accessToken = readAdminAuthState().accessToken;
 
-    if (!accessToken) {
+    if (!accessToken || pendingSlotId) {
       return;
     }
+
+    setPendingSlotId(slot.buncheolMemberId);
 
     try {
       await requestAdminMemberAccessTypeChange(
@@ -238,15 +249,19 @@ export function AdminParticipationCodeSection({
       setMessage(
         error instanceof Error ? error.message : "슬롯을 전환하지 못했어요.",
       );
+    } finally {
+      setPendingSlotId(null);
     }
   }
 
   async function handleRevoke(code: AdminParticipationCodeItem) {
     const accessToken = readAdminAuthState().accessToken;
 
-    if (!accessToken) {
+    if (!accessToken || pendingCodeId) {
       return;
     }
+
+    setPendingCodeId(code.codeId);
 
     try {
       await requestAdminParticipationCodeRevoke(accessToken, code.codeId);
@@ -260,6 +275,8 @@ export function AdminParticipationCodeSection({
       setMessage(
         error instanceof Error ? error.message : "코드를 폐기하지 못했어요.",
       );
+    } finally {
+      setPendingCodeId(null);
     }
   }
 
@@ -327,6 +344,8 @@ export function AdminParticipationCodeSection({
           {codeSlots.map((slot) => {
             const activeCode = slot.activeCode;
             const isPending = pendingSlotId === slot.buncheolMemberId;
+            // 진행 중인 요청은 슬롯을 가리지 않고 하나뿐이라, 다른 슬롯 버튼도 함께 잠근다.
+            const isBusy = pendingSlotId !== null || pendingCodeId !== null;
 
             return (
               <div
@@ -415,7 +434,7 @@ export function AdminParticipationCodeSection({
                     <>
                       <button
                         className="h-11 rounded-full bg-black px-4 text-[14px] font-semibold text-white disabled:bg-black/25"
-                        disabled={isPending || slot.taken}
+                        disabled={isBusy || slot.taken}
                         onClick={() => void handleIssue(slot, true)}
                         type="button"
                       >
@@ -423,7 +442,7 @@ export function AdminParticipationCodeSection({
                       </button>
                       <button
                         className="h-11 rounded-full bg-[#fff1f0] px-4 text-[14px] font-semibold text-[#c03131] disabled:bg-[#f3f3f3] disabled:text-black/25"
-                        disabled={isPending || activeCode.status !== "ACTIVE"}
+                        disabled={isBusy || activeCode.status !== "ACTIVE"}
                         onClick={() => void handleRevoke(activeCode)}
                         type="button"
                       >
@@ -434,7 +453,7 @@ export function AdminParticipationCodeSection({
                     <>
                       <button
                         className="h-11 rounded-full bg-black px-4 text-[14px] font-semibold text-white disabled:bg-black/25"
-                        disabled={isPending || slot.taken}
+                        disabled={isBusy || slot.taken}
                         onClick={() => void handleIssue(slot, false)}
                         type="button"
                       >
@@ -442,7 +461,7 @@ export function AdminParticipationCodeSection({
                       </button>
                       <button
                         className="h-11 rounded-full bg-white px-4 text-[14px] font-semibold text-black/55 ring-1 ring-black/10 disabled:text-black/25"
-                        disabled={slot.taken}
+                        disabled={isBusy || slot.taken}
                         onClick={() => void handleAccessTypeChange(slot, "OPEN")}
                         type="button"
                       >
@@ -488,7 +507,9 @@ export function AdminParticipationCodeSection({
                 </div>
                 <button
                   className="h-9 rounded-full bg-white px-3 text-[12px] font-semibold text-black/60 ring-1 ring-black/10 disabled:text-black/25"
-                  disabled={slot.taken || slot.price > 0}
+                  disabled={
+                    pendingSlotId !== null || slot.taken || slot.price > 0
+                  }
                   onClick={() => void handleAccessTypeChange(slot, "CODE_ONLY")}
                   type="button"
                 >

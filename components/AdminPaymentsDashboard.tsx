@@ -1444,30 +1444,30 @@ export function AdminPaymentsDashboard() {
           </div>
         </header>
 
-        <div className="flex gap-2">
-            {(
-              [
-                { key: "payments", label: "결제 확인" },
-                ...(FEATURES.shippingFeePayback
-                  ? ([{ key: "payback", label: "배송비 돌려받기" }] as const)
-                  : []),
-                { key: "codes", label: "서포터즈 참여코드 발급" },
-              ] as const
-            ).map((tab) => (
-              <button
-                aria-pressed={dashboardMode === tab.key}
-                className={`h-11 rounded-full px-5 text-[14px] font-semibold transition-colors ${
-                  dashboardMode === tab.key
-                    ? "bg-black text-white"
-                    : "bg-white text-black/50 hover:bg-[#fafafa]"
-                }`}
-                key={tab.key}
-                onClick={() => setDashboardMode(tab.key)}
-                type="button"
-              >
-                {tab.label}
-              </button>
-            ))}
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              { key: "payments", label: "결제 확인" },
+              ...(FEATURES.shippingFeePayback
+                ? ([{ key: "payback", label: "배송비 돌려받기" }] as const)
+                : []),
+              { key: "codes", label: "서포터즈 참여코드 발급" },
+            ] as const
+          ).map((tab) => (
+            <button
+              aria-pressed={dashboardMode === tab.key}
+              className={`h-11 rounded-full px-5 text-[14px] font-semibold transition-colors ${
+                dashboardMode === tab.key
+                  ? "bg-black text-white"
+                  : "bg-white text-black/50 hover:bg-[#fafafa]"
+              }`}
+              key={tab.key}
+              onClick={() => setDashboardMode(tab.key)}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {dashboardMode === "codes" ? (

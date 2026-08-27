@@ -788,8 +788,6 @@ const buncheolChipToneClasses: Record<BuncheolChipTone, string> = {
   cancelled: "bg-[#f1f1f1] text-black/45",
 };
 
-// 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
-// (CANCELLED = 최소 인원 미달 자동 취소, HOST_CANCELLED = 개최자 취소 — 워딩은 "개최자 사정"으로 완곡하게).
 // 낼 돈이 없었던 참여(코드 참여 등)에는 환불 안내를 띄우지 않는다 — 가리킬 계좌 자체가 없다.
 function isFreeBidRecord(bid: BidRecord) {
   if (typeof bid.paymentAmount === "number") {
@@ -799,6 +797,8 @@ function isFreeBidRecord(bid: BidRecord) {
   return bid.amount === 0 && (bid.shippingFee ?? 0) === 0;
 }
 
+// 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
+// (CANCELLED = 최소 인원 미달 자동 취소, HOST_CANCELLED = 개최자 취소 — 워딩은 "개최자 사정"으로 완곡하게).
 function getBidRecordCancellationNotice(bid: BidRecord) {
   const cancellationKind = getBidRecordCancellationKind(bid);
 
@@ -969,9 +969,20 @@ function getC2CBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   return -1;
 }
 
+// 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
+const freeProgressStepLabels = [
+  "참여 접수",
+  "참여 확정",
+  ...bidProgressStepLabels.slice(2),
+] as const;
+
 function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
   const isC2C = isC2CBidRecord(bid);
-  const labels = isC2C ? c2cProgressStepLabels : bidProgressStepLabels;
+  const labels = isFreeBidRecord(bid)
+    ? freeProgressStepLabels
+    : isC2C
+      ? c2cProgressStepLabels
+      : bidProgressStepLabels;
   const currentStepIndex = isC2C
     ? getC2CBidRecordProgressStepIndex(bid, now)
     : getBidRecordProgressStepIndex(bid, now);
@@ -3318,7 +3329,7 @@ export function BidHistoryContent({
                       <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/55">
                         <div className="flex items-baseline justify-between gap-2">
                           <p className="text-[11px] font-medium text-black/35">
-                            입금 총액
+                            {isFreeBidRecord(bid) ? "참여 금액" : "입금 총액"}
                           </p>
                           <p className="text-[17px] font-semibold tracking-[-0.05em]">
                             {formatPrice(cardTotalAmount)}
