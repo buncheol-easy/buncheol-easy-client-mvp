@@ -1111,6 +1111,9 @@ export function ProductDetail({
   const [isHostedByMeFromApi, setIsHostedByMeFromApi] = useState(
     product.isHostedByMe === true,
   );
+  const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
+    product.openChatUrl ?? null,
+  );
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -1720,8 +1723,10 @@ export function ProductDetail({
     (option) => option.participatedByMe === true,
   );
   const isAdditionalC2CApplication = isC2CProduct && hasMyServerParticipation;
+  // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
+  // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct
-    ? getSafeOpenChatHref(product.openChatUrl)
+    ? getSafeOpenChatHref(openChatUrlFromApi)
     : null;
   const canBidProduct =
     !isPublicPreview &&
@@ -1932,6 +1937,12 @@ export function ProductDetail({
   useEffect(() => {
     setIsLiked(product.liked === true);
   }, [product.id, product.liked]);
+
+  // prop 이 교체되면 반드시 되돌린다 — 세션 만료로 익명 재조회가 되면 서버는 링크를 빼는데,
+  // 그때 refreshDetailOptions 는 비로그인 조기 반환이라 이 값을 지워 줄 경로가 없다.
+  useEffect(() => {
+    setOpenChatUrlFromApi(product.openChatUrl ?? null);
+  }, [product.id, product.openChatUrl]);
 
   useEffect(() => {
     setAuctionOptions(product.options);
@@ -2228,6 +2239,7 @@ export function ProductDetail({
       const refreshedProduct = toProductDetailItem(detail);
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
       setIsHostedByMeFromApi(isHosted);
+      setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
       setAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
       setBidAmounts((current) =>
