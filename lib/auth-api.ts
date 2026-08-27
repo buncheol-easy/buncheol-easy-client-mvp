@@ -180,8 +180,6 @@ export type UpdateBuncheolRequest = {
 
 export type ParticipateBuncheolRequest = {
   buncheolMemberId: number;
-  // 코드 참여(0원)만 생략할 수 있다.
-  refundAccount?: BankAccountInfo | null;
   shippingAddressId: number;
   participationCode?: string | null;
 };
@@ -4298,7 +4296,6 @@ export async function participateBuncheol(
   // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
   const requestBody = {
     buncheolMemberId: body.buncheolMemberId,
-    ...(body.refundAccount ? { refundAccount: body.refundAccount } : {}),
     shippingAddressId: body.shippingAddressId,
     ...(body.participationCode
       ? { participationCode: body.participationCode }

@@ -2487,7 +2487,8 @@ export function ProductDetail({
         return;
       }
 
-      // 코드 참여는 0원이라 계좌를 묻지 않는다.
+      // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다.
+      // 여기서 조회하는 건 입금자명 표시와 미등록 시 등록 시트를 먼저 띄우기 위한 용도다.
       let refundAccount = isCodeCheckout ? null : checkoutRefundAccount;
 
       if (!isCodeCheckout && !refundAccount) {
@@ -2600,7 +2601,8 @@ export function ProductDetail({
         return;
       }
 
-      // 코드 참여는 0원이라 계좌를 묻지 않는다.
+      // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다.
+      // 여기서 조회하는 건 입금자명 표시와 미등록 시 등록 시트를 먼저 띄우기 위한 용도다.
       let refundAccount = isCodeCheckout ? null : checkoutRefundAccount;
 
       if (!isCodeCheckout && !refundAccount) {
@@ -2648,7 +2650,6 @@ export function ProductDetail({
         didRequestParticipation = true;
         const result = await participateBuncheol(accessToken, buncheolId, {
           buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
-          refundAccount,
           shippingAddressId,
           participationCode: isCodeCheckout
             ? checkoutCodeInput.trim()
