@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ApiRequestError,
-  requestAdminBuncheolSlots,
+  requestAdminBuncheolMembers,
   requestAdminParticipationCodeIssue,
   requestAdminParticipationCodeRevoke,
   requestAdminParticipationCodes,
-  requestAdminSlotAccessTypeChange,
-  type AdminBuncheolSlotItem,
+  requestAdminMemberAccessTypeChange,
+  type AdminBuncheolMemberItem,
   type AdminParticipationCodeItem,
 } from "@/lib/auth-api";
 import { readAdminAuthState } from "@/lib/admin-auth-store";
@@ -67,7 +67,7 @@ export function AdminParticipationCodeSection({
 }: AdminParticipationCodeSectionProps) {
   const [buncheolIdInput, setBuncheolIdInput] = useState("");
   const [loadedBuncheolId, setLoadedBuncheolId] = useState("");
-  const [slots, setSlots] = useState<AdminBuncheolSlotItem[]>([]);
+  const [slots, setSlots] = useState<AdminBuncheolMemberItem[]>([]);
   const [codes, setCodes] = useState<AdminParticipationCodeItem[]>([]);
   const [message, setMessage] = useState(
     "분철 ID를 입력하면 슬롯과 발급 이력을 불러와요.",
@@ -94,7 +94,7 @@ export function AdminParticipationCodeSection({
 
       try {
         const [nextSlots, nextCodes] = await Promise.all([
-          requestAdminBuncheolSlots(accessToken, buncheolId),
+          requestAdminBuncheolMembers(accessToken, buncheolId),
           requestAdminParticipationCodes(accessToken, buncheolId),
         ]);
 
@@ -143,7 +143,7 @@ export function AdminParticipationCodeSection({
     return () => window.clearTimeout(timer);
   }, [copiedCodeId]);
 
-  async function handleIssue(slot: AdminBuncheolSlotItem, reissue: boolean) {
+  async function handleIssue(slot: AdminBuncheolMemberItem, reissue: boolean) {
     const accessToken = readAdminAuthState().accessToken;
 
     if (!accessToken || pendingSlotId) {
@@ -194,7 +194,7 @@ export function AdminParticipationCodeSection({
   }
 
   async function handleAccessTypeChange(
-    slot: AdminBuncheolSlotItem,
+    slot: AdminBuncheolMemberItem,
     accessType: "OPEN" | "CODE_ONLY",
   ) {
     const accessToken = readAdminAuthState().accessToken;
@@ -204,7 +204,7 @@ export function AdminParticipationCodeSection({
     }
 
     try {
-      await requestAdminSlotAccessTypeChange(
+      await requestAdminMemberAccessTypeChange(
         accessToken,
         loadedBuncheolId,
         slot.buncheolMemberId,

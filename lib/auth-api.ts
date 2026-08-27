@@ -6270,7 +6270,7 @@ export type AdminParticipationCodeItem = {
   revokedAt: string | null;
 };
 
-export type AdminBuncheolSlotItem = {
+export type AdminBuncheolMemberItem = {
   buncheolMemberId: string;
   memberName: string | null;
   price: number;
@@ -6317,7 +6317,7 @@ function getAdminParticipationCodeItem(
   };
 }
 
-function getAdminBuncheolSlotItem(value: unknown): AdminBuncheolSlotItem | null {
+function getAdminBuncheolMemberItem(value: unknown): AdminBuncheolMemberItem | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -6343,12 +6343,12 @@ function getAdminBuncheolSlotItem(value: unknown): AdminBuncheolSlotItem | null 
   };
 }
 
-export async function requestAdminBuncheolSlots(
+export async function requestAdminBuncheolMembers(
   accessToken: string,
   buncheolId: string,
-): Promise<AdminBuncheolSlotItem[]> {
+): Promise<AdminBuncheolMemberItem[]> {
   const response = await fetchWithTimeout(
-    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/slots`,
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/members`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
@@ -6360,8 +6360,8 @@ export async function requestAdminBuncheolSlots(
 
   return Array.isArray(body)
     ? body
-        .map(getAdminBuncheolSlotItem)
-        .filter((item): item is AdminBuncheolSlotItem => item !== null)
+        .map(getAdminBuncheolMemberItem)
+        .filter((item): item is AdminBuncheolMemberItem => item !== null)
     : [];
 }
 
@@ -6424,14 +6424,14 @@ export async function requestAdminParticipationCodeIssue(
 }
 
 /** 활성 참여가 있는 슬롯은 서버가 거부한다. */
-export async function requestAdminSlotAccessTypeChange(
+export async function requestAdminMemberAccessTypeChange(
   accessToken: string,
   buncheolId: string,
   buncheolMemberId: string,
   accessType: "OPEN" | "CODE_ONLY",
 ) {
   const response = await fetchWithTimeout(
-    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/slots/${buncheolMemberId}`,
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${buncheolId}/members/${buncheolMemberId}`,
     {
       body: JSON.stringify({ accessType }),
       credentials: "include",
