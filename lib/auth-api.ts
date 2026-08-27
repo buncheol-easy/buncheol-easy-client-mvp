@@ -6390,7 +6390,7 @@ export async function requestAdminParticipationCodeIssue(
   body: {
     buncheolMemberId: number;
     issuedTo?: string | null;
-    validHours?: number | null;
+    validHours: number;
     reissue?: boolean;
   },
 ): Promise<AdminParticipationCodeItem> {
@@ -6400,7 +6400,7 @@ export async function requestAdminParticipationCodeIssue(
       body: JSON.stringify({
         buncheolMemberId: body.buncheolMemberId,
         ...(body.issuedTo ? { issuedTo: body.issuedTo } : {}),
-        ...(body.validHours ? { validHours: body.validHours } : {}),
+        validHours: body.validHours,
         reissue: body.reissue === true,
       }),
       credentials: "include",

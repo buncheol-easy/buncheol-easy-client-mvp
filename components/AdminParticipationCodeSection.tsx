@@ -13,7 +13,9 @@ import {
 } from "@/lib/auth-api";
 import { readAdminAuthState } from "@/lib/admin-auth-store";
 
+// 폼 초기값일 뿐 서버 기본값이 아니다 — 발급 API 는 validHours 를 항상 요구한다.
 const DEFAULT_VALID_HOURS = 48;
+const MAX_VALID_HOURS = 24 * 30;
 
 function formatPrice(value: number) {
   return `${value.toLocaleString("ko-KR")}원`;
@@ -157,6 +159,19 @@ export function AdminParticipationCodeSection({
       return;
     }
 
+    const validHours = Number(
+      validHoursBySlot[slot.buncheolMemberId] ?? DEFAULT_VALID_HOURS,
+    );
+
+    if (
+      !Number.isInteger(validHours) ||
+      validHours < 1 ||
+      validHours > MAX_VALID_HOURS
+    ) {
+      setMessage(`유효 시간은 1~${MAX_VALID_HOURS} 사이 정수로 입력해 주세요.`);
+      return;
+    }
+
     setPendingSlotId(slot.buncheolMemberId);
 
     try {
@@ -166,9 +181,7 @@ export function AdminParticipationCodeSection({
         {
           buncheolMemberId: memberId,
           issuedTo: issuedToBySlot[slot.buncheolMemberId]?.trim() || null,
-          validHours:
-            Number(validHoursBySlot[slot.buncheolMemberId]) ||
-            DEFAULT_VALID_HOURS,
+          validHours,
           reissue,
         },
       );
@@ -392,8 +405,10 @@ export function AdminParticipationCodeSection({
                           [slot.buncheolMemberId]: event.target.value,
                         }))
                       }
-                      placeholder={String(DEFAULT_VALID_HOURS)}
-                      value={validHoursBySlot[slot.buncheolMemberId] ?? ""}
+                      value={
+                        validHoursBySlot[slot.buncheolMemberId] ??
+                        String(DEFAULT_VALID_HOURS)
+                      }
                     />
                   </label>
                   {activeCode ? (
@@ -438,7 +453,8 @@ export function AdminParticipationCodeSection({
                 </div>
                 <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
                   발급 계정은 코드를 보낼 곳을 남기는 운영 메모예요 (예: X_buncheoleasy,
-                  N_blogid). 유효 시간을 비우면 {DEFAULT_VALID_HOURS}시간이 적용돼요.
+                  N_blogid). 유효 시간은 발급할 때마다 직접 정해요 (1~
+                  {MAX_VALID_HOURS}시간).
                   {activeCode ? " 재발급하면 위 코드는 즉시 무효가 돼요." : ""}
                 </p>
               </div>
