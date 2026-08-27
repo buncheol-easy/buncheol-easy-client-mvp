@@ -1451,7 +1451,7 @@ export function AdminPaymentsDashboard() {
                 ...(FEATURES.shippingFeePayback
                   ? ([{ key: "payback", label: "배송비 돌려받기" }] as const)
                   : []),
-                { key: "codes", label: "참여 코드" },
+                { key: "codes", label: "서포터즈 참여코드 발급" },
               ] as const
             ).map((tab) => (
               <button
