@@ -1111,6 +1111,13 @@ export function ProductDetail({
   const [isHostedByMeFromApi, setIsHostedByMeFromApi] = useState(
     product.isHostedByMe === true,
   );
+  // 서버는 오픈채팅 링크를 개최자·활성 참여자에게만 싣는다(server#144). product prop 은 마운트
+  // 시점 응답이라 그때는 아직 참여자가 아니어서 링크가 null 이고, 신청해도 prop 은 갱신되지
+  // 않는다(ApiProductDetail 의 상세 로드 effect 가 참여 상태를 deps 로 갖지 않는다). 신청 직후
+  // refreshDetailOptions 가 상세를 다시 받으므로 그 값을 여기에 덮어 링크를 즉시 노출한다.
+  const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
+    null,
+  );
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -1720,8 +1727,10 @@ export function ProductDetail({
     (option) => option.participatedByMe === true,
   );
   const isAdditionalC2CApplication = isC2CProduct && hasMyServerParticipation;
+  // 재조회로 받은 값을 우선한다 — prop 은 마운트 시점 응답이라 신청 직후에도 링크가 비어 있다.
+  // 재조회가 null 을 주면(링크 미등록·참여 해제) prop 으로 되돌아가 기존 동작을 유지한다.
   const productOpenChatHref = isC2CProduct
-    ? getSafeOpenChatHref(product.openChatUrl)
+    ? getSafeOpenChatHref(openChatUrlFromApi ?? product.openChatUrl)
     : null;
   const canBidProduct =
     !isPublicPreview &&
@@ -2228,6 +2237,7 @@ export function ProductDetail({
       const refreshedProduct = toProductDetailItem(detail);
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
       setIsHostedByMeFromApi(isHosted);
+      setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
       setAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
       setBidAmounts((current) =>
