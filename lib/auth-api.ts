@@ -399,6 +399,9 @@ export type BuncheolManagementParticipant = {
   buncheolMemberId?: string;
   confirmedAt?: string | null;
   delivery?: BuncheolManagementDelivery | null;
+  // 입금자명(= 환불 계좌 예금주). 서버가 평시에 계좌 대신 이것만 내린다 (docs/70 결정 21).
+  // refundAccount 는 개최자가 실제로 환불해야 하는 건에만 채워지므로 대조 키는 이쪽을 봐야 한다.
+  depositorName?: string | null;
   dueAt?: string | null;
   memberName: string;
   participantNickname: string;
@@ -432,6 +435,8 @@ export type BuncheolManagementDetail = {
   id: string;
   memberCount?: number;
   minHeadcount?: number;
+  // 참여자 소통용 오픈채팅 링크 — 등록하지 않았으면 null. 개최 관리 화면에서 바로 수정한다.
+  openChatUrl?: string | null;
   optionCount: number;
   options: BuncheolManagementOption[];
   participants: BuncheolManagementParticipant[];
@@ -3485,6 +3490,11 @@ function getBuncheolManagementParticipantFromRecord(
       getStringValue(record, ["memberName", "name", "label"]) ||
       fallback.memberName ||
       "멤버",
+    depositorName:
+      getOptionalStringValue(record, ["depositorName", "depositor"]) ??
+      // 구버전 서버 폴백 — 계좌를 통째로 내리던 시절엔 예금주가 대조 키였다.
+      refundAccount?.holder ??
+      null,
     participantNickname,
     participationId,
     paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
@@ -3752,6 +3762,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
       getNumberValue(data, ["optionCount", "memberSlotCount", "memberCount"]) ??
       options.length,
     options,
+    openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
     participants,
     paymentDueAt: getOptionalStringValue(data, ["paymentDueAt"]) ?? null,
     purchaseSite: getOptionalStringValue(data, [
@@ -4167,6 +4178,33 @@ export async function requestBuncheolManagement(
   }
 
   return detail;
+}
+
+/**
+ * 오픈채팅 링크만 수정한다. 전체 수정(updateBuncheol)은 모집중에만 통하지만 이 경로는 입금 수집중·진행확정에서도 열린다.
+ * 빈 문자열을 보내면 링크가 제거된다.
+ */
+export async function updateBuncheolOpenChatUrl(
+  accessToken: string,
+  buncheolId: string,
+  openChatUrl: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/open-chat-url`,
+    {
+      body: JSON.stringify({ openChatUrl }),
+      credentials: "include",
+      headers: {
+        ...getAuthHeaders(accessToken),
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
 }
 
 const buncheolHostPermissionErrorCode = "USR-031";

@@ -41,22 +41,7 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
-import { getSafeOpenChatHref } from "@/lib/open-chat-url";
-
-// 카카오에서 복사한 주소는 스킴 없이 오는 경우가 흔하다("open.kakao.com/o/...") —
-// 스킴이 없으면 https:// 를 붙여 한 번 더 검증한다.
-function getNormalizedOpenChatUrl(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!trimmedValue) {
-    return null;
-  }
-
-  return (
-    getSafeOpenChatHref(trimmedValue) ??
-    getSafeOpenChatHref(`https://${trimmedValue}`)
-  );
-}
+import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
 import {
   getInitialAuthState,
   readAuthState,
@@ -951,7 +936,7 @@ export function UploadProductForm({
     if (
       !isEditMode &&
       openChatUrl.trim() &&
-      !getNormalizedOpenChatUrl(openChatUrl)
+      !normalizeOpenChatUrlInput(openChatUrl)
     ) {
       return {
         field: "openChatUrl",
@@ -2136,7 +2121,7 @@ export function UploadProductForm({
               groupId: apiGroupId,
               minHeadcount: parsedMinHeadcount,
               // 검증을 통과한 정규화 값(스킴 보정·호스트 소문자화)을 전송한다.
-              openChatUrl: getNormalizedOpenChatUrl(openChatUrl) ?? undefined,
+              openChatUrl: normalizeOpenChatUrlInput(openChatUrl) ?? undefined,
               gs25ShippingFee: getStoreShippingFee(
                 selectedShipping,
                 shippingPrices,
@@ -2485,19 +2470,19 @@ export function UploadProductForm({
                           잠긴 정보
                         </p>
                         <div className="mt-3 grid grid-cols-2 gap-3">
-                          <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
+                          <div className="min-w-0 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
                             <p className="text-[12px] font-semibold text-black/35">
                               구매처
                             </p>
-                            <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
+                            <p className="mt-2 break-keep break-words text-[16px] font-semibold tracking-[-0.05em]">
                               {purchaseSource || "-"}
                             </p>
                           </div>
-                          <div className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
+                          <div className="min-w-0 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
                             <p className="text-[12px] font-semibold text-black/35">
                               아이돌 그룹
                             </p>
-                            <p className="mt-2 text-[16px] font-semibold tracking-[-0.05em]">
+                            <p className="mt-2 break-keep break-words text-[16px] font-semibold tracking-[-0.05em]">
                               {selectedGroup?.name ?? editingProduct?.era ?? "-"}
                             </p>
                           </div>
