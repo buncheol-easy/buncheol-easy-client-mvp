@@ -67,7 +67,9 @@ function formatWonAmount(value: number | null | undefined) {
 // 입금자명 표기 규칙. 개최자가 통장에서 대조하는 이름이라 확인 시트 문구와 목록 행이 반드시 같은 값을
 // 써야 한다 — 세 곳에 흩어져 있던 같은 식을 모았다(한쪽만 바뀌면 시트와 행의 이름이 조용히 갈린다).
 function getDepositorName(participant: BuncheolManagementParticipant) {
-  return participant.refundAccount?.holder || participant.participantNickname;
+  // 파서(lib/auth-api.ts)가 depositorName 안에서 이미 refundAccount.holder 를 흡수하므로
+  // 여기서 holder 를 다시 보면 도달 불가 분기가 된다 — 닉네임 폴백만 남긴다.
+  return participant.depositorName || participant.participantNickname;
 }
 
 function formatKoreaDateTime(value: string | undefined) {
@@ -1696,13 +1698,13 @@ export function HostedBuncheolManage({
                 // ⚠️ participationId 가 일치하는 참여만 쓴다. LEGACY 는 슬롯당 참여가 여러 건이라
                 // participants[0] 은 낙찰자라는 보장이 없고, 그걸 폴백으로 쓰면 제3자의 실명 예금주가
                 // "입금자명"에 찍힌다 — 대조를 틀리게 만들 뿐 아니라 실명 노출이다.
-                // holder 는 빈 문자열일 수 있어 ?? 가 아니라 || 로 폴백한다.
+                const matchedParticipant = option.participants?.find(
+                  (participant) =>
+                    participant.participationId ===
+                    option.winner?.participationId,
+                );
                 const optionDepositorName =
-                  option.participants?.find(
-                    (participant) =>
-                      participant.participationId ===
-                      option.winner?.participationId,
-                  )?.refundAccount?.holder ||
+                  matchedParticipant?.depositorName ||
                   option.winner?.depositorName ||
                   null;
                 const isTrackingRegistered = Boolean(
@@ -1819,7 +1821,14 @@ export function HostedBuncheolManage({
                                       <span className="mr-2 text-black/35">
                                         참여자
                                       </span>
-                                      {option.winner?.depositorName ?? "-"}
+                                      {/* ⚠️ winner.depositorName 을 쓰면 안 된다. winner 파서는
+                                          depositorName → … → participantNickname 순으로 읽는데,
+                                          서버가 참여 레코드에 depositorName(실명 예금주)을 싣기 시작하면
+                                          이 줄이 실명으로 바뀐다 — 라벨과 값이 어긋나고 바로 아래
+                                          "입금자명"과 같은 값이 두 번 뜨며 닉네임이 화면에서 사라진다.
+                                          이 줄은 닉네임 전용이다. */}
+                                      {matchedParticipant?.participantNickname ??
+                                        "-"}
                                     </p>
                                     {/* 통장에 찍히는 건 예금주명이라, 닉네임(참여자)만으로는 대조가 안 된다 (docs/53 Q-18).
                                         C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}

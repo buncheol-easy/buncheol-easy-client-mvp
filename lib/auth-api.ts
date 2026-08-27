@@ -399,6 +399,9 @@ export type BuncheolManagementParticipant = {
   buncheolMemberId?: string;
   confirmedAt?: string | null;
   delivery?: BuncheolManagementDelivery | null;
+  // 입금자명(= 환불 계좌 예금주). 서버가 평시에 계좌 대신 이것만 내린다 (docs/70 결정 21).
+  // refundAccount 는 개최자가 실제로 환불해야 하는 건에만 채워지므로 대조 키는 이쪽을 봐야 한다.
+  depositorName?: string | null;
   dueAt?: string | null;
   memberName: string;
   participantNickname: string;
@@ -3487,6 +3490,11 @@ function getBuncheolManagementParticipantFromRecord(
       getStringValue(record, ["memberName", "name", "label"]) ||
       fallback.memberName ||
       "멤버",
+    depositorName:
+      getOptionalStringValue(record, ["depositorName", "depositor"]) ??
+      // 구버전 서버 폴백 — 계좌를 통째로 내리던 시절엔 예금주가 대조 키였다.
+      refundAccount?.holder ??
+      null,
     participantNickname,
     participationId,
     paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
