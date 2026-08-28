@@ -2551,9 +2551,11 @@ export function ProductDetail({
 
       // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다.
       // 여기서 조회하는 건 입금자명 표시와 미등록 시 등록 시트를 먼저 띄우기 위한 용도다.
-      let refundAccount = isCodeCheckout ? null : checkoutRefundAccount;
+      // 0원(코드) 참여도 예외가 아니다 — 서버가 금액과 무관하게 계좌를 요구하므로(서버 PR #151),
+      // 여기서 막지 않으면 참여 요청이 409 USR-025 로 떨어지고 이유가 화면에 드러나지 않는다.
+      let refundAccount = checkoutRefundAccount;
 
-      if (!isCodeCheckout && !refundAccount) {
+      if (!refundAccount) {
         try {
           const profile = await requestUserProfile(accessToken);
 
@@ -2565,8 +2567,9 @@ export function ProductDetail({
       }
 
       if (
-        !isCodeCheckout &&
-        (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder)
+        !refundAccount?.bank ||
+        !refundAccount.account ||
+        !refundAccount.holder
       ) {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
@@ -2665,9 +2668,11 @@ export function ProductDetail({
 
       // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다.
       // 여기서 조회하는 건 입금자명 표시와 미등록 시 등록 시트를 먼저 띄우기 위한 용도다.
-      let refundAccount = isCodeCheckout ? null : checkoutRefundAccount;
+      // 0원(코드) 참여도 예외가 아니다 — 서버가 금액과 무관하게 계좌를 요구하므로(서버 PR #151),
+      // 여기서 막지 않으면 참여 요청이 409 USR-025 로 떨어지고 이유가 화면에 드러나지 않는다.
+      let refundAccount = checkoutRefundAccount;
 
-      if (!isCodeCheckout && !refundAccount) {
+      if (!refundAccount) {
         try {
           const profile = await requestUserProfile(accessToken);
 
@@ -2679,8 +2684,9 @@ export function ProductDetail({
       }
 
       if (
-        !isCodeCheckout &&
-        (!refundAccount?.bank || !refundAccount.account || !refundAccount.holder)
+        !refundAccount?.bank ||
+        !refundAccount.account ||
+        !refundAccount.holder
       ) {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
@@ -5092,8 +5098,9 @@ export function ProductDetail({
                 계좌 등록
               </h2>
               <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
-                입금자명 확인과 환불에 쓰고, 분철을 개최하면 참여자 입금을 받는
-                계좌이기도 해요. 등록하면 참여를 바로 이어갈 수 있어요.
+                {isCodeCheckout
+                  ? "서포터즈 슬롯은 0원이지만, 참여자 확인과 분철 개최에 쓰이는 계좌라 등록이 필요해요. 등록하면 참여를 바로 이어갈 수 있어요."
+                  : "입금자명 확인과 환불에 쓰고, 분철을 개최하면 참여자 입금을 받는 계좌이기도 해요. 등록하면 참여를 바로 이어갈 수 있어요."}
               </p>
 
               <div className="mt-4 space-y-3">
