@@ -976,6 +976,30 @@ const freeProgressStepLabels = [
   ...bidProgressStepLabels.slice(2),
 ] as const;
 
+// 0원 참여 전용 축. 라벨이 5칸이므로 인덱스도 반드시 5칸으로 뽑아야 한다 —
+// C2C 6칸 축을 물리면 한 칸씩 앞서 표시된다(코드 참여는 생성 즉시 CONFIRMED 라
+// 첫 화면부터 어긋나고, 배송 중인 건이 "배송 완료"로 보인다).
+function getFreeBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
+  if (isBidRecordCancelled(bid) || isBidRecordPaymentExpired(bid, now)) {
+    return -1;
+  }
+
+  if (isDeliveryCompletedStatus(bid.deliveryStatus)) {
+    return 4;
+  }
+
+  if (isDeliveryInProgress(bid)) {
+    return 3;
+  }
+
+  if (isBidRecordPaymentConfirmed(bid)) {
+    return isBuncheolConfirmedStatus(bid.buncheolStatus) ? 2 : 1;
+  }
+
+  // 0원이라 입금 기한이 없어 "입금 가능" 판정을 쓸 수 없다. 확정 전은 전부 접수 단계로 둔다.
+  return 0;
+}
+
 function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
   const isC2C = isC2CBidRecord(bid);
   const labels = isFreeBidRecord(bid)
@@ -983,9 +1007,11 @@ function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
     : isC2C
       ? c2cProgressStepLabels
       : bidProgressStepLabels;
-  const currentStepIndex = isC2C
-    ? getC2CBidRecordProgressStepIndex(bid, now)
-    : getBidRecordProgressStepIndex(bid, now);
+  const currentStepIndex = isFreeBidRecord(bid)
+    ? getFreeBidRecordProgressStepIndex(bid, now)
+    : isC2C
+      ? getC2CBidRecordProgressStepIndex(bid, now)
+      : getBidRecordProgressStepIndex(bid, now);
 
   // isCurrent 는 "지금 어디"를 점 하나로 표시하기 위한 것 — 라벨이 10px 이라
   // 채워진 점만으로는 진행된 구간과 현재 단계가 구분되지 않았다.

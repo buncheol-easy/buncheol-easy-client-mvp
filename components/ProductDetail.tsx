@@ -1504,6 +1504,9 @@ export function ProductDetail({
         bankName: bank,
       });
       setRefundAccountError("");
+      // 계좌 미등록으로 참여가 막혔을 때 세운 배너다. 등록에 성공했으면 같이 걷어야
+      // "등록했어요" 토스트와 "등록이 필요해요" 배너가 동시에 뜨지 않는다.
+      setCheckoutError("");
       setIsRefundAccountSheetOpen(false);
       showProductToast("계좌를 등록했어요. 이어서 참여해 주세요.");
     } catch (error: unknown) {
@@ -1821,8 +1824,10 @@ export function ProductDetail({
   const isAdditionalC2CApplication =
     isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct;
   // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
+  // 코드 참여는 배송비까지 전액 지원이라 제외한다 — 안 빼면 "배송비가 한 번 더 부과돼요"와
+  // "배송비까지 전액 지원"이 같은 화면에 나란히 뜬다.
   const isRebundledC2CApplication =
-    hasMyServerParticipation && isC2CCollectingProduct;
+    hasMyServerParticipation && isC2CCollectingProduct && !isCodeCheckout;
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
   // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct
