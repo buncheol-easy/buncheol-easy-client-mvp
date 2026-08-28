@@ -30,13 +30,19 @@ type AccessTokenResponse = {
 
 export class ApiRequestError extends Error {
   status: number;
+  // 서버 에러 코드(BCH-xxx·USR-xxx). 메시지 문자열 매칭 없이 분기해야 하는 곳에서만 채운다.
+  code?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.code = code;
   }
 }
+
+// 마이페이지 정산 계좌 미등록. 서버가 참여 요청에서 금액과 무관하게 계좌를 요구한다(서버 PR #151).
+export const USER_BANK_ACCOUNT_NOT_REGISTERED_CODE = "USR-025";
 
 export type UserProfileStatus = {
   isProfileComplete: boolean;
@@ -4352,7 +4358,21 @@ export async function participateBuncheol(
   );
 
   if (!response.ok) {
-    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+    // 코드를 버리면(parseErrorMessage) 계좌 미등록을 메시지 문자열로만 식별하게 된다 — 서버 문구가
+    // 바뀌는 순간 조용히 깨지고, 그 자리에 서버 원문이 그대로 노출된다.
+    const errorBody = await readJsonBody(response);
+    const errorCode = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["code"])
+      : undefined;
+    const errorDetail = isRecord(errorBody)
+      ? getOptionalStringValue(errorBody, ["message", "detail", "title"])
+      : undefined;
+
+    throw new ApiRequestError(
+      errorDetail || response.statusText || "참여를 시작하지 못했어요.",
+      response.status,
+      errorCode,
+    );
   }
 
   const data = getNestedData(await readJsonBody(response));

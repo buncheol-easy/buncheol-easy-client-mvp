@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
   ApiRequestError,
+  USER_BANK_ACCOUNT_NOT_REGISTERED_CODE,
   addBuncheolBookmark,
   deleteBuncheol,
   participateBuncheol,
@@ -1512,6 +1513,51 @@ export function ProductDetail({
     }
   }
 
+  // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다. 여기서 확인하는 건
+  // 입금자명 표시와, 미등록이면 등록 시트를 먼저 띄우기 위한 용도다. 0원(코드) 참여도 예외가 아니다 —
+  // 서버가 금액과 무관하게 계좌를 요구하므로(서버 PR #151) 예외를 두면 참여 요청이 409 로 떨어진다.
+  //
+  // ⚠️ "조회 실패"와 "미등록"을 반드시 구분한다. 실패를 미등록으로 취급하면 계좌가 있는 유저에게 빈 폼을
+  // 띄우고, 저장하는 순간 기존 정산 계좌를 덮어쓴다. 체크아웃 진입·제출 두 게이트가 같은 판정을 쓰도록
+  // 한 곳에 모았다 — 한쪽만 고치는 사고가 이 PR 이 고치고 있는 문제의 원인이었다.
+  async function resolveCheckoutRefundAccount(
+    accessToken: string,
+  ): Promise<
+    | { account: BankAccountInfo; status: "ready" }
+    | { status: "missing" }
+    | { status: "unavailable" }
+  > {
+    if (
+      checkoutRefundAccount?.bank &&
+      checkoutRefundAccount.account &&
+      checkoutRefundAccount.holder
+    ) {
+      return { account: checkoutRefundAccount, status: "ready" };
+    }
+
+    let profileAccount: BankAccountInfo | null;
+
+    try {
+      const profile = await requestUserProfile(accessToken);
+
+      profileAccount = profile.bankAccount;
+    } catch {
+      return { status: "unavailable" };
+    }
+
+    if (
+      !profileAccount?.bank ||
+      !profileAccount.account ||
+      !profileAccount.holder
+    ) {
+      return { status: "missing" };
+    }
+
+    setCheckoutRefundAccount(profileAccount);
+
+    return { account: profileAccount, status: "ready" };
+  }
+
   // 접수처 선택 즉시 배송지를 등록하고 이번 체크아웃 배송지로 잡는다 — 페이지 이탈 없음.
   async function handleCheckoutStoreSelected(store: CvsStore) {
     if (checkoutAddressCreateRef.current) {
@@ -2549,33 +2595,25 @@ export function ProductDetail({
         return;
       }
 
-      // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다.
-      // 여기서 조회하는 건 입금자명 표시와 미등록 시 등록 시트를 먼저 띄우기 위한 용도다.
-      // 0원(코드) 참여도 예외가 아니다 — 서버가 금액과 무관하게 계좌를 요구하므로(서버 PR #151),
-      // 여기서 막지 않으면 참여 요청이 409 USR-025 로 떨어지고 이유가 화면에 드러나지 않는다.
-      let refundAccount = checkoutRefundAccount;
+      const refundAccountResult =
+        await resolveCheckoutRefundAccount(accessToken);
 
-      if (!refundAccount) {
-        try {
-          const profile = await requestUserProfile(accessToken);
-
-          refundAccount = profile.bankAccount;
-          setCheckoutRefundAccount(refundAccount);
-        } catch {
-          refundAccount = null;
-        }
+      if (refundAccountResult.status === "unavailable") {
+        setIsBidSubmitPending(false);
+        showProductToast(
+          "계좌 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
+        );
+        return;
       }
 
-      if (
-        !refundAccount?.bank ||
-        !refundAccount.account ||
-        !refundAccount.holder
-      ) {
+      if (refundAccountResult.status === "missing") {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
         setIsRefundAccountSheetOpen(true);
         return;
       }
+
+      const refundAccount = refundAccountResult.account;
 
       setCheckoutDeliveryAddress(nextBidDeliveryAddress);
       setCheckoutRefundAccount(refundAccount);
@@ -2666,28 +2704,18 @@ export function ProductDetail({
         return;
       }
 
-      // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다.
-      // 여기서 조회하는 건 입금자명 표시와 미등록 시 등록 시트를 먼저 띄우기 위한 용도다.
-      // 0원(코드) 참여도 예외가 아니다 — 서버가 금액과 무관하게 계좌를 요구하므로(서버 PR #151),
-      // 여기서 막지 않으면 참여 요청이 409 USR-025 로 떨어지고 이유가 화면에 드러나지 않는다.
-      let refundAccount = checkoutRefundAccount;
+      const refundAccountResult =
+        await resolveCheckoutRefundAccount(accessToken);
 
-      if (!refundAccount) {
-        try {
-          const profile = await requestUserProfile(accessToken);
-
-          refundAccount = profile.bankAccount;
-          setCheckoutRefundAccount(refundAccount);
-        } catch {
-          refundAccount = null;
-        }
+      if (refundAccountResult.status === "unavailable") {
+        setIsBidSubmitPending(false);
+        setCheckoutError(
+          "계좌 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
+        );
+        return;
       }
 
-      if (
-        !refundAccount?.bank ||
-        !refundAccount.account ||
-        !refundAccount.holder
-      ) {
+      if (refundAccountResult.status === "missing") {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
         setIsRefundAccountSheetOpen(true);
@@ -2857,6 +2885,11 @@ export function ProductDetail({
           error instanceof Error ? error.message : "참여를 시작하지 못했어요.";
         const isForbidden =
           error instanceof ApiRequestError && error.status === 403;
+        // 선차단(resolveCheckoutRefundAccount)이 서버 조건과 어긋났을 때의 마지막 방어선.
+        // 이게 없으면 서버 원문이 그대로 노출되고, 사용자는 어디서 계좌를 등록하는지 알 수 없다.
+        const needsBankAccount =
+          error instanceof ApiRequestError &&
+          error.code === USER_BANK_ACCOUNT_NOT_REGISTERED_CODE;
         const didDeadlinePass = isDeadlineClosed(product.deadline);
         const isHostParticipationBlocked =
           errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
@@ -2866,7 +2899,11 @@ export function ProductDetail({
           errorMessage.includes("본인") ||
           errorMessage.includes("내가 연");
 
-        if (isHostParticipationBlocked) {
+        if (needsBankAccount) {
+          setCheckoutError("");
+          setRefundAccountError("");
+          setIsRefundAccountSheetOpen(true);
+        } else if (isHostParticipationBlocked) {
           setIsHostedByMeFromApi(true);
           setCheckoutError(
             "내가 연 분철은 참여할 수 없어요. 다른 계정으로 전환해 주세요.",
@@ -5099,8 +5136,9 @@ export function ProductDetail({
               </h2>
               <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
                 {isCodeCheckout
-                  ? "서포터즈 슬롯은 0원이지만, 참여자 확인과 분철 개최에 쓰이는 계좌라 등록이 필요해요. 등록하면 참여를 바로 이어갈 수 있어요."
-                  : "입금자명 확인과 환불에 쓰고, 분철을 개최하면 참여자 입금을 받는 계좌이기도 해요. 등록하면 참여를 바로 이어갈 수 있어요."}
+                  ? "서포터즈 슬롯은 0원이라 입금할 금액은 없지만, 정산 계좌는 모든 참여에 공통으로 필요해요. 마이페이지에 저장되고 나중에 유료 분철에 참여하거나 직접 개최할 때 그대로 쓰여요."
+                  : "입금자명 확인과 환불에 쓰고, 분철을 개최하면 참여자 입금을 받는 계좌이기도 해요."}{" "}
+                등록하면 참여를 바로 이어갈 수 있어요.
               </p>
 
               <div className="mt-4 space-y-3">
