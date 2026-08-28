@@ -4360,19 +4360,24 @@ export async function participateBuncheol(
   if (!response.ok) {
     // 코드를 버리면(parseErrorMessage) 계좌 미등록을 메시지 문자열로만 식별하게 된다 — 서버 문구가
     // 바뀌는 순간 조용히 깨지고, 그 자리에 서버 원문이 그대로 노출된다.
-    const errorBody = await readJsonBody(response);
-    const errorCode = isRecord(errorBody)
+    const parsedErrorBody: unknown = await readJsonBody(response);
+    const errorBody = isRecord(parsedErrorBody) ? parsedErrorBody : null;
+
+    // ⚠️ parseErrorMessage 와 같은 규칙 — 빈 문자열은 건너뛰고 다음 후보로 간다. getStringValue 계열은
+    // 빈 문자열에서 멈추므로 message:"" + detail:"..." 이면 detail 을 잃는다. 호출부(ProductDetail)의
+    // 개최자 참여 차단 안내가 이 메시지 문자열 매칭에 걸려 있어, 좁히면 그 분기가 통째로 죽는다.
+    const errorMessage =
+      getFirstNonEmptyString(
+        errorBody?.message,
+        errorBody?.detail,
+        errorBody?.title,
+        response.statusText,
+      ) || DEFAULT_ERROR_MESSAGE;
+    const errorCode = errorBody
       ? getOptionalStringValue(errorBody, ["code"])
       : undefined;
-    const errorDetail = isRecord(errorBody)
-      ? getOptionalStringValue(errorBody, ["message", "detail", "title"])
-      : undefined;
 
-    throw new ApiRequestError(
-      errorDetail || response.statusText || "참여를 시작하지 못했어요.",
-      response.status,
-      errorCode,
-    );
+    throw new ApiRequestError(errorMessage, response.status, errorCode);
   }
 
   const data = getNestedData(await readJsonBody(response));

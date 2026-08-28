@@ -1513,13 +1513,10 @@ export function ProductDetail({
     }
   }
 
-  // 참여 요청에는 계좌를 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다. 여기서 확인하는 건
-  // 입금자명 표시와, 미등록이면 등록 시트를 먼저 띄우기 위한 용도다. 0원(코드) 참여도 예외가 아니다 —
-  // 서버가 금액과 무관하게 계좌를 요구하므로(서버 PR #151) 예외를 두면 참여 요청이 409 로 떨어진다.
-  //
-  // ⚠️ "조회 실패"와 "미등록"을 반드시 구분한다. 실패를 미등록으로 취급하면 계좌가 있는 유저에게 빈 폼을
-  // 띄우고, 저장하는 순간 기존 정산 계좌를 덮어쓴다. 체크아웃 진입·제출 두 게이트가 같은 판정을 쓰도록
-  // 한 곳에 모았다 — 한쪽만 고치는 사고가 이 PR 이 고치고 있는 문제의 원인이었다.
+  // 계좌는 요청에 싣지 않는다 — 서버가 마이페이지 정산 계좌를 읽는다. 여기서 확인하는 건 입금자명 표시와,
+  // 미등록이면 등록 시트를 먼저 띄우기 위한 용도다(0원 코드 참여도 서버가 계좌를 요구한다).
+  // ⚠️ 조회 실패(unavailable)를 미등록으로 취급하면 계좌가 있는 유저에게 빈 폼을 띄우고 저장 시 기존
+  // 정산 계좌를 덮어쓴다. 막는 것은 미등록이 "확인된" 경우뿐이고, 모르는 경우는 서버 판정에 맡긴다.
   async function resolveCheckoutRefundAccount(
     accessToken: string,
   ): Promise<
@@ -2598,14 +2595,8 @@ export function ProductDetail({
       const refundAccountResult =
         await resolveCheckoutRefundAccount(accessToken);
 
-      if (refundAccountResult.status === "unavailable") {
-        setIsBidSubmitPending(false);
-        showProductToast(
-          "계좌 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
-        );
-        return;
-      }
-
+      // 조회에 실패했으면(unavailable) 막지 않는다 — 계좌가 있는 유저까지 참여가 끊긴다.
+      // 최종 판정은 서버가 하고, 계좌 미등록이면 409 USR-025 로 돌아와 시트를 띄운다.
       if (refundAccountResult.status === "missing") {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
@@ -2613,10 +2604,11 @@ export function ProductDetail({
         return;
       }
 
-      const refundAccount = refundAccountResult.account;
-
       setCheckoutDeliveryAddress(nextBidDeliveryAddress);
-      setCheckoutRefundAccount(refundAccount);
+
+      if (refundAccountResult.status === "ready") {
+        setCheckoutRefundAccount(refundAccountResult.account);
+      }
     } else {
       setCheckoutDeliveryAddress(bidDeliveryAddress);
       setCheckoutRefundAccount(null);
@@ -2707,14 +2699,7 @@ export function ProductDetail({
       const refundAccountResult =
         await resolveCheckoutRefundAccount(accessToken);
 
-      if (refundAccountResult.status === "unavailable") {
-        setIsBidSubmitPending(false);
-        setCheckoutError(
-          "계좌 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
-        );
-        return;
-      }
-
+      // 진입 게이트와 같은 규칙 — 조회 실패는 통과시키고 서버 409 를 최종 판정으로 쓴다.
       if (refundAccountResult.status === "missing") {
         setIsBidSubmitPending(false);
         setRefundAccountError("");
@@ -2900,7 +2885,8 @@ export function ProductDetail({
           errorMessage.includes("내가 연");
 
         if (needsBankAccount) {
-          setCheckoutError("");
+          // 시트는 배경 탭으로 닫힌다 — 흔적을 안 남기면 "참여하기를 눌렀는데 아무 일도 없는 화면"이 된다.
+          setCheckoutError("참여하려면 정산 계좌 등록이 필요해요.");
           setRefundAccountError("");
           setIsRefundAccountSheetOpen(true);
         } else if (isHostParticipationBlocked) {
@@ -5136,7 +5122,7 @@ export function ProductDetail({
               </h2>
               <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
                 {isCodeCheckout
-                  ? "서포터즈 슬롯은 0원이라 입금할 금액은 없지만, 정산 계좌는 모든 참여에 공통으로 필요해요. 마이페이지에 저장되고 나중에 유료 분철에 참여하거나 직접 개최할 때 그대로 쓰여요."
+                  ? "서포터즈 슬롯은 0원이라 입금할 금액은 없지만, 정산 계좌는 모든 참여에 공통으로 필요해요. 마이페이지에 저장돼요."
                   : "입금자명 확인과 환불에 쓰고, 분철을 개최하면 참여자 입금을 받는 계좌이기도 해요."}{" "}
                 등록하면 참여를 바로 이어갈 수 있어요.
               </p>
