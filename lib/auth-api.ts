@@ -30,13 +30,19 @@ type AccessTokenResponse = {
 
 export class ApiRequestError extends Error {
   status: number;
+  // 서버 에러 코드(BCH-xxx·USR-xxx). 메시지 문자열 매칭 없이 분기해야 하는 곳에서만 채운다.
+  code?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.code = code;
   }
 }
+
+// 마이페이지 정산 계좌 미등록. 서버가 참여 요청에서 금액과 무관하게 계좌를 요구한다(서버 PR #151).
+export const USER_BANK_ACCOUNT_NOT_REGISTERED_CODE = "USR-025";
 
 export type UserProfileStatus = {
   isProfileComplete: boolean;
@@ -180,8 +186,8 @@ export type UpdateBuncheolRequest = {
 
 export type ParticipateBuncheolRequest = {
   buncheolMemberId: number;
-  refundAccount: BankAccountInfo;
   shippingAddressId: number;
+  participationCode?: string | null;
 };
 
 export type ParticipationCheckoutResponse = {
@@ -329,6 +335,7 @@ export type BuncheolMember = {
   purchasePaymentDueAt?: string;
   purchasePaymentStatus?: string;
   purchaseParticipationId?: string;
+  requiresCode?: boolean;
   saleStatus?: string;
   topBidAmounts: number[];
 };
@@ -2595,10 +2602,14 @@ function getBuncheolMemberFromRecord(
   const purchaseState = getBuncheolMemberPurchaseStateFromRecord(record);
   const saleStatus = getOptionalStringValue(record, ["saleStatus"]);
 
+  const normalizedSaleStatus = saleStatus?.toUpperCase();
+
   return {
-    available: saleStatus
-      ? saleStatus.toUpperCase() === "AVAILABLE"
+    // CODE_ONLY 는 공석이라 선택 가능으로 둔다 — 자격은 체크아웃의 코드 입력이 가른다.
+    available: normalizedSaleStatus
+      ? normalizedSaleStatus === "AVAILABLE" || normalizedSaleStatus === "CODE_ONLY"
       : getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
+    requiresCode: normalizedSaleStatus === "CODE_ONLY",
     id,
     name,
     bidMinPrice,
@@ -3987,6 +3998,7 @@ export function toProductDetailItem(
       purchasePaymentDueAt: member.purchasePaymentDueAt,
       purchasePaymentStatus: member.purchasePaymentStatus,
       purchaseParticipationId: member.purchaseParticipationId,
+      requiresCode: member.requiresCode,
       saleStatus: member.saleStatus,
       startingBid: formattedPrice,
       topBids: ["-", "-", "-"] as [string, string, string],
@@ -4328,8 +4340,10 @@ export async function participateBuncheol(
   // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
   const requestBody = {
     buncheolMemberId: body.buncheolMemberId,
-    refundAccount: body.refundAccount,
     shippingAddressId: body.shippingAddressId,
+    ...(body.participationCode
+      ? { participationCode: body.participationCode }
+      : {}),
   };
   const requestInit: RequestInit = {
     body: JSON.stringify(requestBody),
@@ -4344,7 +4358,26 @@ export async function participateBuncheol(
   );
 
   if (!response.ok) {
-    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+    // 코드를 버리면(parseErrorMessage) 계좌 미등록을 메시지 문자열로만 식별하게 된다 — 서버 문구가
+    // 바뀌는 순간 조용히 깨지고, 그 자리에 서버 원문이 그대로 노출된다.
+    const parsedErrorBody: unknown = await readJsonBody(response);
+    const errorBody = isRecord(parsedErrorBody) ? parsedErrorBody : null;
+
+    // ⚠️ parseErrorMessage 와 같은 규칙 — 빈 문자열은 건너뛰고 다음 후보로 간다. getStringValue 계열은
+    // 빈 문자열에서 멈추므로 message:"" + detail:"..." 이면 detail 을 잃는다. 호출부(ProductDetail)의
+    // 개최자 참여 차단 안내가 이 메시지 문자열 매칭에 걸려 있어, 좁히면 그 분기가 통째로 죽는다.
+    const errorMessage =
+      getFirstNonEmptyString(
+        errorBody?.message,
+        errorBody?.detail,
+        errorBody?.title,
+        response.statusText,
+      ) || DEFAULT_ERROR_MESSAGE;
+    const errorCode = errorBody
+      ? getOptionalStringValue(errorBody, ["code"])
+      : undefined;
+
+    throw new ApiRequestError(errorMessage, response.status, errorCode);
   }
 
   const data = getNestedData(await readJsonBody(response));
@@ -6270,6 +6303,227 @@ export async function requestAdminShippingFeePaybackAction(
       method: "PATCH",
     },
     "배송비 돌려받기 처리 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+}
+
+// --- 참여 코드 (서포터즈 배정 슬롯) ---
+
+export type AdminParticipationCodeItem = {
+  codeId: string;
+  code: string;
+  buncheolId: string;
+  buncheolMemberId: string | null;
+  memberName: string | null;
+  issuedTo: string | null;
+  status: "ACTIVE" | "EXPIRED" | "USED" | "REVOKED";
+  issuedAt: string | null;
+  expiresAt: string | null;
+  // DM 문안에 그대로 옮겨 적는 KST 표기 (서버 포맷을 그대로 쓴다).
+  issuedAtText: string | null;
+  expiresAtText: string | null;
+  usedAt: string | null;
+  usedParticipationId: string | null;
+  revokedAt: string | null;
+};
+
+export type AdminBuncheolMemberItem = {
+  buncheolMemberId: string;
+  memberName: string | null;
+  price: number;
+  accessType: "OPEN" | "CODE_ONLY";
+  taken: boolean;
+  activeCode: AdminParticipationCodeItem | null;
+};
+
+function getAdminParticipationCodeItem(
+  value: unknown,
+): AdminParticipationCodeItem | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const codeId = getOptionalStringValue(value, ["codeId", "id"]);
+  const code = getOptionalStringValue(value, ["code"]);
+
+  if (!codeId || !code) {
+    return null;
+  }
+
+  const status = getOptionalStringValue(value, ["status"])?.toUpperCase();
+
+  return {
+    codeId,
+    code,
+    buncheolId: getOptionalStringValue(value, ["buncheolId"]) ?? "",
+    buncheolMemberId: getOptionalStringValue(value, ["buncheolMemberId"]) ?? null,
+    memberName: getOptionalStringValue(value, ["memberName"]) ?? null,
+    issuedTo: getOptionalStringValue(value, ["issuedTo"]) ?? null,
+    status:
+      status === "EXPIRED" || status === "USED" || status === "REVOKED"
+        ? status
+        : "ACTIVE",
+    issuedAt: getOptionalStringValue(value, ["issuedAt"]) ?? null,
+    expiresAt: getOptionalStringValue(value, ["expiresAt"]) ?? null,
+    issuedAtText: getOptionalStringValue(value, ["issuedAtText"]) ?? null,
+    expiresAtText: getOptionalStringValue(value, ["expiresAtText"]) ?? null,
+    usedAt: getOptionalStringValue(value, ["usedAt"]) ?? null,
+    usedParticipationId:
+      getOptionalStringValue(value, ["usedParticipationId"]) ?? null,
+    revokedAt: getOptionalStringValue(value, ["revokedAt"]) ?? null,
+  };
+}
+
+function getAdminBuncheolMemberItem(value: unknown): AdminBuncheolMemberItem | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const buncheolMemberId = getOptionalStringValue(value, ["buncheolMemberId"]);
+
+  if (!buncheolMemberId) {
+    return null;
+  }
+
+  return {
+    buncheolMemberId,
+    memberName: getOptionalStringValue(value, ["memberName"]) ?? null,
+    price: getNumberValue(value, ["price"]) ?? 0,
+    accessType:
+      getOptionalStringValue(value, ["accessType"])?.toUpperCase() === "CODE_ONLY"
+        ? "CODE_ONLY"
+        : "OPEN",
+    taken: getBooleanValue(value, ["taken"]) === true,
+    activeCode: getAdminParticipationCodeItem(
+      isRecord(value) ? value.activeCode : null,
+    ),
+  };
+}
+
+export async function requestAdminBuncheolMembers(
+  accessToken: string,
+  buncheolId: string,
+): Promise<AdminBuncheolMemberItem[]> {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/members`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+    "슬롯 목록을 불러오지 못했어요.",
+  );
+  const body = await parseAdminResponse<unknown>(response);
+  const rows = Array.isArray(body)
+    ? body
+    : isRecord(body)
+      ? getNestedRecordListValue(body, ["items", "content", "list", "data"])
+      : [];
+
+  return rows
+    .map(getAdminBuncheolMemberItem)
+    .filter((item): item is AdminBuncheolMemberItem => item !== null);
+}
+
+export async function requestAdminParticipationCodes(
+  accessToken: string,
+  buncheolId: string,
+): Promise<AdminParticipationCodeItem[]> {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/participation-codes`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "GET",
+    },
+    "발급 이력을 불러오지 못했어요.",
+  );
+  const body = await parseAdminResponse<unknown>(response);
+  const rows = Array.isArray(body)
+    ? body
+    : isRecord(body)
+      ? getNestedRecordListValue(body, ["items", "content", "list", "data"])
+      : [];
+
+  return rows
+    .map(getAdminParticipationCodeItem)
+    .filter((item): item is AdminParticipationCodeItem => item !== null);
+}
+
+export async function requestAdminParticipationCodeIssue(
+  accessToken: string,
+  buncheolId: string,
+  body: {
+    buncheolMemberId: number;
+    issuedTo?: string | null;
+    validHours: number;
+    reissue?: boolean;
+  },
+): Promise<AdminParticipationCodeItem> {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/participation-codes`,
+    {
+      body: JSON.stringify({
+        buncheolMemberId: body.buncheolMemberId,
+        ...(body.issuedTo ? { issuedTo: body.issuedTo } : {}),
+        validHours: body.validHours,
+        reissue: body.reissue === true,
+      }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+    "코드 발급 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+  const item = getAdminParticipationCodeItem(
+    await parseAdminResponse<unknown>(response),
+  );
+
+  if (!item) {
+    throw new Error("발급 결과를 확인할 수 없어요.");
+  }
+
+  return item;
+}
+
+/** 활성 참여가 있는 슬롯은 서버가 거부한다. */
+export async function requestAdminMemberAccessTypeChange(
+  accessToken: string,
+  buncheolId: string,
+  buncheolMemberId: string,
+  accessType: "OPEN" | "CODE_ONLY",
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/members/${encodeURIComponent(buncheolMemberId)}`,
+    {
+      body: JSON.stringify({ accessType }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "PATCH",
+    },
+    "슬롯 전환 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+}
+
+export async function requestAdminParticipationCodeRevoke(
+  accessToken: string,
+  codeId: string,
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/participation-codes/${encodeURIComponent(codeId)}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+    "코드 폐기 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
   );
 
   if (!response.ok) {
