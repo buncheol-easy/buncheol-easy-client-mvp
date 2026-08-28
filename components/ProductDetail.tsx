@@ -1504,6 +1504,9 @@ export function ProductDetail({
         bankName: bank,
       });
       setRefundAccountError("");
+      // 계좌 미등록으로 참여가 막혔을 때 세운 배너다. 등록에 성공했으면 같이 걷어야
+      // "등록했어요" 토스트와 "등록이 필요해요" 배너가 동시에 뜨지 않는다.
+      setCheckoutError("");
       setIsRefundAccountSheetOpen(false);
       showProductToast("계좌를 등록했어요. 이어서 참여해 주세요.");
     } catch (error: unknown) {
@@ -4479,9 +4482,14 @@ export function ProductDetail({
                           등록해야 생기므로(:productOpenChatHref) 없을 때 문의를 유도하면 갈 곳이 없다. */}
                       {isRebundledC2CApplication ? (
                         <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/40">
-                          {productOpenChatHref
-                            ? "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요. 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
-                            : "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요."}
+                          {/* 코드 참여는 배송비까지 전액 지원이라 "한 번 더 부과" 만 틀린 말이 된다.
+                              별도 택배로 따로 온다는 사실은 그대로 참이라 그 부분은 남긴다. */}
+                          {(isCodeCheckout
+                            ? "성사 확정 후 추가 신청은 별도 택배로 따로 도착해요."
+                            : "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요.") +
+                            (productOpenChatHref
+                              ? " 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
+                              : "")}
                         </p>
                       ) : null}
                     </div>
