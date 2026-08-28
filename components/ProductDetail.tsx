@@ -1167,6 +1167,8 @@ export function ProductDetail({
   const [isHostedByMeFromApi, setIsHostedByMeFromApi] = useState(
     product.isHostedByMe === true,
   );
+  // 분철 상태(prop 은 마운트 시점 값이라 굳는다 — refreshDetailOptions 가 덮는다).
+  const [statusFromApi, setStatusFromApi] = useState<string | null>(null);
   const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
     product.openChatUrl ?? null,
   );
@@ -1713,26 +1715,28 @@ export function ProductDetail({
     product.deadline,
     deadlineTick,
   );
+  // 재조회로 갱신되는 현재 상태. prop 은 마운트 시점 값이라 그대로 읽으면 성사 확정이 화면에 안 걸린다.
+  const productStatus = statusFromApi ?? product.status;
   // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
-  const isCancelledProduct = isBuncheolCancelledStatus(product.status);
-  const isConfirmedProduct = isBuncheolConfirmedStatus(product.status);
+  const isCancelledProduct = isBuncheolCancelledStatus(productStatus);
+  const isConfirmedProduct = isBuncheolConfirmedStatus(productStatus);
   const isC2CProduct = getFlowType(product.flowType) === "C2C";
   // E1(docs/46 §4.7): C2C 확정 후(PAYMENT_COLLECTING) 빈 슬롯은 즉시입금으로 추가 신청을
   // 받는다 — deadline(신청 마감)이 지났어도 열어둔다. 분철 CONFIRMED 후에는 서버가 차단.
   const isC2CCollectingProduct =
-    isC2CProduct && isBuncheolPaymentCollectingStatus(product.status);
+    isC2CProduct && isBuncheolPaymentCollectingStatus(productStatus);
   // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를,
   // C2C 입금 수집 중에는 기한이 지나도 빈 슬롯 즉시입금 신청이 열려 있으므로
   // 카운트다운의 "참여 마감" 대신 추가 신청 가능 문구를 보여준다.
   const purchaseDeadlineDisplay = isCancelledProduct
-    ? getBuncheolStatusBadgeLabel(product.status)
+    ? getBuncheolStatusBadgeLabel(productStatus)
     : isConfirmedProduct
       ? "마감됨"
       : isC2CCollectingProduct && isDeadlinePassed
         ? "추가 신청 가능"
         : purchaseDeadlineCountdown;
   const isPurchasableStatus =
-    isBuncheolPurchasableStatus(product.status) || isC2CCollectingProduct;
+    isBuncheolPurchasableStatus(productStatus) || isC2CCollectingProduct;
   const isDeadlineBlocked = isDeadlinePassed && !isC2CCollectingProduct;
   const shouldDimProductMedia =
     !isPublicPreview &&
@@ -1773,7 +1777,7 @@ export function ProductDetail({
   const canEditProduct =
     product.id.startsWith("uploaded-") ||
     (isHostedProduct &&
-      isBuncheolRecruitingStatus(product.status) &&
+      isBuncheolRecruitingStatus(productStatus) &&
       !isDeadlinePassed);
   // 입금 확인(확정)된 참여가 1건이라도 있으면 개최자 취소를 막는다 (docs/56 §14-3).
   // 서버 CAS(hostCancelIfCollectingAndNoConfirmed, BCH-093)와 같은 범위로 맞춘다 —
@@ -1783,7 +1787,7 @@ export function ProductDetail({
   // 확정 판정에 hasOptionPurchaseState 를 함께 요구해 취소·환불된 참여의 잔여 확정 값은 제외한다.
   const isHostCancelBlocked =
     isC2CProduct &&
-    isBuncheolPaymentCollectingStatus(product.status) &&
+    isBuncheolPaymentCollectingStatus(productStatus) &&
     auctionOptions.some(
       (option) =>
         hasOptionPurchaseState(option) && isConfirmedOptionPurchase(option),
@@ -1812,7 +1816,13 @@ export function ProductDetail({
   const hasMyServerParticipation = auctionOptions.some(
     (option) => option.participatedByMe === true,
   );
-  const isAdditionalC2CApplication = isC2CProduct && hasMyServerParticipation;
+  // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 성사 확정 전 재참여만
+  // 해당한다: 확정 뒤 추가 모집은 서버가 새 묶음을 만들고 배송비를 다시 부과한다.
+  const isAdditionalC2CApplication =
+    isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct;
+  // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
+  const isRebundledC2CApplication =
+    hasMyServerParticipation && isC2CCollectingProduct;
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
   // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct
@@ -2030,9 +2040,13 @@ export function ProductDetail({
 
   // prop 이 교체되면 반드시 되돌린다 — 세션 만료로 익명 재조회가 되면 서버는 링크를 빼는데,
   // 그때 refreshDetailOptions 는 비로그인 조기 반환이라 이 값을 지워 줄 경로가 없다.
+  // 상태도 같다: null 로 되돌리면 productStatus 의 폴백이 다시 prop 을 이긴다. 이게 없으면
+  // "prop 이 굳는다" 를 고치면서 "로컬 값이 굳는다" 를 새로 만든다 — 취소된 분철이 계속
+  // 입금수집 화면으로 보이거나, 다른 분철로 넘어갔을 때 앞 분철의 상태가 남는다.
   useEffect(() => {
     setOpenChatUrlFromApi(product.openChatUrl ?? null);
-  }, [product.id, product.openChatUrl]);
+    setStatusFromApi(null);
+  }, [product.id, product.openChatUrl, product.status]);
 
   useEffect(() => {
     setAuctionOptions(product.options);
@@ -2331,6 +2345,8 @@ export function ProductDetail({
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
       setIsHostedByMeFromApi(isHosted);
       setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
+      // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
+      setStatusFromApi(refreshedProduct.status ?? null);
       setAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
       setBidAmounts((current) =>
@@ -4422,8 +4438,9 @@ export function ProductDetail({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-[12px] font-semibold text-black/40">배송지</p>
-                          {/* 추가 신청은 서버가 첫 참여 배송지 스냅샷을 강제한다(docs/46 §4.7-A1).
-                              현재 선택값을 그대로 보여주면 실제 배송지와 다를 수 있어 문구로 대체한다. */}
+                          {/* docs/46 §4.7-A1 의 배송지 스냅샷 강제는 이제 <b>성사 확정 전</b> 재신청에만
+                              해당한다 — 확정 뒤 추가 모집은 새 묶음이라 배송지를 다시 고른다. 상속 구간에서만
+                              현재 선택값 대신 문구로 대체한다(선택값이 실제 배송지와 다를 수 있으므로). */}
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {isAdditionalC2CApplication
                               ? "첫 신청 때 선택한 배송지"
@@ -4457,6 +4474,16 @@ export function ProductDetail({
                           ? "추가 신청은 첫 신청과 같은 배송지·입금자명으로 묶여요. 배송비도 추가로 부과되지 않아요."
                           : "택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요."}
                       </p>
+                      {/* 재번들은 이 블록에서 배송지를 새로 고르는 사람이라 위 수령 안내가 그대로
+                          필요하다. 배송비가 왜 또 붙는지만 한 줄 덧붙인다. 오픈채팅 링크는 개최자가
+                          등록해야 생기므로(:productOpenChatHref) 없을 때 문의를 유도하면 갈 곳이 없다. */}
+                      {isRebundledC2CApplication ? (
+                        <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/40">
+                          {productOpenChatHref
+                            ? "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요. 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
+                            : "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요."}
+                        </p>
+                      ) : null}
                     </div>
 
                     {isCodeCheckout ? (
