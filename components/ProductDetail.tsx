@@ -1824,10 +1824,8 @@ export function ProductDetail({
   const isAdditionalC2CApplication =
     isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct;
   // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
-  // 코드 참여는 배송비까지 전액 지원이라 제외한다 — 안 빼면 "배송비가 한 번 더 부과돼요"와
-  // "배송비까지 전액 지원"이 같은 화면에 나란히 뜬다.
   const isRebundledC2CApplication =
-    hasMyServerParticipation && isC2CCollectingProduct && !isCodeCheckout;
+    hasMyServerParticipation && isC2CCollectingProduct;
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
   // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct
@@ -4484,9 +4482,14 @@ export function ProductDetail({
                           등록해야 생기므로(:productOpenChatHref) 없을 때 문의를 유도하면 갈 곳이 없다. */}
                       {isRebundledC2CApplication ? (
                         <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/40">
-                          {productOpenChatHref
-                            ? "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요. 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
-                            : "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요."}
+                          {/* 코드 참여는 배송비까지 전액 지원이라 "한 번 더 부과" 만 틀린 말이 된다.
+                              별도 택배로 따로 온다는 사실은 그대로 참이라 그 부분은 남긴다. */}
+                          {(isCodeCheckout
+                            ? "성사 확정 후 추가 신청은 별도 택배로 따로 도착해요."
+                            : "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요.") +
+                            (productOpenChatHref
+                              ? " 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
+                              : "")}
                         </p>
                       ) : null}
                     </div>

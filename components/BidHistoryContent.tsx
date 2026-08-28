@@ -328,6 +328,13 @@ const c2cProgressStepLabels = [
   "배송 완료",
 ] as const;
 
+// 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
+const freeProgressStepLabels = [
+  "참여 접수",
+  "참여 확정",
+  ...bidProgressStepLabels.slice(2),
+] as const;
+
 // 라벨은 진행바(bidProgressStepLabels / c2cProgressStepLabels)와 같은 문자열을 재사용한다 —
 // 두 곳이 어긋나면 안내 시트와 진행바가 서로 다른 단계 이름을 보여주게 된다.
 //
@@ -374,6 +381,41 @@ const c2cParticipationStatusGuide = [
   {
     icon: PackageCheckIcon,
     label: c2cProgressStepLabels[5],
+    description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
+  },
+] as const satisfies readonly StatusGuideItem[];
+
+// 0원 참여(서포터즈 코드) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
+// 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "24시간 안에 개최자 계좌로
+// 보내고 '보냈어요'를 눌러주세요" 가 뜬다.
+const freeParticipationStatusGuide = [
+  {
+    icon: ClipboardListIcon,
+    label: freeProgressStepLabels[0],
+    description:
+      "받은 코드로 자리를 잡은 단계예요. 입금할 금액이 없어 따로 보낼 돈은 없어요.",
+  },
+  {
+    icon: CheckIcon,
+    label: freeProgressStepLabels[1],
+    description:
+      "참여가 확정된 상태예요. 입금 절차 없이 진행 확정을 기다리면 돼요.",
+  },
+  {
+    icon: UsersRoundIcon,
+    label: freeProgressStepLabels[2],
+    description:
+      "분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
+  },
+  {
+    icon: TruckIcon,
+    label: freeProgressStepLabels[3],
+    description:
+      "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
+  },
+  {
+    icon: PackageCheckIcon,
+    label: freeProgressStepLabels[4],
     description: "택배가 선택한 편의점에 도착해 수령까지 끝났어요.",
   },
 ] as const satisfies readonly StatusGuideItem[];
@@ -968,13 +1010,6 @@ function getC2CBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
 
   return -1;
 }
-
-// 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
-const freeProgressStepLabels = [
-  "참여 접수",
-  "참여 확정",
-  ...bidProgressStepLabels.slice(2),
-] as const;
 
 // 0원 참여 전용 축. 라벨이 5칸이므로 인덱스도 반드시 5칸으로 뽑아야 한다 —
 // C2C 6칸 축을 물리면 한 칸씩 앞서 표시된다(코드 참여는 생성 즉시 CONFIRMED 라
@@ -1680,6 +1715,9 @@ export function BidHistoryContent({
   );
   const isStatusGuideC2C =
     visibleBidRecords.length === 0 || visibleBidRecords.some(isC2CBidRecord);
+  // 유상 참여가 하나라도 섞이면 입금 안내가 필요하므로, 전부 0원일 때만 무입금 안내로 간다.
+  const isStatusGuideFree =
+    visibleBidRecords.length > 0 && visibleBidRecords.every(isFreeBidRecord);
   const isHostingHelpSheet = mode === "hosted";
   // 운영진의 LEGACY 개최만 있는 계정에 "직접 환불" 을 보여주면 없는 의무를 만든다.
   const hasC2CHostedProduct = (apiHostedProducts ?? []).some(
@@ -1687,9 +1725,11 @@ export function BidHistoryContent({
   );
   const statusHelpSheetGuide: readonly StatusGuideItem[] = isHostingHelpSheet
     ? hostingStatusGuide
-    : isStatusGuideC2C
-      ? c2cParticipationStatusGuide
-      : legacyParticipationStatusGuide;
+    : isStatusGuideFree
+      ? freeParticipationStatusGuide
+      : isStatusGuideC2C
+        ? c2cParticipationStatusGuide
+        : legacyParticipationStatusGuide;
   // 입금 대기(기한 압박 구간)는 15초 주기로 빠르게 갱신한다.
   const hasUrgentPaymentPolling = paymentBidRecords.some((bid) =>
     isBidRecordPaymentReady(bid, now),
