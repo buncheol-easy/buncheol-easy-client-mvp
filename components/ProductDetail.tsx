@@ -1816,15 +1816,13 @@ export function ProductDetail({
   const hasMyServerParticipation = auctionOptions.some(
     (option) => option.participatedByMe === true,
   );
-  // 「첫 신청과 묶인다」는 판정. 성사 확정 전 재참여만 해당한다 — 확정 뒤 추가 모집은 서버가 새 묶음을
-  // 만들고 배송비를 다시 부과하므로, 여기서 한정하지 않으면 화면이 "배송비 추가 없음" 이라고 약속한 뒤
-  // 서버가 받는다. 사용처 7곳(배송지 표시·변경 버튼·안내문·배송비·총액·폴백)이 이 정의를 따라온다.
+  // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 성사 확정 전 재참여만
+  // 해당한다: 확정 뒤 추가 모집은 서버가 새 묶음을 만들고 배송비를 다시 부과한다.
   const isAdditionalC2CApplication =
     isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct;
-  // 성사 확정 뒤 같은 사람이 빈 슬롯을 잡는 경우. 첫 신청과 화면이 같아야 하지만(새 배송지·새 배송비)
-  // 배송비가 왜 또 붙는지는 설명해야 한다 — 그 한 문장만 이 플래그로 낸다.
+  // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
   const isRebundledC2CApplication =
-    isC2CProduct && hasMyServerParticipation && isC2CCollectingProduct;
+    hasMyServerParticipation && isC2CCollectingProduct;
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
   // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct
@@ -2042,9 +2040,13 @@ export function ProductDetail({
 
   // prop 이 교체되면 반드시 되돌린다 — 세션 만료로 익명 재조회가 되면 서버는 링크를 빼는데,
   // 그때 refreshDetailOptions 는 비로그인 조기 반환이라 이 값을 지워 줄 경로가 없다.
+  // 상태도 같다: null 로 되돌리면 productStatus 의 폴백이 다시 prop 을 이긴다. 이게 없으면
+  // "prop 이 굳는다" 를 고치면서 "로컬 값이 굳는다" 를 새로 만든다 — 취소된 분철이 계속
+  // 입금수집 화면으로 보이거나, 다른 분철로 넘어갔을 때 앞 분철의 상태가 남는다.
   useEffect(() => {
     setOpenChatUrlFromApi(product.openChatUrl ?? null);
-  }, [product.id, product.openChatUrl]);
+    setStatusFromApi(null);
+  }, [product.id, product.openChatUrl, product.status]);
 
   useEffect(() => {
     setAuctionOptions(product.options);
@@ -2343,9 +2345,7 @@ export function ProductDetail({
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
       setIsHostedByMeFromApi(isHosted);
       setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
-      // 상태를 버리면 개최자가 성사 확정을 눌러도 화면이 안 바뀐다. 그 상태로 빈 슬롯을 잡으면
-      // 화면은 "배송비 0원 · 첫 신청 배송지" 라고 말하는데 서버는 새 묶음에 배송비를 부과하고
-      // 클라가 몰래 실어 보낸 기본 배송지를 쓴다 — 금액과 주소가 둘 다 틀린다.
+      // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
       setAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
@@ -4438,8 +4438,9 @@ export function ProductDetail({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-[12px] font-semibold text-black/40">배송지</p>
-                          {/* 추가 신청은 서버가 첫 참여 배송지 스냅샷을 강제한다(docs/46 §4.7-A1).
-                              현재 선택값을 그대로 보여주면 실제 배송지와 다를 수 있어 문구로 대체한다. */}
+                          {/* docs/46 §4.7-A1 의 배송지 스냅샷 강제는 이제 <b>성사 확정 전</b> 재신청에만
+                              해당한다 — 확정 뒤 추가 모집은 새 묶음이라 배송지를 다시 고른다. 상속 구간에서만
+                              현재 선택값 대신 문구로 대체한다(선택값이 실제 배송지와 다를 수 있으므로). */}
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {isAdditionalC2CApplication
                               ? "첫 신청 때 선택한 배송지"
@@ -4471,10 +4472,18 @@ export function ProductDetail({
                       <p className="mt-2.5 text-[12px] font-medium leading-5 text-black/40">
                         {isAdditionalC2CApplication
                           ? "추가 신청은 첫 신청과 같은 배송지·입금자명으로 묶여요. 배송비도 추가로 부과되지 않아요."
-                          : isRebundledC2CApplication
-                            ? "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요. 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
-                            : "택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요."}
+                          : "택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요."}
                       </p>
+                      {/* 재번들은 이 블록에서 배송지를 새로 고르는 사람이라 위 수령 안내가 그대로
+                          필요하다. 배송비가 왜 또 붙는지만 한 줄 덧붙인다. 오픈채팅 링크는 개최자가
+                          등록해야 생기므로(:productOpenChatHref) 없을 때 문의를 유도하면 갈 곳이 없다. */}
+                      {isRebundledC2CApplication ? (
+                        <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/40">
+                          {productOpenChatHref
+                            ? "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요. 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
+                            : "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요."}
+                        </p>
+                      ) : null}
                     </div>
 
                     {isCodeCheckout ? (
