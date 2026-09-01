@@ -1282,7 +1282,8 @@ export function HostedBuncheolManage({
               </p>
               {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를
                   통과한다. 전원 입금이면 입금확인 경로에서 자동으로 CONFIRMED 가 되므로, 이 버튼이 실제로
-                  필요한 것은 "입금 안 한 참여가 취소·기한만료로 정리된" 경우뿐이다. 누를 수 없는 동안에도
+                  필요한 것은 "입금 안 한 참여가 취소·제외로 정리된" 경우뿐이다. C2C 는 자동 만료가
+                  없어 개최자가 직접 정리해야 이 조건이 성립한다. 누를 수 없는 동안에도
                   계속 보여서 개최자가 용도를 되묻게 됐으므로(docs/56 H-12) 조건이 맞을 때만 노출한다.
                   위 성사 확정 섹션이 disabled 유지인 것과 정책이 다른 이유: 성사 확정은 "신청자가 생기면
                   누르게 될 버튼"이라 자리를 예고하는 값이 있지만, 부분 확정은 정상 진행(전원 입금 → 자동
@@ -1308,8 +1309,8 @@ export function HostedBuncheolManage({
                 </>
               ) : c2cUnpaidActiveCount > 0 ? (
                 <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                  입금을 확인하거나, 기한이 지나 자동 취소되면 입금한 사람만으로
-                  진행을 확정할 수 있어요.
+                  입금을 확인하거나, 기한이 지난 미입금 참여를 직접 정리하면
+                  입금한 사람만으로 진행을 확정할 수 있어요.
                 </p>
               ) : (
                 <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
