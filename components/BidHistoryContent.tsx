@@ -1066,14 +1066,35 @@ function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
   }));
 }
 
-// 🔴 묶음 키는 <b>여기 한 곳</b>에서만 정한다. 카드 그룹핑과 액션(「보냈어요」)·금액 집계가 서로
-// 다른 키를 쓰면 카드에 보이는 금액과 모달 금액이 갈린다.
-//
-// 묶음을 모르는 응답(서버 승격 전)은 <b>분철</b>로 폴백한다 — 자기 자리만 잡으면 다슬롯 사용자의
-// 묶음이 쪼개져(1건만 PAYMENT_SENT) 개최자 입금확인이 409 로 영구히 막힌다. 실측상 prod·staging
-// 모두 bundle_id 가 빈 참여는 0건이라 도달하지 않지만, 폴백 방향은 안전한 쪽으로 둔다.
+// 묶음 키가 둘인 이유: 서버가 묶음을 안 준 응답에서 폴백 방향이 반대여야 한다.
+// · 표시(카드 그룹핑) — 자기 자신이 한 묶음. 분철로 묶으면 성사 확정 뒤 추가로 잡은 자리까지 합쳐져
+//   서로 다른 이체 2건이 「한 번에 보내요」 한 장이 된다. 개최 관리도 같은 선택이다.
+// · 액션(마킹) — 분철 전체. 자기 자리만 잡으면 묶음이 쪼개져 개최자 입금확인이 409 로 막힌다.
+// 실측상 prod·staging 모두 bundle_id 가 빈 참여는 0건이라 둘은 지금 같은 답을 낸다.
 function getBidRecordBundleKey(bid: BidRecord) {
+  return bid.bundleId ? `b:${bid.bundleId}` : `p:${bid.id}`;
+}
+
+function getBidRecordTransferKey(bid: BidRecord) {
   return bid.bundleId ? `b:${bid.bundleId}` : `p:${bid.productId}`;
+}
+
+// 🔴 이 이체에 들어가는 자리. 카드·시트·확인 모달이 같은 집합을 봐야 숫자가 안 갈린다.
+// 확정된 자리는 그 이체의 잔액이 아니고, 취소된 자리는 서버가 배송비 귀속을 살아 있는 자리로 옮겨
+// 실어 주므로 옛 값을 든 채 더해지면 「배송비 (묶음 1회)」 아래 2회분이 찍힌다.
+// 남는 게 없으면(이미 끝난 묶음) 있는 그대로 보여준다.
+function getBundleTransferSlots(slots: BidRecord[]) {
+  const pending = slots.filter(
+    (slot) => !isBidRecordCancelled(slot) && !isBidRecordPaymentConfirmed(slot),
+  );
+
+  if (pending.length > 0) {
+    return pending;
+  }
+
+  const settled = slots.filter((slot) => !isBidRecordCancelled(slot));
+
+  return settled.length > 0 ? settled : slots;
 }
 
 // 묶음 = 이체 1회 · 택배 1개. 카드도 그 단위로 접는다.
@@ -1099,7 +1120,6 @@ function toBidRecordBundles(source: BidRecord[]) {
   return order.map((key) => byKey.get(key)!);
 }
 
-// 자리를 여러 개 잡으면 한 묶음이고(#166 다중 선택), 카드는 그 묶음 단위로 접는다.
 function getBidRecordOptionLabels(bid: BidRecord) {
   const label = bid.optionLabel.trim();
 
@@ -1838,9 +1858,8 @@ export function BidHistoryContent({
     eligiblePaymentAddresses[0] ??
     null;
   // 🔴 시트가 보여주는 금액은 <b>묶음 합계</b>여야 한다 — 이체가 한 번이기 때문이다.
-  // ⚠️ 액션 대상과 금액 대상은 다르다. 액션은 서버 CAS 가 실제로 옮길 자리(AWAITING 만)이고,
-  // 금액은 그 이체에 들어간 자리 전부다. 같은 함수를 쓰면 마킹 후 목록이 비어 총액이 한 자리로
-  // 떨어진다 — 자리 2개 묶음에서 「보냈어요」 뒤 시트를 다시 열면 실제로 그랬다.
+  // ⚠️ 액션 대상과 금액 대상은 다르다 — 액션은 서버 CAS 가 옮길 자리(AWAITING 만), 금액은 그 이체에
+  // 들어간 자리다. 같은 함수를 쓰면 마킹 후 목록이 비어 총액이 한 자리로 떨어진다.
   const paymentAmountSources = selectedPaymentBid
     ? getBundleAmountSlots(selectedPaymentBid)
     : [];
@@ -2876,19 +2895,13 @@ export function BidHistoryContent({
     }, 3200);
   }
 
-  // 같은 분철 내 내 활성 참여를 함께 다루는 대상 목록 — 다슬롯 합산 입금 1회 전제
-  // (docs/46 §4.7-A4: 서버 API 는 참여 단위, FE 가 일괄 반복 호출).
   // 자리 2개 이상 묶음의 카드. 이체 1회 · 배송비 1회 · 택배 1개를 한 장으로 보여준다.
-  //
-  // ⚠️ 자리를 「행」이 아니라 「칩」으로 나열한다. 행이면 자리당 +36px 라 5자리 카드가 715px 가 되어
-  // 375x667 화면을 넘긴다 — 이 파일이 한 번 겪고 고친 상태다("카드 하나가 화면 1.5개를 먹었다").
-  // 칩이면 자리 수와 무관하게 높이가 거의 고정이고, 개최 관리(#165)가 같은 문제를 같은 방식으로 풀었다.
+  // ⚠️ 자리는 「행」이 아니라 「칩」이다 — 행이면 자리당 +36px 라 5자리에서 카드가 화면을 넘긴다.
   function renderBundleCard(unsortedSlots: BidRecord[]) {
-    // ⚠️ 서버 정렬은 created_at DESC 이고 그 칸이 초 단위(DATETIME precision 0)다. 다중 선택은
-    // 요청 1회로 같은 트랜잭션에서 N행을 꽂으므로 <b>같은 초</b>가 되고, 그 안의 순서는 MySQL 재량이다.
-    // 배열 위치에 기대면 폴링마다 자리 순서와 대표가 흔들린다 — id(AUTO_INCREMENT) 로 고정한다.
-    const slots = [...unsortedSlots].sort(
-      (a, b) => Number(a.id) - Number(b.id),
+    // ⚠️ created_at 이 초 단위라 같은 트랜잭션에서 꽂힌 자리들의 순서가 MySQL 재량이다.
+    // 배열 위치에 기대면 폴링마다 자리 순서와 대표가 흔들린다 — id 로 고정한다.
+    const slots = [...unsortedSlots].sort((a, b) =>
+      a.id.localeCompare(b.id, undefined, { numeric: true }),
     );
     const head = slots[0];
     const isCancelled = slots.every((slot) => isBidRecordCancelled(slot));
@@ -2900,6 +2913,10 @@ export function BidHistoryContent({
     );
     const isOverdue = slots.some((slot) => isBidRecordPaymentOverdue(slot, now));
     const buncheolChip = getBidRecordBuncheolChip(head, now);
+    // 취소 사유·취소 불가 사유는 묶음 전 자리가 같은 값이라 카드당 하나로 접는다. 빼면 취소된
+    // 묶음에서 환불 안내가 통째로 사라지고, 「보냈어요」 뒤에는 취소 버튼만 말없이 없어진다.
+    const cancellationNotice = getBidRecordCancellationNotice(head);
+    const cancelBlockedNotice = getBidRecordCancelBlockedNotice(head);
     const canOpenPaymentSheet = slots.some((slot) =>
       canViewBidRecordPaymentSheet(slot, now),
     );
@@ -2922,17 +2939,22 @@ export function BidHistoryContent({
       ) ??
       head;
     const progressSteps = getBidRecordProgressSteps(progressSlot, now);
-    const bundleProductAmount = slots.reduce((sum, slot) => sum + slot.amount, 0);
-    const bundleShippingFee = slots.some(
+    // 금액은 「이 이체에 들어가는 자리」만 더한다 — 취소·확정 자리를 더하면 배송비가 이중 계산된다.
+    const amountSlots = getBundleTransferSlots(slots);
+    const bundleProductAmount = amountSlots.reduce(
+      (sum, slot) => sum + slot.amount,
+      0,
+    );
+    const bundleShippingFee = amountSlots.some(
       (slot) => typeof slot.shippingFee === "number",
     )
-      ? slots.reduce(
+      ? amountSlots.reduce(
           (sum, slot) =>
             sum + (typeof slot.shippingFee === "number" ? slot.shippingFee : 0),
           0,
         )
       : null;
-    const bundleTotalAmount = slots.reduce(
+    const bundleTotalAmount = amountSlots.reduce(
       (sum, slot) => sum + getBidRecordPaymentTotal(slot),
       0,
     );
@@ -3033,7 +3055,11 @@ export function BidHistoryContent({
             <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/55">
               <div className="flex items-baseline justify-between gap-2">
                 <p className="text-[11px] font-medium text-black/35">
-                  한 번에 보낼 돈
+                  {isCancelled
+                    ? "참여 금액"
+                    : isPaymentConfirmed
+                      ? "입금 완료"
+                      : "한 번에 보낼 돈"}
                 </p>
                 <p className="text-[17px] font-semibold tracking-[-0.05em]">
                   {formatPrice(bundleTotalAmount)}
@@ -3069,9 +3095,19 @@ export function BidHistoryContent({
               </dl>
             </div>
 
-            {/* ⚠️ 진행바 6칸 라벨은 375px 에서 여유가 1px 뿐이다 — 감싸기·들여쓰기 금지.
-                단일 카드와 같은 depth·같은 컨테이너 클래스를 그대로 쓴다. */}
+            {/* ⚠️ 진행바 6칸 라벨은 375px 에서 줄바꿈 여유가 1px 뿐이다 — 감싸거나 들여쓰지 말 것.
+                단일 카드와 px-3 을 맞춰야 그 실측이 유효하다. */}
             <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5">
+              {cancellationNotice ? (
+                <div className="mb-3 flex flex-col items-center gap-1.5">
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/55">
+                    {cancellationNotice.label}
+                  </span>
+                  <p className="break-keep text-center text-[11px] font-medium leading-4 text-black/40">
+                    {cancellationNotice.description}
+                  </p>
+                </div>
+              ) : null}
               <div className="relative">
                 {/* 연결선 여백 = 첫·마지막 점의 열 중심(열 폭의 절반) — 5열 10%, 6열 8.33% */}
                 <div
@@ -3130,13 +3166,15 @@ export function BidHistoryContent({
 
             {safeOpenChatHref ? (
               <a
-                className="mt-3 flex items-center justify-between gap-2 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2.5 text-[12px] font-semibold"
+                className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
                 href={safeOpenChatHref}
-                rel="noreferrer noopener"
+                rel="noreferrer"
                 target="_blank"
               >
-                <span className="text-black/45">개최자 오픈채팅</span>
-                <span>참여하기 →</span>
+                <span className="text-[12px] font-medium text-black/45">
+                  개최자 오픈채팅
+                </span>
+                <span className="text-[12px] font-semibold">참여하기 →</span>
               </a>
             ) : null}
 
@@ -3160,8 +3198,14 @@ export function BidHistoryContent({
               </div>
             ) : null}
 
+            {cancelBlockedNotice ? (
+              <p className="mt-3 break-keep text-[12px] font-medium leading-5 text-black/40">
+                {cancelBlockedNotice}
+              </p>
+            ) : null}
+
             {/* 취소는 자리 단위 API 뿐이다 — 묶음판이 없고, 같은 묶음의 두 자리를 동시에 취소하면
-                서버가 데드락으로 500 을 낸다. 한 번에 하나씩 누르게 둔다. */}
+                서버가 데드락으로 500 이 난다. */}
             {slots.some((slot) => canCancelBidRecord(slot)) ? (
               <div className="mt-2 flex flex-wrap justify-end gap-1.5">
                 {slots
@@ -3202,31 +3246,26 @@ export function BidHistoryContent({
   // 이 묶음의 이체에 들어간 자리 전부 — <b>상태를 보지 않는다</b>. 금액 표시 전용이다.
   // 취소된 자리는 뺀다(서버가 배송비 귀속을 활성 자리 기준으로 다시 계산해 내려준다).
   function getBundleAmountSlots(bid: BidRecord) {
-    const key = getBidRecordBundleKey(bid);
+    const key = getBidRecordTransferKey(bid);
     const slots = paymentBidRecords.filter(
-      (record) =>
-        !isBidRecordCancelled(record) && getBidRecordBundleKey(record) === key,
+      (record) => getBidRecordTransferKey(record) === key,
     );
 
-    return slots.length > 0 ? slots : [bid];
+    return slots.length > 0 ? getBundleTransferSlots(slots) : [bid];
   }
 
-  // 이체 단위가 묶음이라 마킹 대상도 묶음으로 좁힌다.
-  //
-  // ⚠️ 묶음을 모르는 응답(서버 승격 전)에서는 <b>구 동작인 분철 기준</b>으로 되돌린다. 자기 슬롯만
-  // 잡으면 다슬롯 사용자의 묶음이 쪼개져(1건만 PAYMENT_SENT) 개최자 입금확인이 409 로 영구히 막힌다
-  // — 이 변경이 없애려는 바로 그 상태다.
+  // 마킹 대상 — 서버 CAS 가 실제로 옮길 자리만. 키 선택 근거는 getBidRecordTransferKey.
   function getSameBundleRecords(
     bid: BidRecord,
     statusFilter: (status: string | undefined) => boolean,
   ) {
-    const key = getBidRecordBundleKey(bid);
+    const key = getBidRecordTransferKey(bid);
 
     return paymentBidRecords.filter(
       (record) =>
         isC2CBidRecord(record) &&
         statusFilter(record.participationStatus) &&
-        getBidRecordBundleKey(record) === key,
+        getBidRecordTransferKey(record) === key,
     );
   }
 
@@ -3662,9 +3701,8 @@ export function BidHistoryContent({
             {!isBidRecordsLoading && bundles.length > 0 ? (
             <div className="content-reveal space-y-3">
             {bundles.map((slots) => {
-              // 🔴 자리 1개는 <b>여기서 조기 반환하지 않고</b> 아래 기존 카드를 그대로 탄다.
-              // 픽셀이 같은 게 아니라 <b>같은 코드</b>다 — 이 훅이 없으면 98% 경로가 새 JSX 를 타게
-              // 되고, 그때부터는 "안 바뀌었다" 를 눈으로 확인하는 수밖에 없어진다.
+              // 조기 반환은 아래 const 블록보다 <b>앞</b>에 있어야 한다 — 그래야 자리 1개가 기존
+              // JSX 를 그대로 타서 「픽셀이 같다」가 아니라 「같은 코드」가 된다.
               if (slots.length > 1) {
                 return renderBundleCard(slots);
               }
