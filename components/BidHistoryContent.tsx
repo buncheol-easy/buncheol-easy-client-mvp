@@ -1066,7 +1066,40 @@ function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
   }));
 }
 
-// 참여 1건 = 멤버 슬롯 1개(단일 선택 정책)라 참여 목록은 그룹핑 없이 참여 1건 = 카드 1장으로 그린다.
+// 🔴 묶음 키는 <b>여기 한 곳</b>에서만 정한다. 카드 그룹핑과 액션(「보냈어요」)·금액 집계가 서로
+// 다른 키를 쓰면 카드에 보이는 금액과 모달 금액이 갈린다.
+//
+// 묶음을 모르는 응답(서버 승격 전)은 <b>분철</b>로 폴백한다 — 자기 자리만 잡으면 다슬롯 사용자의
+// 묶음이 쪼개져(1건만 PAYMENT_SENT) 개최자 입금확인이 409 로 영구히 막힌다. 실측상 prod·staging
+// 모두 bundle_id 가 빈 참여는 0건이라 도달하지 않지만, 폴백 방향은 안전한 쪽으로 둔다.
+function getBidRecordBundleKey(bid: BidRecord) {
+  return bid.bundleId ? `b:${bid.bundleId}` : `p:${bid.productId}`;
+}
+
+// 묶음 = 이체 1회 · 택배 1개. 카드도 그 단위로 접는다.
+// ⚠️ 새 정렬을 넣지 않는다 — 서버가 최신 참여순으로 내려주므로(2차 정렬 키 없음) 첫 등장 순서를
+// 그대로 쓰면 자동으로 "가장 최근 자리" 기준이 된다. 재정렬하면 방금 참여한 건이 아래로 밀린다.
+function toBidRecordBundles(source: BidRecord[]) {
+  const order: string[] = [];
+  const byKey = new Map<string, BidRecord[]>();
+
+  for (const bid of source) {
+    const key = getBidRecordBundleKey(bid);
+    const slots = byKey.get(key);
+
+    if (slots) {
+      slots.push(bid);
+      continue;
+    }
+
+    order.push(key);
+    byKey.set(key, [bid]);
+  }
+
+  return order.map((key) => byKey.get(key)!);
+}
+
+// 자리를 여러 개 잡으면 한 묶음이고(#166 다중 선택), 카드는 그 묶음 단위로 접는다.
 function getBidRecordOptionLabels(bid: BidRecord) {
   const label = bid.optionLabel.trim();
 
@@ -1805,21 +1838,12 @@ export function BidHistoryContent({
     eligiblePaymentAddresses[0] ??
     null;
   // 🔴 시트가 보여주는 금액은 <b>묶음 합계</b>여야 한다 — 이체가 한 번이기 때문이다.
-  // 슬롯 1건만 보여주면 확인 모달의 합계와 숫자가 갈리고, 그 모달이 "금액이 다르면 개최자가
-  // 통장에서 찾지 못한다" 고 경고하는 화면이라 스스로를 무너뜨린다.
-  const selectedPaymentBundleSlots = selectedPaymentBid
-    ? getSameBundleRecords(
-        selectedPaymentBid,
-        isParticipationAwaitingPaymentStatus,
-      )
+  // ⚠️ 액션 대상과 금액 대상은 다르다. 액션은 서버 CAS 가 실제로 옮길 자리(AWAITING 만)이고,
+  // 금액은 그 이체에 들어간 자리 전부다. 같은 함수를 쓰면 마킹 후 목록이 비어 총액이 한 자리로
+  // 떨어진다 — 자리 2개 묶음에서 「보냈어요」 뒤 시트를 다시 열면 실제로 그랬다.
+  const paymentAmountSources = selectedPaymentBid
+    ? getBundleAmountSlots(selectedPaymentBid)
     : [];
-  // 마킹 전(입금 대기)이 아니면 위 목록이 비므로 선택 슬롯으로 폴백한다.
-  const paymentAmountSources =
-    selectedPaymentBundleSlots.length > 0
-      ? selectedPaymentBundleSlots
-      : selectedPaymentBid
-        ? [selectedPaymentBid]
-        : [];
   const paymentShippingFee = paymentAmountSources.some(
     (bid) => typeof bid.shippingFee === "number",
   )
@@ -1829,6 +1853,11 @@ export function BidHistoryContent({
         0,
       )
     : null;
+  // 배송비·총액이 묶음 합계인데 상품 금액만 자리 1건이면 "10,000 + 3,000 = 23,000" 이 뜬다.
+  const paymentProductAmount = paymentAmountSources.reduce(
+    (sum, bid) => sum + bid.amount,
+    0,
+  );
   const paymentTotalAmount = paymentAmountSources.reduce(
     (sum, bid) => sum + getBidRecordPaymentTotal(bid),
     0,
@@ -2316,11 +2345,20 @@ export function BidHistoryContent({
         return true;
       });
 
-    // 참여 1건 = 카드 1장. 같은 분철이라도 참여(멤버)별로 각각 보여준다.
-    // 서버가 최신 참여순(createdAt DESC)으로 내려주므로 재정렬하지 않고 그 순서를 유지한다
-    // — 마감일 기준으로 다시 정렬하면 방금 참여한 건이 아래로 밀린다.
     return filteredRecords;
   }, [authState.isLoggedIn, filter, now, paymentBidRecords]);
+
+  // 🔴 <b>필터보다 그룹핑이 먼저다</b>. 필터로 자른 뒤 묶으면 확정·미확정이 섞인 묶음에서 카드가
+  // 묶음의 일부만 그리고, 그 카드의 합계가 실제 이체 금액과 달라진다. 혼합 묶음은 이론이 아니라
+  // 도달 가능한 정상 경로다 — 슬롯 단위 입금확인 API 와 어드민 벌크 확인이 열려 있다.
+  // 그래서 자리 행·금액은 언제나 묶음 전 슬롯에서 뽑고, 탭 판정만 「한 자리라도 걸리면」으로 본다.
+  const bundles = useMemo(() => {
+    const visibleIds = new Set(records.map((bid) => bid.id));
+
+    return toBidRecordBundles(
+      paymentBidRecords.filter((bid) => !isHiddenCancelledBidRecord(bid)),
+    ).filter((slots) => slots.some((bid) => visibleIds.has(bid.id)));
+  }, [paymentBidRecords, records]);
   /*
    * 필터를 걸어 목록이 비었을 때 "아직 참여한 분철이 없어요"라고 하면 사실과 다르다 —
    * 참여는 있는데 이 조건에 맞는 게 없을 뿐이고, 화면에는 필터를 되돌릴 안내도 없었다.
@@ -2840,6 +2878,339 @@ export function BidHistoryContent({
 
   // 같은 분철 내 내 활성 참여를 함께 다루는 대상 목록 — 다슬롯 합산 입금 1회 전제
   // (docs/46 §4.7-A4: 서버 API 는 참여 단위, FE 가 일괄 반복 호출).
+  // 자리 2개 이상 묶음의 카드. 이체 1회 · 배송비 1회 · 택배 1개를 한 장으로 보여준다.
+  //
+  // ⚠️ 자리를 「행」이 아니라 「칩」으로 나열한다. 행이면 자리당 +36px 라 5자리 카드가 715px 가 되어
+  // 375x667 화면을 넘긴다 — 이 파일이 한 번 겪고 고친 상태다("카드 하나가 화면 1.5개를 먹었다").
+  // 칩이면 자리 수와 무관하게 높이가 거의 고정이고, 개최 관리(#165)가 같은 문제를 같은 방식으로 풀었다.
+  function renderBundleCard(unsortedSlots: BidRecord[]) {
+    // ⚠️ 서버 정렬은 created_at DESC 이고 그 칸이 초 단위(DATETIME precision 0)다. 다중 선택은
+    // 요청 1회로 같은 트랜잭션에서 N행을 꽂으므로 <b>같은 초</b>가 되고, 그 안의 순서는 MySQL 재량이다.
+    // 배열 위치에 기대면 폴링마다 자리 순서와 대표가 흔들린다 — id(AUTO_INCREMENT) 로 고정한다.
+    const slots = [...unsortedSlots].sort(
+      (a, b) => Number(a.id) - Number(b.id),
+    );
+    const head = slots[0];
+    const isCancelled = slots.every((slot) => isBidRecordCancelled(slot));
+    const isPaymentConfirmed = slots.every((slot) =>
+      isBidRecordPaymentConfirmed(slot),
+    );
+    const isPaymentSent = slots.some((slot) =>
+      isParticipationPaymentSentStatus(slot.participationStatus),
+    );
+    const isOverdue = slots.some((slot) => isBidRecordPaymentOverdue(slot, now));
+    const buncheolChip = getBidRecordBuncheolChip(head, now);
+    const canOpenPaymentSheet = slots.some((slot) =>
+      canViewBidRecordPaymentSheet(slot, now),
+    );
+    // 🔴 시트에 넘길 자리는 서버가 계좌를 실어 준 자리여야 한다 — 확정 자리를 넘기면 계좌가 null 이라
+    // 「보냈어요」 모달이 뜨지 못하고 조용히 토스트로 끝난다.
+    const paymentSheetSlot =
+      slots.find((slot) => canViewBidRecordPaymentSheet(slot, now)) ?? head;
+    const safeOpenChatHref =
+      isC2CBidRecord(head) && !isCancelled
+        ? getSafeOpenChatHref(head.openChatUrl)
+        : null;
+    // 진행바는 묶음이 하나다. 자리마다 상태가 갈리면 가장 뒤처진 자리를 쓴다 — 앞선 자리를 쓰면
+    // "다 끝난 것처럼" 보이는데 실제로는 개최자가 아직 확인하지 않은 돈이 남아 있다.
+    const progressSlot =
+      slots.find((slot) =>
+        isParticipationAwaitingPaymentStatus(slot.participationStatus),
+      ) ??
+      slots.find((slot) =>
+        isParticipationPaymentSentStatus(slot.participationStatus),
+      ) ??
+      head;
+    const progressSteps = getBidRecordProgressSteps(progressSlot, now);
+    const bundleProductAmount = slots.reduce((sum, slot) => sum + slot.amount, 0);
+    const bundleShippingFee = slots.some(
+      (slot) => typeof slot.shippingFee === "number",
+    )
+      ? slots.reduce(
+          (sum, slot) =>
+            sum + (typeof slot.shippingFee === "number" ? slot.shippingFee : 0),
+          0,
+        )
+      : null;
+    const bundleTotalAmount = slots.reduce(
+      (sum, slot) => sum + getBidRecordPaymentTotal(slot),
+      0,
+    );
+    // 택배 1개 = 묶음 1개라 슬롯들이 같은 배송을 문다. deliveryId 로 중복을 제거하되 여러 건이면
+    // 여러 개를 그린다 — 서버 승격 전 데이터에서는 자리마다 배송이 따로 올 수 있다.
+    const deliveries: BidRecord[] = [];
+
+    for (const slot of slots) {
+      if (
+        slot.deliveryId &&
+        isBidRecordPaymentConfirmed(slot) &&
+        !deliveries.some((entry) => entry.deliveryId === slot.deliveryId)
+      ) {
+        deliveries.push(slot);
+      }
+    }
+
+    return (
+      <article
+        className="overflow-hidden rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
+        key={getBidRecordBundleKey(head)}
+      >
+        <div
+          className={`-mx-4 -mt-4 mb-3.5 px-4 py-2 text-[11.5px] font-semibold leading-5 tracking-[-0.02em] ${
+            isCancelled || isPaymentConfirmed
+              ? "bg-[#f1f1f1] text-black/45"
+              : isOverdue
+                ? "bg-black text-[#D7FF5F]"
+                : "bg-[#D7FF5F] text-black"
+          }`}
+        >
+          {isCancelled
+            ? `취소된 묶음 · 자리 ${slots.length}개`
+            : isPaymentConfirmed
+              ? `묶음 · 자리 ${slots.length}개 · 택배 1개`
+              : isPaymentSent
+                ? "보냈어요 · 개최자가 확인 중이에요"
+                : isOverdue
+                  ? "기한 지남 · 아직 보낼 수 있어요"
+                  : `묶음 · 한 번에 보내요 · 자리 ${slots.length}개`}
+        </div>
+
+        <div className="flex items-start gap-3">
+          <div className="flex w-14 shrink-0 flex-col items-center gap-1.5">
+            <Link
+              aria-label={`${head.title} 상세 보기`}
+              className={`relative h-14 w-14 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${head.tone}`}
+              href={`/products/${head.productId}?from=bids`}
+              onClick={rememberBidHistoryProductEntry}
+            >
+              {head.imageUrl ? (
+                <Image
+                  alt=""
+                  className={`h-full w-full object-cover${
+                    buncheolChip.tone === "cancelled"
+                      ? " scale-110 blur-[2px]"
+                      : ""
+                  }`}
+                  fill
+                  sizes="56px"
+                  src={head.imageUrl}
+                  unoptimized
+                />
+              ) : null}
+            </Link>
+            <span
+              className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+            >
+              {buncheolChip.label}
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <Link
+              className="block min-w-0"
+              href={`/products/${head.productId}?from=bids`}
+              onClick={rememberBidHistoryProductEntry}
+            >
+              <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
+                {head.title}
+              </p>
+            </Link>
+            {/* 묶음으로 접으면 "어느 자리를 잡았나" 가 흐려진다 — 칩으로 되살린다. */}
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {slots.map((slot) => (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    isBidRecordCancelled(slot)
+                      ? "bg-[#f7f7f7] text-black/30 line-through"
+                      : "bg-[#f1f1f1] text-black/55"
+                  }`}
+                  key={slot.id}
+                >
+                  {getBidRecordOptionLabels(slot)[0]}
+                </span>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/55">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-[11px] font-medium text-black/35">
+                  한 번에 보낼 돈
+                </p>
+                <p className="text-[17px] font-semibold tracking-[-0.05em]">
+                  {formatPrice(bundleTotalAmount)}
+                </p>
+              </div>
+              <dl className="mt-2 space-y-1 border-t border-[#E4F6A5]/80 pt-2 text-[12px]">
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="shrink-0 font-medium text-black/35">
+                    상품 {slots.length}자리
+                  </dt>
+                  <dd className="font-semibold tracking-[-0.03em]">
+                    {formatPrice(bundleProductAmount)}
+                  </dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="shrink-0 font-medium text-black/35">
+                    배송비 (묶음 1회)
+                  </dt>
+                  <dd className="font-semibold tracking-[-0.03em]">
+                    {bundleShippingFee !== null
+                      ? formatPrice(bundleShippingFee)
+                      : "-"}
+                  </dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="shrink-0 font-medium text-black/35">
+                    모집 기한
+                  </dt>
+                  <dd className="font-semibold tracking-[-0.03em]">
+                    {formatCompactDeadline(head.deadline)}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {/* ⚠️ 진행바 6칸 라벨은 375px 에서 여유가 1px 뿐이다 — 감싸기·들여쓰기 금지.
+                단일 카드와 같은 depth·같은 컨테이너 클래스를 그대로 쓴다. */}
+            <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5">
+              <div className="relative">
+                {/* 연결선 여백 = 첫·마지막 점의 열 중심(열 폭의 절반) — 5열 10%, 6열 8.33% */}
+                <div
+                  className={
+                    progressSteps.length === 6
+                      ? "absolute left-[8.333%] right-[8.333%] top-[9px] h-px bg-[#CAD6A0]"
+                      : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
+                  }
+                />
+                {/* gap 은 0.5(2px) — 6단계 라벨이 한 줄에 들어갈 수 있는 폭을
+                    한 칸이라도 더 벌기 위한 값이다. 아래 라벨의 tracking 과 함께
+                    "한 줄로 필요한 폭"을 395px → 373px 로 낮춘다 (실측).
+                    그래야 iPhone SE(375) · iPhone 12~15(390) 에서 접히지 않는다. */}
+                <div
+                  className={`relative grid gap-0.5 ${
+                    progressSteps.length === 6
+                      ? "grid-cols-6"
+                      : "grid-cols-5"
+                  }`}
+                >
+                  {progressSteps.map((step) => (
+                    <div
+                      className="flex min-w-0 flex-col items-center gap-1.5"
+                      key={step.label}
+                    >
+                      {/* 현재 단계에만 링을 둘러 "지금 어디"를 표시한다 —
+                          라벨이 10px 이라 채워진 점만으로는 지나온 구간과
+                          현재 단계가 구분되지 않았다. */}
+                      <span
+                        className={`h-[18px] w-[18px] rounded-full border-2 ${
+                          step.isActive
+                            ? "border-[#CFE86B] bg-[#D7FF5F]"
+                            : "border-[#dedede] bg-white"
+                        } ${
+                          step.isCurrent
+                            ? "ring-2 ring-[#CFE86B]/45 ring-offset-1 ring-offset-[#F7FAEE]"
+                            : ""
+                        }`}
+                      />
+                      <span
+                        className={`break-keep text-center text-[10px] leading-3 tracking-[-0.06em] ${
+                          step.isCurrent
+                            ? "font-bold text-black"
+                            : step.isActive
+                              ? "font-semibold text-black/70"
+                              : "font-semibold text-black/35"
+                        }`}
+                      >
+                        {step.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {safeOpenChatHref ? (
+              <a
+                className="mt-3 flex items-center justify-between gap-2 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2.5 text-[12px] font-semibold"
+                href={safeOpenChatHref}
+                rel="noreferrer noopener"
+                target="_blank"
+              >
+                <span className="text-black/45">개최자 오픈채팅</span>
+                <span>참여하기 →</span>
+              </a>
+            ) : null}
+
+            {canOpenPaymentSheet || isPaymentSent ? (
+              <div className="mt-4 flex justify-end gap-2">
+                {isPaymentSent ? (
+                  <span className="inline-flex items-center rounded-full bg-[#E4F6A5] px-3 py-1.5 text-[12px] font-semibold text-black/70">
+                    입금 확인 대기
+                  </span>
+                ) : null}
+                {canOpenPaymentSheet ? (
+                  <button
+                    className="rounded-full bg-black px-4 py-2 text-[12px] font-semibold text-[#D7FF5F] disabled:bg-black/20"
+                    disabled={pendingParticipationId !== null}
+                    onClick={() => openPaymentSheet(paymentSheetSlot.id)}
+                    type="button"
+                  >
+                    입금 정보
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* 취소는 자리 단위 API 뿐이다 — 묶음판이 없고, 같은 묶음의 두 자리를 동시에 취소하면
+                서버가 데드락으로 500 을 낸다. 한 번에 하나씩 누르게 둔다. */}
+            {slots.some((slot) => canCancelBidRecord(slot)) ? (
+              <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                {slots
+                  .filter((slot) => canCancelBidRecord(slot))
+                  .map((slot) => (
+                    <button
+                      className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] font-semibold text-black/55 disabled:text-black/25"
+                      disabled={pendingParticipationId !== null}
+                      key={slot.id}
+                      onClick={() => requestCancelParticipation(slot)}
+                      type="button"
+                    >
+                      {getBidRecordOptionLabels(slot)[0]} 취소
+                    </button>
+                  ))}
+              </div>
+            ) : null}
+
+            {deliveries.map((slot) => (
+              <div
+                className="mt-3 border-t border-black/[0.06] pt-3"
+                key={slot.deliveryId}
+              >
+                <p className="text-[12px] font-medium text-black/40">배송</p>
+                <p className="mt-1 text-[13px] font-semibold text-black/55">
+                  {slot.trackingNumber
+                    ? `운송장 ${slot.trackingNumber}`
+                    : "운송장 등록 대기"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  // 이 묶음의 이체에 들어간 자리 전부 — <b>상태를 보지 않는다</b>. 금액 표시 전용이다.
+  // 취소된 자리는 뺀다(서버가 배송비 귀속을 활성 자리 기준으로 다시 계산해 내려준다).
+  function getBundleAmountSlots(bid: BidRecord) {
+    const key = getBidRecordBundleKey(bid);
+    const slots = paymentBidRecords.filter(
+      (record) =>
+        !isBidRecordCancelled(record) && getBidRecordBundleKey(record) === key,
+    );
+
+    return slots.length > 0 ? slots : [bid];
+  }
+
   // 이체 단위가 묶음이라 마킹 대상도 묶음으로 좁힌다.
   //
   // ⚠️ 묶음을 모르는 응답(서버 승격 전)에서는 <b>구 동작인 분철 기준</b>으로 되돌린다. 자기 슬롯만
@@ -2849,13 +3220,13 @@ export function BidHistoryContent({
     bid: BidRecord,
     statusFilter: (status: string | undefined) => boolean,
   ) {
+    const key = getBidRecordBundleKey(bid);
+
     return paymentBidRecords.filter(
       (record) =>
         isC2CBidRecord(record) &&
         statusFilter(record.participationStatus) &&
-        (bid.bundleId
-          ? record.bundleId === bid.bundleId
-          : record.productId === bid.productId),
+        getBidRecordBundleKey(record) === key,
     );
   }
 
@@ -3144,7 +3515,7 @@ export function BidHistoryContent({
     isBidRecordsLoading,
     isHostedProductsLoading,
     mode,
-    records.length,
+    bundles.length,
     hostedRecords.length,
     skipEnterAnimation,
   ]);
@@ -3247,7 +3618,7 @@ export function BidHistoryContent({
             ) : null}
             {isBidRecordsLoading ? (
               <BidHistoryListSkeleton />
-            ) : records.length === 0 ? (
+            ) : bundles.length === 0 ? (
               authState.isLoggedIn ? (
                 filter !== "all" && hasAnyBidRecords ? (
                   <EmptyState
@@ -3288,9 +3659,17 @@ export function BidHistoryContent({
                 />
               )
             ) : null}
-            {!isBidRecordsLoading && records.length > 0 ? (
+            {!isBidRecordsLoading && bundles.length > 0 ? (
             <div className="content-reveal space-y-3">
-            {records.map((bid) => {
+            {bundles.map((slots) => {
+              // 🔴 자리 1개는 <b>여기서 조기 반환하지 않고</b> 아래 기존 카드를 그대로 탄다.
+              // 픽셀이 같은 게 아니라 <b>같은 코드</b>다 — 이 훅이 없으면 98% 경로가 새 JSX 를 타게
+              // 되고, 그때부터는 "안 바뀌었다" 를 눈으로 확인하는 수밖에 없어진다.
+              if (slots.length > 1) {
+                return renderBundleCard(slots);
+              }
+
+              const bid = slots[0];
               const isCancelled = isBidRecordCancelled(bid);
               const cancellationNotice = getBidRecordCancellationNotice(bid);
               const buncheolChip = getBidRecordBuncheolChip(bid, now);
@@ -4214,7 +4593,7 @@ export function BidHistoryContent({
             <div className="shrink-0 border-t border-black/10 bg-white pt-4">
               <div className="flex items-center justify-between text-[14px] font-medium text-black/45">
                 <span>상품 금액</span>
-                <span>{formatPrice(selectedPaymentBid.amount)}</span>
+                <span>{formatPrice(paymentProductAmount)}</span>
               </div>
               <div className="mt-2 flex items-center justify-between text-[14px] font-medium text-black/45">
                 <span>배송비</span>
