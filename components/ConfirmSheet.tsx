@@ -2,11 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 
+export type ConfirmSheetDetail = {
+  label: string;
+  value: string;
+};
+
 export type ConfirmSheetRequest = {
+  cancelLabel?: string;
   confirmLabel: string;
   description?: string;
+  // 라벨-값 목록. 되돌릴 수 없는 액션 직전에 "무엇을 확정하는지" 를 다시 보여주는 자리다.
+  details?: ConfirmSheetDetail[];
   onConfirm: () => void;
   title: string;
+  // 강조 경고. 마지막 줄만 굵게 — 되돌릴 수 없다는 사실이 목록에 묻히면 안 된다.
+  warnings?: string[];
 };
 
 type ConfirmSheetProps = {
@@ -19,7 +29,7 @@ type ConfirmSheetProps = {
 // 억제하고 즉시 false 를 반환해, 되돌리기 어려운 액션(알림톡 발송·상태 일괄 전이)이
 // 아예 실행 불가능해진다 — 앱 시트로 확인을 받으면 환경과 무관하게 동작한다.
 export function ConfirmSheet({
-  cancelLabel = "아니요",
+  cancelLabel: fallbackCancelLabel = "아니요",
   onCancel,
   request,
 }: ConfirmSheetProps) {
@@ -106,13 +116,46 @@ export function ConfirmSheet({
             {request.description}
           </p>
         ) : null}
+        {request.details?.length ? (
+          <dl className="mt-4 space-y-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5">
+            {request.details.map((detail) => (
+              <div
+                className="flex items-baseline justify-between gap-3"
+                key={detail.label}
+              >
+                <dt className="shrink-0 text-[12px] font-medium text-black/40">
+                  {detail.label}
+                </dt>
+                <dd className="min-w-0 break-all text-right text-[13px] font-semibold tracking-[-0.03em]">
+                  {detail.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+        {request.warnings?.length ? (
+          <div className="mt-3 space-y-1">
+            {request.warnings.map((warning, index) => (
+              <p
+                className={`text-[12px] leading-5 ${
+                  index === request.warnings!.length - 1
+                    ? "font-semibold text-black/70"
+                    : "font-medium text-black/45"
+                }`}
+                key={warning}
+              >
+                {warning}
+              </p>
+            ))}
+          </div>
+        ) : null}
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button
             className="h-12 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
             onClick={onCancel}
             type="button"
           >
-            {cancelLabel}
+            {request.cancelLabel ?? fallbackCancelLabel}
           </button>
           <button
             className="h-12 rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F]"
