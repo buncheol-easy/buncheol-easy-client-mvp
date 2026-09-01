@@ -81,6 +81,8 @@ export function ConfirmSheet({
     return null;
   }
 
+  const warnings = request.warnings ?? [];
+
   return (
     // 결제 정보 시트(z-40) 등 기존 시트 위에서도 열릴 수 있어 z-[60].
     // (호출 컴포넌트 루트에 transform 이 걸리면 fixed 기준이 그 컨테이너가 되는 것은
@@ -99,12 +101,15 @@ export function ConfirmSheet({
       <section
         aria-labelledby="confirm-sheet-title"
         aria-modal="true"
-        className={`bid-sheet-panel relative mx-auto w-full max-w-[430px] rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+        // 상세·경고가 붙으면 400px 안팎이 된다 — 가로 모드·인앱 웹뷰 상하단 바·폰트 확대가 겹치면
+        // 위로 넘쳐 제목과 금액이 잘린다. 버튼은 스크롤 밖에 고정해 항상 닿게 둔다.
+        className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100%-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
           isEntered ? "bid-sheet-panel-active" : ""
         }`}
         role="dialog"
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-black/15" />
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <h2
           className="text-[19px] font-semibold tracking-[-0.05em]"
           id="confirm-sheet-title"
@@ -118,38 +123,39 @@ export function ConfirmSheet({
         ) : null}
         {request.details?.length ? (
           <dl className="mt-4 space-y-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5">
-            {request.details.map((detail) => (
+            {request.details.map((detail, index) => (
               <div
                 className="flex items-baseline justify-between gap-3"
-                key={detail.label}
+                key={`${detail.label}-${index}`}
               >
                 <dt className="shrink-0 text-[12px] font-medium text-black/40">
                   {detail.label}
                 </dt>
-                <dd className="min-w-0 break-all text-right text-[13px] font-semibold tracking-[-0.03em]">
+                <dd className="min-w-0 break-words text-right text-[13px] font-semibold tracking-[-0.03em]">
                   {detail.value}
                 </dd>
               </div>
             ))}
           </dl>
         ) : null}
-        {request.warnings?.length ? (
+        {warnings.length > 0 ? (
           <div className="mt-3 space-y-1">
-            {request.warnings.map((warning, index) => (
+            {warnings.map((warning, index) => (
               <p
                 className={`text-[12px] leading-5 ${
-                  index === request.warnings!.length - 1
+                  index === warnings.length - 1
                     ? "font-semibold text-black/70"
                     : "font-medium text-black/45"
                 }`}
-                key={warning}
+                key={`${warning}-${index}`}
               >
                 {warning}
               </p>
             ))}
           </div>
         ) : null}
-        <div className="mt-5 grid grid-cols-2 gap-2">
+        </div>
+        <div className="mt-5 shrink-0 grid grid-cols-2 gap-2">
           <button
             className="h-12 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
             onClick={onCancel}

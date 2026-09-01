@@ -817,6 +817,18 @@ const buncheolChipToneClasses: Record<BuncheolChipTone, string> = {
 };
 
 // 낼 돈이 없었던 참여(코드 참여 등)에는 환불 안내를 띄우지 않는다 — 가리킬 계좌 자체가 없다.
+// 이 슬롯의 입금 총액(상품 + 배송비). 배송비를 모르는 구응답이면 임의 상수를 더하지 않고
+// amount 만 쓴다. 시트·카드·확인 모달이 같은 식을 복제하면 숫자가 갈린다.
+function getBidRecordPaymentTotal(bid: BidRecord) {
+  const shippingFee =
+    typeof bid.shippingFee === "number" ? bid.shippingFee : null;
+
+  return (
+    bid.paymentAmount ??
+    (shippingFee !== null ? bid.amount + shippingFee : bid.amount)
+  );
+}
+
 function isFreeBidRecord(bid: BidRecord) {
   if (typeof bid.paymentAmount === "number") {
     return bid.paymentAmount === 0;
@@ -1689,7 +1701,7 @@ export function BidHistoryContent({
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
   >(null);
-  // C2C 참여 액션(보냈어요·철회·취소) 진행 중인 참여 ID — 중복 호출 방지.
+  // C2C 참여 액션(보냈어요·취소) 진행 중인 참여 ID — 중복 호출 방지.
   const [pendingParticipationId, setPendingParticipationId] = useState<
     string | null
   >(null);
@@ -1793,17 +1805,36 @@ export function BidHistoryContent({
     selectedEligiblePaymentAddress ??
     eligiblePaymentAddresses[0] ??
     null;
-  // 배송비를 모르는 구응답이면 임의 상수를 더하지 않고 amount(총액)만 쓴다 — 카드 쪽 폴백과 동일.
-  const paymentShippingFee =
-    typeof selectedPaymentBid?.shippingFee === "number"
-      ? selectedPaymentBid.shippingFee
-      : null;
-  const paymentTotalAmount = selectedPaymentBid
-    ? selectedPaymentBid.paymentAmount ??
-      (paymentShippingFee !== null
-        ? selectedPaymentBid.amount + paymentShippingFee
-        : selectedPaymentBid.amount)
-    : 0;
+  // 🔴 시트가 보여주는 금액은 <b>묶음 합계</b>여야 한다 — 이체가 한 번이기 때문이다.
+  // 슬롯 1건만 보여주면 확인 모달의 합계와 숫자가 갈리고, 그 모달이 "금액이 다르면 개최자가
+  // 통장에서 찾지 못한다" 고 경고하는 화면이라 스스로를 무너뜨린다.
+  const selectedPaymentBundleSlots = selectedPaymentBid
+    ? getSameBundleRecords(
+        selectedPaymentBid,
+        isParticipationAwaitingPaymentStatus,
+      )
+    : [];
+  // 마킹 전(입금 대기)이 아니면 위 목록이 비므로 선택 슬롯으로 폴백한다.
+  const paymentAmountSources =
+    selectedPaymentBundleSlots.length > 0
+      ? selectedPaymentBundleSlots
+      : selectedPaymentBid
+        ? [selectedPaymentBid]
+        : [];
+  const paymentShippingFee = paymentAmountSources.some(
+    (bid) => typeof bid.shippingFee === "number",
+  )
+    ? paymentAmountSources.reduce(
+        (sum, bid) =>
+          sum + (typeof bid.shippingFee === "number" ? bid.shippingFee : 0),
+        0,
+      )
+    : null;
+  const paymentTotalAmount = paymentAmountSources.reduce(
+    (sum, bid) => sum + getBidRecordPaymentTotal(bid),
+    0,
+  );
+  const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
   const selectedPaymentOptionLabels = selectedPaymentBid
@@ -2274,8 +2305,8 @@ export function BidHistoryContent({
         }
 
         if (filter === "payment") {
-          // C2C 보냈어요(확인 대기)도 입금 축 탭에 남긴다 — 마킹 직후 카드가 증발하면
-          // 오마킹 셀프 수정(보냈어요 취소) 진입점이 전체 탭으로 숨는다.
+          // C2C 보냈어요(확인 대기)도 입금 축 탭에 남긴다 — 개최자 확인을 기다리는 동안
+          // 계좌를 다시 확인할 수 있어야 한다 (docs/46 §3-5).
           return canViewBidRecordPaymentSheet(bid, now);
         }
 
@@ -2810,11 +2841,11 @@ export function BidHistoryContent({
 
   // 같은 분철 내 내 활성 참여를 함께 다루는 대상 목록 — 다슬롯 합산 입금 1회 전제
   // (docs/46 §4.7-A4: 서버 API 는 참여 단위, FE 가 일괄 반복 호출).
-  // 같은 <b>묶음</b>의 활성 슬롯 — 낙관적 갱신 대상이다.
+  // 이체 단위가 묶음이라 마킹 대상도 묶음으로 좁힌다.
   //
-  // 🔴 예전에는 분철(productId) 기준이었는데, 성사 확정 뒤 추가로 잡은 자리는 <b>이체가 따로인 별개
-  // 묶음</b>이라 A 만 입금했는데 B 까지 「보냈어요」로 찍혔다(prod 실사례 1건). 묶음 id 로 좁힌다.
-  // 묶음이 없는 구 행은 자기 자신만 대상이다.
+  // ⚠️ 묶음을 모르는 응답(서버 승격 전)에서는 <b>구 동작인 분철 기준</b>으로 되돌린다. 자기 슬롯만
+  // 잡으면 다슬롯 사용자의 묶음이 쪼개져(1건만 PAYMENT_SENT) 개최자 입금확인이 409 로 영구히 막힌다
+  // — 이 변경이 없애려는 바로 그 상태다.
   function getSameBundleRecords(
     bid: BidRecord,
     statusFilter: (status: string | undefined) => boolean,
@@ -2825,7 +2856,7 @@ export function BidHistoryContent({
         statusFilter(record.participationStatus) &&
         (bid.bundleId
           ? record.bundleId === bid.bundleId
-          : record.id === bid.id),
+          : record.productId === bid.productId),
     );
   }
 
@@ -2838,7 +2869,7 @@ export function BidHistoryContent({
 
     const account = bid.hostBankAccount;
 
-    // 계좌를 모르면 보낼 곳이 없다 — 확인만 받고 마킹하면 "안 보낸 돈을 보냈다" 가 된다.
+    // 버튼이 이미 disabled 라 도달하지 않지만, 계좌 없이 마킹되면 "안 보낸 돈을 보냈다" 가 되므로 남긴다.
     if (!account) {
       showActionToast(
         "개최자 계좌를 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.",
@@ -2850,20 +2881,22 @@ export function BidHistoryContent({
       bid,
       isParticipationAwaitingPaymentStatus,
     );
-    const memberNames = targets
-      .flatMap((target) => getBidRecordOptionLabels(target))
-      .filter(Boolean);
-    // 묶음 총액 — 배송비는 묶음에 1회만 붙고 서버가 그 몫을 슬롯 하나에 실어 보낸다. 슬롯 금액을
-    // 그대로 더하면 합계가 맞는다.
-    const bundleTotal = targets.reduce((sum, target) => {
-      const shippingFee =
-        typeof target.shippingFee === "number" ? target.shippingFee : null;
-      return (
-        sum +
-        (target.paymentAmount ??
-          (shippingFee !== null ? target.amount + shippingFee : target.amount))
+    // 폴링이 상태를 바꿔 대상이 사라졌을 수 있다 — 모달을 띄우면 확인해도 아무 일이 안 일어난다.
+    if (targets.length === 0) {
+      showActionToast(
+        "참여 상태가 바뀌었어요. 새로고침 후 다시 확인해 주세요.",
       );
-    }, 0);
+      return;
+    }
+
+    const memberNames = targets.flatMap((target) =>
+      getBidRecordOptionLabels(target),
+    );
+    // 묶음 총액 — 배송비는 묶음에 1회만 붙고 서버가 그 몫을 슬롯 하나에 실어 보낸다.
+    const bundleTotal = targets.reduce(
+      (sum, target) => sum + getBidRecordPaymentTotal(target),
+      0,
+    );
 
     setConfirmSheetRequest({
       cancelLabel: "아직 안 보냈어요",
@@ -2920,11 +2953,14 @@ export function BidHistoryContent({
     setPendingParticipationId(bid.id);
 
     try {
-      // 묶음이 없는 구 행만 슬롯 API 로 폴백한다. 신규 참여는 전부 묶음을 갖는다.
       if (bid.bundleId) {
         await requestBundlePaymentSent(accessToken, bid.bundleId);
       } else {
-        await requestParticipationPaymentSent(accessToken, bid.id);
+        // 묶음을 모르는 응답 — 구 동작 그대로 슬롯마다 부른다. 한 건이라도 실패하면 전부 실패로
+        // 다루어 화면과 서버가 갈리지 않게 한다(부분 성공을 낙관적으로 반영하지 않는다).
+        for (const target of targets) {
+          await requestParticipationPaymentSent(accessToken, target.id);
+        }
       }
 
       const sentAt = new Date().toISOString();
@@ -3279,11 +3315,7 @@ export function BidHistoryContent({
               const progressSteps = getBidRecordProgressSteps(bid, now);
               const cardShippingFee =
                 typeof bid.shippingFee === "number" ? bid.shippingFee : null;
-              const cardTotalAmount =
-                bid.paymentAmount ??
-                (cardShippingFee !== null
-                  ? bid.amount + cardShippingFee
-                  : bid.amount);
+              const cardTotalAmount = getBidRecordPaymentTotal(bid);
               const isPaybackActionable = isPaybackRequestable(bid);
               const isPaybackRejected =
                 isPaybackActionable && getPaybackStatus(bid) === "REJECTED";
@@ -4196,6 +4228,11 @@ export function BidHistoryContent({
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[15px] font-semibold tracking-[-0.04em]">
                   결제 예정 금액
+                  {paymentSlotCount > 1 ? (
+                    <span className="ml-1 text-[12px] font-medium text-black/40">
+                      자리 {paymentSlotCount}개 합계
+                    </span>
+                  ) : null}
                 </span>
                 <span className="text-[22px] font-semibold tracking-[-0.05em]">
                   {formatPrice(paymentTotalAmount)}
