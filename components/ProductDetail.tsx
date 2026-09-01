@@ -1728,6 +1728,13 @@ export function ProductDetail({
   // 받는다 — deadline(신청 마감)이 지났어도 열어둔다. 분철 CONFIRMED 후에는 서버가 차단.
   const isC2CCollectingProduct =
     isC2CProduct && isBuncheolPaymentCollectingStatus(productStatus);
+  // 🔴 자리를 여러 개 한 번에 잡는 것은 <b>C2C 모집중 전용</b>이다.
+  // · 추가 모집(PAYMENT_COLLECTING)은 자리마다 별개 묶음·별개 이체·별개 기한이라 합산 안내가
+  //   거짓이 된다 — 서버도 409(BCH-060)로 막는다
+  // · LEGACY 는 1인 1자리가 DB 유니크로 강제돼 있다
+  // · 코드 참여는 코드 하나가 자리 하나에 대응한다
+  const canSelectMultipleMembers =
+    isC2CProduct && !isC2CCollectingProduct && !isCodeCheckout;
   // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를,
   // C2C 입금 수집 중에는 기한이 지나도 빈 슬롯 즉시입금 신청이 열려 있으므로
   // 카운트다운의 "참여 마감" 대신 추가 신청 가능 문구를 보여준다.
@@ -2470,8 +2477,11 @@ export function ProductDetail({
       if (current[optionId] === "selected") {
         nextAmounts = { ...current };
         delete nextAmounts[optionId];
+      } else if (canSelectMultipleMembers) {
+        // 자리를 여러 개 잡으면 한 묶음이 된다 — 이체 1회 · 배송비 1회 · 택배 1개.
+        nextAmounts = { ...current, [optionId]: "selected" };
       } else {
-        // 참여 1건 = 멤버 1명(단일 선택 정책). 새 멤버를 선택하면 기존 선택을 해제한다.
+        // 코드 참여는 코드가 자리 하나에 대응하고, 추가 모집은 자리마다 별개 이체라 묶을 수 없다.
         nextAmounts = { [optionId]: "selected" };
       }
 
@@ -2653,9 +2663,17 @@ export function ProductDetail({
       return;
     }
 
-    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전에서 저장된 다중 선택 복원 등 예외 경로를 방어한다.
-    if (submittedBids.length > 1) {
-      window.alert("멤버는 한 번에 1명씩 참여할 수 있어요. 참여할 멤버를 하나만 선택해 주세요.");
+    // 다중 선택이 열리지 않은 구간(코드 참여·추가 모집)에서 복원 등으로 여러 개가 들어온 경우 방어.
+    if (submittedBids.length > 1 && !canSelectMultipleMembers) {
+      window.alert(
+        "지금은 자리를 한 번에 하나씩만 신청할 수 있어요. 하나만 선택해 주세요.",
+      );
+      return;
+    }
+
+    // 서버 상한(@Size(max = 20))과 같은 값. 넘겨 보내면 C-001 로 돌아온다.
+    if (submittedBids.length > 20) {
+      window.alert("한 번에 최대 20자리까지 신청할 수 있어요.");
       return;
     }
 
@@ -2750,6 +2768,9 @@ export function ProductDetail({
         didRequestParticipation = true;
         const result = await participateBuncheol(accessToken, buncheolId, {
           buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
+          buncheolMemberIds: checkoutRequestItems.map(
+            (item) => item.buncheolMemberId,
+          ),
           shippingAddressId,
           participationCode: isCodeCheckout
             ? checkoutCodeInput.trim()
@@ -4576,6 +4597,20 @@ export function ProductDetail({
                       ) : null}
                     </div>
                     )}
+
+                    {/* 자리를 여러 개 고른 경우에만 — 한 묶음이 된다는 사실과 실패 규칙을 미리 알린다.
+                        하나라도 이미 팔렸으면 서버가 전체를 롤백하므로 부분 성공이 없다. */}
+                    {selectedCheckoutItems.length > 1 ? (
+                      <p className="px-1 text-[12px] font-semibold leading-5 text-black/60">
+                        자리 {selectedCheckoutItems.length}개를 한 번에
+                        신청해요. 배송비는 한 번만 붙고 택배도 한 개로 와요.
+                        <br />
+                        <span className="font-medium text-black/40">
+                          고른 자리 중 하나라도 먼저 팔리면 전체가 신청되지
+                          않아요. 그때는 다시 골라 주세요.
+                        </span>
+                      </p>
+                    ) : null}
 
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
                       {isCodeCheckout

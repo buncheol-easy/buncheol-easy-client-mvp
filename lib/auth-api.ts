@@ -186,6 +186,9 @@ export type UpdateBuncheolRequest = {
 
 export type ParticipateBuncheolRequest = {
   buncheolMemberId: number;
+  // 자리를 여러 개 한 번에 잡을 때. 서버는 배열이 있으면 배열을 쓰고 단수는 무시한다.
+  // C2C 모집중 전용 — 성사 확정 뒤 추가 모집에 보내면 409(BCH-060)다.
+  buncheolMemberIds?: number[];
   shippingAddressId: number;
   participationCode?: string | null;
 };
@@ -4339,9 +4342,14 @@ export async function participateBuncheol(
     throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
   }
 
-  // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
+  // 자리를 여러 개 보낼 때만 배열을 싣는다 — 서버는 배열이 있으면 배열이 이긴다.
+  // 단수 필드는 구버전 서버(배열 미지원)에서도 동작하도록 항상 함께 보낸다.
+  const memberIds = (body.buncheolMemberIds ?? []).filter((id) =>
+    Number.isFinite(id),
+  );
   const requestBody = {
     buncheolMemberId: body.buncheolMemberId,
+    ...(memberIds.length > 1 ? { buncheolMemberIds: memberIds } : {}),
     shippingAddressId: body.shippingAddressId,
     ...(body.participationCode
       ? { participationCode: body.participationCode }
