@@ -186,6 +186,9 @@ export type UpdateBuncheolRequest = {
 
 export type ParticipateBuncheolRequest = {
   buncheolMemberId: number;
+  // 자리를 여러 개 한 번에 잡을 때. 서버는 배열이 있으면 배열을 쓰고 단수는 무시한다.
+  // C2C 모집중 전용 — 성사 확정 뒤 추가 모집에 보내면 409(BCH-060)다.
+  buncheolMemberIds?: number[];
   shippingAddressId: number;
   participationCode?: string | null;
 };
@@ -4368,9 +4371,17 @@ export async function participateBuncheol(
     throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
   }
 
-  // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
+  // 자리를 여러 개 보낼 때만 배열을 싣는다 — 서버는 배열이 있으면 배열이 이긴다.
+  // 단수 필드는 구버전 서버(배열 미지원)에서도 동작하도록 항상 함께 보낸다.
+  const memberIds = body.buncheolMemberIds ?? [];
+
+  // 조용히 개수를 줄이면 "3개 골랐는데 2개만 신청됨" 이 소리 없이 난다 — 단수 필드와 같은 규칙으로 끊는다.
+  if (memberIds.some((id) => !Number.isFinite(id))) {
+    throw new Error("참여할 멤버 정보를 확인하지 못했어요.");
+  }
   const requestBody = {
     buncheolMemberId: body.buncheolMemberId,
+    ...(memberIds.length > 1 ? { buncheolMemberIds: memberIds } : {}),
     shippingAddressId: body.shippingAddressId,
     ...(body.participationCode
       ? { participationCode: body.participationCode }
@@ -4417,10 +4428,14 @@ export async function participateBuncheol(
     throw new Error("참여 결과를 확인할 수 없어요.");
   }
 
-  const participationIds = getStringListValue(data, [
-    "participationIds",
-    "ids",
-  ]);
+  // 서버는 List<Long> 을 내려 숫자 배열이지만(getStringListValue 가 처리), 객체 배열로 감싸 오는
+  // 응답도 대비한다 — 여기서 비면 다건 신청이 성공했는데 화면은 실패로 보인다.
+  const participationIds = [
+    ...getStringListValue(data, ["participationIds", "ids"]),
+    ...getRecordListValue(data, ["participationIds", "participations", "items"])
+      .map((item) => getStringValue(item, ["participationId", "id"]))
+      .filter((id) => id.trim().length > 0),
+  ].filter((id, index, ids) => ids.indexOf(id) === index);
   const participationId =
     getStringValue(data, ["participationId", "id"]) ||
     participationIds[0] ||
