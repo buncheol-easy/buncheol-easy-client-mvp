@@ -2998,12 +2998,12 @@ export function BidHistoryContent({
           {isCancelled
             ? `취소된 묶음 · 자리 ${slots.length}개`
             : isPaymentConfirmed
-              ? `묶음 · 자리 ${slots.length}개 · 택배 1개`
+              ? `묶음 · 자리 ${amountSlots.length}개 · 택배 1개`
               : isPaymentSent
                 ? "보냈어요 · 개최자가 확인 중이에요"
                 : isOverdue
                   ? "기한 지남 · 아직 보낼 수 있어요"
-                  : `묶음 · 한 번에 보내요 · 자리 ${slots.length}개`}
+                  : `묶음 · 한 번에 보내요 · 자리 ${amountSlots.length}개`}
         </div>
 
         <div className="flex items-start gap-3">
@@ -3077,7 +3077,7 @@ export function BidHistoryContent({
               <dl className="mt-2 space-y-1 border-t border-[#E4F6A5]/80 pt-2 text-[12px]">
                 <div className="flex items-baseline justify-between gap-2">
                   <dt className="shrink-0 font-medium text-black/35">
-                    상품 {slots.length}자리
+                    상품 {amountSlots.length}자리
                   </dt>
                   <dd className="font-semibold tracking-[-0.03em]">
                     {formatPrice(bundleProductAmount)}
