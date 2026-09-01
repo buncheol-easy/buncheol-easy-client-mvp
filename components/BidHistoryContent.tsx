@@ -2910,9 +2910,13 @@ export function BidHistoryContent({
     );
     const head = slots[0];
     const isCancelled = slots.every((slot) => isBidRecordCancelled(slot));
-    const isPaymentConfirmed = slots.every((slot) =>
-      isBidRecordPaymentConfirmed(slot),
-    );
+    // 🔴 취소된 자리는 판정에서 뺀다. every 로 보면 「취소 1 + 확정 1」 묶음이 확정으로 안 잡혀
+    // 이미 다 낸 묶음에 라임 배너 「한 번에 보내요」와 「한 번에 보낼 돈」이 뜬다.
+    // (staging 묶음 137·87 이 실제로 그 모양이다.) 금액 집계와 같은 축으로 맞춘다.
+    const livingSlots = slots.filter((slot) => !isBidRecordCancelled(slot));
+    const isPaymentConfirmed =
+      livingSlots.length > 0 &&
+      livingSlots.every((slot) => isBidRecordPaymentConfirmed(slot));
     const isPaymentSent = slots.some((slot) =>
       isParticipationPaymentSentStatus(slot.participationStatus),
     );
@@ -2994,12 +2998,12 @@ export function BidHistoryContent({
           {isCancelled
             ? `취소된 묶음 · 자리 ${slots.length}개`
             : isPaymentConfirmed
-              ? `묶음 · 자리 ${slots.length}개 · 택배 1개`
+              ? `묶음 · 자리 ${amountSlots.length}개 · 택배 1개`
               : isPaymentSent
                 ? "보냈어요 · 개최자가 확인 중이에요"
                 : isOverdue
                   ? "기한 지남 · 아직 보낼 수 있어요"
-                  : `묶음 · 한 번에 보내요 · 자리 ${slots.length}개`}
+                  : `묶음 · 한 번에 보내요 · 자리 ${amountSlots.length}개`}
         </div>
 
         <div className="flex items-start gap-3">
@@ -3073,7 +3077,7 @@ export function BidHistoryContent({
               <dl className="mt-2 space-y-1 border-t border-[#E4F6A5]/80 pt-2 text-[12px]">
                 <div className="flex items-baseline justify-between gap-2">
                   <dt className="shrink-0 font-medium text-black/35">
-                    상품 {slots.length}자리
+                    상품 {amountSlots.length}자리
                   </dt>
                   <dd className="font-semibold tracking-[-0.03em]">
                     {formatPrice(bundleProductAmount)}
