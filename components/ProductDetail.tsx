@@ -4669,7 +4669,9 @@ export function ProductDetail({
                           </p>
                         </div>
                         <p className="mt-3 text-[12px] font-medium leading-5 text-white/60">
-                          마감 전까지 입금하지 않으면 자동 취소돼요.
+                          {isC2CProduct
+                            ? "기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요."
+                            : "마감 전까지 입금하지 않으면 자동 취소돼요."}
                         </p>
                       </div>
 

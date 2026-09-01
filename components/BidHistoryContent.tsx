@@ -640,14 +640,8 @@ const PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM = "BLOCKED_BY_HOST_CONFIRM";
 // C2C 자발 취소 가능 구간 (docs/46 §5). 판정은 서버가 하고 화면은 그 값을 따르기만 한다 —
 // 상태로 재판정하면 성사 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다.
 //
-// 🔴 <b>기한은 더 이상 이 판정에 끼어들지 않는다</b> (docs/84 §3-1). 예전에는 만료 가드가 서버 판정보다
-// 앞섰는데, 근거가 "만료 카드는 곧 서버 스케줄러가 자동 취소할 것" 이었고 <b>C2C 에서 그 전제가 사라졌다.</b>
-//
-// 이제 서버 값(cancellability)만 따른다. 결과적으로 구간이 이렇게 갈린다:
-//   · 성사확정을 거친 참여 → 서버가 BCH-092 로 막는다. 기한과 무관하게 <b>원래부터</b> 못 나간다
-//   · 추가 모집분(확정 이후 생성)  → 서버가 열어 둔다. 별개 이체·별개 택배라 빠져도 남에게 영향이 없다
-// 화면이 기한으로 한 번 더 막으면 "서버는 되는데 버튼이 없음" 이 되고, 그건 releasability·confirmTarget 을
-// 서버가 값으로 내려주게 만든 이 트랙의 규칙을 스스로 깨는 것이다.
+// 기한 축을 뺐다 — 예전 만료 가드의 근거가 "곧 서버가 자동 취소할 것" 이었고 C2C 에서 그 전제가
+// 사라졌다. 이제 서버 값(cancellability)만 따른다 (docs/84 §3-1).
 function canCancelBidRecord(bid: BidRecord) {
   if (!isC2CBidRecord(bid) || isBidRecordCancelled(bid)) {
     return false;
@@ -886,10 +880,8 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
   };
 }
 
-// 입금 기한이 지났는지 — <b>표시 전용</b>. 아무것도 잠그지 않는다.
-//
-// C2C 기한은 "지나면 자동 취소" 도 "순수 표시용" 도 아니고 "지나면 개최자가 정리에 나설 수 있다" 는
-// 뜻이다 (docs/71 §8-1). 그래서 이 값은 문구·라벨을 바꿀 뿐 버튼을 없애지 않는다.
+// 기한 경과 여부 — 표시 전용이라 아무것도 잠그지 않는다. C2C 기한은 "지나면 개최자가 정리에 나설 수
+// 있는 시각" 이지 참여가 죽는 시각이 아니다 (docs/71 §8-1).
 function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
   const isC2C = isC2CBidRecord(bid);
   // C2C 는 AWAITING_PAYMENT 만 기한 대상 — APPLIED(기한 없음)·PAYMENT_SENT(개최자 확인 대기)는 제외한다.
@@ -919,12 +911,9 @@ function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
   );
 }
 
-// 기한이 지나 <b>참여가 곧 죽는</b> 상태 — 액션을 잠그는 쪽이다. <b>LEGACY 전용</b>이다.
-//
-// 🔴 C2C 는 서버가 자동 취소를 하지 않는다(만료 폴링이 flow_type = LEGACY 로 좁혀졌다). 그래서 C2C 에서
-// 기한이 지난 참여는 <b>여전히 살아 있고 지금 입금하면 확정된다</b>. 이 판정으로 잠그면 참여자가 입금도
-// 「보냈어요」도 못 해, 개최자가 「제외」를 누를 때까지 아무것도 못 하고 갇힌다.
-// LEGACY 는 30분 자동취소가 여전히 참이라 그대로 둔다.
+// 기한이 지나 참여가 곧 죽는 상태 — 액션을 잠그는 쪽이고 LEGACY 전용이다.
+// 서버 만료 폴링이 flow_type = LEGACY 로 좁혀져 C2C 는 자동 취소되지 않는다. C2C 를 여기서 잠그면
+// 살아 있는 참여인데 입금도 마킹도 못 하게 된다.
 function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
   if (isC2CBidRecord(bid)) {
     return false;
@@ -1153,13 +1142,12 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     return "입금 기한이 지나 참여가 취소됐을 수 있어요.";
   }
 
-  // C2C 는 자동 취소가 없다 — 기한이 지나도 지금 보내면 확정된다. 다만 개최자가 정리에 나설 수 있는
-  // 구간이 열리므로(docs/71 §8-1) 그 사실을 그대로 알린다.
-  if (isBidRecordPaymentOverdue(bid, now)) {
-    return "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
-  }
-
   if (isBidRecordPaymentReady(bid, now)) {
+    // ⚠️ overdue 검사가 ready 보다 뒤에 있으면 도달하지 못한다 — C2C 는 기한이 지나도 ready 다.
+    if (isBidRecordPaymentOverdue(bid, now)) {
+      return "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
+    }
+
     const remaining = formatPaymentRemainingTime(
       bid.deadline,
       now,
@@ -1755,8 +1743,11 @@ export function BidHistoryContent({
         ? c2cParticipationStatusGuide
         : legacyParticipationStatusGuide;
   // 입금 대기(기한 압박 구간)는 15초 주기로 빠르게 갱신한다.
-  const hasUrgentPaymentPolling = paymentBidRecords.some((bid) =>
-    isBidRecordPaymentReady(bid, now),
+  // C2C 는 기한이 지나도 입금 대기가 유지되므로 만료분을 빼지 않으면 15초 N+1 이 며칠이고 계속 돈다 —
+  // 아래 "며칠까지 갈 수 있는 대기" 와 성격이 같아졌다.
+  const hasUrgentPaymentPolling = paymentBidRecords.some(
+    (bid) =>
+      isBidRecordPaymentReady(bid, now) && !isBidRecordPaymentOverdue(bid, now),
   );
   // C2C 신청(개최자 확정 대기)·보냈어요(확인 대기)는 며칠까지 갈 수 있는 대기라
   // 폴링은 하되 60초 주기로 늦춘다 — 15초 N+1 요청이 무기한 도는 것 방지.
@@ -1764,7 +1755,9 @@ export function BidHistoryContent({
     (bid) =>
       isC2CBidRecord(bid) &&
       (isParticipationAppliedStatus(bid.participationStatus) ||
-        isParticipationPaymentSentStatus(bid.participationStatus)),
+        isParticipationPaymentSentStatus(bid.participationStatus) ||
+        // 기한이 지난 C2C 입금 대기 — 개최자가 정리할 때까지 며칠 갈 수 있다.
+        isBidRecordPaymentOverdue(bid, now)),
   );
   const shouldRefreshPaymentState =
     hasUrgentPaymentPolling || hasIdleC2CPolling;
@@ -1824,6 +1817,13 @@ export function BidHistoryContent({
   const isSelectedPaymentReady = selectedPaymentBid
     ? isBidRecordPaymentReady(selectedPaymentBid, now)
     : false;
+  // C2C 는 기한이 지나도 입금 대기가 풀리지 않는다 — 남은 시간·재촉 문구를 그대로 두면
+  // "기한 지남" 과 "기한 안에 입금해 주세요" 가 한 박스에 같이 뜬다.
+  const isSelectedPaymentOverdue = selectedPaymentBid
+    ? isBidRecordPaymentOverdue(selectedPaymentBid, now)
+    : false;
+  const isSelectedPaymentCountingDown =
+    isSelectedPaymentReady && !isSelectedPaymentOverdue;
   const isSelectedPaymentC2C = selectedPaymentBid
     ? isC2CBidRecord(selectedPaymentBid)
     : false;
@@ -1888,10 +1888,11 @@ export function BidHistoryContent({
     };
   }, []);
 
-  // 결제 정보 시트가 열려 있는 동안에는 입금 마감 카운트다운을 분철 상세처럼
-  // 갱신한다(초가 보일 때만 1초 틱). 기한이 지나면 결제 대기가 풀리며 인터벌도 정리된다.
+  // 결제 정보 시트가 열려 있는 동안에는 입금 마감 카운트다운을 분철 상세처럼 갱신한다(초가 보일 때만
+  // 1초 틱). 기한이 지나면 카운트다운 자체가 사라지므로 틱도 멈춘다 — C2C 는 결제 대기가 안 풀려서
+  // isSelectedPaymentReady 로는 안 멈추고, 표시가 "기한 지남" 고정인데 초당 리렌더만 돈다.
   useEffect(() => {
-    if (!isPaymentSheetOpen || !isSelectedPaymentReady) {
+    if (!isPaymentSheetOpen || !isSelectedPaymentCountingDown) {
       return;
     }
 
@@ -1909,7 +1910,7 @@ export function BidHistoryContent({
     };
   }, [
     isPaymentSheetOpen,
-    isSelectedPaymentReady,
+    isSelectedPaymentCountingDown,
     shouldTickSelectedPaymentEverySecond,
   ]);
 
@@ -2392,16 +2393,8 @@ export function BidHistoryContent({
       return;
     }
 
-    // C2C 보냈어요 상태는 계좌 재확인 열람 허용 — 만료 가드를 건너뛴다.
-    // (C2C 는 만료 가드 자체가 false 라 이 분기는 LEGACY 에서만 의미가 있다.)
-    const isSelectedBidPaymentSent =
-      isC2CBidRecord(selectedBid) &&
-      isParticipationPaymentSentStatus(selectedBid.participationStatus);
-
-    if (
-      !isSelectedBidPaymentSent &&
-      isBidRecordPaymentExpired(selectedBid, currentTime)
-    ) {
+    // 만료 잠금은 LEGACY 전용이다 — C2C 는 기한이 지나도 시트를 연다.
+    if (isBidRecordPaymentExpired(selectedBid, currentTime)) {
       setHistoryMessage(
         "입금 기한이 지나 결제할 수 없어요. 참여가 자동 취소됐을 수 있어요.",
       );
@@ -4080,19 +4073,19 @@ export function BidHistoryContent({
             <div className="mt-3 rounded-[0.9rem] bg-black px-4 py-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
-                  {isSelectedPaymentReady ? "입금 마감까지" : "현재 상태"}
+                  {isSelectedPaymentCountingDown ? "입금 마감까지" : "현재 상태"}
                 </p>
                 <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
                   {selectedPaymentStatusLabel}
                 </span>
               </div>
               <p className="mt-1 text-[24px] font-semibold tracking-[-0.06em]">
-                {isSelectedPaymentReady
+                {isSelectedPaymentCountingDown
                   ? selectedPaymentRemainingTime
                   : selectedPaymentStatusLabel}
               </p>
               <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
-                {isSelectedPaymentReady
+                {isSelectedPaymentCountingDown
                   ? "기한 안에 아래 계좌로 입금해 주세요."
                   : selectedPaymentStatusDescription}
               </p>
