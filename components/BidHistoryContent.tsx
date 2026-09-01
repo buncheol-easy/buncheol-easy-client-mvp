@@ -476,7 +476,7 @@ const hostingStatusGuide = [
     icon: UsersRoundIcon,
     label: "진행 확정",
     description:
-      "전원 입금이 확인되면 자동으로 진행 확정돼요. 미입금 참여가 기한 만료·취소로 정리되면 입금한 인원만으로 확정할 수도 있어요.",
+      "전원 입금이 확인되면 자동으로 진행 확정돼요. 기한이 지난 미입금 참여를 직접 정리하면 입금한 인원만으로 확정할 수도 있어요.",
   },
   {
     icon: TruckIcon,
@@ -640,16 +640,16 @@ const PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM = "BLOCKED_BY_HOST_CONFIRM";
 // C2C 자발 취소 가능 구간 (docs/46 §5). 판정은 서버가 하고 화면은 그 값을 따르기만 한다 —
 // 상태로 재판정하면 성사 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다.
 //
-// ⚠️ 만료 가드(isBidRecordPaymentExpired)만 서버 판정보다 앞선다. 서버 취소 API 는 기한을 보지 않아
-// CANCELLABLE 을 내리지만, 만료 카드는 곧 서버 스케줄러가 자동 취소할 것이라 "취소" 액션을 남겨 두면
-// 방금 만료된 건에 대고 취소를 누르는 흐름이 된다. 이 순서는 이 PR 이전부터의 동작이고, 여기서 뒤집으면
-// 만료 표시 UX 전반을 함께 봐야 해 그대로 뒀다 (이전 주석은 코드와 반대로 적혀 있었다).
-function canCancelBidRecord(bid: BidRecord, now: Date) {
-  if (
-    !isC2CBidRecord(bid) ||
-    isBidRecordCancelled(bid) ||
-    isBidRecordPaymentExpired(bid, now)
-  ) {
+// 🔴 <b>기한은 더 이상 이 판정에 끼어들지 않는다</b> (docs/84 §3-1). 예전에는 만료 가드가 서버 판정보다
+// 앞섰는데, 근거가 "만료 카드는 곧 서버 스케줄러가 자동 취소할 것" 이었고 <b>C2C 에서 그 전제가 사라졌다.</b>
+//
+// 이제 서버 값(cancellability)만 따른다. 결과적으로 구간이 이렇게 갈린다:
+//   · 성사확정을 거친 참여 → 서버가 BCH-092 로 막는다. 기한과 무관하게 <b>원래부터</b> 못 나간다
+//   · 추가 모집분(확정 이후 생성)  → 서버가 열어 둔다. 별개 이체·별개 택배라 빠져도 남에게 영향이 없다
+// 화면이 기한으로 한 번 더 막으면 "서버는 되는데 버튼이 없음" 이 되고, 그건 releasability·confirmTarget 을
+// 서버가 값으로 내려주게 만든 이 트랙의 규칙을 스스로 깨는 것이다.
+function canCancelBidRecord(bid: BidRecord) {
+  if (!isC2CBidRecord(bid) || isBidRecordCancelled(bid)) {
     return false;
   }
 
@@ -690,12 +690,8 @@ function withdrawPaymentSentCancellability(current: string | null | undefined) {
 // 서버 에러 문구(BCH-086 · BCH-092)와 같은 내용이다.
 // 노출 범위는 사용자가 실제로 취소를 찾는 두 구간뿐 — 입금확인·배송 단계 카드까지 상시 안내를 띄우면
 // 정작 필요한 곳에서 묻힌다(Wave 2 에서 완료 분철에 상시 노출됐던 문제, docs/56 §21-4).
-function getBidRecordCancelBlockedNotice(bid: BidRecord, now: Date) {
-  if (
-    !isC2CBidRecord(bid) ||
-    isBidRecordCancelled(bid) ||
-    isBidRecordPaymentExpired(bid, now)
-  ) {
+function getBidRecordCancelBlockedNotice(bid: BidRecord) {
+  if (!isC2CBidRecord(bid) || isBidRecordCancelled(bid)) {
     return null;
   }
 
@@ -890,10 +886,13 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
   };
 }
 
-function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
+// 입금 기한이 지났는지 — <b>표시 전용</b>. 아무것도 잠그지 않는다.
+//
+// C2C 기한은 "지나면 자동 취소" 도 "순수 표시용" 도 아니고 "지나면 개최자가 정리에 나설 수 있다" 는
+// 뜻이다 (docs/71 §8-1). 그래서 이 값은 문구·라벨을 바꿀 뿐 버튼을 없애지 않는다.
+function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
   const isC2C = isC2CBidRecord(bid);
-  // C2C 는 AWAITING_PAYMENT 만 만료 대상 — APPLIED(기한 없음)·PAYMENT_SENT(만료 면제,
-  // docs/46 §1.1)는 후보에서 제외한다.
+  // C2C 는 AWAITING_PAYMENT 만 기한 대상 — APPLIED(기한 없음)·PAYMENT_SENT(개최자 확인 대기)는 제외한다.
   const isPaymentCandidate = isC2C
     ? isParticipationAwaitingPaymentStatus(bid.participationStatus)
     : isParticipationAwaitingPaymentStatus(bid.participationStatus) ||
@@ -918,6 +917,20 @@ function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
     !Number.isNaN(paymentDeadline.getTime()) &&
     paymentDeadline.getTime() <= now.getTime()
   );
+}
+
+// 기한이 지나 <b>참여가 곧 죽는</b> 상태 — 액션을 잠그는 쪽이다. <b>LEGACY 전용</b>이다.
+//
+// 🔴 C2C 는 서버가 자동 취소를 하지 않는다(만료 폴링이 flow_type = LEGACY 로 좁혀졌다). 그래서 C2C 에서
+// 기한이 지난 참여는 <b>여전히 살아 있고 지금 입금하면 확정된다</b>. 이 판정으로 잠그면 참여자가 입금도
+// 「보냈어요」도 못 해, 개최자가 「제외」를 누를 때까지 아무것도 못 하고 갇힌다.
+// LEGACY 는 30분 자동취소가 여전히 참이라 그대로 둔다.
+function isBidRecordPaymentExpired(bid: BidRecord, now: Date) {
+  if (isC2CBidRecord(bid)) {
+    return false;
+  }
+
+  return isBidRecordPaymentOverdue(bid, now);
 }
 
 function isDeliveryInProgress(bid: BidRecord) {
@@ -1095,6 +1108,11 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
     return "입금 기한 만료";
   }
 
+  // C2C 는 기한이 지나도 참여가 살아 있다 — "만료" 라고 쓰면 끝난 것으로 읽힌다.
+  if (isBidRecordPaymentOverdue(bid, now)) {
+    return "기한 지남";
+  }
+
   if (isBidRecordPaymentReady(bid, now)) {
     return "입금 대기";
   }
@@ -1133,6 +1151,12 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
 
   if (isBidRecordPaymentExpired(bid, now)) {
     return "입금 기한이 지나 참여가 취소됐을 수 있어요.";
+  }
+
+  // C2C 는 자동 취소가 없다 — 기한이 지나도 지금 보내면 확정된다. 다만 개최자가 정리에 나설 수 있는
+  // 구간이 열리므로(docs/71 §8-1) 그 사실을 그대로 알린다.
+  if (isBidRecordPaymentOverdue(bid, now)) {
+    return "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
   }
 
   if (isBidRecordPaymentReady(bid, now)) {
@@ -2368,7 +2392,8 @@ export function BidHistoryContent({
       return;
     }
 
-    // C2C 보냈어요 상태는 만료 면제 + 계좌 재확인 열람 허용 — 만료 가드를 건너뛴다.
+    // C2C 보냈어요 상태는 계좌 재확인 열람 허용 — 만료 가드를 건너뛴다.
+    // (C2C 는 만료 가드 자체가 false 라 이 분기는 LEGACY 에서만 의미가 있다.)
     const isSelectedBidPaymentSent =
       isC2CBidRecord(selectedBid) &&
       isParticipationPaymentSentStatus(selectedBid.participationStatus);
@@ -3283,8 +3308,8 @@ export function BidHistoryContent({
                 bid,
                 now,
               );
-              const canCancel = canCancelBidRecord(bid, now);
-              const cancelBlockedNotice = getBidRecordCancelBlockedNotice(bid, now);
+              const canCancel = canCancelBidRecord(bid);
+              const cancelBlockedNotice = getBidRecordCancelBlockedNotice(bid);
               const isActionPending = pendingParticipationId !== null;
               const safeOpenChatHref =
                 isC2C && !isCancelled
