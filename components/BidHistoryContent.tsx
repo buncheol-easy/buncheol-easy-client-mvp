@@ -48,8 +48,8 @@ import {
   requestMyHostedBuncheols,
   requestMyParticipations,
   requestParticipationPaymentDetail,
+  requestBundlePaymentSent,
   requestParticipationPaymentSent,
-  revertParticipationPaymentSent,
   toProductDetailItem,
   type BankAccountInfo,
   type MyHostedBuncheol,
@@ -566,6 +566,8 @@ type BidRecord = {
   buncheolStatus?: string;
   openChatUrl?: string | null;
   refundHolder?: string | null;
+  // 소속 묶음 = 이체 1회의 단위. 「보냈어요」가 이 단위로 나간다.
+  bundleId?: string | null;
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
@@ -659,9 +661,8 @@ function canCancelBidRecord(bid: BidRecord) {
   );
 }
 
-// 낙관적 상태 갱신용 판정 전이. 서버 응답을 기다리지 않고 화면을 먼저 바꾸는 두 경로("보냈어요"
-// 마킹·철회)가 상태만 올리고 판정을 두면 버튼과 사유가 어긋난다. 다음 폴링이 서버 값으로 정정하지만
-// 그 사이에 사용자가 보는 건 방금 누른 액션의 결과 화면이다.
+// 낙관적 갱신용 판정 전이. 「보냈어요」 마킹이 상태만 올리고 판정을 그대로 두면 버튼과 사유가
+// 어긋난다 — 다음 폴링이 정정하기까지 사용자가 보는 건 방금 누른 액션의 결과 화면이다.
 function markPaymentSentCancellability(current: string | null | undefined) {
   // 서버 판정이 없으면(구 응답) 폴백 로직이 상태로 판정하므로 건드리지 않는다.
   if (!current) {
@@ -674,11 +675,6 @@ function markPaymentSentCancellability(current: string | null | undefined) {
     : current;
 }
 
-function withdrawPaymentSentCancellability(current: string | null | undefined) {
-  // 마킹으로 올린 값만 되돌린다 — null 로 두면 폴백(상태 기준)이 걸려 입금 대기 구간의 취소가 열린다.
-  // 다른 사유는 철회로 풀리지 않으므로 그대로 둔다.
-  return current === PARTICIPATION_CANCEL_BLOCKED_BY_STATUS ? null : current ?? null;
-}
 
 // 버튼만 사라지면 "취소가 왜 없지" 로 문의가 는다 — 왜 안 되는지 + 다음에 뭘 해야 하는지를 함께 보여준다.
 // 서버 에러 문구(BCH-086 · BCH-092)와 같은 내용이다.
@@ -821,6 +817,18 @@ const buncheolChipToneClasses: Record<BuncheolChipTone, string> = {
 };
 
 // 낼 돈이 없었던 참여(코드 참여 등)에는 환불 안내를 띄우지 않는다 — 가리킬 계좌 자체가 없다.
+// 이 슬롯의 입금 총액(상품 + 배송비). 배송비를 모르는 구응답이면 임의 상수를 더하지 않고
+// amount 만 쓴다. 시트·카드·확인 모달이 같은 식을 복제하면 숫자가 갈린다.
+function getBidRecordPaymentTotal(bid: BidRecord) {
+  const shippingFee =
+    typeof bid.shippingFee === "number" ? bid.shippingFee : null;
+
+  return (
+    bid.paymentAmount ??
+    (shippingFee !== null ? bid.amount + shippingFee : bid.amount)
+  );
+}
+
 function isFreeBidRecord(bid: BidRecord) {
   if (typeof bid.paymentAmount === "number") {
     return bid.paymentAmount === 0;
@@ -1321,6 +1329,7 @@ function getBidRecordFromParticipation(
     // getBuncheolManagementWinnerFromRecord(auth-api.ts)의 후보 키와 HostedBuncheolManage 의
     // depositorName 은 참여자 닉네임을 담을 수 있어, 예금주가 아닌 이름이 입금자명으로 표시된다.
     refundHolder: participation.refundHolder ?? null,
+    bundleId: participation.bundleId ?? null,
     paymentSentAt: participation.paymentSentAt ?? null,
     paymentRejectedAt: participation.paymentRejectedAt ?? null,
     paymentAmount:
@@ -1692,7 +1701,7 @@ export function BidHistoryContent({
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
   >(null);
-  // C2C 참여 액션(보냈어요·철회·취소) 진행 중인 참여 ID — 중복 호출 방지.
+  // C2C 참여 액션(보냈어요·취소) 진행 중인 참여 ID — 중복 호출 방지.
   const [pendingParticipationId, setPendingParticipationId] = useState<
     string | null
   >(null);
@@ -1796,17 +1805,36 @@ export function BidHistoryContent({
     selectedEligiblePaymentAddress ??
     eligiblePaymentAddresses[0] ??
     null;
-  // 배송비를 모르는 구응답이면 임의 상수를 더하지 않고 amount(총액)만 쓴다 — 카드 쪽 폴백과 동일.
-  const paymentShippingFee =
-    typeof selectedPaymentBid?.shippingFee === "number"
-      ? selectedPaymentBid.shippingFee
-      : null;
-  const paymentTotalAmount = selectedPaymentBid
-    ? selectedPaymentBid.paymentAmount ??
-      (paymentShippingFee !== null
-        ? selectedPaymentBid.amount + paymentShippingFee
-        : selectedPaymentBid.amount)
-    : 0;
+  // 🔴 시트가 보여주는 금액은 <b>묶음 합계</b>여야 한다 — 이체가 한 번이기 때문이다.
+  // 슬롯 1건만 보여주면 확인 모달의 합계와 숫자가 갈리고, 그 모달이 "금액이 다르면 개최자가
+  // 통장에서 찾지 못한다" 고 경고하는 화면이라 스스로를 무너뜨린다.
+  const selectedPaymentBundleSlots = selectedPaymentBid
+    ? getSameBundleRecords(
+        selectedPaymentBid,
+        isParticipationAwaitingPaymentStatus,
+      )
+    : [];
+  // 마킹 전(입금 대기)이 아니면 위 목록이 비므로 선택 슬롯으로 폴백한다.
+  const paymentAmountSources =
+    selectedPaymentBundleSlots.length > 0
+      ? selectedPaymentBundleSlots
+      : selectedPaymentBid
+        ? [selectedPaymentBid]
+        : [];
+  const paymentShippingFee = paymentAmountSources.some(
+    (bid) => typeof bid.shippingFee === "number",
+  )
+    ? paymentAmountSources.reduce(
+        (sum, bid) =>
+          sum + (typeof bid.shippingFee === "number" ? bid.shippingFee : 0),
+        0,
+      )
+    : null;
+  const paymentTotalAmount = paymentAmountSources.reduce(
+    (sum, bid) => sum + getBidRecordPaymentTotal(bid),
+    0,
+  );
+  const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
   const selectedPaymentOptionLabels = selectedPaymentBid
@@ -2277,8 +2305,8 @@ export function BidHistoryContent({
         }
 
         if (filter === "payment") {
-          // C2C 보냈어요(확인 대기)도 입금 축 탭에 남긴다 — 마킹 직후 카드가 증발하면
-          // 오마킹 셀프 수정(보냈어요 취소) 진입점이 전체 탭으로 숨는다.
+          // C2C 보냈어요(확인 대기)도 입금 축 탭에 남긴다 — 개최자 확인을 기다리는 동안
+          // 계좌를 다시 확인할 수 있어야 한다 (docs/46 §3-5).
           return canViewBidRecordPaymentSheet(bid, now);
         }
 
@@ -2813,19 +2841,94 @@ export function BidHistoryContent({
 
   // 같은 분철 내 내 활성 참여를 함께 다루는 대상 목록 — 다슬롯 합산 입금 1회 전제
   // (docs/46 §4.7-A4: 서버 API 는 참여 단위, FE 가 일괄 반복 호출).
-  function getSameBuncheolC2CRecords(
+  // 이체 단위가 묶음이라 마킹 대상도 묶음으로 좁힌다.
+  //
+  // ⚠️ 묶음을 모르는 응답(서버 승격 전)에서는 <b>구 동작인 분철 기준</b>으로 되돌린다. 자기 슬롯만
+  // 잡으면 다슬롯 사용자의 묶음이 쪼개져(1건만 PAYMENT_SENT) 개최자 입금확인이 409 로 영구히 막힌다
+  // — 이 변경이 없애려는 바로 그 상태다.
+  function getSameBundleRecords(
     bid: BidRecord,
     statusFilter: (status: string | undefined) => boolean,
   ) {
     return paymentBidRecords.filter(
       (record) =>
-        record.productId === bid.productId &&
         isC2CBidRecord(record) &&
-        statusFilter(record.participationStatus),
+        statusFilter(record.participationStatus) &&
+        (bid.bundleId
+          ? record.bundleId === bid.bundleId
+          : record.productId === bid.productId),
     );
   }
 
-  // C2C "보냈어요" — 같은 분철의 입금 대기 참여 전부를 일괄 마킹한다.
+  // 「보냈어요」 사전 확인 — 되돌릴 수단이 없으므로(셀프 철회 제거, docs/71 §8-2) 이 모달이 유일한
+  // 방어선이다. 금액·입금자명·계좌를 다시 보여주는 것이 설계의 핵심 — 사후 복구를 사전 경고로 바꿨다.
+  function requestMarkPaymentSent(bid: BidRecord) {
+    if (pendingParticipationId) {
+      return;
+    }
+
+    const account = bid.hostBankAccount;
+
+    // 버튼이 이미 disabled 라 도달하지 않지만, 계좌 없이 마킹되면 "안 보낸 돈을 보냈다" 가 되므로 남긴다.
+    if (!account) {
+      showActionToast(
+        "개최자 계좌를 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.",
+      );
+      return;
+    }
+
+    const targets = getSameBundleRecords(
+      bid,
+      isParticipationAwaitingPaymentStatus,
+    );
+    // 폴링이 상태를 바꿔 대상이 사라졌을 수 있다 — 모달을 띄우면 확인해도 아무 일이 안 일어난다.
+    if (targets.length === 0) {
+      showActionToast(
+        "참여 상태가 바뀌었어요. 새로고침 후 다시 확인해 주세요.",
+      );
+      return;
+    }
+
+    const memberNames = targets.flatMap((target) =>
+      getBidRecordOptionLabels(target),
+    );
+    // 묶음 총액 — 배송비는 묶음에 1회만 붙고 서버가 그 몫을 슬롯 하나에 실어 보낸다.
+    const bundleTotal = targets.reduce(
+      (sum, target) => sum + getBidRecordPaymentTotal(target),
+      0,
+    );
+
+    setConfirmSheetRequest({
+      cancelLabel: "아직 안 보냈어요",
+      confirmLabel: "보냈어요",
+      details: [
+        { label: "보낼 금액", value: formatPrice(bundleTotal) },
+        ...(bid.refundHolder
+          ? [{ label: "입금자명", value: bid.refundHolder }]
+          : []),
+        {
+          label: "받는 계좌",
+          value: `${account.bank} ${account.account}${
+            account.holder ? ` (${account.holder})` : ""
+          }`.trim(),
+        },
+        ...(memberNames.length > 0
+          ? [{ label: "멤버", value: memberNames.join(" · ") }]
+          : []),
+      ],
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void handleMarkPaymentSent(bid);
+      },
+      title: "정말 보내셨나요?",
+      warnings: [
+        "금액이나 입금자명이 다르면 개최자가 통장에서 찾지 못할 수 있어요.",
+        "한 번 누르면 되돌릴 수 없어요.",
+      ],
+    });
+  }
+
+  // C2C "보냈어요" — 묶음 단위 1회 요청. 이체가 한 번이므로 신고도 한 번이다.
   async function handleMarkPaymentSent(bid: BidRecord) {
     const accessToken = authState.accessToken;
 
@@ -2838,7 +2941,7 @@ export function BidHistoryContent({
       return;
     }
 
-    const targets = getSameBuncheolC2CRecords(
+    const targets = getSameBundleRecords(
       bid,
       isParticipationAwaitingPaymentStatus,
     );
@@ -2850,153 +2953,49 @@ export function BidHistoryContent({
     setPendingParticipationId(bid.id);
 
     try {
-      const results = await Promise.allSettled(
-        targets.map((target) =>
-          requestParticipationPaymentSent(accessToken, target.id),
-        ),
-      );
-      const failure = results.find(
-        (result): result is PromiseRejectedResult =>
-          result.status === "rejected",
-      );
-      const succeededIds = new Set(
-        targets
-          .filter((_, index) => results[index]?.status === "fulfilled")
-          .map((target) => target.id),
-      );
-
-      if (succeededIds.size > 0) {
-        const sentAt = new Date().toISOString();
-        setApiBidRecords((records) =>
-          records
-            ? records.map((record) =>
-                succeededIds.has(record.id)
-                  ? {
-                      ...record,
-                      participationStatus: "PAYMENT_SENT",
-                      // 상태를 낙관적으로 올리면 취소 판정도 같은 전이를 반영해야 한다 —
-                      // 상태만 올리면 서버 판정이 CANCELLABLE 로 남아 취소 버튼이 그대로 노출된다.
-                      // 이미 다른 사유로 막혀 있으면(성사 확정 등) 그 사유를 유지한다.
-                      cancellability: markPaymentSentCancellability(
-                        record.cancellability,
-                      ),
-                      paymentSentAt: record.paymentSentAt ?? sentAt,
-                    }
-                  : record,
-              )
-            : records,
-        );
-      }
-
-      if (failure) {
-        // historyMessage 는 시트 백드롭(z-40)에 가려 안 보인다 — 시트 위(z-50) 토스트로 알린다.
-        showActionToast(
-          succeededIds.size > 0
-            ? `${targets.length}건 중 ${succeededIds.size}건만 표시됐어요. 다시 시도해 주세요.`
-            : failure.reason instanceof Error
-              ? failure.reason.message
-              : "보냈어요 표시에 실패했어요. 잠시 후 다시 시도해 주세요.",
-        );
+      if (bid.bundleId) {
+        await requestBundlePaymentSent(accessToken, bid.bundleId);
       } else {
-        setHistoryMessage("");
-        showActionToast(
-          "보냈어요 표시 완료! 개최자가 입금을 확인하면 알려드릴게요.",
-        );
-        closePaymentSheet();
-      }
-    } finally {
-      setPendingParticipationId(null);
-    }
-  }
-
-  // C2C "보냈어요" 철회 — 오마킹 셀프 수정. 마킹과 대칭으로 같은 분철 일괄 처리한다.
-  function requestRevertPaymentSent(bid: BidRecord) {
-    if (pendingParticipationId) {
-      return;
-    }
-
-    setConfirmSheetRequest({
-      confirmLabel: "표시 취소",
-      description: "입금 기한이 다시 적용돼요.",
-      onConfirm: () => {
-        setConfirmSheetRequest(null);
-        void runRevertPaymentSent(bid);
-      },
-      title: "보냈어요 표시를 취소할까요?",
-    });
-  }
-
-  async function runRevertPaymentSent(bid: BidRecord) {
-    const accessToken = authState.accessToken;
-
-    if (!accessToken) {
-      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
-      return;
-    }
-
-    if (pendingParticipationId) {
-      return;
-    }
-
-    const targets = getSameBuncheolC2CRecords(
-      bid,
-      isParticipationPaymentSentStatus,
-    );
-
-    if (targets.length === 0) {
-      return;
-    }
-
-    setPendingParticipationId(bid.id);
-
-    try {
-      const results = await Promise.allSettled(
-        targets.map((target) =>
-          revertParticipationPaymentSent(accessToken, target.id),
-        ),
-      );
-      const failure = results.find(
-        (result): result is PromiseRejectedResult =>
-          result.status === "rejected",
-      );
-      const succeededIds = new Set(
-        targets
-          .filter((_, index) => results[index]?.status === "fulfilled")
-          .map((target) => target.id),
-      );
-
-      if (succeededIds.size > 0) {
-        setApiBidRecords((records) =>
-          records
-            ? records.map((record) =>
-                succeededIds.has(record.id)
-                  ? {
-                      ...record,
-                      participationStatus: "AWAITING_PAYMENT",
-                      // 마킹 때 올린 판정을 되돌린다. 되돌리지 않으면 버튼도 없고 안내도 없는
-                      // (안내는 보냈어요 구간에서만 뜬다) 카드가 되어 사용자를 가둔다.
-                      cancellability: withdrawPaymentSentCancellability(
-                        record.cancellability,
-                      ),
-                    }
-                  : record,
-              )
-            : records,
-        );
+        // 묶음을 모르는 응답 — 구 동작 그대로 슬롯마다 부른다. 한 건이라도 실패하면 전부 실패로
+        // 다루어 화면과 서버가 갈리지 않게 한다(부분 성공을 낙관적으로 반영하지 않는다).
+        for (const target of targets) {
+          await requestParticipationPaymentSent(accessToken, target.id);
+        }
       }
 
-      if (failure) {
-        showActionToast(
-          succeededIds.size > 0
-            ? `${targets.length}건 중 ${succeededIds.size}건만 취소됐어요. 다시 시도해 주세요.`
-            : failure.reason instanceof Error
-              ? failure.reason.message
-              : "보냈어요 표시를 취소하지 못했어요.",
-        );
-      } else {
-        setHistoryMessage("");
-        showActionToast("보냈어요 표시를 취소했어요.");
-      }
+      const sentAt = new Date().toISOString();
+      const markedIds = new Set(targets.map((target) => target.id));
+      setApiBidRecords((records) =>
+        records
+          ? records.map((record) =>
+              markedIds.has(record.id)
+                ? {
+                    ...record,
+                    participationStatus: "PAYMENT_SENT",
+                    // 상태를 낙관적으로 올리면 취소 판정도 같은 전이를 반영해야 한다 —
+                    // 상태만 올리면 서버 판정이 CANCELLABLE 로 남아 취소 버튼이 그대로 노출된다.
+                    cancellability: markPaymentSentCancellability(
+                      record.cancellability,
+                    ),
+                    paymentSentAt: record.paymentSentAt ?? sentAt,
+                  }
+                : record,
+            )
+          : records,
+      );
+
+      setHistoryMessage("");
+      showActionToast(
+        "보냈어요 표시 완료! 개최자가 입금을 확인하면 알려드릴게요.",
+      );
+      closePaymentSheet();
+    } catch (error) {
+      // historyMessage 는 시트 백드롭(z-40)에 가려 안 보인다 — 시트 위(z-50) 토스트로 알린다.
+      showActionToast(
+        error instanceof Error
+          ? error.message
+          : "보냈어요 표시에 실패했어요. 잠시 후 다시 시도해 주세요.",
+      );
     } finally {
       setPendingParticipationId(null);
     }
@@ -3316,11 +3315,7 @@ export function BidHistoryContent({
               const progressSteps = getBidRecordProgressSteps(bid, now);
               const cardShippingFee =
                 typeof bid.shippingFee === "number" ? bid.shippingFee : null;
-              const cardTotalAmount =
-                bid.paymentAmount ??
-                (cardShippingFee !== null
-                  ? bid.amount + cardShippingFee
-                  : bid.amount);
+              const cardTotalAmount = getBidRecordPaymentTotal(bid);
               const isPaybackActionable = isPaybackRequestable(bid);
               const isPaybackRejected =
                 isPaybackActionable && getPaybackStatus(bid) === "REJECTED";
@@ -4233,6 +4228,11 @@ export function BidHistoryContent({
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[15px] font-semibold tracking-[-0.04em]">
                   결제 예정 금액
+                  {paymentSlotCount > 1 ? (
+                    <span className="ml-1 text-[12px] font-medium text-black/40">
+                      자리 {paymentSlotCount}개 합계
+                    </span>
+                  ) : null}
                 </span>
                 <span className="text-[22px] font-semibold tracking-[-0.05em]">
                   {formatPrice(paymentTotalAmount)}
@@ -4247,7 +4247,7 @@ export function BidHistoryContent({
                   !selectedPaymentBankAccount ||
                   pendingParticipationId !== null
                 }
-                onClick={() => handleMarkPaymentSent(selectedPaymentBid)}
+                onClick={() => requestMarkPaymentSent(selectedPaymentBid)}
                 type="button"
               >
                 {pendingParticipationId !== null
@@ -4255,16 +4255,11 @@ export function BidHistoryContent({
                   : "입금 보냈어요"}
               </button>
             ) : isSelectedPaymentSent ? (
-              <button
-                className="mt-4 h-14 w-full rounded-full border border-black/10 bg-white text-[15px] font-semibold tracking-[-0.04em] text-black/55 disabled:text-black/25"
-                disabled={pendingParticipationId !== null}
-                onClick={() => requestRevertPaymentSent(selectedPaymentBid)}
-                type="button"
-              >
-                {pendingParticipationId !== null
-                  ? "취소하는 중"
-                  : "보냈어요 표시 취소"}
-              </button>
+              // 되돌리는 전이가 없다 (docs/71 §8-2) — 잘못 눌렀으면 개최자에게 알리는 것이 유일한 경로다.
+              <p className="mt-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5 text-[12px] font-medium leading-5 text-black/45">
+                보냈다고 표시한 뒤에는 되돌릴 수 없어요. 잘못 눌렀다면 개최자에게
+                알려 주세요.
+              </p>
             ) : (
               <button
                 className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"

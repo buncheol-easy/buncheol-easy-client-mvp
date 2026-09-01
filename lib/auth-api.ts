@@ -471,6 +471,9 @@ export type ShippingFeePaybackInfo = {
 
 export type MyParticipation = {
   bidAmount: number;
+  // 소속 묶음 = 이체 1회 · 택배 1개의 단위. 「보냈어요」·입금확인·「제외」가 전부 이 단위로 돈다.
+  // 같은 분철에서 자리를 여러 개 잡으면 한 묶음이고, 성사 확정 뒤 추가로 잡으면 별개 묶음이다.
+  bundleId?: string | null;
   buncheolDeadline: string;
   buncheolId: string;
   buncheolMemberId?: string | null;
@@ -4034,7 +4037,6 @@ export function toProductDetailItem(
   };
 }
 
-
 export async function requestBuncheols(
   accessToken?: string,
   params: BuncheolListParams = {},
@@ -4596,6 +4598,15 @@ export async function requestMyParticipations(accessToken: string) {
             ? getOptionalStringValue(buncheol, ["openChatUrl"])
             : null) ??
           null,
+        bundleId:
+          getOptionalStringValue(record, [
+            "bundleId",
+            "participationBundleId",
+          ]) ??
+          (isRecord(record.bundle)
+            ? getOptionalStringValue(record.bundle, ["id", "bundleId"])
+            : undefined) ??
+          null,
         paymentSentAt:
           getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
         paymentRejectedAt:
@@ -4991,14 +5002,14 @@ export async function rejectParticipationPaymentSent(
   }
 }
 
-// C2C "보냈어요" 마킹 — 입금 후 참여자가 표시(AWAITING_PAYMENT → PAYMENT_SENT).
-// 서버가 멱등 처리하므로(docs/46 §4.2) 이미 마킹된 참여에 다시 호출해도 성공한다.
-export async function requestParticipationPaymentSent(
+// 「보냈어요」 묶음 마킹 — 이체 1회에 요청 1회다. 슬롯마다 부르면 중간에 실패했을 때 묶음 안 슬롯
+// 상태가 갈려 개최자 입금확인(all-or-nothing)이 막힌다. 재요청은 서버가 멱등 처리한다.
+export async function requestBundlePaymentSent(
   accessToken: string,
-  participationId: string,
+  bundleId: string,
 ) {
   const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/payment-sent`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
@@ -5011,8 +5022,8 @@ export async function requestParticipationPaymentSent(
   }
 }
 
-// C2C "보냈어요" 마킹 철회 — 오마킹 셀프 수정(PAYMENT_SENT → AWAITING_PAYMENT 복귀).
-export async function revertParticipationPaymentSent(
+// 묶음이 없는 참여(배포선 창에서 생긴 행)용 폴백. 신규 참여는 전부 묶음을 갖는다.
+export async function requestParticipationPaymentSent(
   accessToken: string,
   participationId: string,
 ) {
@@ -5021,7 +5032,7 @@ export async function revertParticipationPaymentSent(
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
-      method: "DELETE",
+      method: "POST",
     },
   );
 
