@@ -1145,7 +1145,11 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordPaymentReady(bid, now)) {
     // ⚠️ overdue 검사가 ready 보다 뒤에 있으면 도달하지 못한다 — C2C 는 기한이 지나도 ready 다.
     if (isBidRecordPaymentOverdue(bid, now)) {
-      return "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
+      // 재확인 요청(개최자가 입금 내역을 못 찾음)은 연장된 기한마저 지나도 여전히 가장 중요한
+      // 정보다. 이걸 가리면 이미 보낸 사람이 "지금 보내셔도 됩니다" 만 보고 중복 송금한다.
+      return isC2C && bid.paymentRejectedAt
+        ? "개최자가 입금 내역을 찾지 못했어요. 보낸 내역을 다시 확인해 주세요. 기한이 지나 개최자가 참여를 취소할 수도 있어요."
+        : "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
     }
 
     const remaining = formatPaymentRemainingTime(
@@ -3297,6 +3301,7 @@ export function BidHistoryContent({
               const isPaymentSent =
                 isC2C &&
                 isParticipationPaymentSentStatus(bid.participationStatus);
+              const isOverdue = isBidRecordPaymentOverdue(bid, now);
               const canOpenPaymentSheet = canViewBidRecordPaymentSheet(
                 bid,
                 now,
@@ -3389,6 +3394,13 @@ export function BidHistoryContent({
                       >
                         {buncheolChip.label}
                       </span>
+                      {/* 잠금이 풀리면서 기한 지난 카드가 기한 안 카드와 시각적으로 같아졌다.
+                          "개최자가 취소할 수 있는 구간" 에 들어온 것을 목록에서도 알린다. */}
+                      {isOverdue ? (
+                        <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
+                          기한 지남
+                        </span>
+                      ) : null}
                     </div>
                     <div className="min-w-0 flex-1">
                       <Link
@@ -4075,9 +4087,12 @@ export function BidHistoryContent({
                 <p className="text-[12px] font-semibold text-[#D7FF5F]/80">
                   {isSelectedPaymentCountingDown ? "입금 마감까지" : "현재 상태"}
                 </p>
-                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
-                  {selectedPaymentStatusLabel}
-                </span>
+                {/* 카운트다운이 아닐 때는 아래 24px 본문이 같은 라벨을 크게 쓴다 — 한 박스에 두 번 찍지 않는다. */}
+                {isSelectedPaymentCountingDown ? (
+                  <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/70">
+                    {selectedPaymentStatusLabel}
+                  </span>
+                ) : null}
               </div>
               <p className="mt-1 text-[24px] font-semibold tracking-[-0.06em]">
                 {isSelectedPaymentCountingDown
