@@ -1120,6 +1120,11 @@ function toBidRecordBundles(source: BidRecord[]) {
   return order.map((key) => byKey.get(key)!);
 }
 
+// 전상법 §20① 중개자 고지. 약관 제9조·/broker-notice 가 "참여·입금 화면에 표시" 를 공표한 문언이라
+// 한쪽만 고쳐지면 안 된다 — 카드와 결제 시트가 같은 상수를 쓴다.
+const BROKER_NOTICE =
+  "분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접 입금돼요.";
+
 function getBidRecordOptionLabels(bid: BidRecord) {
   const label = bid.optionLabel.trim();
 
@@ -3482,51 +3487,77 @@ export function BidHistoryContent({
 
   // 카드에 붙이는 개최자 계좌. 시트를 열지 않고 바로 보내게 하는 것이 목적이다.
   //
-  // 🔴 <b>C2C 만</b> 낸다. LEGACY 는 목록 프리페치가 입금 대기 참여로만 개최자 id 를 모아서
-  // 「보냈어요」 행의 계좌가 null 로 내려올 수 있다 — 빈 박스는 "아직 안 준 것" 처럼 보인다.
-  // 계좌는 대표 자리가 아니라 <b>묶음 전체</b>에서 찾는다. 서버가 확정된 자리엔 null 로 내리기 때문이다.
+  // 🔴 게이트를 <b>결제 단계</b>로 잡는다 — 계좌가 실렸는지만 보면 안 된다. hostBankAccount 는 목록
+  // 응답 전용이 아니라 결제 상세·분철 상세에서도 병합되고, 분철이 취소됐는데 참여 취소가 아직 전파되지
+  // 않은 응답도 실재한다. 그러면 <b>취소된 분철 카드가 계좌를 띄워 입금을 유도한다</b>.
+  // C2C 는 LEGACY 와 달리 회수 경로가 문의뿐이라 그 사고가 특히 나쁘다.
   //
-  // 중개자 고지(전상법 §20①)는 별도 문단이 아니라 <b>안내 문장에 절로 흡수</b>한다 (docs/56 H-06).
-  // 고지를 뺄 수는 없다 — 약관 제9조와 /broker-notice 가 "참여·입금 화면에 표시" 를 공표했고,
-  // 계좌가 보이는 지면에 고지가 0인 상태를 만들지 않는다. 문단을 늘리지 않는 것이 그 결정의 핵심이다.
+  // LEGACY 를 뺀 이유는 다르다 — 목록 프리페치가 입금 대기 참여로만 개최자 id 를 모아서 「보냈어요」
+  // 행의 계좌가 null 로 내려올 수 있고, 빈 박스는 "아직 안 준 것" 처럼 보인다.
+  //
+  // 중개자 고지는 별도 문단이 아니라 안내 문장에 흡수한다 (docs/56 H-06 — 사용자가 "고지가 너무 많다").
   function renderCardHostAccount(slots: BidRecord[]) {
-    const head = slots[0];
-
-    if (!isC2CBidRecord(head)) {
+    if (!isC2CBidRecord(slots[0])) {
       return null;
     }
 
-    const account = slots.find((slot) => slot.hostBankAccount)?.hostBankAccount;
+    // canViewBidRecordPaymentSheet 가 곧 docs/46 §3-5 의 "계좌 노출 = 입금 대기 + 보냈어요" 다.
+    // C2C 는 만료 잠금이 항상 false 라 기한 지난 카드도 남는다. 취소 검사는 PAYMENT_SENT 분기에
+    // 없으므로 따로 얹는다.
+    const payableSlots = slots.filter(
+      (slot) =>
+        !isBidRecordCancelled(slot) && canViewBidRecordPaymentSheet(slot, now),
+    );
 
-    if (!account) {
+    if (payableSlots.length === 0) {
       return null;
     }
 
-    const depositorName = slots.find((slot) => slot.refundHolder)?.refundHolder;
+    // 낼 돈이 없는 참여(0원)에 계좌를 띄우면 "24시간 안에 보내라" 와 같은 오안내가 된다.
+    if (payableSlots.every((slot) => isFreeBidRecord(slot))) {
+      return null;
+    }
+
+    const account = payableSlots.find((slot) => slot.hostBankAccount)
+      ?.hostBankAccount;
+
+    if (!account?.account) {
+      return null;
+    }
+
+    const depositorName = payableSlots.find((slot) => slot.refundHolder)
+      ?.refundHolder;
     const accountText = `${account.bank} ${account.account}`.trim();
 
     return (
-      <div className="mt-3 rounded-[0.75rem] bg-[#f7f7f7] px-3 py-2.5">
+      <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate text-[13px] font-semibold tracking-[-0.03em]">
+            {/* 잘린 계좌번호는 복사만 되고 눈으로 대조가 안 된다 — 카드는 폭이 좁으니 줄바꿈을 허용한다. */}
+            <p className="break-all text-[13px] font-semibold leading-5 tracking-[-0.03em]">
               {accountText}
             </p>
-            <p className="mt-0.5 text-[11px] font-medium text-black/40">
-              예금주 {account.holder}
-              {depositorName ? ` · 입금자명 ${depositorName}` : ""}
-            </p>
+            {account.holder || depositorName ? (
+              <p className="mt-0.5 text-[11px] font-medium text-black/40">
+                {[
+                  account.holder ? `예금주 ${account.holder}` : "",
+                  depositorName ? `입금자명 ${depositorName}` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : null}
           </div>
           <button
-            className="shrink-0 rounded-full bg-black px-3 py-1.5 text-[11px] font-semibold text-[#D7FF5F]"
-            onClick={() => void copyCardAccount(accountText, account.bank)}
+            className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-[#D7FF5F]"
+            onClick={() => void copyCardAccount(account.account, account.bank)}
             type="button"
           >
             복사
           </button>
         </div>
         <p className="mt-2 break-keep text-[11px] font-medium leading-4 text-black/35">
-          분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접 입금돼요.
+          {BROKER_NOTICE}
         </p>
       </div>
     );
@@ -3535,9 +3566,11 @@ export function BidHistoryContent({
   // 시트의 복사 토스트는 그 시트 안에 absolute 로 박혀 있어 카드에서 못 쓴다 — 카드 N장이 상태
   // 하나를 공유하면 어디서 복사했는지 안 보인다. 화면 단위 토스트를 쓰고 은행명을 넣어 구분한다.
   async function copyCardAccount(value: string, bank: string) {
+    const prefix = bank.trim() ? `${bank.trim()} ` : "";
+
     try {
       await navigator.clipboard.writeText(value);
-      showActionToast(`${bank} 계좌번호가 복사됐어요.`);
+      showActionToast(`${prefix}계좌번호가 복사됐어요.`);
     } catch {
       showActionToast("계좌번호를 복사하지 못했어요. 길게 눌러 복사해 주세요.");
     }
@@ -4641,7 +4674,7 @@ export function BidHistoryContent({
               */}
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                 {isSelectedPaymentC2C
-                  ? "송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. 분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접 입금돼요."
+                  ? `송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. ${BROKER_NOTICE}`
                   : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요."}
               </p>
               {selectedPaymentOpenChatHref ? (
