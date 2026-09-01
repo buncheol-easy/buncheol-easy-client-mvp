@@ -356,7 +356,6 @@ const c2cParticipationStatusGuide = [
   {
     icon: BanknoteIcon,
     label: c2cProgressStepLabels[1],
-    // 재확인 요청은 이 단계에서만 일어난다 — 반려된 참여도 카드·진행바에선 여기 머문다.
     description:
       "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요. 기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 뺄 수 있어요.",
   },

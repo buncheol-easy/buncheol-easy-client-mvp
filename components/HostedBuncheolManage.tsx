@@ -254,6 +254,13 @@ function getParticipantBundles(
 
 // 「제외」가 왜 안 되는지. 버튼만 흐려 두면 개최자가 이유를 못 찾는다.
 // 판정은 서버 값(releasability)을 그대로 읽는다 — 화면이 재판정하면 서버 가드와 갈린다.
+// 파서 최종 폴백이 리터럴 "멤버" 라, 그대로 찍으면 칩에 "멤버" 가 뜬다.
+function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
+  const name = slot.memberName?.trim();
+
+  return !name || name === "멤버" ? "멤버 확인 필요" : name;
+}
+
 function getReleaseBlockedReason(releasability: string | null | undefined) {
   switch (releasability) {
     case "RECRUITING":
@@ -264,9 +271,11 @@ function getReleaseBlockedReason(releasability: string | null | undefined) {
       return "입금 확인된 자리가 있어 뺄 수 없어요.";
     case "ALREADY_CLOSED":
       return "이미 정리된 참여예요.";
+    case "RELEASABLE":
+      return null;
     // 판정이 없는 구 응답 — 버튼은 흐려 두되 사유를 단정하지 않는다.
     default:
-      return releasability === "RELEASABLE" ? null : "지금은 뺄 수 없어요.";
+      return "지금은 뺄 수 없어요.";
   }
 }
 
@@ -559,19 +568,38 @@ export function HostedBuncheolManage({
   // 서버 CAS(confirmIfAllCollected)와 같은 조건 — 이때만 부분 확정 버튼을 노출한다 (docs/56 H-12).
   const canFinalizeCollected =
     c2cUnpaidActiveCount === 0 && c2cConfirmedCount > 0;
-  // 📌 「옵션 id 가 어긋나 어느 카드에도 못 실린 참여」 경고는 없앴다 — 묶음은 참여 자체로 접히므로
-  // 옵션 id 와 무관하게 항상 목록에 나온다. 그 경고가 막으려던 상태가 구조적으로 사라졌다.
-  // C2C 배송 집계는 winner(대표 1명)가 아닌 활성 참여 전건 기준. 배송 스냅샷은 입금 전에도
-  // 생기므로(참여 생성 시 배송지 전송) 입금 확인 완료 건만 "운송장 대기"로 센다 — 행 렌더와 동일 조건.
-  const c2cDeliveryReadyCount = activeC2CParticipants.filter(
-    (participant) =>
-      (isParticipationConfirmedStatus(participant.status) ||
-        Boolean(participant.confirmedAt)) &&
-      Boolean(participant.delivery?.deliveryId) &&
-      !participant.delivery?.trackingNumber,
+  // 🔴 배송 집계는 <b>배송 단위</b>다. 참여 단위로 세면 한 묶음의 두 슬롯이 같은 배송을 물고 있을 때
+  // 목록에는 운송장 입력칸이 1개인데 "운송장 대기 2건" 으로 뜬다. deliveryId 로 중복을 제거한다.
+  // 배송 스냅샷은 입금 전에도 생기므로(참여 생성 시 배송지 전송) 입금확인된 건만 대기로 센다.
+  const c2cDeliveries = new Map<
+    string,
+    { confirmed: boolean; trackingNumber?: string | null }
+  >();
+
+  for (const participant of activeC2CParticipants) {
+    const deliveryId = participant.delivery?.deliveryId;
+
+    if (!deliveryId) {
+      continue;
+    }
+
+    const confirmed =
+      isParticipationConfirmedStatus(participant.status) ||
+      Boolean(participant.confirmedAt);
+    const previous = c2cDeliveries.get(deliveryId);
+    c2cDeliveries.set(deliveryId, {
+      // 같은 배송을 문 슬롯 중 하나라도 확정이면 그 택배는 나가야 한다.
+      confirmed: confirmed || Boolean(previous?.confirmed),
+      trackingNumber:
+        participant.delivery?.trackingNumber ?? previous?.trackingNumber ?? null,
+    });
+  }
+
+  const c2cDeliveryReadyCount = [...c2cDeliveries.values()].filter(
+    (delivery) => delivery.confirmed && !delivery.trackingNumber,
   ).length;
-  const c2cTrackingCompletedCount = activeC2CParticipants.filter((participant) =>
-    Boolean(participant.delivery?.trackingNumber),
+  const c2cTrackingCompletedCount = [...c2cDeliveries.values()].filter(
+    (delivery) => Boolean(delivery.trackingNumber),
   ).length;
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
@@ -857,10 +885,7 @@ export function HostedBuncheolManage({
     // 개최자가 통장에서 대조하는 값 그대로 — 입금자명과 묶음 총액. 이체가 한 번이므로 합계로 묻는다.
     const depositorName = getDepositorName(head);
     const total = bundle.slots.reduce((sum, slot) => sum + slot.amount, 0);
-    const memberNames = bundle.slots
-      .map((slot) => slot.memberName)
-      .filter(Boolean)
-      .join(" · ");
+    const memberNames = bundle.slots.map(getSlotMemberLabel).join(" · ");
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
@@ -937,10 +962,7 @@ export function HostedBuncheolManage({
     }
 
     const depositorName = getDepositorName(bundle.slots[0]);
-    const memberNames = bundle.slots
-      .map((slot) => slot.memberName)
-      .filter(Boolean)
-      .join(" · ");
+    const memberNames = bundle.slots.map(getSlotMemberLabel).join(" · ");
 
     setConfirmSheetRequest({
       confirmLabel: "제외",
@@ -1471,6 +1493,10 @@ export function HostedBuncheolManage({
                 <p className="rounded-[1rem] bg-[#f7f7f7] px-4 py-5 text-center text-[13px] font-semibold text-black/40">
                   옵션 정보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.
                 </p>
+              ) : isC2C && c2cBundles.length === 0 ? (
+                <p className="rounded-[1rem] bg-[#f7f7f7] px-4 py-5 text-center text-[13px] font-semibold text-black/40">
+                  아직 신청한 참여자가 없어요.
+                </p>
               ) : isC2C ? (
                 // 🔴 C2C 는 <b>묶음</b> 단위로 보여준다 — 「제외」·입금확인이 묶음 API 하나뿐이라,
                 // 멤버 자리 줄에 버튼을 달면 "한 줄을 눌렀는데 그 사람 자리가 전부 빠지는" 화면이 된다.
@@ -1503,10 +1529,16 @@ export function HostedBuncheolManage({
                           isParticipationPaymentSentStatus(slot.status),
                     )
                     .map((slot) => slot.participationId);
-                  const releaseBlockedReason = getReleaseBlockedReason(
-                    head.releasability,
+                  // 슬롯마다 내려오는 값이라 전부 같아야 정상이지만, 갈리는 순간 "버튼은 열렸는데
+                  // 409" 가 된다 — 전원이 RELEASABLE 일 때만 연다. 사유는 막힌 슬롯의 것을 쓴다.
+                  const blockedSlot = bundle.slots.find(
+                    (slot) => slot.releasability !== "RELEASABLE",
                   );
-                  const canRelease = head.releasability === "RELEASABLE";
+                  const canRelease = !blockedSlot && Boolean(bundle.bundleId);
+                  const releaseBlockedReason = bundle.bundleId
+                    ? getReleaseBlockedReason(blockedSlot?.releasability)
+                    : // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
+                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.";
                   const isBundleConfirming =
                     pendingC2CAction === `confirm:${bundle.key}`;
                   const isBundleReleasing =
@@ -1524,30 +1556,51 @@ export function HostedBuncheolManage({
                     0,
                   );
                   // 택배 1개 = 묶음 1개 — 배송은 묶음에 하나뿐이라 대표 슬롯에서 읽는다.
-                  const bundleDelivery =
-                    bundle.slots.find((slot) => slot.delivery)?.delivery ?? null;
-                  const deliveryOwnerId =
-                    bundle.slots.find((slot) => slot.delivery)?.participationId ??
-                    head.participationId;
-                  const hasTracking = Boolean(bundleDelivery?.trackingNumber);
-                  const canRegisterTracking = Boolean(
-                    bundleDelivery?.deliveryId &&
-                      isBundleConfirmed &&
-                      detail.status === "CONFIRMED",
+                  // 🔴 배송은 <b>deliveryId 로 중복 제거해 전건</b>을 낸다. 서버가 묶음당 1건으로
+                  // 정리했지만(#166) 그 배포 전 데이터·롤아웃 순서에서는 슬롯마다 배송이 따로 온다.
+                  // 첫 건만 그리면 두 번째 택배의 운송장을 등록할 UI 경로가 사라진다.
+                  const bundleDeliveries: {
+                    delivery: NonNullable<
+                      BuncheolManagementParticipant["delivery"]
+                    >;
+                    ownerId: string;
+                    ownerConfirmed: boolean;
+                  }[] = [];
+
+                  for (const slot of bundle.slots) {
+                    if (
+                      !slot.delivery?.deliveryId ||
+                      bundleDeliveries.some(
+                        (entry) =>
+                          entry.delivery.deliveryId === slot.delivery?.deliveryId,
+                      )
+                    ) {
+                      continue;
+                    }
+
+                    bundleDeliveries.push({
+                      delivery: slot.delivery,
+                      ownerId: slot.participationId,
+                      // 🔴 확정 판정은 <b>그 배송을 문 슬롯</b> 기준이다. 묶음 전체(every)로 게이트하면
+                      // 부분 확정 묶음(확정 1 + 미입금 1)에서 이미 확정된 자리의 운송장 입력칸까지
+                      // 사라진다 — 개최자가 발송을 못 한다.
+                      ownerConfirmed:
+                        isParticipationConfirmedStatus(slot.status) ||
+                        Boolean(slot.confirmedAt),
+                    });
+                  }
+
+                  const sentAtSlot = bundle.slots.find(
+                    (slot) => slot.paymentSentAt,
                   );
-                  const isRegisteringTracking =
-                    pendingC2CAction === `tracking:${deliveryOwnerId}`;
-                  const trackingInput =
-                    participantTrackingInputs[deliveryOwnerId] ?? "";
-                  const bundleTimeInfo = isBundleSent
-                    ? bundle.slots.find((slot) => slot.paymentSentAt)?.paymentSentAt
-                      ? ` · 보냈어요 ${formatKoreaDateTime(bundle.slots.find((slot) => slot.paymentSentAt)!.paymentSentAt!)}`
-                      : ""
-                    : isBundleAwaiting && head.dueAt
-                      ? ` · 기한 ${formatKoreaDateTime(head.dueAt)}`
-                      : isBundleConfirmed && head.confirmedAt
-                        ? ` · 확인 ${formatKoreaDateTime(head.confirmedAt)}`
-                        : "";
+                  const bundleTimeInfo =
+                    isBundleSent && sentAtSlot?.paymentSentAt
+                      ? ` · 보냈어요 ${formatKoreaDateTime(sentAtSlot.paymentSentAt)}`
+                      : isBundleAwaiting && head.dueAt
+                        ? ` · 기한 ${formatKoreaDateTime(head.dueAt)}`
+                        : isBundleConfirmed && head.confirmedAt
+                          ? ` · 확인 ${formatKoreaDateTime(head.confirmedAt)}`
+                          : "";
 
                   return (
                     <article
@@ -1602,13 +1655,18 @@ export function HostedBuncheolManage({
                             className="rounded-full bg-[#f1f1f1] px-2 py-0.5 text-[11px] font-semibold text-black/55"
                             key={slot.participationId}
                           >
-                            {slot.memberName}
+                            {getSlotMemberLabel(slot)}
                           </span>
                         ))}
                       </div>
 
-                      {isBundleSent || isBundleAwaiting || isBundleApplied ? (
-                        <div className="mt-3 flex items-center justify-end gap-2">
+                      {/* 상태 화이트리스트로 게이트하면 모르는 status(제외 직후 서버가 새 값을 주는 등)에서
+                          버튼이 0개인 유령 줄이 남는다. 실제로 할 수 있는 것이 하나라도 있으면 연다. */}
+                      {!isBundleConfirmed &&
+                      (canRelease ||
+                        releaseBlockedReason ||
+                        confirmTargetIds.length > 0) ? (
+                        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                           {/* 「제외」는 입금 기한이 지난 뒤에만 열린다 — 이체가 통장에 늦게 찍히는
                               일이 흔해, 기한 안에 뺄 수 있게 하면 정상 입금자를 빼는 사고가 난다
                               (docs/71 §8-1). 버튼을 감추지 않고 사유를 보여준다. */}
@@ -1618,7 +1676,7 @@ export function HostedBuncheolManage({
                             </p>
                           ) : null}
                           <button
-                            className="h-9 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                            className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
                             disabled={!canRelease || pendingC2CAction !== null}
                             onClick={() => requestReleaseBundle(bundle)}
                             type="button"
@@ -1627,7 +1685,7 @@ export function HostedBuncheolManage({
                           </button>
                           {confirmTargetIds.length > 0 ? (
                             <button
-                              className="h-9 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                              className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
                               disabled={pendingC2CAction !== null}
                               onClick={() =>
                                 requestConfirmBundlePayment(
@@ -1643,60 +1701,92 @@ export function HostedBuncheolManage({
                         </div>
                       ) : null}
 
-                      {isBundleConfirmed && bundleDelivery ? (
-                        <div className="mt-3 border-t border-black/[0.06] pt-3">
-                          <p className="text-[12px] font-medium text-black/40">
-                            {[
-                              getShippingMethodLabel(
-                                bundleDelivery.shippingMethod,
-                              ),
-                              bundleDelivery.storeName,
-                              bundleDelivery.receiverPhoneNumber,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </p>
-                          {hasTracking ? (
-                            <p className="mt-1.5 text-[13px] font-semibold text-black/55">
-                              운송장 {bundleDelivery.trackingNumber}
-                              {getDeliveryStatusLabel(bundleDelivery.status)
-                                ? ` · ${getDeliveryStatusLabel(bundleDelivery.status)}`
-                                : ""}
-                            </p>
-                          ) : (
-                            <div className="mt-2 flex gap-2">
-                              <input
-                                className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
-                                disabled={!canRegisterTracking}
-                                inputMode="numeric"
-                                onChange={(event) =>
-                                  setParticipantTrackingInputs((inputs) => ({
-                                    ...inputs,
-                                    [deliveryOwnerId]: event.target.value,
-                                  }))
-                                }
-                                placeholder="운송장 번호"
-                                value={trackingInput}
-                              />
-                              <button
-                                className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                disabled={
-                                  !canRegisterTracking ||
-                                  trackingInput.trim().length === 0 ||
-                                  pendingC2CAction !== null
-                                }
-                                onClick={() =>
-                                  handleRegisterParticipantTracking(
-                                    bundle.slots.find((slot) => slot.delivery) ??
-                                      head,
-                                  )
-                                }
-                                type="button"
-                              >
-                                {isRegisteringTracking ? "등록 중" : "등록"}
-                              </button>
-                            </div>
-                          )}
+                      {bundleDeliveries.length > 0 ? (
+                        <div className="mt-3 space-y-3 border-t border-black/[0.06] pt-3">
+                          {bundleDeliveries.map((entry) => {
+                            const hasTracking = Boolean(
+                              entry.delivery.trackingNumber,
+                            );
+                            const canRegisterTracking =
+                              entry.ownerConfirmed &&
+                              detail.status === "CONFIRMED";
+                            const isRegistering =
+                              pendingC2CAction === `tracking:${entry.ownerId}`;
+                            const trackingInput =
+                              participantTrackingInputs[entry.ownerId] ?? "";
+
+                            return (
+                              <div key={entry.delivery.deliveryId}>
+                                <p className="text-[12px] font-medium text-black/40">
+                                  {[
+                                    getShippingMethodLabel(
+                                      entry.delivery.shippingMethod,
+                                    ),
+                                    entry.delivery.storeName,
+                                    entry.delivery.receiverPhoneNumber,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </p>
+                                {hasTracking ? (
+                                  <p className="mt-1.5 text-[13px] font-semibold text-black/55">
+                                    운송장 {entry.delivery.trackingNumber}
+                                    {getDeliveryStatusLabel(
+                                      entry.delivery.status,
+                                    )
+                                      ? ` · ${getDeliveryStatusLabel(entry.delivery.status)}`
+                                      : ""}
+                                  </p>
+                                ) : (
+                                  <div className="mt-2 flex gap-2">
+                                    <input
+                                      className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
+                                      disabled={!canRegisterTracking}
+                                      inputMode="numeric"
+                                      onChange={(event) =>
+                                        setParticipantTrackingInputs(
+                                          (inputs) => ({
+                                            ...inputs,
+                                            [entry.ownerId]:
+                                              event.currentTarget.value,
+                                          }),
+                                        )
+                                      }
+                                      // 버튼을 흐리기만 하면 개최자가 이유를 못 찾는다 — 「제외」와 같은 규칙.
+                                      placeholder={
+                                        canRegisterTracking
+                                          ? "운송장 번호 입력"
+                                          : entry.ownerConfirmed
+                                            ? "분철 진행 확정 후 등록 가능"
+                                            : "입금 확인 후 등록 가능"
+                                      }
+                                      value={trackingInput}
+                                    />
+                                    <button
+                                      className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                      disabled={
+                                        !canRegisterTracking ||
+                                        trackingInput.trim().length === 0 ||
+                                        pendingC2CAction !== null
+                                      }
+                                      onClick={() =>
+                                        void handleRegisterParticipantTracking(
+                                          bundle.slots.find(
+                                            (slot) =>
+                                              slot.participationId ===
+                                              entry.ownerId,
+                                          ) ?? head,
+                                        )
+                                      }
+                                      type="button"
+                                    >
+                                      {isRegistering ? "등록 중" : "등록"}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : null}
                     </article>

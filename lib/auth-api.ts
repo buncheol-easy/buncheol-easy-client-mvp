@@ -419,8 +419,6 @@ export type BuncheolManagementParticipant = {
   status: string;
   // 소속 묶음 = 이체 1회 · 택배 1개. 「제외」·입금확인이 이 단위로 돈다.
   bundleId?: string | null;
-  // 참여자 id — 같은 사람의 슬롯을 한 줄로 묶을 때 쓴다.
-  participantId?: string | null;
   // 🔴 판정은 서버가 값으로 내려준다. 화면이 상태로 재판정하면 서버 가드와 갈려
   // "버튼은 있는데 눌러도 409" 가 생긴다 (docs/82 §4-3).
   // RELEASABLE | RECRUITING | BEFORE_DUE | HAS_CONFIRMED | ALREADY_CLOSED
@@ -822,8 +820,8 @@ function getOptionalNumberValue(
   return value === null ? undefined : value;
 }
 
-// 서버 boolean 판정값용. 값이 없으면 undefined 를 돌려 호출부가 "판정 없음"(구 응답)과
-// "false" 를 구분할 수 있게 한다 — 둘을 섞으면 판정 없는 응답에서 버튼이 조용히 사라진다.
+// 서버 boolean 판정값용. 값이 boolean 이 아니면 undefined 를 돌린다 — 소비부가 typeof 로
+// "판정 없음"(구 응답)과 false 를 가른다.
 function getOptionalBooleanValue(
   body: Record<string, unknown>,
   keys: string[],
@@ -3539,8 +3537,6 @@ function getBuncheolManagementParticipantFromRecord(
     paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
     refundAccount,
     bundleId: getOptionalStringValue(record, ["bundleId"]) ?? null,
-    participantId:
-      getOptionalStringValue(record, ["participantId", "userId"]) ?? null,
     releasability: getOptionalStringValue(record, ["releasability"]) ?? null,
     confirmTarget: getOptionalBooleanValue(record, ["confirmTarget"]) ?? null,
     status:
