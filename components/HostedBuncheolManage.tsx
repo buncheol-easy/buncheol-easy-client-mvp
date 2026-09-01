@@ -11,7 +11,8 @@ import {
 import {
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
-  rejectParticipationPaymentSent,
+  confirmBundlePayment,
+  releaseBundle,
   requestBuncheolDetail,
   requestBuncheolManagement,
   requestDeliveryTrackingRegistration,
@@ -215,6 +216,58 @@ function getPaymentStatusLabel(winner: BuncheolManagementWinner | null) {
 
   // 알 수 없는 상태를 "입금 대기"로 접으면 개최자에게 틀린 신호가 되므로 raw 를 유지한다.
   return winner.paymentStatus ?? "입금 대기";
+}
+
+export type ManagementBundle = {
+  key: string;
+  bundleId: string | null;
+  slots: BuncheolManagementParticipant[];
+};
+
+// 활성 참여를 묶음으로 접는다. 묶음 = 이체 1회 · 택배 1개이고, 「제외」·입금확인이 그 단위로 돈다.
+// 묶음이 없는 구 행은 자기 자신이 한 묶음이다.
+function getParticipantBundles(
+  participants: BuncheolManagementParticipant[],
+): ManagementBundle[] {
+  const order: string[] = [];
+  const byKey = new Map<string, ManagementBundle>();
+
+  for (const participant of participants) {
+    const key = participant.bundleId ?? `p:${participant.participationId}`;
+    const bundle = byKey.get(key);
+
+    if (bundle) {
+      bundle.slots.push(participant);
+      continue;
+    }
+
+    order.push(key);
+    byKey.set(key, {
+      key,
+      bundleId: participant.bundleId ?? null,
+      slots: [participant],
+    });
+  }
+
+  return order.map((key) => byKey.get(key)!);
+}
+
+// 「제외」가 왜 안 되는지. 버튼만 흐려 두면 개최자가 이유를 못 찾는다.
+// 판정은 서버 값(releasability)을 그대로 읽는다 — 화면이 재판정하면 서버 가드와 갈린다.
+function getReleaseBlockedReason(releasability: string | null | undefined) {
+  switch (releasability) {
+    case "RECRUITING":
+      return "모집 중에는 뺄 수 없어요.";
+    case "BEFORE_DUE":
+      return "입금 기한이 지나야 뺄 수 있어요.";
+    case "HAS_CONFIRMED":
+      return "입금 확인된 자리가 있어 뺄 수 없어요.";
+    case "ALREADY_CLOSED":
+      return "이미 정리된 참여예요.";
+    // 판정이 없는 구 응답 — 버튼은 흐려 두되 사유를 단정하지 않는다.
+    default:
+      return releasability === "RELEASABLE" ? null : "지금은 뺄 수 없어요.";
+  }
 }
 
 function getParticipantsByOptionId(
@@ -485,6 +538,8 @@ export function HostedBuncheolManage({
   const activeC2CParticipants = (detail?.participants ?? []).filter(
     (participant) => !isParticipationCancelledStatus(participant.status),
   );
+  const c2cBundles = getParticipantBundles(activeC2CParticipants);
+
   const c2cAppliedCount = activeC2CParticipants.filter((participant) =>
     isParticipationAppliedStatus(participant.status),
   ).length;
@@ -504,19 +559,8 @@ export function HostedBuncheolManage({
   // 서버 CAS(confirmIfAllCollected)와 같은 조건 — 이때만 부분 확정 버튼을 노출한다 (docs/56 H-12).
   const canFinalizeCollected =
     c2cUnpaidActiveCount === 0 && c2cConfirmedCount > 0;
-  // 서버가 참여자를 최상위 participants 로만 내려주는 응답 대비 — 옵션 중첩분과 머지한다.
-  const c2cParticipantsByOptionId = getParticipantsByOptionId(
-    activeC2CParticipants,
-  );
-  // 옵션 id 공간이 어긋나 어느 카드에도 못 실린 참여 — 집계에는 잡히는데 리스트에서
-  // 사라지면 개최자가 액션을 못 하므로 경고로 드러낸다.
-  const c2cUnmatchedParticipantCount = activeC2CParticipants.filter(
-    (participant) =>
-      !participant.buncheolMemberId ||
-      !(detail?.options ?? []).some(
-        (option) => option.buncheolMemberId === participant.buncheolMemberId,
-      ),
-  ).length;
+  // 📌 「옵션 id 가 어긋나 어느 카드에도 못 실린 참여」 경고는 없앴다 — 묶음은 참여 자체로 접히므로
+  // 옵션 id 와 무관하게 항상 목록에 나온다. 그 경고가 막으려던 상태가 구조적으로 사라졌다.
   // C2C 배송 집계는 winner(대표 1명)가 아닌 활성 참여 전건 기준. 배송 스냅샷은 입금 전에도
   // 생기므로(참여 생성 시 배송지 전송) 입금 확인 완료 건만 "운송장 대기"로 센다 — 행 렌더와 동일 조건.
   const c2cDeliveryReadyCount = activeC2CParticipants.filter(
@@ -799,44 +843,55 @@ export function HostedBuncheolManage({
     }
   }
 
-  // C2C 참여 단위 입금확인 확인 요청. 입금확인은 되돌릴 수 없고(참여가 CONFIRMED 로 확정되며
-  // 참여자에게 알림톡이 나간다) 전원 확인 시 분철까지 진행확정으로 넘어가므로, 성사 확정·부분
-  // 확정·반려와 같은 확인 시트를 태운다 — 여기만 확인 없이 즉시 실행되고 있었다.
-  function requestConfirmC2CPayment(
-    participant: BuncheolManagementParticipant,
+  // C2C 묶음 입금확인. 되돌릴 수 없고(참여가 CONFIRMED 로 확정되며 알림톡이 나간다) 전원 확인 시
+  // 분철까지 진행확정으로 넘어가므로 확인 시트를 태운다.
+  function requestConfirmBundlePayment(
+    bundle: ManagementBundle,
+    expectedSlotIds: string[],
   ) {
     if (pendingC2CAction) {
       return;
     }
 
-    // 개최자가 통장에서 대조하는 값 그대로를 보여준다 — 입금자명(환불계좌 예금주)과 입금 총액.
-    const depositorName = getDepositorName(participant);
+    const head = bundle.slots[0];
+    // 개최자가 통장에서 대조하는 값 그대로 — 입금자명과 묶음 총액. 이체가 한 번이므로 합계로 묻는다.
+    const depositorName = getDepositorName(head);
+    const total = bundle.slots.reduce((sum, slot) => sum + slot.amount, 0);
+    const memberNames = bundle.slots
+      .map((slot) => slot.memberName)
+      .filter(Boolean)
+      .join(" · ");
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
-      // formatWonAmount 는 0 이하를 "-" 로 돌려줘 문장 안에서는 "슬롯 -을 받으셨나요" 가 된다.
-      // 0원 슬롯 + 배송비 0원 조합에서 실제로 도달할 수 있어, 금액을 못 쓰면 절을 통째로 뺀다.
+      // formatWonAmount 는 0 이하를 "-" 로 돌려줘 문장 안에서는 "- 을 받으셨나요" 가 된다.
+      // 0원 슬롯 조합에서 실제로 도달할 수 있어, 금액을 못 쓰면 절을 통째로 뺀다.
       description:
-        participant.amount > 0
-          ? `${depositorName}님의 ${participant.memberName} 슬롯 ${formatWonAmount(participant.amount)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
-          : `${depositorName}님의 ${participant.memberName} 슬롯 입금을 받으셨나요? 확인하면 되돌릴 수 없어요.`,
+        total > 0
+          ? `${depositorName}님의 ${memberNames} ${formatWonAmount(total)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
+          : `${depositorName}님의 ${memberNames} 입금을 받으셨나요? 확인하면 되돌릴 수 없어요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
-        void runConfirmC2CPayment(participant);
+        void runConfirmBundlePayment(bundle, expectedSlotIds);
       },
-      title: "입금을 확인할까요?",
+      title:
+        bundle.slots.length > 1
+          ? `자리 ${bundle.slots.length}개를 한 번에 확인할까요?`
+          : "입금을 확인할까요?",
     });
   }
 
-  // C2C 참여 단위 입금확인 — 입금 대기·보냈어요 모두 대상 (docs/46 §4.3).
-  async function runConfirmC2CPayment(
-    participant: BuncheolManagementParticipant,
+  // 묶음 입금확인 — all-or-nothing (docs/70 §5). 슬롯마다 확인하면 묶음 안 상태가 갈려
+  // 「제외」가 HAS_CONFIRMED 로 영구히 막히는 묶음이 남는다.
+  async function runConfirmBundlePayment(
+    bundle: ManagementBundle,
+    expectedSlotIds: string[],
   ) {
     if (pendingC2CAction) {
       return;
     }
 
-    setPendingC2CAction(`confirm:${participant.participationId}`);
+    setPendingC2CAction(`confirm:${bundle.key}`);
 
     try {
       const accessToken = await getFreshAccessToken();
@@ -846,9 +901,21 @@ export function HostedBuncheolManage({
         return;
       }
 
-      await requestPaymentConfirmation(accessToken, participant.participationId, {
-        ignoreConflict: true,
-      });
+      if (bundle.bundleId) {
+        await confirmBundlePayment(
+          accessToken,
+          bundle.bundleId,
+          expectedSlotIds,
+        );
+      } else {
+        // 묶음이 없는 구 행 폴백 — 신규 참여는 전부 묶음을 갖는다.
+        await requestPaymentConfirmation(
+          accessToken,
+          bundle.slots[0].participationId,
+          { ignoreConflict: true },
+        );
+      }
+
       await reloadManagementDetail(accessToken);
       setMessage("입금 확인이 완료됐어요.");
     } catch (error: unknown) {
@@ -862,36 +929,44 @@ export function HostedBuncheolManage({
     }
   }
 
-  // C2C 미입금 반려 — 보냈어요 해제 + 기한 +24h 연장 + 재확인 알림톡 (docs/46 §4.5).
-  function requestRejectPaymentSent(
-    participant: BuncheolManagementParticipant,
-  ) {
+  // 묶음 「제외」 — 입금 기한이 지난 미입금 참여를 개최자가 정리한다 (docs/71 §1·§8-1).
+  // C2C 는 자동 취소가 없어 이것이 유일한 출구다. 참여자는 기한 후 스스로 빠질 수 없다.
+  function requestReleaseBundle(bundle: ManagementBundle) {
     if (pendingC2CAction) {
       return;
     }
 
-    const depositorName = getDepositorName(participant);
+    const depositorName = getDepositorName(bundle.slots[0]);
+    const memberNames = bundle.slots
+      .map((slot) => slot.memberName)
+      .filter(Boolean)
+      .join(" · ");
 
     setConfirmSheetRequest({
-      confirmLabel: "표시 해제",
-      // 개최자가 반려를 "취소"로 오해하는 걸 막는다 — 실제로는 참여가 유지된 채 기한만 늘어난다 (docs/54 1-7).
-      description: `취소가 아니에요. ${depositorName}님에게 재확인을 요청하고 기한이 24시간 연장돼요.`,
+      confirmLabel: "제외",
+      description: `${depositorName}님의 ${memberNames} 자리를 뺄까요? 참여자에게 취소 안내가 나가고, 그 자리는 다시 신청받을 수 있어요. 되돌릴 수 없어요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
-        void runRejectPaymentSent(participant);
+        void runReleaseBundle(bundle);
       },
-      title: "'보냈어요' 표시를 해제할까요?",
+      title:
+        bundle.slots.length > 1
+          ? `자리 ${bundle.slots.length}개를 함께 뺄까요?`
+          : "이 참여를 뺄까요?",
     });
   }
 
-  async function runRejectPaymentSent(
-    participant: BuncheolManagementParticipant,
-  ) {
+  async function runReleaseBundle(bundle: ManagementBundle) {
     if (pendingC2CAction) {
       return;
     }
 
-    setPendingC2CAction(`reject:${participant.participationId}`);
+    if (!bundle.bundleId) {
+      setMessage("이 참여는 묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.");
+      return;
+    }
+
+    setPendingC2CAction(`release:${bundle.key}`);
 
     try {
       const accessToken = await getFreshAccessToken();
@@ -901,17 +976,12 @@ export function HostedBuncheolManage({
         return;
       }
 
-      await rejectParticipationPaymentSent(
-        accessToken,
-        participant.participationId,
-      );
+      await releaseBundle(accessToken, bundle.bundleId);
       await reloadManagementDetail(accessToken);
-      setMessage("보냈어요 표시를 해제하고 재확인 안내를 보냈어요.");
+      setMessage("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
     } catch (error: unknown) {
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "반려를 처리하지 못했어요.",
+        error instanceof Error ? error.message : "참여를 빼지 못했어요.",
       );
     } finally {
       setPendingC2CAction(null);
@@ -1390,7 +1460,7 @@ export function HostedBuncheolManage({
                 {/* 리스트 모수는 취소를 뺀 활성 참여 전건(신청됨·입금 대기 포함)이라
                     "여기에 표시돼요"로 쓰면 안 된다 — 바뀌는 것은 존재가 아니라 상태다. */}
                 {isC2C
-                  ? "참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조하고, 입금이 확인되지 않으면 '입금 못 찾음'으로 재확인을 요청할 수 있어요."
+                  ? "참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조해 확인하고, 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."
                   : "멤버마다 입금 확인 → 운송장 등록 순서로 처리해요."}
               </p>
             </div>
@@ -1401,248 +1471,233 @@ export function HostedBuncheolManage({
                   옵션 정보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.
                 </p>
               ) : isC2C ? (
-                // C2C: 다슬롯이라 대표 참여자(winner)가 아닌 활성 참여 전건을 멤버별로 보여준다.
-                detail.options.map((option) => {
-                  // 파서(getBuncheolManagementDetailFromBody)가 최상위·옵션 중첩 참여자를
-                  // participationId 기준으로 이미 합쳐 두므로, 활성 참여 그룹핑만 쓰면 된다.
-                  const optionParticipants =
-                    c2cParticipantsByOptionId[option.buncheolMemberId] ?? [];
+                // 🔴 C2C 는 <b>묶음</b> 단위로 보여준다 — 「제외」·입금확인이 묶음 API 하나뿐이라,
+                // 멤버 자리 줄에 버튼을 달면 "한 줄을 눌렀는데 그 사람 자리가 전부 빠지는" 화면이 된다.
+                // 대신 자리 축(누가 남았나)이 흐려지므로 줄 안에 멤버명을 칩으로 나열한다 (docs/84 §3-5).
+                c2cBundles.map((bundle) => {
+                  const head = bundle.slots[0];
+                  const depositorName = getDepositorName(head);
+                  const isBundleConfirmed = bundle.slots.every(
+                    (slot) =>
+                      isParticipationConfirmedStatus(slot.status) ||
+                      Boolean(slot.confirmedAt),
+                  );
+                  const isBundleSent = bundle.slots.some((slot) =>
+                    isParticipationPaymentSentStatus(slot.status),
+                  );
+                  const isBundleAwaiting = bundle.slots.some((slot) =>
+                    isParticipationAwaitingPaymentStatus(slot.status),
+                  );
+                  const isBundleApplied = bundle.slots.some((slot) =>
+                    isParticipationAppliedStatus(slot.status),
+                  );
+                  // 🔴 확정 대상은 서버가 슬롯마다 내려주는 confirmTarget 이다. 화면이 상태로
+                  // 재판정하면 서버가 가진 집합과 갈려 409(BCH-115)가 영구히 난다.
+                  // 판정이 없는 구 응답에서는 입금 가능 상태로 폴백한다.
+                  const confirmTargetIds = bundle.slots
+                    .filter((slot) =>
+                      typeof slot.confirmTarget === "boolean"
+                        ? slot.confirmTarget
+                        : isParticipationAwaitingPaymentStatus(slot.status) ||
+                          isParticipationPaymentSentStatus(slot.status),
+                    )
+                    .map((slot) => slot.participationId);
+                  const releaseBlockedReason = getReleaseBlockedReason(
+                    head.releasability,
+                  );
+                  const canRelease = head.releasability === "RELEASABLE";
+                  const isBundleConfirming =
+                    pendingC2CAction === `confirm:${bundle.key}`;
+                  const isBundleReleasing =
+                    pendingC2CAction === `release:${bundle.key}`;
+                  const bundleTotal = bundle.slots.reduce(
+                    (sum, slot) => sum + slot.amount,
+                    0,
+                  );
+                  const bundleShippingFee = bundle.slots.reduce(
+                    (sum, slot) =>
+                      sum +
+                      (typeof slot.shippingFee === "number"
+                        ? slot.shippingFee
+                        : 0),
+                    0,
+                  );
+                  // 택배 1개 = 묶음 1개 — 배송은 묶음에 하나뿐이라 대표 슬롯에서 읽는다.
+                  const bundleDelivery =
+                    bundle.slots.find((slot) => slot.delivery)?.delivery ?? null;
+                  const deliveryOwnerId =
+                    bundle.slots.find((slot) => slot.delivery)?.participationId ??
+                    head.participationId;
+                  const hasTracking = Boolean(bundleDelivery?.trackingNumber);
+                  const canRegisterTracking = Boolean(
+                    bundleDelivery?.deliveryId &&
+                      isBundleConfirmed &&
+                      detail.status === "CONFIRMED",
+                  );
+                  const isRegisteringTracking =
+                    pendingC2CAction === `tracking:${deliveryOwnerId}`;
+                  const trackingInput =
+                    participantTrackingInputs[deliveryOwnerId] ?? "";
+                  const bundleTimeInfo = isBundleSent
+                    ? bundle.slots.find((slot) => slot.paymentSentAt)?.paymentSentAt
+                      ? ` · 보냈어요 ${formatKoreaDateTime(bundle.slots.find((slot) => slot.paymentSentAt)!.paymentSentAt!)}`
+                      : ""
+                    : isBundleAwaiting && head.dueAt
+                      ? ` · 기한 ${formatKoreaDateTime(head.dueAt)}`
+                      : isBundleConfirmed && head.confirmedAt
+                        ? ` · 확인 ${formatKoreaDateTime(head.confirmedAt)}`
+                        : "";
 
                   return (
                     <article
-                      className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white shadow-[0_10px_28px_rgba(0,0,0,0.035)]"
-                      key={option.buncheolMemberId}
+                      className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white px-4 py-3.5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]"
+                      key={bundle.key}
                     >
-                      <div className="flex items-center gap-3 border-b border-black/[0.06] px-4 py-3">
-                        <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-[0.9rem] bg-[#f1f1f1] ring-1 ring-black/[0.04]">
-                          {option.memberImage ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              alt=""
-                              className="h-full w-full object-cover"
-                              src={option.memberImage}
-                            />
-                          ) : null}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
-                            {option.memberName ||
-                              `멤버 ${option.memberId ?? option.buncheolMemberId}`}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                            입금자명 {depositorName}
                           </p>
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
-                            참여 {optionParticipants.length}명
+                            {formatWonAmount(bundleTotal)}
+                            {bundle.slots.length > 1
+                              ? ` · 자리 ${bundle.slots.length}개`
+                              : ""}
+                            {bundleTimeInfo}
                           </p>
+                          {/* 배송비는 묶음에 1회만 붙는다 — 합계만 보여주면 개최자가 통장 금액과
+                              왜 다른지 설명할 수 없다 (docs/53 Q-22). */}
+                          {bundleShippingFee > 0 ? (
+                            <p className="mt-0.5 text-[11px] font-medium text-black/30">
+                              {`상품 ${formatWonAmount(Math.max(bundleTotal - bundleShippingFee, 0))} + 배송비 ${formatWonAmount(bundleShippingFee)}`}
+                            </p>
+                          ) : null}
                         </div>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            isBundleConfirmed
+                              ? "bg-black text-white"
+                              : isBundleSent
+                                ? "bg-[#D7FF5F] text-black"
+                                : "bg-[#eeeeee] text-black/60"
+                          }`}
+                        >
+                          {isBundleConfirmed
+                            ? "입금 확인 완료"
+                            : isBundleSent
+                              ? "보냈어요"
+                              : isBundleAwaiting
+                                ? "입금 대기"
+                                : isBundleApplied
+                                  ? "신청됨"
+                                  : "확인 필요"}
+                        </span>
                       </div>
 
-                      {optionParticipants.length === 0 ? (
-                        <p className="px-4 py-4 text-[13px] font-medium text-black/35">
-                          아직 신청한 참여자가 없어요.
-                        </p>
-                      ) : (
-                        <div className="space-y-2 px-4 py-3">
-                          {optionParticipants.map((participant) => {
-                            const depositorName = getDepositorName(participant);
-                            const isRowConfirmed =
-                              isParticipationConfirmedStatus(
-                                participant.status,
-                              ) || Boolean(participant.confirmedAt);
-                            const isRowSent = isParticipationPaymentSentStatus(
-                              participant.status,
-                            );
-                            const isRowAwaiting =
-                              isParticipationAwaitingPaymentStatus(
-                                participant.status,
-                              );
-                            const isRowApplied = isParticipationAppliedStatus(
-                              participant.status,
-                            );
-                            const isRowConfirming =
-                              pendingC2CAction ===
-                              `confirm:${participant.participationId}`;
-                            const isRowRejecting =
-                              pendingC2CAction ===
-                              `reject:${participant.participationId}`;
-                            const isRowRegisteringTracking =
-                              pendingC2CAction ===
-                              `tracking:${participant.participationId}`;
-                            const trackingInput =
-                              participantTrackingInputs[
-                                participant.participationId
-                              ] ?? "";
-                            const hasTracking = Boolean(
-                              participant.delivery?.trackingNumber,
-                            );
-                            // 운송장 등록은 분철 진행 확정 후에만 — 서버 가드(DLV-009)와 동일한
-                            // 정확한 CONFIRMED 비교를 의도적으로 유지한다.
-                            const canRegisterTracking = Boolean(
-                              participant.delivery?.deliveryId &&
-                                isRowConfirmed &&
-                                detail.status === "CONFIRMED",
-                            );
-                            const rowTimeInfo =
-                              isRowSent && participant.paymentSentAt
-                                ? ` · 보냈어요 ${formatKoreaDateTime(participant.paymentSentAt)}`
-                                : isRowAwaiting && participant.dueAt
-                                  ? ` · 기한 ${formatKoreaDateTime(participant.dueAt)}`
-                                  : isRowConfirmed && participant.confirmedAt
-                                    ? ` · 확인 ${formatKoreaDateTime(participant.confirmedAt)}`
-                                    : "";
+                      {/* 묶음으로 접으면서 "어느 자리를 잡았나" 가 흐려진다 — 칩으로 되살린다. */}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {bundle.slots.map((slot) => (
+                          <span
+                            className="rounded-full bg-[#f1f1f1] px-2 py-0.5 text-[11px] font-semibold text-black/55"
+                            key={slot.participationId}
+                          >
+                            {slot.memberName}
+                          </span>
+                        ))}
+                      </div>
 
-                            return (
-                              <div
-                                className="rounded-[0.85rem] border border-black/[0.08] px-3 py-3"
-                                key={participant.participationId}
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
-                                      입금자명 {depositorName}
-                                    </p>
-                                    <p className="mt-0.5 text-[12px] font-medium text-black/40">
-                                      {formatWonAmount(participant.amount)}
-                                      {rowTimeInfo}
-                                    </p>
-                                    {/* 다슬롯은 배송비가 묶음 첫 슬롯에만 붙어 같은 사람의 두 참여 금액이 달라진다.
-                                        합계만 보여주면 개최자가 통장 금액과 왜 다른지 설명할 수 없다 (docs/53 Q-22). */}
-                                    {/* 배송비 0원은 다슬롯 묶음뿐 아니라 무료 배송 개최에서도 나온다.
-                                        0원에 "다른 참여에 부과돼요"를 붙이면 없는 참여를 가리키므로,
-                                        실제로 부과된 건에서만 내역을 쪼개 보여준다 (docs/53 Q-22). */}
-                                    {typeof participant.shippingFee === "number" &&
-                                    participant.shippingFee > 0 ? (
-                                      <p className="mt-0.5 text-[11px] font-medium text-black/30">
-                                        {`상품 ${formatWonAmount(Math.max(participant.amount - participant.shippingFee, 0))} + 배송비 ${formatWonAmount(participant.shippingFee)}`}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                  <span
-                                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                      isRowConfirmed
-                                        ? "bg-black text-white"
-                                        : isRowSent
-                                          ? "bg-[#D7FF5F] text-black"
-                                          : "bg-[#eeeeee] text-black/60"
-                                    }`}
-                                  >
-                                    {isRowConfirmed
-                                      ? "입금 확인 완료"
-                                      : isRowSent
-                                        ? "보냈어요"
-                                        : isRowAwaiting
-                                          ? "입금 대기"
-                                          : isRowApplied
-                                            ? "신청됨"
-                                            : "확인 필요"}
-                                  </span>
-                                </div>
-
-                                {isRowSent || isRowAwaiting ? (
-                                  <div className="mt-3 flex justify-end gap-2">
-                                    {isRowSent ? (
-                                      <button
-                                        className="h-9 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:text-black/25"
-                                        disabled={pendingC2CAction !== null}
-                                        onClick={() =>
-                                          requestRejectPaymentSent(participant)
-                                        }
-                                        type="button"
-                                      >
-                                        {isRowRejecting
-                                          ? "해제 중"
-                                          : "입금 못 찾음"}
-                                      </button>
-                                    ) : null}
-                                    <button
-                                      className="h-9 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                      disabled={pendingC2CAction !== null}
-                                      onClick={() =>
-                                        requestConfirmC2CPayment(participant)
-                                      }
-                                      type="button"
-                                    >
-                                      {isRowConfirming
-                                        ? "처리 중"
-                                        : "입금 확인"}
-                                    </button>
-                                  </div>
-                                ) : null}
-
-                                {isRowConfirmed && participant.delivery ? (
-                                  <div className="mt-3 border-t border-black/[0.06] pt-3">
-                                    <p className="text-[12px] font-medium text-black/40">
-                                      {[
-                                        getShippingMethodLabel(
-                                          participant.delivery.shippingMethod,
-                                        ),
-                                        participant.delivery.storeName,
-                                        participant.delivery
-                                          .receiverPhoneNumber,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" · ")}
-                                    </p>
-                                    {hasTracking ? (
-                                      <p className="mt-1.5 text-[13px] font-semibold text-black/55">
-                                        운송장{" "}
-                                        {participant.delivery.trackingNumber}
-                                        {getDeliveryStatusLabel(
-                                          participant.delivery.status,
-                                        )
-                                          ? ` · ${getDeliveryStatusLabel(participant.delivery.status)}`
-                                          : ""}
-                                      </p>
-                                    ) : (
-                                      <div className="mt-2 flex gap-2">
-                                        <input
-                                          className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
-                                          disabled={!canRegisterTracking}
-                                          inputMode="numeric"
-                                          onChange={(event) => {
-                                            const nextValue =
-                                              event.currentTarget.value;
-
-                                            setParticipantTrackingInputs(
-                                              (current) => ({
-                                                ...current,
-                                                [participant.participationId]:
-                                                  nextValue,
-                                              }),
-                                            );
-                                          }}
-                                          placeholder={
-                                            canRegisterTracking
-                                              ? "운송장 번호 입력"
-                                              : "분철 진행 확정 후 등록 가능"
-                                          }
-                                          value={trackingInput}
-                                        />
-                                        <button
-                                          className="h-10 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                          disabled={
-                                            !canRegisterTracking ||
-                                            pendingC2CAction !== null ||
-                                            trackingInput.trim().length === 0
-                                          }
-                                          onClick={() =>
-                                            void handleRegisterParticipantTracking(
-                                              participant,
-                                            )
-                                          }
-                                          type="button"
-                                        >
-                                          {isRowRegisteringTracking
-                                            ? "등록 중"
-                                            : "운송장 등록"}
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
+                      {isBundleSent || isBundleAwaiting || isBundleApplied ? (
+                        <div className="mt-3 flex items-center justify-end gap-2">
+                          {/* 「제외」는 입금 기한이 지난 뒤에만 열린다 — 이체가 통장에 늦게 찍히는
+                              일이 흔해, 기한 안에 뺄 수 있게 하면 정상 입금자를 빼는 사고가 난다
+                              (docs/71 §8-1). 버튼을 감추지 않고 사유를 보여준다. */}
+                          {releaseBlockedReason ? (
+                            <p className="mr-auto text-[11px] font-medium leading-4 text-black/35">
+                              {releaseBlockedReason}
+                            </p>
+                          ) : null}
+                          <button
+                            className="h-9 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                            disabled={!canRelease || pendingC2CAction !== null}
+                            onClick={() => requestReleaseBundle(bundle)}
+                            type="button"
+                          >
+                            {isBundleReleasing ? "빼는 중" : "제외"}
+                          </button>
+                          {confirmTargetIds.length > 0 ? (
+                            <button
+                              className="h-9 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                              disabled={pendingC2CAction !== null}
+                              onClick={() =>
+                                requestConfirmBundlePayment(
+                                  bundle,
+                                  confirmTargetIds,
+                                )
+                              }
+                              type="button"
+                            >
+                              {isBundleConfirming ? "처리 중" : "입금 확인"}
+                            </button>
+                          ) : null}
                         </div>
-                      )}
+                      ) : null}
+
+                      {isBundleConfirmed && bundleDelivery ? (
+                        <div className="mt-3 border-t border-black/[0.06] pt-3">
+                          <p className="text-[12px] font-medium text-black/40">
+                            {[
+                              getShippingMethodLabel(
+                                bundleDelivery.shippingMethod,
+                              ),
+                              bundleDelivery.storeName,
+                              bundleDelivery.receiverPhoneNumber,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                          {hasTracking ? (
+                            <p className="mt-1.5 text-[13px] font-semibold text-black/55">
+                              운송장 {bundleDelivery.trackingNumber}
+                              {getDeliveryStatusLabel(bundleDelivery.status)
+                                ? ` · ${getDeliveryStatusLabel(bundleDelivery.status)}`
+                                : ""}
+                            </p>
+                          ) : (
+                            <div className="mt-2 flex gap-2">
+                              <input
+                                className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
+                                disabled={!canRegisterTracking}
+                                inputMode="numeric"
+                                onChange={(event) =>
+                                  setParticipantTrackingInputs((inputs) => ({
+                                    ...inputs,
+                                    [deliveryOwnerId]: event.target.value,
+                                  }))
+                                }
+                                placeholder="운송장 번호"
+                                value={trackingInput}
+                              />
+                              <button
+                                className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                disabled={
+                                  !canRegisterTracking ||
+                                  trackingInput.trim().length === 0 ||
+                                  pendingC2CAction !== null
+                                }
+                                onClick={() =>
+                                  handleRegisterParticipantTracking(
+                                    bundle.slots.find((slot) => slot.delivery) ??
+                                      head,
+                                  )
+                                }
+                                type="button"
+                              >
+                                {isRegisteringTracking ? "등록 중" : "등록"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })
@@ -1992,13 +2047,6 @@ export function HostedBuncheolManage({
                 );
                 })
               )}
-              {isC2C && c2cUnmatchedParticipantCount > 0 ? (
-                <p className="rounded-[1rem] border border-[#F3C1C1] bg-[#fff2f2] px-4 py-3 text-[13px] font-medium leading-5 text-[#c03131]">
-                  멤버 정보와 연결되지 않은 참여가{" "}
-                  {c2cUnmatchedParticipantCount}건 있어요. 화면을 새로고침해도
-                  계속 보이면 분철이지로 문의해 주세요.
-                </p>
-              ) : null}
             </div>
           </section>
         </div>

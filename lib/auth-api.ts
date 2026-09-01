@@ -417,6 +417,17 @@ export type BuncheolManagementParticipant = {
   paymentSentAt?: string | null;
   refundAccount?: BankAccountInfo | null;
   status: string;
+  // 소속 묶음 = 이체 1회 · 택배 1개. 「제외」·입금확인이 이 단위로 돈다.
+  bundleId?: string | null;
+  // 참여자 id — 같은 사람의 슬롯을 한 줄로 묶을 때 쓴다.
+  participantId?: string | null;
+  // 🔴 판정은 서버가 값으로 내려준다. 화면이 상태로 재판정하면 서버 가드와 갈려
+  // "버튼은 있는데 눌러도 409" 가 생긴다 (docs/82 §4-3).
+  // RELEASABLE | RECRUITING | BEFORE_DUE | HAS_CONFIRMED | ALREADY_CLOSED
+  releasability?: string | null;
+  // 이 슬롯이 묶음 입금확인의 대상인가. confirm 요청의 expectedSlotIds 는 이 값이 true 인
+  // 슬롯만 담아야 한다 — 아니면 409(BCH-115)가 영구히 난다.
+  confirmTarget?: boolean | null;
 };
 
 export type BuncheolManagementOption = {
@@ -809,6 +820,23 @@ function getOptionalNumberValue(
   const value = getNumberValue(body, keys);
 
   return value === null ? undefined : value;
+}
+
+// 서버 boolean 판정값용. 값이 없으면 undefined 를 돌려 호출부가 "판정 없음"(구 응답)과
+// "false" 를 구분할 수 있게 한다 — 둘을 섞으면 판정 없는 응답에서 버튼이 조용히 사라진다.
+function getOptionalBooleanValue(
+  body: Record<string, unknown>,
+  keys: string[],
+) {
+  for (const key of keys) {
+    const value = body[key];
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function getOptionalStringValue(body: Record<string, unknown>, keys: string[]) {
@@ -3510,6 +3538,11 @@ function getBuncheolManagementParticipantFromRecord(
     participationId,
     paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
     refundAccount,
+    bundleId: getOptionalStringValue(record, ["bundleId"]) ?? null,
+    participantId:
+      getOptionalStringValue(record, ["participantId", "userId"]) ?? null,
+    releasability: getOptionalStringValue(record, ["releasability"]) ?? null,
+    confirmTarget: getOptionalBooleanValue(record, ["confirmTarget"]) ?? null,
     status:
       getOptionalStringValue(record, [
         "status",
@@ -4973,23 +5006,6 @@ export async function finalizeBuncheolCollected(
 
 // C2C 개최자 미입금 반려 — 입금 내역을 찾지 못한 "보냈어요"를 입금 대기로 되돌리고
 // 기한을 +24h 연장하며 참여자에게 재확인 안내가 발송된다 (docs/46 §4.5).
-export async function rejectParticipationPaymentSent(
-  accessToken: string,
-  participationId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/reject-payment`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
 
 // C2C "보냈어요" 마킹 — 입금 후 참여자가 표시(AWAITING_PAYMENT → PAYMENT_SENT).
 // 서버가 멱등 처리하므로(docs/46 §4.2) 이미 마킹된 참여에 다시 호출해도 성공한다.
@@ -6644,4 +6660,46 @@ export async function requestAdminReceiptConfirmation(
   }>(response);
 
   return getAdminBulkResult(body);
+}
+
+// 묶음 「제외」 — 입금 기한이 지난 뒤에만 열린다. 서버가 기한·상태를 재검증하므로 화면 판정과
+// 갈리면 409 로 돌아온다 (BCH-111 모집중 · BCH-112 기한 전 · BCH-113 확정 슬롯 있음).
+export async function releaseBundle(accessToken: string, bundleId: string) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/release`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// 묶음 입금확인 — all-or-nothing. expectedSlotIds 는 화면에 보인 슬롯 집합이며 서버가 가진 것과
+// 다르면 409(BCH-115)로 거부한다. 개최자가 본 것과 확정되는 것을 같게 만드는 장치다.
+export async function confirmBundlePayment(
+  accessToken: string,
+  bundleId: string,
+  expectedSlotIds: string[],
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/confirm`,
+    {
+      body: JSON.stringify({ expectedSlotIds }),
+      credentials: "include",
+      headers: {
+        ...getAuthHeaders(accessToken),
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
 }
