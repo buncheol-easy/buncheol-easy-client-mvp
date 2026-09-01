@@ -2910,9 +2910,13 @@ export function BidHistoryContent({
     );
     const head = slots[0];
     const isCancelled = slots.every((slot) => isBidRecordCancelled(slot));
-    const isPaymentConfirmed = slots.every((slot) =>
-      isBidRecordPaymentConfirmed(slot),
-    );
+    // 🔴 취소된 자리는 판정에서 뺀다. every 로 보면 「취소 1 + 확정 1」 묶음이 확정으로 안 잡혀
+    // 이미 다 낸 묶음에 라임 배너 「한 번에 보내요」와 「한 번에 보낼 돈」이 뜬다.
+    // (staging 묶음 137·87 이 실제로 그 모양이다.) 금액 집계와 같은 축으로 맞춘다.
+    const livingSlots = slots.filter((slot) => !isBidRecordCancelled(slot));
+    const isPaymentConfirmed =
+      livingSlots.length > 0 &&
+      livingSlots.every((slot) => isBidRecordPaymentConfirmed(slot));
     const isPaymentSent = slots.some((slot) =>
       isParticipationPaymentSentStatus(slot.participationStatus),
     );
