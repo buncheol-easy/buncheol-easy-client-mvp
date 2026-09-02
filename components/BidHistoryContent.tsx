@@ -2910,12 +2910,13 @@ export function BidHistoryContent({
     );
     const isCancelled = slots.every((slot) => isBidRecordCancelled(slot));
     // 🔴 취소된 자리는 판정에서 뺀다. every 로 보면 「취소 1 + 확정 1」 묶음이 확정으로 안 잡혀
-    // 이미 다 낸 묶음에 라임 배너 「한 번에 보내요」와 「한 번에 보낼 돈」이 뜬다.
+    // 이미 다 낸 묶음의 금액 블록에 「한 번에 보낼 돈」 라벨이 뜬다.
     // (staging 묶음 137·87 이 실제로 그 모양이다.) 금액 집계와 같은 축으로 맞춘다.
     const livingSlots = slots.filter((slot) => !isBidRecordCancelled(slot));
+    const isOverdue = slots.some((slot) => isBidRecordPaymentOverdue(slot, now));
     // 🔴 대표도 살아 있는 자리에서 뽑는다 — 취소분이 id 최솟값이면 취소 배너·취소 불가 안내가
     // 전액 입금된 묶음에 뜨고(cancellationNotice), 진행바 인덱스가 -1 이라 다 끝난 묶음의
-    // 진행바가 통째로 빈다. 금액축(amountSlots)·배너축(isPaymentConfirmed)과 축을 맞춘다.
+    // 진행바가 통째로 빈다. 금액축(amountSlots)·금액 라벨축(isPaymentConfirmed)과 축을 맞춘다.
     const head = livingSlots[0] ?? slots[0];
     const isPaymentConfirmed =
       livingSlots.length > 0 &&
@@ -3016,6 +3017,14 @@ export function BidHistoryContent({
             >
               {buncheolChip.label}
             </span>
+            {/* 자리 1개 카드와 같은 칩이다. 진행바는 C2C 기한 경과를 반영하지 않고(만료 판정이
+                LEGACY 전용) 분철 칩은 분철 축만 보므로, 이걸 빼면 묶음 카드만 "개최자가 취소할
+                수 있는 구간" 에 들어온 것을 목록에서 알리지 못한다. */}
+            {isOverdue ? (
+              <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
+                기한 지남
+              </span>
+            ) : null}
           </div>
           <div className="min-w-0 flex-1">
             <Link
