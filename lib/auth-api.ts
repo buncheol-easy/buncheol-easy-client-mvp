@@ -186,6 +186,9 @@ export type UpdateBuncheolRequest = {
 
 export type ParticipateBuncheolRequest = {
   buncheolMemberId: number;
+  // 자리를 여러 개 한 번에 잡을 때. 서버는 배열이 있으면 배열을 쓰고 단수는 무시한다.
+  // C2C 모집중 전용 — 성사 확정 뒤 추가 모집에 보내면 409(BCH-060)다.
+  buncheolMemberIds?: number[];
   shippingAddressId: number;
   participationCode?: string | null;
 };
@@ -417,6 +420,15 @@ export type BuncheolManagementParticipant = {
   paymentSentAt?: string | null;
   refundAccount?: BankAccountInfo | null;
   status: string;
+  // 소속 묶음 = 이체 1회 · 택배 1개. 「제외」·입금확인이 이 단위로 돈다.
+  bundleId?: string | null;
+  // 🔴 판정은 서버가 값으로 내려준다. 화면이 상태로 재판정하면 서버 가드와 갈려
+  // "버튼은 있는데 눌러도 409" 가 생긴다 (docs/82 §4-3).
+  // RELEASABLE | RECRUITING | BEFORE_DUE | HAS_CONFIRMED | ALREADY_CLOSED
+  releasability?: string | null;
+  // 이 슬롯이 묶음 입금확인의 대상인가. confirm 요청의 expectedSlotIds 는 이 값이 true 인
+  // 슬롯만 담아야 한다 — 아니면 409(BCH-115)가 영구히 난다.
+  confirmTarget?: boolean | null;
 };
 
 export type BuncheolManagementOption = {
@@ -471,6 +483,9 @@ export type ShippingFeePaybackInfo = {
 
 export type MyParticipation = {
   bidAmount: number;
+  // 소속 묶음 = 이체 1회 · 택배 1개의 단위. 「보냈어요」·입금확인·「제외」가 전부 이 단위로 돈다.
+  // 같은 분철에서 자리를 여러 개 잡으면 한 묶음이고, 성사 확정 뒤 추가로 잡으면 별개 묶음이다.
+  bundleId?: string | null;
   buncheolDeadline: string;
   buncheolId: string;
   buncheolMemberId?: string | null;
@@ -809,6 +824,23 @@ function getOptionalNumberValue(
   const value = getNumberValue(body, keys);
 
   return value === null ? undefined : value;
+}
+
+// 서버 boolean 판정값용. 값이 boolean 이 아니면 undefined 를 돌린다 — 소비부가 typeof 로
+// "판정 없음"(구 응답)과 false 를 가른다.
+function getOptionalBooleanValue(
+  body: Record<string, unknown>,
+  keys: string[],
+) {
+  for (const key of keys) {
+    const value = body[key];
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function getOptionalStringValue(body: Record<string, unknown>, keys: string[]) {
@@ -3510,6 +3542,9 @@ function getBuncheolManagementParticipantFromRecord(
     participationId,
     paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
     refundAccount,
+    bundleId: getOptionalStringValue(record, ["bundleId"]) ?? null,
+    releasability: getOptionalStringValue(record, ["releasability"]) ?? null,
+    confirmTarget: getOptionalBooleanValue(record, ["confirmTarget"]) ?? null,
     status:
       getOptionalStringValue(record, [
         "status",
@@ -4034,7 +4069,6 @@ export function toProductDetailItem(
   };
 }
 
-
 export async function requestBuncheols(
   accessToken?: string,
   params: BuncheolListParams = {},
@@ -4337,9 +4371,17 @@ export async function participateBuncheol(
     throw new Error("구매할 멤버 정보를 확인하지 못했어요.");
   }
 
-  // 참여 1건 = 멤버 슬롯 1개(단일 선택 정책). 서버도 buncheolMemberId(단수)만 받는다.
+  // 자리를 여러 개 보낼 때만 배열을 싣는다 — 서버는 배열이 있으면 배열이 이긴다.
+  // 단수 필드는 구버전 서버(배열 미지원)에서도 동작하도록 항상 함께 보낸다.
+  const memberIds = body.buncheolMemberIds ?? [];
+
+  // 조용히 개수를 줄이면 "3개 골랐는데 2개만 신청됨" 이 소리 없이 난다 — 단수 필드와 같은 규칙으로 끊는다.
+  if (memberIds.some((id) => !Number.isFinite(id))) {
+    throw new Error("참여할 멤버 정보를 확인하지 못했어요.");
+  }
   const requestBody = {
     buncheolMemberId: body.buncheolMemberId,
+    ...(memberIds.length > 1 ? { buncheolMemberIds: memberIds } : {}),
     shippingAddressId: body.shippingAddressId,
     ...(body.participationCode
       ? { participationCode: body.participationCode }
@@ -4386,10 +4428,14 @@ export async function participateBuncheol(
     throw new Error("참여 결과를 확인할 수 없어요.");
   }
 
-  const participationIds = getStringListValue(data, [
-    "participationIds",
-    "ids",
-  ]);
+  // 서버는 List<Long> 을 내려 숫자 배열이지만(getStringListValue 가 처리), 객체 배열로 감싸 오는
+  // 응답도 대비한다 — 여기서 비면 다건 신청이 성공했는데 화면은 실패로 보인다.
+  const participationIds = [
+    ...getStringListValue(data, ["participationIds", "ids"]),
+    ...getRecordListValue(data, ["participationIds", "participations", "items"])
+      .map((item) => getStringValue(item, ["participationId", "id"]))
+      .filter((id) => id.trim().length > 0),
+  ].filter((id, index, ids) => ids.indexOf(id) === index);
   const participationId =
     getStringValue(data, ["participationId", "id"]) ||
     participationIds[0] ||
@@ -4595,6 +4641,15 @@ export async function requestMyParticipations(accessToken: string) {
           (buncheol
             ? getOptionalStringValue(buncheol, ["openChatUrl"])
             : null) ??
+          null,
+        bundleId:
+          getOptionalStringValue(record, [
+            "bundleId",
+            "participationBundleId",
+          ]) ??
+          (isRecord(record.bundle)
+            ? getOptionalStringValue(record.bundle, ["id", "bundleId"])
+            : undefined) ??
           null,
         paymentSentAt:
           getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
@@ -4971,14 +5026,14 @@ export async function finalizeBuncheolCollected(
   }
 }
 
-// C2C 개최자 미입금 반려 — 입금 내역을 찾지 못한 "보냈어요"를 입금 대기로 되돌리고
-// 기한을 +24h 연장하며 참여자에게 재확인 안내가 발송된다 (docs/46 §4.5).
-export async function rejectParticipationPaymentSent(
+// 「보냈어요」 묶음 마킹 — 이체 1회에 요청 1회다. 슬롯마다 부르면 중간에 실패했을 때 묶음 안 슬롯
+// 상태가 갈려 개최자 입금확인(all-or-nothing)이 막힌다. 재요청은 서버가 멱등 처리한다.
+export async function requestBundlePaymentSent(
   accessToken: string,
-  participationId: string,
+  bundleId: string,
 ) {
   const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/reject-payment`,
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/payment-sent`,
     {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
@@ -4991,8 +5046,7 @@ export async function rejectParticipationPaymentSent(
   }
 }
 
-// C2C "보냈어요" 마킹 — 입금 후 참여자가 표시(AWAITING_PAYMENT → PAYMENT_SENT).
-// 서버가 멱등 처리하므로(docs/46 §4.2) 이미 마킹된 참여에 다시 호출해도 성공한다.
+// 묶음이 없는 참여(배포선 창에서 생긴 행)용 폴백. 신규 참여는 전부 묶음을 갖는다.
 export async function requestParticipationPaymentSent(
   accessToken: string,
   participationId: string,
@@ -5003,25 +5057,6 @@ export async function requestParticipationPaymentSent(
       credentials: "include",
       headers: getAuthHeaders(accessToken),
       method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
-
-// C2C "보냈어요" 마킹 철회 — 오마킹 셀프 수정(PAYMENT_SENT → AWAITING_PAYMENT 복귀).
-export async function revertParticipationPaymentSent(
-  accessToken: string,
-  participationId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "DELETE",
     },
   );
 
@@ -6644,4 +6679,46 @@ export async function requestAdminReceiptConfirmation(
   }>(response);
 
   return getAdminBulkResult(body);
+}
+
+// 묶음 「제외」 — 입금 기한이 지난 뒤에만 열린다. 서버가 기한·상태를 재검증하므로 화면 판정과
+// 갈리면 409 로 돌아온다 (BCH-111 모집중 · BCH-112 기한 전 · BCH-113 확정 슬롯 있음).
+export async function releaseBundle(accessToken: string, bundleId: string) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/release`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// 묶음 입금확인 — all-or-nothing. expectedSlotIds 는 화면에 보인 슬롯 집합이며 서버가 가진 것과
+// 다르면 409(BCH-115)로 거부한다. 개최자가 본 것과 확정되는 것을 같게 만드는 장치다.
+export async function confirmBundlePayment(
+  accessToken: string,
+  bundleId: string,
+  expectedSlotIds: string[],
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/confirm`,
+    {
+      body: JSON.stringify({ expectedSlotIds }),
+      credentials: "include",
+      headers: {
+        ...getAuthHeaders(accessToken),
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
 }

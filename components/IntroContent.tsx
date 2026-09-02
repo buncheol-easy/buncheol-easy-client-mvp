@@ -1094,7 +1094,7 @@ const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress
             </h2>
             {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다. */}
             <p className="mt-1 text-[13px] font-medium text-black/40">
-              {"참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조하고, 입금이 확인되지 않으면 '입금 못 찾음'으로 재확인을 요청할 수 있어요."}
+              {"참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조해 확인하고, 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."}
             </p>
           </div>
 

@@ -243,6 +243,9 @@ const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
+// 서버 상한(@Size(max = 20))과 같은 값. 화면은 안내용이고 최종 판정은 서버다.
+const maxSelectableMemberCount = 20;
+
 const checkoutDraftMaxAgeMs = 30 * 60 * 1000;
 
 // 접수처 검색 시트는 체크아웃에서 필요할 때만 로드한다 (카카오 지도 SDK 포함).
@@ -1286,10 +1289,13 @@ export function ProductDetail({
   function restoreCheckoutSelectionFromReturnOptions(
     returnOptions: CheckoutAddressReturnOption[],
   ) {
-    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전 세션에 다중 선택이 저장돼 있어도 1개만 복원한다.
+    // 배송지 시트를 다녀오면 선택 전체가 복원돼야 한다 — 잘라내면 자리 3개를 고른 사용자가
+    // 주소만 바꾸고 돌아왔는데 1자리로 줄고 총액도 함께 바뀐다.
+    // 단 다녀온 사이에 다중 선택이 닫혔으면(개최자가 성사 확정) 한 자리로 자른다 — 그대로 복원하면
+    // 확인 스텝까지 들어간 뒤 제출 버튼에서야 막히는데, 그 화면엔 선택을 줄일 UI가 없다.
     const restorableOptionIds = getRestorableCheckoutOptionIds(
       returnOptions,
-    ).slice(0, 1);
+    ).slice(0, canSelectMultipleMembers ? maxSelectableMemberCount : 1);
 
     if (restorableOptionIds.length === 0) {
       return false;
@@ -1728,6 +1734,12 @@ export function ProductDetail({
   // 받는다 — deadline(신청 마감)이 지났어도 열어둔다. 분철 CONFIRMED 후에는 서버가 차단.
   const isC2CCollectingProduct =
     isC2CProduct && isBuncheolPaymentCollectingStatus(productStatus);
+  // 자리를 여러 개 한 번에 잡는 것은 C2C 모집중 전용이다.
+  // · 추가 모집은 자리마다 별개 묶음·별개 이체·별개 기한이라 합산 안내가 거짓이 된다(서버도 BCH-060)
+  // · LEGACY 는 1인 1자리가 DB 유니크로 강제돼 있다
+  // · 코드 참여는 코드 하나가 자리 하나에 대응한다
+  const canSelectMultipleMembers =
+    isC2CProduct && isBuncheolRecruitingStatus(productStatus) && !isCodeCheckout;
   // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를,
   // C2C 입금 수집 중에는 기한이 지나도 빈 슬롯 즉시입금 신청이 열려 있으므로
   // 카운트다운의 "참여 마감" 대신 추가 신청 가능 문구를 보여준다.
@@ -2156,7 +2168,8 @@ export function ProductDetail({
 
     const restorableOptions =
       getCheckoutReturnOptionsFromState(checkoutReturnState);
-    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전 세션에 다중 선택이 저장돼 있어도 1개만 복원한다.
+    // 세션에 저장된 선택을 되살리되, 지금 다중 선택이 닫혀 있으면(LEGACY·추가 모집·코드 참여)
+    // 1개만 복원한다 — 여러 자리가 살아 돌아오면 제출 직전까지 갔다가 막힌다.
     const restorableOptionIds = auctionOptions
       .reduce<string[]>((optionIds, option) => {
         const isSelected = restorableOptions.some(
@@ -2180,7 +2193,7 @@ export function ProductDetail({
 
         return optionIds;
       }, [])
-      .slice(0, 1);
+      .slice(0, canSelectMultipleMembers ? maxSelectableMemberCount : 1);
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -2467,11 +2480,26 @@ export function ProductDetail({
     setBidAmounts((current) => {
       let nextAmounts: Record<string, string>;
 
+      const canAddToSelection =
+        canSelectMultipleMembers && option.requiresCode !== true;
+
       if (current[optionId] === "selected") {
         nextAmounts = { ...current };
         delete nextAmounts[optionId];
+      } else if (
+        canAddToSelection &&
+        Object.keys(current).length >= maxSelectableMemberCount
+      ) {
+        showProductToast(
+          `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
+        );
+        nextAmounts = current;
+      } else if (canAddToSelection) {
+        // 자리를 여러 개 잡으면 한 묶음이 된다 — 이체 1회 · 배송비 1회 · 택배 1개.
+        // ⚠️ 코드 자리는 선택 자체를 섞지 않는다. isCodeCheckout 은 현재 선택에서 파생되므로
+        // 여기서 안 막으면 일반 → 코드 순서로 눌렀을 때 함께 담긴다.
+        nextAmounts = { ...current, [optionId]: "selected" };
       } else {
-        // 참여 1건 = 멤버 1명(단일 선택 정책). 새 멤버를 선택하면 기존 선택을 해제한다.
         nextAmounts = { [optionId]: "selected" };
       }
 
@@ -2653,9 +2681,19 @@ export function ProductDetail({
       return;
     }
 
-    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전에서 저장된 다중 선택 복원 등 예외 경로를 방어한다.
-    if (submittedBids.length > 1) {
-      window.alert("멤버는 한 번에 1명씩 참여할 수 있어요. 참여할 멤버를 하나만 선택해 주세요.");
+    // 다중 선택이 열리지 않은 구간(코드 참여·추가 모집)에서 복원 등으로 여러 개가 들어온 경우 방어.
+    if (submittedBids.length > 1 && !canSelectMultipleMembers) {
+      window.alert(
+        "지금은 자리를 한 번에 하나씩만 신청할 수 있어요. 하나만 선택해 주세요.",
+      );
+      return;
+    }
+
+    // 선택 단계에서 이미 막지만, 세션 복원 등 다른 경로를 최종 방어한다.
+    if (submittedBids.length > maxSelectableMemberCount) {
+      window.alert(
+        `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
+      );
       return;
     }
 
@@ -2750,6 +2788,9 @@ export function ProductDetail({
         didRequestParticipation = true;
         const result = await participateBuncheol(accessToken, buncheolId, {
           buncheolMemberId: checkoutRequestItems[0].buncheolMemberId,
+          buncheolMemberIds: checkoutRequestItems.map(
+            (item) => item.buncheolMemberId,
+          ),
           shippingAddressId,
           participationCode: isCodeCheckout
             ? checkoutCodeInput.trim()
@@ -2766,7 +2807,11 @@ export function ProductDetail({
               : [];
 
         if (resultParticipationIds.length < checkoutRequestItems.length) {
-          throw new Error("참여 결과를 확인할 수 없어요.");
+          // 서버는 all-or-nothing 이라 정상 경로에서는 개수가 맞는다. 여기 오면 응답 해석이
+          // 어긋난 것이므로, 자리가 이미 잡혔을 수 있다는 사실을 함께 알린다.
+          throw new Error(
+            "신청 결과를 확인하지 못했어요. 「내 참여」에서 상태를 확인해 주세요.",
+          );
         }
 
         const firstParticipationId = resultParticipationIds[0] ?? "";
@@ -4292,7 +4337,9 @@ export function ProductDetail({
                               : isC2CProduct && !isC2CCollectingProduct
                                 ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
                                 : "참여하면 입금 계좌와 마감 시각이 안내돼요."
-                            : isC2CProduct
+                            : canSelectMultipleMembers
+                              ? "신청할 멤버를 선택해 주세요. 여러 자리를 골라 한 번에 신청할 수 있어요."
+                              : isC2CProduct
                             ? "신청할 멤버를 선택해 주세요. 여러 멤버에 각각 신청할 수 있어요."
                             : "참여할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                   </p>
@@ -4577,13 +4624,28 @@ export function ProductDetail({
                     </div>
                     )}
 
+                    {/* 자리를 여러 개 고른 경우에만 — 한 묶음이 된다는 사실과 실패 규칙을 미리 알린다. */}
+                    {selectedCheckoutItems.length > 1 ? (
+                      <p className="px-1 text-[12px] font-semibold leading-5 text-black/60">
+                        자리 {selectedCheckoutItems.length}개를 한 번에 신청해요.{" "}
+                        {isAdditionalC2CApplication
+                          ? "배송비는 첫 신청에 이미 포함돼 있어요."
+                          : "배송비는 한 번만 붙고 택배도 한 개로 와요."}
+                        <br />
+                        <span className="font-medium text-black/40">
+                          고른 자리 중 하나라도 먼저 팔리면 전체가 신청되지 않아요.
+                          그때는 다시 골라 주세요.
+                        </span>
+                      </p>
+                    ) : null}
+
                     <p className="px-1 text-[12px] font-medium leading-5 text-black/45">
                       {isCodeCheckout
                         ? "코드가 확인되면 바로 참여가 확정돼요. 입금 단계는 없어요."
                         : isC2CProduct && !isC2CCollectingProduct
                         ? "신청 단계에서는 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 드리고, 확정 전에는 언제든 무료로 취소할 수 있어요."
                         : isC2CCollectingProduct
-                          ? "신청하면 24시간 입금 기한이 정해져요. 기한 내에 입금하지 않으면 신청이 자동 취소돼요."
+                          ? "신청하면 24시간 입금 기한이 정해져요. 기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요."
                           : "참여하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 참여가 자동 취소돼요."}
                     </p>
                     {isC2CProduct ? (
@@ -4669,7 +4731,9 @@ export function ProductDetail({
                           </p>
                         </div>
                         <p className="mt-3 text-[12px] font-medium leading-5 text-white/60">
-                          마감 전까지 입금하지 않으면 자동 취소돼요.
+                          {isC2CProduct
+                            ? "기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요."
+                            : "마감 전까지 입금하지 않으면 자동 취소돼요."}
                         </p>
                       </div>
 
