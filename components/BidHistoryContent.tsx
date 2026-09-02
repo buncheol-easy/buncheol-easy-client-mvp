@@ -2908,12 +2908,15 @@ export function BidHistoryContent({
     const slots = [...unsortedSlots].sort((a, b) =>
       a.id.localeCompare(b.id, undefined, { numeric: true }),
     );
-    const head = slots[0];
     const isCancelled = slots.every((slot) => isBidRecordCancelled(slot));
     // 🔴 취소된 자리는 판정에서 뺀다. every 로 보면 「취소 1 + 확정 1」 묶음이 확정으로 안 잡혀
     // 이미 다 낸 묶음에 라임 배너 「한 번에 보내요」와 「한 번에 보낼 돈」이 뜬다.
     // (staging 묶음 137·87 이 실제로 그 모양이다.) 금액 집계와 같은 축으로 맞춘다.
     const livingSlots = slots.filter((slot) => !isBidRecordCancelled(slot));
+    // 🔴 대표도 살아 있는 자리에서 뽑는다 — 취소분이 id 최솟값이면 취소 배너·취소 불가 안내가
+    // 전액 입금된 묶음에 뜨고(cancellationNotice), 진행바 인덱스가 -1 이라 다 끝난 묶음의
+    // 진행바가 통째로 빈다. 금액축(amountSlots)·배너축(isPaymentConfirmed)과 축을 맞춘다.
+    const head = livingSlots[0] ?? slots[0];
     const isPaymentConfirmed =
       livingSlots.length > 0 &&
       livingSlots.every((slot) => isBidRecordPaymentConfirmed(slot));
