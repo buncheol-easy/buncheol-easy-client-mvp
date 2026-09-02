@@ -1567,11 +1567,9 @@ export function HostedBuncheolManage({
                   }[] = [];
 
                   for (const slot of bundle.slots) {
-                    // 🔴 입금이 확인된 자리의 배송만 그린다. 배송 스냅샷은 <b>신청 시점</b>에 만들어지므로
-                    // 게이트가 없으면 아직 한 푼도 안 낸 참여자의 지점명·수령인 전화번호가 개최자에게
-                    // 노출된다. 확정 판정은 묶음 전체(every)가 아니라 <b>그 배송을 문 슬롯</b> 기준이다 —
-                    // 전체로 보면 부분 확정 묶음(확정 1 + 미입금 1)에서 이미 확정된 자리의 운송장
-                    // 입력칸까지 사라져 개최자가 발송을 못 한다.
+                    // 배송 스냅샷은 신청 시점에 생기므로, 확정 전에는 지점명·연락처를 그리지 않는다.
+                    // 판정은 묶음 전체가 아니라 배송을 문 슬롯 기준 — 전체로 보면 부분 확정 묶음에서
+                    // 이미 확정된 자리의 운송장 입력칸까지 사라진다.
                     const isSlotConfirmed =
                       isParticipationConfirmedStatus(slot.status) ||
                       Boolean(slot.confirmedAt);

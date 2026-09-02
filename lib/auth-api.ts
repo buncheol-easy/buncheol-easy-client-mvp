@@ -5026,7 +5026,6 @@ export async function finalizeBuncheolCollected(
   }
 }
 
-
 // 「보냈어요」 묶음 마킹 — 이체 1회에 요청 1회다. 슬롯마다 부르면 중간에 실패했을 때 묶음 안 슬롯
 // 상태가 갈려 개최자 입금확인(all-or-nothing)이 막힌다. 재요청은 서버가 멱등 처리한다.
 export async function requestBundlePaymentSent(
