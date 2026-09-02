@@ -2923,7 +2923,6 @@ export function BidHistoryContent({
     const isPaymentSent = slots.some((slot) =>
       isParticipationPaymentSentStatus(slot.participationStatus),
     );
-    const isOverdue = slots.some((slot) => isBidRecordPaymentOverdue(slot, now));
     const buncheolChip = getBidRecordBuncheolChip(head, now);
     // 취소 사유·취소 불가 사유는 묶음 전 자리가 같은 값이라 카드당 하나로 접는다. 빼면 취소된
     // 묶음에서 환불 안내가 통째로 사라지고, 「보냈어요」 뒤에는 취소 버튼만 말없이 없어진다.
@@ -2989,26 +2988,6 @@ export function BidHistoryContent({
         className="overflow-hidden rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
         key={getBidRecordBundleKey(head)}
       >
-        <div
-          className={`-mx-4 -mt-4 mb-3.5 px-4 py-2 text-[11.5px] font-semibold leading-5 tracking-[-0.02em] ${
-            isCancelled || isPaymentConfirmed
-              ? "bg-[#f1f1f1] text-black/45"
-              : isOverdue
-                ? "bg-black text-[#D7FF5F]"
-                : "bg-[#D7FF5F] text-black"
-          }`}
-        >
-          {isCancelled
-            ? `취소된 묶음 · 자리 ${slots.length}개`
-            : isPaymentConfirmed
-              ? `묶음 · 자리 ${amountSlots.length}개 · 택배 1개`
-              : isPaymentSent
-                ? "보냈어요 · 개최자가 확인 중이에요"
-                : isOverdue
-                  ? "기한 지남 · 아직 보낼 수 있어요"
-                  : `묶음 · 한 번에 보내요 · 자리 ${amountSlots.length}개`}
-        </div>
-
         <div className="flex items-start gap-3">
           <div className="flex w-14 shrink-0 flex-col items-center gap-1.5">
             <Link
