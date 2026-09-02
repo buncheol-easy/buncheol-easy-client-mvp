@@ -1291,9 +1291,11 @@ export function ProductDetail({
   ) {
     // 배송지 시트를 다녀오면 선택 전체가 복원돼야 한다 — 잘라내면 자리 3개를 고른 사용자가
     // 주소만 바꾸고 돌아왔는데 1자리로 줄고 총액도 함께 바뀐다.
+    // 단 다녀온 사이에 다중 선택이 닫혔으면(개최자가 성사 확정) 한 자리로 자른다 — 그대로 복원하면
+    // 확인 스텝까지 들어간 뒤 제출 버튼에서야 막히는데, 그 화면엔 선택을 줄일 UI가 없다.
     const restorableOptionIds = getRestorableCheckoutOptionIds(
       returnOptions,
-    ).slice(0, maxSelectableMemberCount);
+    ).slice(0, canSelectMultipleMembers ? maxSelectableMemberCount : 1);
 
     if (restorableOptionIds.length === 0) {
       return false;
@@ -2166,7 +2168,8 @@ export function ProductDetail({
 
     const restorableOptions =
       getCheckoutReturnOptionsFromState(checkoutReturnState);
-    // 참여 1건 = 멤버 1명(단일 선택 정책). 구버전 세션에 다중 선택이 저장돼 있어도 1개만 복원한다.
+    // 세션에 저장된 선택을 되살리되, 지금 다중 선택이 닫혀 있으면(LEGACY·추가 모집·코드 참여)
+    // 1개만 복원한다 — 여러 자리가 살아 돌아오면 제출 직전까지 갔다가 막힌다.
     const restorableOptionIds = auctionOptions
       .reduce<string[]>((optionIds, option) => {
         const isSelected = restorableOptions.some(
@@ -2190,7 +2193,7 @@ export function ProductDetail({
 
         return optionIds;
       }, [])
-      .slice(0, maxSelectableMemberCount);
+      .slice(0, canSelectMultipleMembers ? maxSelectableMemberCount : 1);
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);

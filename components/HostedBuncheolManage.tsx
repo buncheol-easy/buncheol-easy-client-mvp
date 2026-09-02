@@ -1564,12 +1564,21 @@ export function HostedBuncheolManage({
                       BuncheolManagementParticipant["delivery"]
                     >;
                     ownerId: string;
-                    ownerConfirmed: boolean;
                   }[] = [];
 
                   for (const slot of bundle.slots) {
+                    // 🔴 입금이 확인된 자리의 배송만 그린다. 배송 스냅샷은 <b>신청 시점</b>에 만들어지므로
+                    // 게이트가 없으면 아직 한 푼도 안 낸 참여자의 지점명·수령인 전화번호가 개최자에게
+                    // 노출된다. 확정 판정은 묶음 전체(every)가 아니라 <b>그 배송을 문 슬롯</b> 기준이다 —
+                    // 전체로 보면 부분 확정 묶음(확정 1 + 미입금 1)에서 이미 확정된 자리의 운송장
+                    // 입력칸까지 사라져 개최자가 발송을 못 한다.
+                    const isSlotConfirmed =
+                      isParticipationConfirmedStatus(slot.status) ||
+                      Boolean(slot.confirmedAt);
+
                     if (
                       !slot.delivery?.deliveryId ||
+                      !isSlotConfirmed ||
                       bundleDeliveries.some(
                         (entry) =>
                           entry.delivery.deliveryId === slot.delivery?.deliveryId,
@@ -1581,12 +1590,6 @@ export function HostedBuncheolManage({
                     bundleDeliveries.push({
                       delivery: slot.delivery,
                       ownerId: slot.participationId,
-                      // 🔴 확정 판정은 <b>그 배송을 문 슬롯</b> 기준이다. 묶음 전체(every)로 게이트하면
-                      // 부분 확정 묶음(확정 1 + 미입금 1)에서 이미 확정된 자리의 운송장 입력칸까지
-                      // 사라진다 — 개최자가 발송을 못 한다.
-                      ownerConfirmed:
-                        isParticipationConfirmedStatus(slot.status) ||
-                        Boolean(slot.confirmedAt),
                     });
                   }
 
@@ -1707,8 +1710,8 @@ export function HostedBuncheolManage({
                             const hasTracking = Boolean(
                               entry.delivery.trackingNumber,
                             );
+                            // 자리 확정 여부는 위에서 이미 걸렀으므로 분철 확정만 남는다.
                             const canRegisterTracking =
-                              entry.ownerConfirmed &&
                               detail.status === "CONFIRMED";
                             const isRegistering =
                               pendingC2CAction === `tracking:${entry.ownerId}`;
@@ -1756,9 +1759,7 @@ export function HostedBuncheolManage({
                                       placeholder={
                                         canRegisterTracking
                                           ? "운송장 번호 입력"
-                                          : entry.ownerConfirmed
-                                            ? "분철 진행 확정 후 등록 가능"
-                                            : "입금 확인 후 등록 가능"
+                                          : "분철 진행 확정 후 등록 가능"
                                       }
                                       value={trackingInput}
                                     />
