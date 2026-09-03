@@ -1354,17 +1354,20 @@ function getBidRecordFromParticipation(
   // 서버 bidAmount 는 배송비 포함 입금 총액이다. shippingFee 를 빼 상품(멤버) 금액으로 환산해
   // amount 에 담고, 총액은 paymentAmount 로 유지한다. shippingFee 를 안 내려주는 구 응답이면
   // 분리할 수 없으므로 총액을 그대로 둔다.
+
   const serverShippingFee = participation.shippingFee;
   const serverItemAmount =
     typeof serverShippingFee === "number"
       ? Math.max(participation.bidAmount - serverShippingFee, 0)
       : participation.bidAmount;
 
+  // 🔴 금액 세 칸에 세션 캐시를 섞지 않는다 — 배송비 귀속은 서버가 읽는 시점의 살아 있는 자리로 정하므로
+  // 신청 순간 굳힌 값이 이기면 그 자리가 취소된 뒤 총액만 옛 값으로 남는다.
   return {
     courier: shippingMethods[0]?.name,
     shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
     id: participation.participationId,
-    amount: cachedPayment?.bidAmount ?? serverItemAmount,
+    amount: serverItemAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
     imageUrl:
       participation.thumbnailUrl ??
@@ -1391,7 +1394,6 @@ function getBidRecordFromParticipation(
     paymentRejectedAt: participation.paymentRejectedAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
-      cachedPayment?.paymentAmount ??
       (typeof serverShippingFee === "number" ? participation.bidAmount : null),
     paymentDueAt:
       participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
@@ -1403,7 +1405,7 @@ function getBidRecordFromParticipation(
     rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
-    shippingFee: participation.shippingFee ?? cachedPayment?.shippingFee ?? null,
+    shippingFee: participation.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
     // 개최자 계좌는 세션 캐시에 저장하지 않으므로(v3) 서버 응답에만 의존한다.
     hostBankAccount: participation.hostBankAccount ?? null,
@@ -2910,12 +2912,13 @@ export function BidHistoryContent({
     );
     const isCancelled = slots.every((slot) => isBidRecordCancelled(slot));
     // 🔴 취소된 자리는 판정에서 뺀다. every 로 보면 「취소 1 + 확정 1」 묶음이 확정으로 안 잡혀
-    // 이미 다 낸 묶음에 라임 배너 「한 번에 보내요」와 「한 번에 보낼 돈」이 뜬다.
+    // 이미 다 낸 묶음의 금액 블록에 「한 번에 보낼 돈」 라벨이 뜬다.
     // (staging 묶음 137·87 이 실제로 그 모양이다.) 금액 집계와 같은 축으로 맞춘다.
     const livingSlots = slots.filter((slot) => !isBidRecordCancelled(slot));
+    const isOverdue = slots.some((slot) => isBidRecordPaymentOverdue(slot, now));
     // 🔴 대표도 살아 있는 자리에서 뽑는다 — 취소분이 id 최솟값이면 취소 배너·취소 불가 안내가
     // 전액 입금된 묶음에 뜨고(cancellationNotice), 진행바 인덱스가 -1 이라 다 끝난 묶음의
-    // 진행바가 통째로 빈다. 금액축(amountSlots)·배너축(isPaymentConfirmed)과 축을 맞춘다.
+    // 진행바가 통째로 빈다. 금액축(amountSlots)·금액 라벨축(isPaymentConfirmed)과 축을 맞춘다.
     const head = livingSlots[0] ?? slots[0];
     const isPaymentConfirmed =
       livingSlots.length > 0 &&
@@ -2923,7 +2926,6 @@ export function BidHistoryContent({
     const isPaymentSent = slots.some((slot) =>
       isParticipationPaymentSentStatus(slot.participationStatus),
     );
-    const isOverdue = slots.some((slot) => isBidRecordPaymentOverdue(slot, now));
     const buncheolChip = getBidRecordBuncheolChip(head, now);
     // 취소 사유·취소 불가 사유는 묶음 전 자리가 같은 값이라 카드당 하나로 접는다. 빼면 취소된
     // 묶음에서 환불 안내가 통째로 사라지고, 「보냈어요」 뒤에는 취소 버튼만 말없이 없어진다.
@@ -2989,26 +2991,6 @@ export function BidHistoryContent({
         className="overflow-hidden rounded-[1rem] border border-black/[0.08] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.035)] transition-colors hover:bg-[#FBFCF7]"
         key={getBidRecordBundleKey(head)}
       >
-        <div
-          className={`-mx-4 -mt-4 mb-3.5 px-4 py-2 text-[11.5px] font-semibold leading-5 tracking-[-0.02em] ${
-            isCancelled || isPaymentConfirmed
-              ? "bg-[#f1f1f1] text-black/45"
-              : isOverdue
-                ? "bg-black text-[#D7FF5F]"
-                : "bg-[#D7FF5F] text-black"
-          }`}
-        >
-          {isCancelled
-            ? `취소된 묶음 · 자리 ${slots.length}개`
-            : isPaymentConfirmed
-              ? `묶음 · 자리 ${amountSlots.length}개 · 택배 1개`
-              : isPaymentSent
-                ? "보냈어요 · 개최자가 확인 중이에요"
-                : isOverdue
-                  ? "기한 지남 · 아직 보낼 수 있어요"
-                  : `묶음 · 한 번에 보내요 · 자리 ${amountSlots.length}개`}
-        </div>
-
         <div className="flex items-start gap-3">
           <div className="flex w-14 shrink-0 flex-col items-center gap-1.5">
             <Link
@@ -3037,6 +3019,14 @@ export function BidHistoryContent({
             >
               {buncheolChip.label}
             </span>
+            {/* 자리 1개 카드와 같은 칩이다. 진행바는 C2C 기한 경과를 반영하지 않고(만료 판정이
+                LEGACY 전용) 분철 칩은 분철 축만 보므로, 이걸 빼면 묶음 카드만 "개최자가 취소할
+                수 있는 구간" 에 들어온 것을 목록에서 알리지 못한다. */}
+            {isOverdue ? (
+              <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
+                기한 지남
+              </span>
+            ) : null}
           </div>
           <div className="min-w-0 flex-1">
             <Link
