@@ -1453,6 +1453,18 @@ function isBuncheolDetailInaccessible(bid: BidRecord) {
   );
 }
 
+/** 내 참여 목록을 서버에서 다시 읽어 카드로 만든다. 모듈 스코프 — 폴링 effect 의 deps 에 걸리지 않게. */
+async function fetchBidRecords(accessToken: string): Promise<BidRecord[]> {
+  const participations = await requestMyParticipations(accessToken);
+  const buncheolDetailCache: BuncheolDetailCache = new Map();
+
+  return Promise.all(
+    participations.map((participation) =>
+      getBidRecordWithShippingData(accessToken, participation, buncheolDetailCache),
+    ),
+  );
+}
+
 async function getBidRecordWithShippingData(
   accessToken: string,
   participation: MyParticipation,
@@ -1720,6 +1732,10 @@ export function BidHistoryContent({
   const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
   const addressSheetCloseTimerRef = useRef<number | null>(null);
   const paymentStoreTypeRequestIdRef = useRef(0);
+  // 목록 전체를 갈아치우는 writer 가 둘이다(폴링 · 취소 후 재조회). 응답 도착 순서가
+  // 보장되지 않아, 취소 직전 출발한 폴링이 늦게 도착하면 낡은 배송비가 다시 깔린다.
+  // 세대를 올려 늦게 온 응답을 버린다 — paymentStoreTypeRequestIdRef 와 같은 방식.
+  const bidRecordsGenerationRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -2174,20 +2190,13 @@ export function BidHistoryContent({
         return;
       }
 
-      try {
-        const participations = await requestMyParticipations(accessToken);
-        const buncheolDetailCache: BuncheolDetailCache = new Map();
-        const bidRecords = await Promise.all(
-          participations.map((participation) =>
-            getBidRecordWithShippingData(
-              accessToken,
-              participation,
-              buncheolDetailCache,
-            ),
-          ),
-        );
+      const generation = bidRecordsGenerationRef.current;
 
-        if (isActive) {
+      try {
+        const bidRecords = await fetchBidRecords(accessToken);
+
+        // 그 사이 취소 후 재조회가 세대를 올렸으면 이 응답은 낡았다 — 버린다.
+        if (isActive && bidRecordsGenerationRef.current === generation) {
           setApiBidRecords(bidRecords);
         }
       } catch {
@@ -3466,22 +3475,42 @@ export function BidHistoryContent({
 
     try {
       await cancelParticipation(accessToken, bid.id);
-      setApiBidRecords((records) =>
-        records
-          ? records.map((record) =>
-              record.id === bid.id
-                ? {
-                    ...record,
-                    participationStatus: "CANCELLED",
-                    cancelReason: USER_CANCELLED_REASON,
-                  }
-                : record,
-            )
-          : records,
-      );
+      const cancelPatch = (records: BidRecord[]) =>
+        records.map((record) =>
+          record.id === bid.id
+            ? {
+                ...record,
+                participationStatus: "CANCELLED",
+                cancelReason: USER_CANCELLED_REASON,
+              }
+            : record,
+        );
+
+      setApiBidRecords((records) => (records ? cancelPatch(records) : records));
       setHistoryMessage("");
       // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
+      // ⚠️ 재조회보다 <b>먼저</b> 알린다 — 재조회는 참여 건마다 상세를 더 부를 수 있어 수 초가
+      // 걸리고, 그동안 토스트가 안 뜨면 사용자가 다시 누른다.
       showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
+
+      // 🔴 배송비는 "살아 있는 자리 중 가장 먼저 만들어진 것" 이 진다 — 그 판정을 서버가 읽는
+      // 시점에 하므로, 취소하면 남은 자리의 배송비가 바뀐다. 다시 묻지 않으면 남은 카드가
+      // 배송비 0원인 채로 남아 참여자가 틀린 금액을 이체한다.
+      const generation = (bidRecordsGenerationRef.current += 1);
+
+      try {
+        const records = await fetchBidRecords(accessToken);
+
+        if (bidRecordsGenerationRef.current === generation) {
+          // ⚠️ 낙관 패치를 다시 얹는다. 서버가 아직 취소를 반영하지 않은 응답을 주면(읽기 지연)
+          // 방금 지운 카드가 되살아나, "취소했어요" 토스트와 살아 있는 취소 버튼이 같이 뜬다.
+          setApiBidRecords(cancelPatch(records));
+        }
+      } catch {
+        // 취소 자체는 이미 성공했다. 여기서 토스트를 띄우면 "취소했어요" 와 "실패했어요" 가
+        // 같이 떠 혼란스럽다. ⚠️ 폴링이 항상 따라잡지는 않는다 — shouldRefreshPaymentState 가
+        // 거짓이면(남은 카드가 전부 확정·레거시) 폴링 자체가 돌지 않아 새로고침까지 남는다.
+      }
     } catch (error: unknown) {
       const failureMessage =
         error instanceof Error

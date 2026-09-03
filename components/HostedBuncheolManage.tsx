@@ -261,7 +261,9 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
 
-function getReleaseBlockedReason(releasability: string | null | undefined) {
+// ⚠️ 인자를 optional 로 두지 않는다. undefined 를 받으면 호출부가 「막힌 자리 없음」을 넘겨도
+// default 문구가 뜬다. null 은 서버가 판정을 못 준 경우(구 응답·미연결 행)라 받아야 한다.
+function getReleaseBlockedReason(releasability: string | null) {
   switch (releasability) {
     case "RECRUITING":
       return "모집 중에는 뺄 수 없어요.";
@@ -271,6 +273,8 @@ function getReleaseBlockedReason(releasability: string | null | undefined) {
       return "입금 확인된 자리가 있어 뺄 수 없어요.";
     case "ALREADY_CLOSED":
       return "이미 정리된 참여예요.";
+    // 호출부가 막힌 자리가 있을 때만 부르므로 지금은 도달하지 않는다. 방어용으로 남긴다 —
+    // 다른 호출부가 생겼을 때 RELEASABLE 이 default 문구로 떨어지면 이 PR 의 버그가 재발한다.
     case "RELEASABLE":
       return null;
     // 판정이 없는 구 응답 — 버튼은 흐려 두되 사유를 단정하지 않는다.
@@ -1535,10 +1539,16 @@ export function HostedBuncheolManage({
                     (slot) => slot.releasability !== "RELEASABLE",
                   );
                   const canRelease = !blockedSlot && Boolean(bundle.bundleId);
-                  const releaseBlockedReason = bundle.bundleId
-                    ? getReleaseBlockedReason(blockedSlot?.releasability)
-                    : // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
-                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.";
+                  // 🔴 막힌 자리가 있을 때만 사유를 만든다 — 「막힌 자리 없음」과 「판정값 없음」이
+                  // 둘 다 undefined 라, 그냥 넘기면 제외 가능한 묶음에도 default 문구가 붙는다.
+                  const releaseBlockedReason = !bundle.bundleId
+                    ? // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
+                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요."
+                    : blockedSlot
+                      ? // 슬롯 필드는 optional 이라 undefined 가 올 수 있다. 「판정값 없음」은
+                        // null 로 명시해 넘긴다 — 그게 default 문구가 나와야 하는 유일한 경우다.
+                        getReleaseBlockedReason(blockedSlot.releasability ?? null)
+                      : null;
                   const isBundleConfirming =
                     pendingC2CAction === `confirm:${bundle.key}`;
                   const isBundleReleasing =
