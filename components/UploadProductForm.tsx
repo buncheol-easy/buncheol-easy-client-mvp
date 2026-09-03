@@ -3061,7 +3061,11 @@ export function UploadProductForm({
                   )}
                 {targetMembers.length > 0 ? (
                   <div ref={registerSubmitField("minHeadcount")}>
-                    <label className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
+                    {/* 🔴 <label> 로 감싸지 마라. htmlFor 없는 label 은 안의 첫 labelable 요소와 짝지어지고,
+                        여기서 그건 「−」 버튼이라 카드 아무 데나 눌러도 숫자가 줄어든다(실측: 잘못 「−」가 되는
+                        면적이 버튼 본체의 21배). 숫자는 input 이 아니라 텍스트라 라벨 대상 자체가 없고,
+                        두 버튼은 각자 aria-label 을 갖고 있어 label 을 없애도 잃는 게 없다. */}
+                    <div className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
                       <span className="text-[13px] font-semibold text-black/45">
                         최소 진행 인원
                       </span>
@@ -3100,7 +3104,7 @@ export function UploadProductForm({
                         <PlusIcon />
                       </button>
                       </div>
-                    </label>
+                    </div>
                     {renderSubmitFieldError("minHeadcount")}
                   </div>
                 ) : null}
