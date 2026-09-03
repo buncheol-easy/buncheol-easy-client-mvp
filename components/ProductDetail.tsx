@@ -30,6 +30,7 @@ import {
   type BankAccountInfo,
   type BuncheolManagementOption,
   type CvsStore,
+  type RequestedShippingAddress,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
 import { PRODUCT_ARTIST_ENTRY_INDEX_KEY } from "@/lib/artist-browse";
@@ -1175,6 +1176,12 @@ export function ProductDetail({
   const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
     product.openChatUrl ?? null,
   );
+  // 상속 배송지도 같은 이유로 로컬에 둔다 — prop 은 마운트 시점 응답이라 신청해도 갱신되지 않고,
+  // 그러면 "첫 신청과 묶인다" 판정만 켜지고 주소는 안 뜨는 어긋난 화면이 된다.
+  const [inheritedShippingFromApi, setInheritedShippingFromApi] =
+    useState<RequestedShippingAddress | null>(
+      product.myInheritedShippingAddress ?? null,
+    );
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -2060,8 +2067,14 @@ export function ProductDetail({
   // 입금수집 화면으로 보이거나, 다른 분철로 넘어갔을 때 앞 분철의 상태가 남는다.
   useEffect(() => {
     setOpenChatUrlFromApi(product.openChatUrl ?? null);
+    setInheritedShippingFromApi(product.myInheritedShippingAddress ?? null);
     setStatusFromApi(null);
-  }, [product.id, product.openChatUrl, product.status]);
+  }, [
+    product.id,
+    product.myInheritedShippingAddress,
+    product.openChatUrl,
+    product.status,
+  ]);
 
   useEffect(() => {
     setAuctionOptions(product.options);
@@ -2361,6 +2374,9 @@ export function ProductDetail({
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
       setIsHostedByMeFromApi(isHosted);
       setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
+      setInheritedShippingFromApi(
+        refreshedProduct.myInheritedShippingAddress ?? null,
+      );
       // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
       setAuctionOptions(refreshedProduct.options);
@@ -4491,16 +4507,28 @@ export function ProductDetail({
                           {/* docs/46 §4.7-A1 의 배송지 스냅샷 강제는 이제 <b>성사 확정 전</b> 재신청에만
                               해당한다 — 확정 뒤 추가 모집은 새 묶음이라 배송지를 다시 고른다. 상속 구간에서만
                               현재 선택값 대신 문구로 대체한다(선택값이 실제 배송지와 다를 수 있으므로). */}
+                          {/* 상속 구간에서는 서버가 준 <b>그 묶음의 실제 주소</b>를 보여준다 — 어떤 배송지로
+                              신청했는지 잊었을 수 있어서다. 서버가 값을 못 주면(옛 응답·주소 삭제) 기존 문구로
+                              떨어지되, 선택 UI 는 되살리지 않는다 — 고르게 해 봐야 서버가 거부한다. */}
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {isAdditionalC2CApplication
-                              ? "첫 신청 때 선택한 배송지"
+                              ? inheritedShippingFromApi
+                                ? `${getConvenienceStoreLabel(inheritedShippingFromApi.storeType)} ${getDeliveryAddressDisplayBranchName(
+                                    {
+                                      branchName:
+                                        inheritedShippingFromApi.storeName,
+                                      storeType:
+                                        inheritedShippingFromApi.storeType,
+                                    },
+                                  )}`
+                                : "첫 신청 때 선택한 배송지"
                               : checkoutDeliveryAddress
                                 ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
                                 : "등록된 배송지 없음"}
                           </p>
                           <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
                             {isAdditionalC2CApplication
-                              ? "첫 신청 배송지로 함께 배송돼요."
+                              ? "첫 신청 배송지로 함께 배송돼요. 변경할 수 없어요."
                               : checkoutDeliveryAddress?.address ??
                                 "배송지를 등록해 주세요."}
                           </p>

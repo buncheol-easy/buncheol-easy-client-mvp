@@ -54,6 +54,7 @@ import {
   type BankAccountInfo,
   type MyHostedBuncheol,
   type MyParticipation,
+  type RequestedShippingAddress,
   type ShippingFeePaybackInfo,
 } from "@/lib/auth-api";
 import {
@@ -578,6 +579,8 @@ type BidRecord = {
   // 필드가 없는 구 응답이면 null.
   cancellability?: string | null;
   shippingAddress?: DeliveryAddress | null;
+  // 이 참여가 속한 묶음의 배송지(server#178). 배송 스냅샷과 달리 입금확인 전에도 온다.
+  requestedShippingAddress?: RequestedShippingAddress | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
@@ -1405,6 +1408,8 @@ function getBidRecordFromParticipation(
     rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
+    // ⚠️ 여기에는 캐시 폴백을 붙이지 않는다 — 캐시에 없는 값이고, 붙일 곳도 아니다.
+    requestedShippingAddress: participation.requestedShippingAddress ?? null,
     shippingFee: participation.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
     // 개최자 계좌는 세션 캐시에 저장하지 않으므로(v3) 서버 응답에만 의존한다.
@@ -1853,17 +1858,23 @@ export function BidHistoryContent({
           availablePaymentStoreTypes.includes(address.storeType),
         )
       : prioritizedDeliveryAddresses;
-  const selectedEligiblePaymentAddress =
-    eligiblePaymentAddresses.find(
-      (address) => address.id === selectedPaymentAddressId,
-    ) ?? null;
-  const lockedPaymentDeliveryAddress =
-    selectedPaymentBid?.shippingAddress ?? null;
-  const paymentDeliveryAddress =
-    lockedPaymentDeliveryAddress ??
-    selectedEligiblePaymentAddress ??
-    eligiblePaymentAddresses[0] ??
-    null;
+  // 🔴 근거는 <b>서버가 준 값뿐</b>이다. 없으면 "확인 중" 으로 둔다 — 이 자리엔 「배송지 고정 ·
+  // 변경 불가」 라벨이 붙어 있어서, 유저의 배송지 목록으로 채우면 <b>실제로 가지 않을 주소를 확신에
+  // 차서</b> 보여주게 된다. 정보가 없는 것보다 나쁘다.
+  //
+  // 두 출처 다 서버 값이라 이건 폴백이 아니다 — 입금확인 뒤에는 배송 스냅샷(shippingAddress)이 정본이고,
+  // 그 전에는 묶음 배송지(requestedShippingAddress)가 정본이다 (server#178).
+  const paymentDeliveryAddress: Pick<
+    DeliveryAddress,
+    "branchName" | "storeType"
+  > | null = selectedPaymentBid?.shippingAddress
+    ? selectedPaymentBid.shippingAddress
+    : selectedPaymentBid?.requestedShippingAddress
+      ? {
+          branchName: selectedPaymentBid.requestedShippingAddress.storeName,
+          storeType: selectedPaymentBid.requestedShippingAddress.storeType,
+        }
+      : null;
   // 🔴 시트가 보여주는 금액은 <b>묶음 합계</b>여야 한다 — 이체가 한 번이기 때문이다.
   // ⚠️ 액션 대상과 금액 대상은 다르다 — 액션은 서버 CAS 가 옮길 자리(AWAITING 만), 금액은 그 이체에
   // 들어간 자리다. 같은 함수를 쓰면 마킹 후 목록이 비어 총액이 한 자리로 떨어진다.
@@ -2790,7 +2801,9 @@ export function BidHistoryContent({
     const returnState: AddressReturnState = {
       source: "bids",
       bidId: selectedPaymentBidId,
-      addressId: selectedPaymentAddressId ?? paymentDeliveryAddress?.id ?? null,
+      // 표시용 묶음 배송지에는 id 가 없다(server#178). 유저가 실제로 고른 것만 복원 대상이다 —
+      // 기본 배송지 id 를 대신 넣으면 주소 추가 후 엉뚱한 선택으로 복귀한다.
+      addressId: selectedPaymentAddressId,
     };
 
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
@@ -4889,9 +4902,9 @@ export function BidHistoryContent({
               {eligiblePaymentAddresses.map((address) => {
                 const isDefault =
                   address.id === defaultAddressIds[address.storeType];
-                const isSelected =
-                  address.id ===
-                  (selectedPaymentAddressId ?? paymentDeliveryAddress?.id);
+                // 고른 것이 없으면 아무것도 선택 표시하지 않는다 — 「변경 불가」 배송지를 고르는
+                // 시트에서 기본 배송지를 미리 칠하면 그게 갈 주소인 것처럼 보인다.
+                const isSelected = address.id === selectedPaymentAddressId;
 
                 return (
                   <div

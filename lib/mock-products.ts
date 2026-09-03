@@ -1,3 +1,4 @@
+import type { ConvenienceStoreType } from "@/lib/mock-delivery-addresses";
 import type { ProductCardItem } from "@/components/ProductCard";
 
 export type ProductOption = {
@@ -42,6 +43,12 @@ export type ProductDetailItem = ProductCardItem & {
   flowType?: string | null;
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
   openChatUrl?: string | null;
+  // 자리를 더 신청하면 상속될 배송지(server#178). 상속 구간이 아니거나 못 읽으면 null.
+  // ⚠️ 이 값은 마운트 시점에 굳는다 — 화면은 재조회로 덮는 로컬 상태를 읽어야 한다.
+  myInheritedShippingAddress?: {
+    storeName: string;
+    storeType: ConvenienceStoreType;
+  } | null;
   imageUrl?: string;
   imageUrls?: string[];
   /** 등록 순 이미지 목록(id·대표 여부 포함). 대표사진이 첫 번째가 아닐 수 있다. */

@@ -367,6 +367,11 @@ export type BuncheolDetail = BuncheolSummary & {
   minHeadcount?: number | null;
   isHostedByMe?: boolean;
   members: BuncheolMember[];
+  // 자리를 더 신청하면 첫 신청의 묶음을 재사용하는가(server#178). 참이면 배송지 선택 UI 를 감춘다.
+  // ⚠️ prop 은 마운트 시점 값이라 굳는다 — 화면은 재조회 결과로 덮는 로컬 상태를 읽어야 한다.
+  myShippingInheritanceApplies?: boolean;
+  // 그때 상속될 배송지. applies 가 참인데 이 값이 null 이면 "확인 중" 으로 그린다(선택 UI 를 되살리지 말 것).
+  myInheritedShippingAddress?: RequestedShippingAddress | null;
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
   openChatUrl?: string | null;
   purchaseSite?: string;
@@ -525,6 +530,9 @@ export type MyParticipation = {
   // 두 의미로 이미 쓰이고 있어, 여기 합류시키면 어느 쪽인지 읽어봐야 알 수 있다.
   refundHolder?: string | null;
   shippingAddress?: DeliveryAddress | null;
+  // 이 참여가 속한 묶음의 배송지(server#178). shippingAddress(배송 스냅샷)와 달리 <b>입금확인 전에도</b> 온다.
+  // ⚠️ 없으면 null 이다 — 유저 기본 배송지로 채우지 마라. 이 값이 붙는 자리엔 「변경 불가」 라벨이 있다.
+  requestedShippingAddress?: RequestedShippingAddress | null;
   shippingFee?: number | null;
   shippingOptions?: BuncheolShippingOption[];
   trackingNumber?: string | null;
@@ -1470,6 +1478,41 @@ function getShippingAddressList(body: unknown): unknown[] {
   ];
 
   return candidates.find(Array.isArray) ?? [];
+}
+
+// 묶음 배송지 — 서버가 <b>표시용으로만</b> 내려주는 값(server#178). 택배 1개 = 묶음 1개라
+// 그 묶음의 모든 자리가 같은 주소로 간다.
+//
+// 🔴 이 값을 DeliveryAddress 로 만들지 마라. id 가 없기도 하지만, 더 중요한 이유는 이 값이 붙는 자리에
+// 「배송지 고정 · 변경 불가」 라벨이 있다는 것이다 — 없다고 유저의 배송지 목록으로 채우면 실제로 가지
+// 않을 주소를 확신에 차서 보여주게 된다. 없으면 없는 대로 null 을 흘려 화면이 "확인 중" 으로 그린다.
+export type RequestedShippingAddress = {
+  storeType: ConvenienceStoreType;
+  storeName: string;
+};
+
+function getRequestedShippingAddressFromRecord(
+  value: unknown,
+): RequestedShippingAddress | null {
+  const data = getNestedData(value);
+
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  // 서버 enum 은 GS25_HALF · CU_HALF 지만 리터럴로 비교하지 않는다 — getConvenienceStoreType 은
+  // 부분일치라 이름이 바뀌어도 안 깨지고, 인접 파서와 판별 규칙이 하나로 유지된다.
+  const storeType =
+    getConvenienceStoreType(data.shippingMethod) ??
+    getConvenienceStoreType(data.storeType) ??
+    getConvenienceStoreType(data.storeName);
+  const storeName = getStringValue(data, ["storeName", "branchName", "name"]).trim();
+
+  if (!storeType || !storeName) {
+    return null;
+  }
+
+  return { storeType, storeName };
 }
 
 function getUserShippingAddress(body: unknown): UserShippingAddress | null {
@@ -2833,6 +2876,31 @@ function getBuncheolShippingOptionFromRecord(
   return { fee, method };
 }
 
+/**
+ * 지금 자리를 더 신청하면 첫 신청의 묶음을 재사용하는가(server#178). 참이면 배송지를 고를 수 없다.
+ *
+ * 🔴 주소가 null 인 경우가 <b>둘</b>이고 화면에서 정반대다 — ① 상속 구간이 아니라서(고를 수 있다)
+ * ② 상속인데 배송지를 못 읽어서(고정인데 값이 없다). ②에서 선택 UI 를 그리면 유저가 주소를 고른 뒤
+ * 서버에 거부당한다. 그래서 서버가 불리언을 따로 싣고, 화면은 <b>불리언으로 UI 를 정하고 주소는 표시만</b> 한다.
+ */
+function getInheritedShippingFromRecord(data: Record<string, unknown>): {
+  applies: boolean;
+  address: RequestedShippingAddress | null;
+} {
+  const myParticipation = getNestedData(data.myParticipation);
+
+  if (!isRecord(myParticipation)) {
+    return { address: null, applies: false };
+  }
+
+  return {
+    address: getRequestedShippingAddressFromRecord(
+      myParticipation.inheritedShippingAddress,
+    ),
+    applies: myParticipation.inheritanceApplies === true,
+  };
+}
+
 function getMyParticipationBidsFromRecord(
   data: Record<string, unknown>,
 ): Map<string, { bidAmount: number; participationId: string; rank?: number }> {
@@ -2928,6 +2996,7 @@ function getBuncheolDetailFromBody(body: unknown) {
 
   const myParticipationBids = getMyParticipationBidsFromRecord(data);
   const myParticipationMemberIds = getMyParticipationMemberIdsFromRecord(data);
+  const inheritedShipping = getInheritedShippingFromRecord(data);
   const members = mergeBuncheolMemberPurchaseStates(
     getRecordListValue(data, [
       "buncheolMembers",
@@ -3007,6 +3076,8 @@ function getBuncheolDetailFromBody(body: unknown) {
         : undefined),
     description: getOptionalStringValue(data, ["description", "content"]),
     flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
+    myInheritedShippingAddress: inheritedShipping.address,
+    myShippingInheritanceApplies: inheritedShipping.applies,
     openChatUrl: getOptionalStringValue(data, ["openChatUrl"]) ?? null,
     gs25ShippingFee:
       getOptionalNumberValue(data, [
@@ -4052,6 +4123,9 @@ export function toProductDetailItem(
       detail.description?.trim() ||
       "판매자가 상품 설명을 작성하지 않았습니다.",
     flowType: detail.flowType ?? null,
+    // 🔴 여기서 빠뜨리면 파서가 값을 읽어도 화면까지 오지 않는다 — 서버·파서만 고치고 이 줄을
+    // 안 넣어 "왜 안 뜨지" 로 시간을 쓰기 쉬운 자리다.
+    myInheritedShippingAddress: detail.myInheritedShippingAddress ?? null,
     openChatUrl: detail.openChatUrl ?? null,
     // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 images(등록 순)를 그대로 쓴다.
     imageUrl: detail.thumbnailUrl ?? detail.images[0]?.url,
@@ -4736,6 +4810,10 @@ export async function requestMyParticipations(accessToken: string) {
               ])
             : null),
         shippingAddress,
+        // 서버가 확정한 신규 키라 별칭을 붙이지 않는다 — 별칭 흡수는 파서 안에서 한다(payback 과 같은 관례).
+        requestedShippingAddress: getRequestedShippingAddressFromRecord(
+          record.requestedShippingAddress,
+        ),
         shippingFee:
           getOptionalNumberValueFromRecords(lookupRecords, [
             "shippingFee",
