@@ -261,7 +261,10 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
 
-function getReleaseBlockedReason(releasability: string | null | undefined) {
+// ⚠️ 인자를 optional 로 두지 않는다. undefined 를 받을 수 있으면 호출부가 「막힌 자리 없음」을
+// 실수로 넘겨 default 문구가 뜬다 — 실제로 그렇게 나갔다. null 은 서버가 판정을 못 준
+// 경우(구 응답·미연결 행)라 받아야 한다.
+function getReleaseBlockedReason(releasability: string | null) {
   switch (releasability) {
     case "RECRUITING":
       return "모집 중에는 뺄 수 없어요.";
@@ -1535,10 +1538,18 @@ export function HostedBuncheolManage({
                     (slot) => slot.releasability !== "RELEASABLE",
                   );
                   const canRelease = !blockedSlot && Boolean(bundle.bundleId);
-                  const releaseBlockedReason = bundle.bundleId
-                    ? getReleaseBlockedReason(blockedSlot?.releasability)
-                    : // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
-                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.";
+                  // 🔴 막힌 자리가 있을 때만 사유를 만든다. blockedSlot?.releasability 를 그냥
+                  // 넘기면 「막힌 자리 없음(undefined)」과 「판정값 없음(undefined)」이 같은 값이 되어
+                  // switch 가 default 로 떨어진다 — 그러면 <b>제외가 가능한 모든 묶음</b>에
+                  // "지금은 뺄 수 없어요." 가 붙는다. 버튼은 활성인 채로 옆에 그 문구가 뜬다.
+                  const releaseBlockedReason = !bundle.bundleId
+                    ? // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
+                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요."
+                    : blockedSlot
+                      ? // 슬롯 필드는 optional 이라 undefined 가 올 수 있다. 「판정값 없음」은
+                        // null 로 명시해 넘긴다 — 그게 default 문구가 나와야 하는 유일한 경우다.
+                        getReleaseBlockedReason(blockedSlot.releasability ?? null)
+                      : null;
                   const isBundleConfirming =
                     pendingC2CAction === `confirm:${bundle.key}`;
                   const isBundleReleasing =

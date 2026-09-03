@@ -1448,6 +1448,24 @@ function isBuncheolDetailInaccessible(bid: BidRecord) {
   );
 }
 
+/**
+ * 내 참여 목록을 서버에서 다시 읽어 카드로 만든다.
+ *
+ * 🔴 <b>모듈 스코프에 둔 이유</b>: 컴포넌트 안에 두면 매 렌더마다 새 함수가 되고, 폴링 effect 의
+ * 의존성 배열에 들어가는 순간 "매 렌더마다 즉시 조회" 로 바뀐다(15초 폴링이 무의미해진다).
+ * 여기 두면 폴링 effect 를 한 줄도 건드리지 않고 취소 핸들러가 같은 조회를 쓸 수 있다.
+ */
+async function fetchBidRecords(accessToken: string): Promise<BidRecord[]> {
+  const participations = await requestMyParticipations(accessToken);
+  const buncheolDetailCache: BuncheolDetailCache = new Map();
+
+  return Promise.all(
+    participations.map((participation) =>
+      getBidRecordWithShippingData(accessToken, participation, buncheolDetailCache),
+    ),
+  );
+}
+
 async function getBidRecordWithShippingData(
   accessToken: string,
   participation: MyParticipation,
@@ -2164,17 +2182,7 @@ export function BidHistoryContent({
       }
 
       try {
-        const participations = await requestMyParticipations(accessToken);
-        const buncheolDetailCache: BuncheolDetailCache = new Map();
-        const bidRecords = await Promise.all(
-          participations.map((participation) =>
-            getBidRecordWithShippingData(
-              accessToken,
-              participation,
-              buncheolDetailCache,
-            ),
-          ),
-        );
+        const bidRecords = await fetchBidRecords(accessToken);
 
         if (isActive) {
           setApiBidRecords(bidRecords);
@@ -3451,6 +3459,7 @@ export function BidHistoryContent({
 
     try {
       await cancelParticipation(accessToken, bid.id);
+      // 먼저 낙관적으로 지운다 — 서버 왕복을 기다리는 사이 카드가 살아 있으면 두 번 누른다.
       setApiBidRecords((records) =>
         records
           ? records.map((record) =>
@@ -3464,6 +3473,18 @@ export function BidHistoryContent({
             )
           : records,
       );
+      // 🔴 그리고 반드시 서버에 다시 묻는다. 낙관 갱신은 <b>취소한 카드 하나</b>만 고치는데,
+      // 취소는 <b>같은 묶음의 다른 자리</b>도 바꾼다 — 배송비는 "살아 있는 자리 중 가장 먼저
+      // 만들어진 것" 이 지므로, 배송비를 지고 있던 자리를 취소하면 남은 자리가 이어받아야 한다.
+      // 그 판정은 서버가 읽는 시점에 한다. 다시 묻지 않으면 남은 카드의 배송비가 0원으로,
+      // 총액이 그만큼 줄어든 채 남는다 — 참여자가 <b>틀린 금액을 보고 이체한다.</b>
+      // (폴링이 15~180초 뒤 고쳐 주지만, 그 사이에 이체하면 늦다.)
+      try {
+        setApiBidRecords(await fetchBidRecords(accessToken));
+      } catch {
+        // 재조회 실패는 치명적이지 않다 — 취소 자체는 이미 성공했고 폴링이 따라잡는다.
+        // 여기서 토스트를 띄우면 "취소했어요" 와 "실패했어요" 가 같이 떠 사용자가 혼란스럽다.
+      }
       setHistoryMessage("");
       // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
       showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
