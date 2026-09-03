@@ -1918,9 +1918,13 @@ export function BidHistoryContent({
   const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
-  const selectedPaymentOptionLabels = selectedPaymentBid
-    ? getBidRecordOptionLabels(selectedPaymentBid)
-    : [];
+  // 🔴 이름을 <b>금액과 같은 모수</b>에서 뽑는다. 자리 1건에서 뽑으면 아래에 「자리 2개 합계」가
+  // 뜨는데 위에는 멤버 칩이 하나만 있는 화면이 된다 — 참여자가 실제로 이체하는 화면이고, 이미
+  // 받은 입금 안내 알림톡은 두 이름을 다 나열하므로 문자와 화면이 어긋난다.
+  // (같은 파일 1085행 주석의 규약: "카드·시트·확인 모달이 같은 집합을 봐야 숫자가 안 갈린다".)
+  const selectedPaymentOptionLabels = [
+    ...new Set(paymentAmountSources.flatMap(getBidRecordOptionLabels)),
+  ];
   const selectedPaymentStatusLabel = selectedPaymentBid
     ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
     : "";
