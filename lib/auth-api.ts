@@ -4123,9 +4123,10 @@ export function toProductDetailItem(
       detail.description?.trim() ||
       "판매자가 상품 설명을 작성하지 않았습니다.",
     flowType: detail.flowType ?? null,
-    // 🔴 여기서 빠뜨리면 파서가 값을 읽어도 화면까지 오지 않는다 — 서버·파서만 고치고 이 줄을
-    // 안 넣어 "왜 안 뜨지" 로 시간을 쓰기 쉬운 자리다.
+    // 🔴 여기서 빠뜨리면 파서가 값을 읽어도 화면까지 오지 않는다 — 실제로 첫 PR 에서 불리언을
+    // 이 줄에 안 실어, 파서·타입·주석은 다 있는데 화면이 못 읽는 상태로 리뷰에 걸렸다.
     myInheritedShippingAddress: detail.myInheritedShippingAddress ?? null,
+    myShippingInheritanceApplies: detail.myShippingInheritanceApplies === true,
     openChatUrl: detail.openChatUrl ?? null,
     // imageUrl 은 카드·미리보기용 대표사진. 캐러셀 순서는 images(등록 순)를 그대로 쓴다.
     imageUrl: detail.thumbnailUrl ?? detail.images[0]?.url,

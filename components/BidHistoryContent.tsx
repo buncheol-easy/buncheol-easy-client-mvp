@@ -2801,8 +2801,10 @@ export function BidHistoryContent({
     const returnState: AddressReturnState = {
       source: "bids",
       bidId: selectedPaymentBidId,
-      // 표시용 묶음 배송지에는 id 가 없다(server#178). 유저가 실제로 고른 것만 복원 대상이다 —
-      // 기본 배송지 id 를 대신 넣으면 주소 추가 후 엉뚱한 선택으로 복귀한다.
+      // 표시용 묶음 배송지에는 id 가 없다(server#178) — 그래서 폴백을 뺐다.
+      // ⚠️ selectedPaymentAddressId 자체는 "유저가 고른 값"이 아니다. openPaymentSheet 가 시트를
+      // 열 때 기본 배송지 id 로 미리 채운다. 즉 이 변경은 그 상태가 null 인 구간에서만 차이가 나고,
+      // 실질적으로는 no-op 에 가깝다. 프리셋까지 걷는 것은 이 PR 범위가 아니다.
       addressId: selectedPaymentAddressId,
     };
 
@@ -4902,8 +4904,9 @@ export function BidHistoryContent({
               {eligiblePaymentAddresses.map((address) => {
                 const isDefault =
                   address.id === defaultAddressIds[address.storeType];
-                // 고른 것이 없으면 아무것도 선택 표시하지 않는다 — 「변경 불가」 배송지를 고르는
-                // 시트에서 기본 배송지를 미리 칠하면 그게 갈 주소인 것처럼 보인다.
+                // 표시용 배송지에는 id 가 없어 비교 대상에서 뺐다.
+                // ⚠️ 이 시트는 현재 <b>도달 불가</b>다 — 여는 입구가 「+ 새 배송지 추가」 뒤 복귀
+                // 경로뿐이고, 그 경로 자체가 이 시트 안에서만 시작된다. 정리는 별건으로 둔다.
                 const isSelected = address.id === selectedPaymentAddressId;
 
                 return (

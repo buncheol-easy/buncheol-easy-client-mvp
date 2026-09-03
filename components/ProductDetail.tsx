@@ -1182,6 +1182,9 @@ export function ProductDetail({
     useState<RequestedShippingAddress | null>(
       product.myInheritedShippingAddress ?? null,
     );
+  // 판정 불리언도 같이 로컬로 둔다 — 주소만 갱신하고 판정은 prop 에 남기면 둘이 갈린다.
+  const [shippingInheritanceAppliesFromApi, setShippingInheritanceAppliesFromApi] =
+    useState(product.myShippingInheritanceApplies === true);
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -1840,8 +1843,14 @@ export function ProductDetail({
   );
   // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 성사 확정 전 재참여만
   // 해당한다: 확정 뒤 추가 모집은 서버가 새 묶음을 만들고 배송비를 다시 부과한다.
+  //
+  // 🔴 서버 신호를 OR 로 얹는다. 클라 판정은 목록(auctionOptions)에서 재구성한 것이고, 서버는
+  // 묶음 재사용 여부를 <b>실제로 결정하는 쪽</b>이다(server#178 inheritanceApplies). 둘이 갈리면
+  // 화면이 "배송비 0원"이라 해 놓고 서버가 부과하거나, 고를 수 있다고 해 놓고 서버가 거부한다.
+  // 서버가 참이라고 하면 참으로 본다 — 안전한 쪽(고를 수 없음)으로 기운다.
   const isAdditionalC2CApplication =
-    isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct;
+    (isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct) ||
+    shippingInheritanceAppliesFromApi;
   // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
   const isRebundledC2CApplication =
     hasMyServerParticipation && isC2CCollectingProduct;
@@ -2068,10 +2077,14 @@ export function ProductDetail({
   useEffect(() => {
     setOpenChatUrlFromApi(product.openChatUrl ?? null);
     setInheritedShippingFromApi(product.myInheritedShippingAddress ?? null);
+    setShippingInheritanceAppliesFromApi(
+      product.myShippingInheritanceApplies === true,
+    );
     setStatusFromApi(null);
   }, [
     product.id,
     product.myInheritedShippingAddress,
+    product.myShippingInheritanceApplies,
     product.openChatUrl,
     product.status,
   ]);
@@ -2376,6 +2389,9 @@ export function ProductDetail({
       setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
       setInheritedShippingFromApi(
         refreshedProduct.myInheritedShippingAddress ?? null,
+      );
+      setShippingInheritanceAppliesFromApi(
+        refreshedProduct.myShippingInheritanceApplies === true,
       );
       // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
