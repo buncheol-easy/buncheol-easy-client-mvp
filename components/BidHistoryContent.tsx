@@ -1448,13 +1448,7 @@ function isBuncheolDetailInaccessible(bid: BidRecord) {
   );
 }
 
-/**
- * 내 참여 목록을 서버에서 다시 읽어 카드로 만든다.
- *
- * 🔴 <b>모듈 스코프에 둔 이유</b>: 컴포넌트 안에 두면 매 렌더마다 새 함수가 되고, 폴링 effect 의
- * 의존성 배열에 들어가는 순간 "매 렌더마다 즉시 조회" 로 바뀐다(15초 폴링이 무의미해진다).
- * 여기 두면 폴링 effect 를 한 줄도 건드리지 않고 취소 핸들러가 같은 조회를 쓸 수 있다.
- */
+/** 내 참여 목록을 서버에서 다시 읽어 카드로 만든다. 모듈 스코프 — 폴링 effect 의 deps 에 걸리지 않게. */
 async function fetchBidRecords(accessToken: string): Promise<BidRecord[]> {
   const participations = await requestMyParticipations(accessToken);
   const buncheolDetailCache: BuncheolDetailCache = new Map();
@@ -1733,6 +1727,10 @@ export function BidHistoryContent({
   const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
   const addressSheetCloseTimerRef = useRef<number | null>(null);
   const paymentStoreTypeRequestIdRef = useRef(0);
+  // 목록 전체를 갈아치우는 writer 가 둘이다(폴링 · 취소 후 재조회). 응답 도착 순서가
+  // 보장되지 않아, 취소 직전 출발한 폴링이 늦게 도착하면 낡은 배송비가 다시 깔린다.
+  // 세대를 올려 늦게 온 응답을 버린다 — paymentStoreTypeRequestIdRef 와 같은 방식.
+  const bidRecordsGenerationRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -2181,10 +2179,13 @@ export function BidHistoryContent({
         return;
       }
 
+      const generation = bidRecordsGenerationRef.current;
+
       try {
         const bidRecords = await fetchBidRecords(accessToken);
 
-        if (isActive) {
+        // 그 사이 취소 후 재조회가 세대를 올렸으면 이 응답은 낡았다 — 버린다.
+        if (isActive && bidRecordsGenerationRef.current === generation) {
           setApiBidRecords(bidRecords);
         }
       } catch {
@@ -3459,35 +3460,42 @@ export function BidHistoryContent({
 
     try {
       await cancelParticipation(accessToken, bid.id);
-      // 먼저 낙관적으로 지운다 — 서버 왕복을 기다리는 사이 카드가 살아 있으면 두 번 누른다.
-      setApiBidRecords((records) =>
-        records
-          ? records.map((record) =>
-              record.id === bid.id
-                ? {
-                    ...record,
-                    participationStatus: "CANCELLED",
-                    cancelReason: USER_CANCELLED_REASON,
-                  }
-                : record,
-            )
-          : records,
-      );
-      // 🔴 그리고 반드시 서버에 다시 묻는다. 낙관 갱신은 <b>취소한 카드 하나</b>만 고치는데,
-      // 취소는 <b>같은 묶음의 다른 자리</b>도 바꾼다 — 배송비는 "살아 있는 자리 중 가장 먼저
-      // 만들어진 것" 이 지므로, 배송비를 지고 있던 자리를 취소하면 남은 자리가 이어받아야 한다.
-      // 그 판정은 서버가 읽는 시점에 한다. 다시 묻지 않으면 남은 카드의 배송비가 0원으로,
-      // 총액이 그만큼 줄어든 채 남는다 — 참여자가 <b>틀린 금액을 보고 이체한다.</b>
-      // (폴링이 15~180초 뒤 고쳐 주지만, 그 사이에 이체하면 늦다.)
-      try {
-        setApiBidRecords(await fetchBidRecords(accessToken));
-      } catch {
-        // 재조회 실패는 치명적이지 않다 — 취소 자체는 이미 성공했고 폴링이 따라잡는다.
-        // 여기서 토스트를 띄우면 "취소했어요" 와 "실패했어요" 가 같이 떠 사용자가 혼란스럽다.
-      }
+      const cancelPatch = (records: BidRecord[]) =>
+        records.map((record) =>
+          record.id === bid.id
+            ? {
+                ...record,
+                participationStatus: "CANCELLED",
+                cancelReason: USER_CANCELLED_REASON,
+              }
+            : record,
+        );
+
+      setApiBidRecords((records) => (records ? cancelPatch(records) : records));
       setHistoryMessage("");
       // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
+      // ⚠️ 재조회보다 <b>먼저</b> 알린다 — 재조회는 참여 건마다 상세를 더 부를 수 있어 수 초가
+      // 걸리고, 그동안 토스트가 안 뜨면 사용자가 다시 누른다.
       showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
+
+      // 🔴 배송비는 "살아 있는 자리 중 가장 먼저 만들어진 것" 이 진다 — 그 판정을 서버가 읽는
+      // 시점에 하므로, 취소하면 남은 자리의 배송비가 바뀐다. 다시 묻지 않으면 남은 카드가
+      // 배송비 0원인 채로 남아 참여자가 틀린 금액을 이체한다.
+      const generation = (bidRecordsGenerationRef.current += 1);
+
+      try {
+        const records = await fetchBidRecords(accessToken);
+
+        if (bidRecordsGenerationRef.current === generation) {
+          // ⚠️ 낙관 패치를 다시 얹는다. 서버가 아직 취소를 반영하지 않은 응답을 주면(읽기 지연)
+          // 방금 지운 카드가 되살아나, "취소했어요" 토스트와 살아 있는 취소 버튼이 같이 뜬다.
+          setApiBidRecords(cancelPatch(records));
+        }
+      } catch {
+        // 취소 자체는 이미 성공했다. 여기서 토스트를 띄우면 "취소했어요" 와 "실패했어요" 가
+        // 같이 떠 혼란스럽다. ⚠️ 폴링이 항상 따라잡지는 않는다 — shouldRefreshPaymentState 가
+        // 거짓이면(남은 카드가 전부 확정·레거시) 폴링 자체가 돌지 않아 새로고침까지 남는다.
+      }
     } catch (error: unknown) {
       const failureMessage =
         error instanceof Error
