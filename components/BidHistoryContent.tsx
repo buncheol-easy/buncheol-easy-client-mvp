@@ -1354,6 +1354,11 @@ function getBidRecordFromParticipation(
   // 서버 bidAmount 는 배송비 포함 입금 총액이다. shippingFee 를 빼 상품(멤버) 금액으로 환산해
   // amount 에 담고, 총액은 paymentAmount 로 유지한다. shippingFee 를 안 내려주는 구 응답이면
   // 분리할 수 없으므로 총액을 그대로 둔다.
+  //
+  // 🔴 <b>금액 세 칸에는 세션 캐시를 섞지 않는다.</b> 배송비 귀속은 서버가 <b>읽는 시점에</b> 살아 있는
+  // 자리를 보고 정하는 값이라 남이 취소하면 바뀐다 — 신청 순간 굳힌 값이 이길 수 있으면 배송비를 지던
+  // 자리가 취소된 뒤 총액만 옛 값으로 남는다(카드에 「배송비 3,000원」과 「총액 19,300원」이 동시에 뜬다).
+  // sessionStorage 라 새로고침으로도 안 지워져 탭을 닫아야 사라진다 — prod 실측.
   const serverShippingFee = participation.shippingFee;
   const serverItemAmount =
     typeof serverShippingFee === "number"
@@ -1364,7 +1369,7 @@ function getBidRecordFromParticipation(
     courier: shippingMethods[0]?.name,
     shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
     id: participation.participationId,
-    amount: cachedPayment?.bidAmount ?? serverItemAmount,
+    amount: serverItemAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
     imageUrl:
       participation.thumbnailUrl ??
@@ -1391,7 +1396,6 @@ function getBidRecordFromParticipation(
     paymentRejectedAt: participation.paymentRejectedAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
-      cachedPayment?.paymentAmount ??
       (typeof serverShippingFee === "number" ? participation.bidAmount : null),
     paymentDueAt:
       participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
@@ -1403,7 +1407,7 @@ function getBidRecordFromParticipation(
     rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
-    shippingFee: participation.shippingFee ?? cachedPayment?.shippingFee ?? null,
+    shippingFee: participation.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
     // 개최자 계좌는 세션 캐시에 저장하지 않으므로(v3) 서버 응답에만 의존한다.
     hostBankAccount: participation.hostBankAccount ?? null,
