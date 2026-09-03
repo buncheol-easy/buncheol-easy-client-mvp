@@ -1354,17 +1354,15 @@ function getBidRecordFromParticipation(
   // 서버 bidAmount 는 배송비 포함 입금 총액이다. shippingFee 를 빼 상품(멤버) 금액으로 환산해
   // amount 에 담고, 총액은 paymentAmount 로 유지한다. shippingFee 를 안 내려주는 구 응답이면
   // 분리할 수 없으므로 총액을 그대로 둔다.
-  //
-  // 🔴 <b>금액 세 칸에는 세션 캐시를 섞지 않는다.</b> 배송비 귀속은 서버가 <b>읽는 시점에</b> 살아 있는
-  // 자리를 보고 정하는 값이라 남이 취소하면 바뀐다 — 신청 순간 굳힌 값이 이길 수 있으면 배송비를 지던
-  // 자리가 취소된 뒤 총액만 옛 값으로 남는다(카드에 「배송비 3,000원」과 「총액 19,300원」이 동시에 뜬다).
-  // sessionStorage 라 새로고침으로도 안 지워져 탭을 닫아야 사라진다 — prod 실측.
+
   const serverShippingFee = participation.shippingFee;
   const serverItemAmount =
     typeof serverShippingFee === "number"
       ? Math.max(participation.bidAmount - serverShippingFee, 0)
       : participation.bidAmount;
 
+  // 🔴 금액 세 칸에 세션 캐시를 섞지 않는다 — 배송비 귀속은 서버가 읽는 시점의 살아 있는 자리로 정하므로
+  // 신청 순간 굳힌 값이 이기면 그 자리가 취소된 뒤 총액만 옛 값으로 남는다.
   return {
     courier: shippingMethods[0]?.name,
     shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
