@@ -30,6 +30,7 @@ import {
   type BankAccountInfo,
   type BuncheolManagementOption,
   type CvsStore,
+  type RequestedShippingAddress,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
 import { PRODUCT_ARTIST_ENTRY_INDEX_KEY } from "@/lib/artist-browse";
@@ -1175,6 +1176,15 @@ export function ProductDetail({
   const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
     product.openChatUrl ?? null,
   );
+  // 상속 배송지도 같은 이유로 로컬에 둔다 — prop 은 마운트 시점 응답이라 신청해도 갱신되지 않고,
+  // 그러면 "첫 신청과 묶인다" 판정만 켜지고 주소는 안 뜨는 어긋난 화면이 된다.
+  const [inheritedShippingFromApi, setInheritedShippingFromApi] =
+    useState<RequestedShippingAddress | null>(
+      product.myInheritedShippingAddress ?? null,
+    );
+  // 판정 불리언도 같이 로컬로 둔다 — 주소만 갱신하고 판정은 prop 에 남기면 둘이 갈린다.
+  const [shippingInheritanceAppliesFromApi, setShippingInheritanceAppliesFromApi] =
+    useState(product.myShippingInheritanceApplies === true);
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -1833,8 +1843,14 @@ export function ProductDetail({
   );
   // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 성사 확정 전 재참여만
   // 해당한다: 확정 뒤 추가 모집은 서버가 새 묶음을 만들고 배송비를 다시 부과한다.
+  //
+  // 🔴 서버 신호를 OR 로 얹는다. 클라 판정은 목록(auctionOptions)에서 재구성한 것이고, 서버는
+  // 묶음 재사용 여부를 <b>실제로 결정하는 쪽</b>이다(server#178 inheritanceApplies). 둘이 갈리면
+  // 화면이 "배송비 0원"이라 해 놓고 서버가 부과하거나, 고를 수 있다고 해 놓고 서버가 거부한다.
+  // 서버가 참이라고 하면 참으로 본다 — 안전한 쪽(고를 수 없음)으로 기운다.
   const isAdditionalC2CApplication =
-    isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct;
+    (isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct) ||
+    shippingInheritanceAppliesFromApi;
   // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
   const isRebundledC2CApplication =
     hasMyServerParticipation && isC2CCollectingProduct;
@@ -2060,8 +2076,18 @@ export function ProductDetail({
   // 입금수집 화면으로 보이거나, 다른 분철로 넘어갔을 때 앞 분철의 상태가 남는다.
   useEffect(() => {
     setOpenChatUrlFromApi(product.openChatUrl ?? null);
+    setInheritedShippingFromApi(product.myInheritedShippingAddress ?? null);
+    setShippingInheritanceAppliesFromApi(
+      product.myShippingInheritanceApplies === true,
+    );
     setStatusFromApi(null);
-  }, [product.id, product.openChatUrl, product.status]);
+  }, [
+    product.id,
+    product.myInheritedShippingAddress,
+    product.myShippingInheritanceApplies,
+    product.openChatUrl,
+    product.status,
+  ]);
 
   useEffect(() => {
     setAuctionOptions(product.options);
@@ -2361,6 +2387,12 @@ export function ProductDetail({
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
       setIsHostedByMeFromApi(isHosted);
       setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
+      setInheritedShippingFromApi(
+        refreshedProduct.myInheritedShippingAddress ?? null,
+      );
+      setShippingInheritanceAppliesFromApi(
+        refreshedProduct.myShippingInheritanceApplies === true,
+      );
       // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
       setAuctionOptions(refreshedProduct.options);
@@ -4491,16 +4523,28 @@ export function ProductDetail({
                           {/* docs/46 §4.7-A1 의 배송지 스냅샷 강제는 이제 <b>성사 확정 전</b> 재신청에만
                               해당한다 — 확정 뒤 추가 모집은 새 묶음이라 배송지를 다시 고른다. 상속 구간에서만
                               현재 선택값 대신 문구로 대체한다(선택값이 실제 배송지와 다를 수 있으므로). */}
+                          {/* 상속 구간에서는 서버가 준 <b>그 묶음의 실제 주소</b>를 보여준다 — 어떤 배송지로
+                              신청했는지 잊었을 수 있어서다. 서버가 값을 못 주면(옛 응답·주소 삭제) 기존 문구로
+                              떨어지되, 선택 UI 는 되살리지 않는다 — 고르게 해 봐야 서버가 거부한다. */}
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {isAdditionalC2CApplication
-                              ? "첫 신청 때 선택한 배송지"
+                              ? inheritedShippingFromApi
+                                ? `${getConvenienceStoreLabel(inheritedShippingFromApi.storeType)} ${getDeliveryAddressDisplayBranchName(
+                                    {
+                                      branchName:
+                                        inheritedShippingFromApi.storeName,
+                                      storeType:
+                                        inheritedShippingFromApi.storeType,
+                                    },
+                                  )}`
+                                : "첫 신청 때 선택한 배송지"
                               : checkoutDeliveryAddress
                                 ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
                                 : "등록된 배송지 없음"}
                           </p>
                           <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
                             {isAdditionalC2CApplication
-                              ? "첫 신청 배송지로 함께 배송돼요."
+                              ? "첫 신청 배송지로 함께 배송돼요. 변경할 수 없어요."
                               : checkoutDeliveryAddress?.address ??
                                 "배송지를 등록해 주세요."}
                           </p>
