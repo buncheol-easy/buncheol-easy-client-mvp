@@ -548,6 +548,13 @@ export function HostedBuncheolManage({
     ).length ?? 0;
   // ── C2C 파생값 (docs/46 §4.6 — 관리 응답은 활성 참여 전건을 내려준다) ──
   const isC2C = getFlowType(detail?.flowType) === "C2C";
+  // 🔴 아래 카운트들은 전부 <b>자리 수</b>다(멤버 슬롯 점유 건수). C2C 는 한 사람이 자리를 여러 개
+  // 잡을 수 있어 자리 ≠ 사람이다 — 실측: 자리 5개인데 사람은 2명. 그래서 C2C 는 「자리」로 쓴다.
+  // LEGACY 는 1인 1자리라 자리 = 사람이고 「명」이 맞다.
+  //
+  // ⚠️ <b>숫자는 바꾸지 않는다.</b> 서버의 최소 진행 인원 판정이 자리 수 기준이라, 숫자를 사람 수로
+  // 바꾸면 화면과 서버가 갈린다. 바꾸는 것은 단위 표기뿐이다.
+  const countUnit = isC2C ? "자리" : "명";
   const activeC2CParticipants = (detail?.participants ?? []).filter(
     (participant) => !isParticipationCancelledStatus(participant.status),
   );
@@ -1226,7 +1233,7 @@ export function HostedBuncheolManage({
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">{"\ucc38\uc5ec"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${participantCount}\uba85`}
+                  {`${participantCount}${countUnit}`}
                 </p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1234,7 +1241,7 @@ export function HostedBuncheolManage({
                   {"\uc785\uae08 \ub300\uae30"}
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${isC2C ? c2cAwaitingCount : awaitingPaymentCount}\uba85`}
+                  {`${isC2C ? c2cAwaitingCount : awaitingPaymentCount}${countUnit}`}
                 </p>
               </div>
               {isC2C ? (
@@ -1244,7 +1251,7 @@ export function HostedBuncheolManage({
                       {"\uc2e0\uccad"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cAppliedCount}\uba85`}
+                      {`${c2cAppliedCount}${countUnit}`}
                     </p>
                   </div>
                   <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1252,7 +1259,7 @@ export function HostedBuncheolManage({
                       {"\ubcf4\ub0c8\uc5b4\uc694"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cPaymentSentCount}\uba85`}
+                      {`${c2cPaymentSentCount}${countUnit}`}
                     </p>
                   </div>
                 </>
@@ -1373,7 +1380,9 @@ export function HostedBuncheolManage({
                 ) : null}
               </div>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                입금 확인 {c2cConfirmedCount}명 · 입금 대기 {c2cAwaitingCount}명
+                입금 확인 {c2cConfirmedCount}
+                {countUnit} · 입금 대기 {c2cAwaitingCount}
+                {countUnit}
                 · 보냈어요 {c2cPaymentSentCount}명
               </p>
               {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를

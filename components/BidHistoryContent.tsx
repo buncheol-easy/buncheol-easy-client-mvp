@@ -4298,6 +4298,11 @@ export function BidHistoryContent({
                   product.optionCount ??
                   product.targetMembers?.length ??
                   product.options.length;
+                // 🔴 이 값은 <b>자리 수</b>다. C2C 는 한 사람이 자리를 여러 개 잡을 수 있어
+                // 자리 ≠ 사람이다(실측: 자리 5개 · 사람 2명). LEGACY 는 1인 1자리라 「명」이 맞다.
+                // ⚠️ 숫자는 바꾸지 않는다 — 서버의 최소 진행 인원 판정이 자리 수 기준이다.
+                const countUnit =
+                  getFlowType(product.flowType) === "C2C" ? "자리" : "명";
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,
@@ -4365,7 +4370,8 @@ export function BidHistoryContent({
                             멤버 {optionCount}명
                           </span>
                           <span className="rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
-                            참여 {participantCount}명
+                            참여 {participantCount}
+                            {countUnit}
                           </span>
                           <span className="max-w-full truncate rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                             마감 {product.deadline}
