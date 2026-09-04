@@ -1620,16 +1620,15 @@ export function HostedBuncheolManage({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          {/* 🔴 닉네임을 함께 보여준다. 입금자명(예금주 실명)만 있으면 같은 사람이
-                              묶음을 2개 가진 경우(추가 모집 = 별도 이체) 두 카드가 <b>같은 이름 한 줄</b>로
-                              보여 구별할 단서가 없다. LEGACY 카드는 원래 「참여자 + 입금자명」 두 줄인데
-                              C2C 카드에서 그 줄이 빠져 있었다.
-                              ⚠️ 이 줄은 <b>닉네임 전용</b>이다. depositorName 을 쓰면 실명이 두 번 뜨고
-                              닉네임이 화면에서 사라진다(1980행 주석과 같은 함정). */}
-                          <p className="truncate text-[13px] font-semibold text-black/55">
-                            <span className="mr-1.5 text-black/35">참여자</span>
-                            {bundle.slots[0]?.participantNickname ?? "-"}
-                          </p>
+                          {/* ⚠️ 값이 같으면 감춘다. 입금자명은 비면 닉네임으로 폴백하고(getDepositorName),
+                              파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
+                              같은 이름이 두 줄 뜬다. */}
+                          {head.participantNickname !== depositorName ? (
+                            <p className="truncate text-[13px] font-semibold text-black/55">
+                              <span className="mr-1.5 text-black/35">참여자</span>
+                              {head.participantNickname}
+                            </p>
+                          ) : null}
                           <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.04em]">
                             입금자명 {depositorName}
                           </p>
