@@ -1919,9 +1919,13 @@ export function BidHistoryContent({
   const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
-  const selectedPaymentOptionLabels = selectedPaymentBid
-    ? getBidRecordOptionLabels(selectedPaymentBid)
-    : [];
+  // 🔴 이름을 <b>금액과 같은 모수</b>에서 뽑는다. 자리 1건에서 뽑으면 「자리 2개 합계」 아래에
+  // 칩이 하나만 있는 화면이 된다 — 참여자가 실제로 이체하는 화면이고, 받은 알림톡은 두 이름을
+  // 다 나열하므로 문자와 화면이 어긋난다.
+  // ⚠️ 라벨로 중복 제거하지 마라. memberName 이 빈 자리는 둘 다 "멤버 확인 필요" 가 되어
+  // 하나로 접히고, 그러면 고치려던 「합계는 2자리인데 칩은 1개」가 그대로 재현된다.
+  // ⚠️ 카드는 취소분까지 취소선으로 그리고 시트는 이체에 들어가는 자리만 그린다 — 의도된 차이다.
+  // 시트는 "지금 얼마를 보내나" 를 말하는 자리라 취소분이 끼면 금액과 칩이 어긋난다.
   const selectedPaymentStatusLabel = selectedPaymentBid
     ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
     : "";
@@ -4626,12 +4630,12 @@ export function BidHistoryContent({
                 {selectedPaymentBid.title}
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {selectedPaymentOptionLabels.map((optionLabel) => (
+                {paymentAmountSources.map((slot) => (
                   <span
                     className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65"
-                    key={optionLabel}
+                    key={slot.id}
                   >
-                    {optionLabel}
+                    {getBidRecordOptionLabels(slot)[0]}
                   </span>
                 ))}
               </div>

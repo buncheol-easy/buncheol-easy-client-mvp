@@ -1631,7 +1631,16 @@ export function HostedBuncheolManage({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {/* ⚠️ 값이 같으면 감춘다. 입금자명은 비면 닉네임으로 폴백하고(getDepositorName),
+                              파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
+                              같은 이름이 두 줄 뜬다. */}
+                          {head.participantNickname !== depositorName ? (
+                            <p className="truncate text-[13px] font-semibold text-black/55">
+                              <span className="mr-1.5 text-black/35">참여자</span>
+                              {head.participantNickname}
+                            </p>
+                          ) : null}
+                          <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.04em]">
                             입금자명 {depositorName}
                           </p>
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
