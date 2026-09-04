@@ -512,9 +512,11 @@ export function HostedBuncheolManage({
   // 취소분은 서버가 participants 와 분리해 내려준다 — 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
   const cancelledParticipants = detail?.cancelledParticipants ?? [];
   // 취소분 대다수는 입금 기한 만료라 돈이 오간 적이 없고, 같은 사람이 재참여해 활성으로도 있다.
-  const refundTargetParticipants = cancelledParticipants.filter(
-    (participant) =>
-      Boolean(participant.confirmedAt) || Boolean(participant.paymentSentAt),
+  // 🔴 판정 키는 <b>입금확인 시각 하나</b>다. 서버의 needsHostRefund 와 반드시 같아야 한다 —
+  // 여기만 「보냈어요」를 포함하면 목록에는 뜨는데 서버가 계좌를 안 내려 <b>계좌가 빈 행</b>이 된다.
+  // 「보냈어요」는 자기신고라 개최자가 통장에서 확인한 적이 없는 돈이다.
+  const refundTargetParticipants = cancelledParticipants.filter((participant) =>
+    Boolean(participant.confirmedAt),
   );
   const unpaidCancelledCount =
     cancelledParticipants.length - refundTargetParticipants.length;
