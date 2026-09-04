@@ -512,12 +512,23 @@ export function HostedBuncheolManage({
   // 취소분은 서버가 participants 와 분리해 내려준다 — 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
   const cancelledParticipants = detail?.cancelledParticipants ?? [];
   // 취소분 대다수는 입금 기한 만료라 돈이 오간 적이 없고, 같은 사람이 재참여해 활성으로도 있다.
-  const refundTargetParticipants = cancelledParticipants.filter(
-    (participant) =>
-      Boolean(participant.confirmedAt) || Boolean(participant.paymentSentAt),
+  // 🔴 판정 키는 <b>입금확인 시각 하나</b>다. 서버의 needsHostRefund 와 반드시 같아야 한다 —
+  // 여기만 「보냈어요」를 포함하면 목록에는 뜨는데 서버가 계좌를 안 내려 <b>계좌가 빈 행</b>이 된다.
+  // 「보냈어요」는 자기신고라 개최자가 통장에서 확인한 적이 없는 돈이다.
+  const refundTargetParticipants = cancelledParticipants.filter((participant) =>
+    Boolean(participant.confirmedAt),
   );
-  const unpaidCancelledCount =
-    cancelledParticipants.length - refundTargetParticipants.length;
+  // 🔴 「보냈어요」만 하고 확인 전에 빠진 건을 <b>따로 센다</b>. 이걸 「금액 없음」에 섞으면
+  // 개최자가 "환불할 금액이 없어요" 를 읽는데 실제로는 통장에 돈이 있을 수 있다 —
+  // 「제외」가 기한 뒤에만 열리는 이유가 "이체가 통장에 늦게 찍히는 일이 흔해서" 다.
+  // 계좌를 못 보여주는 것과 존재 자체를 부정하는 것은 다르다.
+  const sentButUnconfirmedCount = cancelledParticipants.filter(
+    (participant) => !participant.confirmedAt && participant.paymentSentAt,
+  ).length;
+  const noTraceCancelledCount =
+    cancelledParticipants.length -
+    refundTargetParticipants.length -
+    sentButUnconfirmedCount;
   const minHeadcount = detail?.minHeadcount ?? 0;
   // ⚠️ 여기만 「명」으로 남긴다. 분자(confirmedCount)는 C2C 에서 자리 수지만, 분모
   // (minHeadcount)는 개최자가 「최소 진행 인원」으로 입력한 정책값이다. 분자만 「자리」로 바꾸면
@@ -1428,16 +1439,18 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
-          {/* 입금 흔적이 있는 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
-              LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다. */}
-          {isC2C && refundTargetParticipants.length > 0 ? (
+          {/* 입금 확인된 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
+              LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다.
+              ⚠️ 노출 조건이 cancelledParticipants 기준이다. refundTargetParticipants 로 좁히면
+              취소분이 전부 「보냈어요만」일 때 섹션째 사라져 안내조차 안 나온다. */}
+          {isC2C && cancelledParticipants.length > 0 ? (
             <section className="mt-6 rounded-[1.05rem] border border-black/10 bg-[#f7f7f7] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 환불이 필요한 참여 {refundTargetParticipants.length}건
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                입금 내역이 있는 취소 건이에요. 통장을 확인하고 아래 계좌로
-                환불해 주세요.
+                입금 확인된 취소 건이에요. 통장을 확인하고 아래 계좌로 환불해
+                주세요.
               </p>
               <div className="mt-3 space-y-2">
                 {refundTargetParticipants.map((participant) => (
@@ -1448,7 +1461,10 @@ export function HostedBuncheolManage({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {participant.participantNickname}
+                          {/* 🔴 통장 대조가 필요한 섹션이라 닉네임이 아니라 <b>입금자명</b>을 쓴다 —
+                            바로 위 문구가 "통장을 확인하고" 이고, getDepositorName 규약이
+                            "확인 시트 문구와 목록 행이 반드시 같은 값" 을 요구한다. */}
+                        {getDepositorName(participant)}
                         </p>
                         {/* 파서 최종 폴백이 리터럴 "멤버" 라 그대로 찍으면 의미 없는 줄이 된다. */}
                         {participant.memberName && participant.memberName !== "멤버" ? (
@@ -1456,10 +1472,9 @@ export function HostedBuncheolManage({
                             {participant.memberName}
                           </p>
                         ) : null}
+                        {/* 목록이 confirmedAt 로 좁혀져 있어 여기 오는 건 전부 확인된 건이다. */}
                         <p className="mt-1 text-[12px] font-semibold text-black/45">
-                          {participant.confirmedAt
-                            ? "입금 확인됨"
-                            : "입금 확인 전 · 보냈어요 표시만 있음"}
+                          입금 확인됨
                         </p>
                       </div>
                       <p className="shrink-0 text-[14px] font-semibold tabular-nums">
@@ -1480,9 +1495,16 @@ export function HostedBuncheolManage({
                   </div>
                 ))}
               </div>
-              {unpaidCancelledCount > 0 ? (
-                <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
-                  입금 전에 취소된 참여 {unpaidCancelledCount}건은 환불할 금액이
+              {sentButUnconfirmedCount > 0 ? (
+                <p className="mt-3 text-[12px] font-medium leading-5 text-black/55">
+                  입금 확인 전에 빠진 참여 {sentButUnconfirmedCount}건이 있어요.
+                  보냈다고 표시했지만 확인되지 않은 건이라 계좌를 보여드리지
+                  않아요 — 통장에 늦게 찍힌 이체가 있는지 확인해 주세요.
+                </p>
+              ) : null}
+              {noTraceCancelledCount > 0 ? (
+                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                  입금 전에 취소된 참여 {noTraceCancelledCount}건은 환불할 금액이
                   없어 여기 표시하지 않아요.
                 </p>
               ) : null}
