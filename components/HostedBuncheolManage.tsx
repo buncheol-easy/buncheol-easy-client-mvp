@@ -37,6 +37,7 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
   isParticipationPaymentSentStatus,
+  getCountUnit,
 } from "@/lib/buncheol-states";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
 import {
@@ -518,6 +519,10 @@ export function HostedBuncheolManage({
   const unpaidCancelledCount =
     cancelledParticipants.length - refundTargetParticipants.length;
   const minHeadcount = detail?.minHeadcount ?? 0;
+  // ⚠️ 여기만 「명」으로 남긴다. 분자(confirmedCount)는 C2C 에서 자리 수지만, 분모
+  // (minHeadcount)는 개최자가 「최소 진행 인원」으로 입력한 정책값이다. 분자만 「자리」로 바꾸면
+  // 「4자리 / 5명」이 되고, 분모까지 바꾸는 것은 그 입력 항목의 의미를 바꾸는 <b>정책 결정</b>이라
+  // 화면에서 임의로 정하지 않는다. 서버는 이 둘을 자리 수로 비교한다.
   const confirmedProgressLabel = minHeadcount
     ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
     : `${confirmedCount}\uba85`;
@@ -548,13 +553,8 @@ export function HostedBuncheolManage({
     ).length ?? 0;
   // ── C2C 파생값 (docs/46 §4.6 — 관리 응답은 활성 참여 전건을 내려준다) ──
   const isC2C = getFlowType(detail?.flowType) === "C2C";
-  // 🔴 아래 카운트들은 전부 <b>자리 수</b>다(멤버 슬롯 점유 건수). C2C 는 한 사람이 자리를 여러 개
-  // 잡을 수 있어 자리 ≠ 사람이다 — 실측: 자리 5개인데 사람은 2명. 그래서 C2C 는 「자리」로 쓴다.
-  // LEGACY 는 1인 1자리라 자리 = 사람이고 「명」이 맞다.
-  //
-  // ⚠️ <b>숫자는 바꾸지 않는다.</b> 서버의 최소 진행 인원 판정이 자리 수 기준이라, 숫자를 사람 수로
-  // 바꾸면 화면과 서버가 갈린다. 바꾸는 것은 단위 표기뿐이다.
-  const countUnit = isC2C ? "자리" : "명";
+  // 아래 카운트들은 전부 자리 수다(멤버 슬롯 점유 건수). 규약은 getCountUnit 참조.
+  const countUnit = getCountUnit(detail?.flowType);
   const activeC2CParticipants = (detail?.participants ?? []).filter(
     (participant) => !isParticipationCancelledStatus(participant.status),
   );
@@ -793,8 +793,8 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "성사 확정",
       description: isUnderMinHeadcount
-        ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}명만 신청했어요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
-        : `신청자 ${applicantCount}명 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
+        ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}${countUnit}만 신청했어요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
+        : `신청자 ${applicantCount}${countUnit} 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runConfirmRecruitment(applicantCount);
@@ -822,7 +822,7 @@ export function HostedBuncheolManage({
 
       await reloadManagementDetail(accessToken);
       setMessage(
-        `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}명에게 입금 안내가 발송됐어요.`,
+        `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}${countUnit}에 입금 안내가 발송됐어요.`,
       );
     } catch (error: unknown) {
       setMessage(
@@ -849,7 +849,7 @@ export function HostedBuncheolManage({
         setConfirmSheetRequest(null);
         void runFinalizeCollected();
       },
-      title: `입금한 ${c2cConfirmedCount}명으로 진행할까요?`,
+      title: `입금한 ${c2cConfirmedCount}${countUnit}로 진행할까요?`,
     });
   }
 
@@ -1346,7 +1346,9 @@ export function HostedBuncheolManage({
                 성사 확정
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                지금까지 신청 {c2cAppliedCount}명이에요. 확정하면 신청자
+                지금까지 신청 {c2cAppliedCount}
+                {countUnit}
+                이에요. 확정하면 신청자
                 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.
               </p>
               <button
@@ -1380,10 +1382,9 @@ export function HostedBuncheolManage({
                 ) : null}
               </div>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                입금 확인 {c2cConfirmedCount}
-                {countUnit} · 입금 대기 {c2cAwaitingCount}
-                {countUnit}
-                · 보냈어요 {c2cPaymentSentCount}명
+                {/* ⚠️ 한 줄로 붙인다. 값 뒤에서 줄을 바꾸면 다음 텍스트 노드의 <b>선두 개행+들여쓰기가
+                    통째로 버려져</b> 공백이 사라진다("1자리· 보냈어요"). 아래 「입금한{" "}」이 같은 이유다. */}
+                {`입금 확인 ${c2cConfirmedCount}${countUnit} · 입금 대기 ${c2cAwaitingCount}${countUnit} · 보냈어요 ${c2cPaymentSentCount}${countUnit}`}
               </p>
               {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를
                   통과한다. 전원 입금이면 입금확인 경로에서 자동으로 CONFIRMED 가 되므로, 이 버튼이 실제로
@@ -1405,11 +1406,12 @@ export function HostedBuncheolManage({
                   >
                     {pendingC2CAction === "finalize-collected"
                       ? "확정하는 중"
-                      : `입금한 ${c2cConfirmedCount}명으로 진행 확정`}
+                      : `입금한 ${c2cConfirmedCount}${countUnit}로 진행 확정`}
                   </button>
                   <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
                     입금을 기다리는 참여가 더 없어요. 확정하면 입금한{" "}
-                    {c2cConfirmedCount}명으로 분철을 진행해요.
+                    {c2cConfirmedCount}
+                    {countUnit}로 분철을 진행해요.
                   </p>
                 </>
               ) : c2cUnpaidActiveCount > 0 ? (

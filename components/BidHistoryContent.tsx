@@ -75,6 +75,7 @@ import {
   isParticipationPaymentSentStatus,
   isUserCancelledReason,
   USER_CANCELLED_REASON,
+  getCountUnit,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -4298,11 +4299,8 @@ export function BidHistoryContent({
                   product.optionCount ??
                   product.targetMembers?.length ??
                   product.options.length;
-                // 🔴 이 값은 <b>자리 수</b>다. C2C 는 한 사람이 자리를 여러 개 잡을 수 있어
-                // 자리 ≠ 사람이다(실측: 자리 5개 · 사람 2명). LEGACY 는 1인 1자리라 「명」이 맞다.
-                // ⚠️ 숫자는 바꾸지 않는다 — 서버의 최소 진행 인원 판정이 자리 수 기준이다.
-                const countUnit =
-                  getFlowType(product.flowType) === "C2C" ? "자리" : "명";
+                const countUnit = getCountUnit(product.flowType);
+                // 아래 participantCount 는 <b>자리 수</b>다 — 규약은 getCountUnit 참조.
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,

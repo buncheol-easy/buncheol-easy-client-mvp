@@ -14,7 +14,10 @@ import {
   type ReactNode,
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
-import { isBuncheolRecruitingStatus } from "@/lib/buncheol-states";
+import {
+  getCountUnit,
+  isBuncheolRecruitingStatus,
+} from "@/lib/buncheol-states";
 import { X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import {
@@ -106,7 +109,7 @@ function formatIntroRecentDeadline(deadline: string) {
 
 function getIntroRecentState(item: BuncheolSummary) {
   if (typeof item.activeParticipationCount === "number") {
-    return `참여 ${item.activeParticipationCount}명`;
+    return `참여 ${item.activeParticipationCount}${getCountUnit(item.flowType)}`;
   }
 
   if (item.memberNames.length > 0) {
