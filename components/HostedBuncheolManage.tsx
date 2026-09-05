@@ -1796,15 +1796,18 @@ export function HostedBuncheolManage({
                                       className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
                                       disabled={!canRegisterTracking}
                                       inputMode="numeric"
-                                      onChange={(event) =>
+                                      // 🔴 updater 는 렌더 단계에서 늦게 불려 그때 currentTarget 은
+                                      // null 이다 — 값을 밖에서 먼저 꺼내야 한다.
+                                      onChange={(event) => {
+                                        const trackingNumber =
+                                          event.currentTarget.value;
                                         setParticipantTrackingInputs(
                                           (inputs) => ({
                                             ...inputs,
-                                            [entry.ownerId]:
-                                              event.currentTarget.value,
+                                            [entry.ownerId]: trackingNumber,
                                           }),
-                                        )
-                                      }
+                                        );
+                                      }}
                                       // 버튼을 흐리기만 하면 개최자가 이유를 못 찾는다 — 「제외」와 같은 규칙.
                                       placeholder={
                                         canRegisterTracking
