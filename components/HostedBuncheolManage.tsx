@@ -1797,8 +1797,9 @@ export function HostedBuncheolManage({
                                       disabled={!canRegisterTracking}
                                       inputMode="numeric"
                                       // 🔴 값을 updater 밖에서 먼저 꺼낸다. updater 는 React 가
-                                      // 나중에 부르는데 그때 currentTarget 은 이미 null 이라
-                                      // 렌더가 예외를 던지고, 그 재시도가 무한히 돌아 탭이 죽는다.
+                                      // 나중에 부르는데 그때 currentTarget 은 이미 null 이다.
+                                      // 렌더 중 TypeError 가 나고(로컬 dev 로그에서 확인),
+                                      // 프로덕션에서는 콘솔에 아무것도 안 남긴 채 탭이 죽는다.
                                       onChange={(event) => {
                                         const trackingNumber =
                                           event.currentTarget.value;
