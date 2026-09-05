@@ -752,14 +752,15 @@ function getBidRecordCancellationKind(bid: BidRecord) {
     return "BUNCHEOL_CANCELLED";
   }
 
-  // 🔴 모르는 사유의 기본값은 HOST_RELEASED 다. 「자동 취소」로 떨어뜨리면 참여자를 분철이지로
-  // 잘못 보내지만, 「개최자가 뺐다」는 최악의 경우에도 물어볼 상대를 맞게 가리킨다.
-  return "HOST_RELEASED";
+  // 🔴 모르는 사유의 기본값은 <b>flow 로 갈린다</b>. C2C 는 돈이 개최자에게 있으니 「개최자가 뺐다」가
+  // 최악의 경우에도 물어볼 상대를 맞게 가리킨다. LEGACY 는 「제외」 자체가 없고 환불 주체가
+  // 플랫폼이라, 같은 기본값을 쓰면 일어날 수 없는 사건을 단정하고 문의처까지 틀리게 보낸다.
+  return isC2CBidRecord(bid) ? "HOST_RELEASED" : "PAYMENT_TIMEOUT";
 }
 
 // 참여 내역 목록에서 감출 참여 (docs/56 H-05). 자발 취소(본인 귀책)만 감춘다 —
 // 분철 취소·입금 기한 만료는 사용자 귀책이 아니고, 알림톡을 못 본 사용자에게는 유일한 흔적이다.
-// 사유를 알 수 없는 취소는 getBidRecordCancellationKind 가 PAYMENT_TIMEOUT 으로 떨어뜨리므로
+// 사유를 알 수 없는 취소는 getBidRecordCancellationKind 가 자발 취소가 아닌 쪽으로 떨어뜨리므로
 // 자동으로 남는 쪽이 된다.
 // 입금 흔적(보냈어요 마킹·확인 완료·paidAt)이 있으면 사유가 USER_CANCELLED 여도 남긴다 —
 // 서버가 참여자 요청에 의한 CS 취소를 같은 사유로 기록하면 환불을 추적할 유일한 근거가 사라진다.
@@ -848,14 +849,22 @@ function isFreeBidRecord(bid: BidRecord) {
   return bid.amount === 0 && (bid.shippingFee ?? 0) === 0;
 }
 
-// 취소됐어도 개최자에게 물을 게 남은 경우 — 돈을 보냈는데 개최자가 뺀 자리다. 오픈채팅을 끊으면
-// 유일한 인앱 연락 수단이 사라지고, 화면은 대금을 만진 적 없는 분철이지로 그를 보낸다.
-function stillNeedsHostContact(bid: BidRecord) {
+// 취소 카드에서 살아남는 유일한 입금 흔적. 취소 행은 상세 보강을 타지 않아 paidAt 이 안 채워진다.
+function hasBidRecordPaymentTrace(bid: BidRecord) {
   return (
-    getBidRecordCancellationKind(bid) === "HOST_RELEASED" &&
-    (Boolean(bid.paymentSentAt) ||
-      isParticipationPaymentSentStatus(bid.participationStatus))
+    Boolean(bid.paymentSentAt) ||
+    isParticipationPaymentSentStatus(bid.participationStatus)
   );
+}
+
+// 취소됐어도 개최자에게 물을 게 남은 경우 — C2C 에서 돈이 오간 자리다. 오픈채팅을 끊으면 유일한
+// 인앱 연락 수단이 사라지는데, 화면은 대금을 만진 적 없는 분철이지로 그를 보낸다.
+function stillNeedsHostContact(bid: BidRecord) {
+  if (!isC2CBidRecord(bid) || !hasBidRecordPaymentTrace(bid)) {
+    return false;
+  }
+  const kind = getBidRecordCancellationKind(bid);
+  return kind === "HOST_RELEASED" || kind === "BUNCHEOL_CANCELLED";
 }
 
 // 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
@@ -878,17 +887,19 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
   }
 
   if (cancellationKind === "HOST_RELEASED") {
-    // 돈을 누가 갖고 있나로 갈린다 — C2C 는 개최자 개인계좌다.
-    const hasSentTrace =
-      Boolean(bid.paymentSentAt) ||
-      isParticipationPaymentSentStatus(bid.participationStatus);
+    // 돈을 누가 갖고 있나로 갈린다 — C2C 는 개최자 개인계좌, LEGACY 는 플랫폼이다.
+    // ⚠️ 흔적이 없다고 「낼 게 없다」고 단정하지 않는다. 「보냈어요」를 거치지 않고 개최자가 바로
+    // 입금확인한 자리는 취소 후 paymentSentAt 이 비는데, 그 사람은 돈을 낸 사람이다.
+    const hasTrace = hasBidRecordPaymentTrace(bid);
     return {
       label: "개최자가 뺐어요",
       description: isFreeBidRecord(bid)
-        ? "입금 기한이 지나 개최자가 참여를 뺐어요."
-        : hasSentTrace
-          ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 개최자에게 먼저 알려 주세요 — 대금은 개최자 계좌로 갔어요. 연락이 어려우면 분철이지가 확인을 도와드릴게요."
-          : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요.",
+        ? "개최자가 참여를 뺐어요."
+        : !isC2C
+          ? "개최자가 참여를 뺐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
+          : hasTrace
+            ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 개최자에게 먼저 알려 주세요 — 대금은 개최자 계좌로 갔어요. 연락이 어려우면 분철이지가 확인을 도와드릴게요."
+            : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주세요.",
     };
   }
 
