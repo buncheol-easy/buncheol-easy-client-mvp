@@ -1757,12 +1757,11 @@ export function HostedBuncheolManage({
                       {bundleDeliveries.length > 0 ? (
                         <div className="mt-3 space-y-3 border-t border-black/[0.06] pt-3">
                           {bundleDeliveries.map((entry) => {
+                            // 🔴 분철 확정 게이트가 없다. 배송이 여기 있다는 것 자체가 그 자리는
+                            // 입금확인됐다는 뜻이고, 그러면 개최자 취소도 이미 막혀 있다 (서버 #183).
                             const hasTracking = Boolean(
                               entry.delivery.trackingNumber,
                             );
-                            // 자리 확정 여부는 위에서 이미 걸렀으므로 분철 확정만 남는다.
-                            const canRegisterTracking =
-                              detail.status === "CONFIRMED";
                             const isRegistering =
                               pendingC2CAction === `tracking:${entry.ownerId}`;
                             const trackingInput =
@@ -1794,7 +1793,6 @@ export function HostedBuncheolManage({
                                   <div className="mt-2 flex gap-2">
                                     <input
                                       className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
-                                      disabled={!canRegisterTracking}
                                       inputMode="numeric"
                                       // 🔴 updater 는 렌더 단계에서 늦게 불려 그때 currentTarget 은
                                       // null 이다 — 값을 밖에서 먼저 꺼내야 한다.
@@ -1808,18 +1806,12 @@ export function HostedBuncheolManage({
                                           }),
                                         );
                                       }}
-                                      // 버튼을 흐리기만 하면 개최자가 이유를 못 찾는다 — 「제외」와 같은 규칙.
-                                      placeholder={
-                                        canRegisterTracking
-                                          ? "운송장 번호 입력"
-                                          : "분철 진행 확정 후 등록 가능"
-                                      }
+                                      placeholder="운송장 번호 입력"
                                       value={trackingInput}
                                     />
                                     <button
                                       className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
                                       disabled={
-                                        !canRegisterTracking ||
                                         trackingInput.trim().length === 0 ||
                                         pendingC2CAction !== null
                                       }
