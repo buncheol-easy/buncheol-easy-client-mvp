@@ -1796,15 +1796,19 @@ export function HostedBuncheolManage({
                                       className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
                                       disabled={!canRegisterTracking}
                                       inputMode="numeric"
-                                      onChange={(event) =>
+                                      // 🔴 값을 updater 밖에서 먼저 꺼낸다. updater 는 React 가
+                                      // 나중에 부르는데 그때 currentTarget 은 이미 null 이라
+                                      // 렌더가 예외를 던지고, 그 재시도가 무한히 돌아 탭이 죽는다.
+                                      onChange={(event) => {
+                                        const trackingNumber =
+                                          event.currentTarget.value;
                                         setParticipantTrackingInputs(
                                           (inputs) => ({
                                             ...inputs,
-                                            [entry.ownerId]:
-                                              event.currentTarget.value,
+                                            [entry.ownerId]: trackingNumber,
                                           }),
-                                        )
-                                      }
+                                        );
+                                      }}
                                       // 버튼을 흐리기만 하면 개최자가 이유를 못 찾는다 — 「제외」와 같은 규칙.
                                       placeholder={
                                         canRegisterTracking
