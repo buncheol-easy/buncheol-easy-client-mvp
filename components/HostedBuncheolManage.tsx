@@ -592,7 +592,7 @@ export function HostedBuncheolManage({
     c2cUnpaidActiveCount === 0 && c2cConfirmedCount > 0;
   // 🔴 배송 집계는 <b>배송 단위</b>다. 참여 단위로 세면 한 묶음의 두 슬롯이 같은 배송을 물고 있을 때
   // 목록에는 운송장 입력칸이 1개인데 "운송장 대기 2건" 으로 뜬다. deliveryId 로 중복을 제거한다.
-  // 배송 스냅샷은 입금 전에도 생기므로(참여 생성 시 배송지 전송) 입금확인된 건만 대기로 센다.
+  // 배송 스냅샷은 입금확인 시점에 생긴다(서버 DeliverySnapshotCreator). 방어적으로 확인된 건만 센다.
   const c2cDeliveries = new Map<
     string,
     { confirmed: boolean; trackingNumber?: string | null }
@@ -1610,7 +1610,10 @@ export function HostedBuncheolManage({
                   }[] = [];
 
                   for (const slot of bundle.slots) {
-                    // 배송 스냅샷은 신청 시점에 생기므로, 확정 전에는 지점명·연락처를 그리지 않는다.
+                    // 배송 스냅샷은 입금확인 시점에 생긴다(서버 DeliverySnapshotCreator).
+                    // 🔴 이 isSlotConfirmed 필터가 아래 운송장 입력칸의 게이트를 대신한다 — 분철 확정
+                    // 게이트(#183)를 뗀 뒤 「입금확인된 자리만 운송장을 받는다」는 규칙은 여기 한 곳이
+                    // 지킨다. 이 조건을 완화하면 미확인 자리에 입력칸이 열린다.
                     // 판정은 묶음 전체가 아니라 배송을 문 슬롯 기준 — 전체로 보면 부분 확정 묶음에서
                     // 이미 확정된 자리의 운송장 입력칸까지 사라진다.
                     const isSlotConfirmed =
@@ -1757,8 +1760,8 @@ export function HostedBuncheolManage({
                       {bundleDeliveries.length > 0 ? (
                         <div className="mt-3 space-y-3 border-t border-black/[0.06] pt-3">
                           {bundleDeliveries.map((entry) => {
-                            // 🔴 분철 확정 게이트가 없다. 배송이 여기 있다는 것 자체가 그 자리는
-                            // 입금확인됐다는 뜻이고, 그러면 개최자 취소도 이미 막혀 있다 (서버 #183).
+                            // 분철 확정 게이트 없음 — 입금확인 판정은 위 isSlotConfirmed
+                            // 필터가 대신한다(#183). 서버도 같은 축(자리 CONFIRMED)만 본다.
                             const hasTracking = Boolean(
                               entry.delivery.trackingNumber,
                             );
@@ -1792,7 +1795,7 @@ export function HostedBuncheolManage({
                                 ) : (
                                   <div className="mt-2 flex gap-2">
                                     <input
-                                      className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
+                                      className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black"
                                       inputMode="numeric"
                                       // 🔴 updater 는 렌더 단계에서 늦게 불려 그때 currentTarget 은
                                       // null 이다 — 값을 밖에서 먼저 꺼내야 한다.
@@ -1861,8 +1864,9 @@ export function HostedBuncheolManage({
                 const isPaymentConfirmed =
                   isParticipationConfirmedStatus(option.winner?.paymentStatus) ||
                   Boolean(option.winner?.paymentConfirmedAt);
-                // 운송장 등록은 분철이 진행확정(CONFIRMED)된 뒤에만 가능하다 — 모집중 발송 후
-                // 분철이 무산(최소 인원 미달 취소)되는 모순을 막는 서버 가드(DLV-009)와 동일 조건.
+                // (LEGACY 한정) 운송장 등록은 분철이 진행확정(CONFIRMED)된 뒤에만 가능하다 —
+                // 모집중 발송 후 분철이 무산(최소 인원 미달 취소)되는 모순을 막는 서버 가드(DLV-009)와
+                // 동일 조건. #183 이 이 가드를 LEGACY 한정으로 좁혔으므로 C2C 분기에는 없다.
                 // 중앙 confirmed 계열(PAID 등 동의어 포함)로 넓히지 않고 서버 가드와 같은
                 // 정확한 CONFIRMED 비교를 의도적으로 유지한다.
                 const isBuncheolConfirmedForShipping =
