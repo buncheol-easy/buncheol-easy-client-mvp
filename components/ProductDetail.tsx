@@ -1791,6 +1791,10 @@ export function ProductDetail({
   // 옵션 가격으로 판정하고, 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
   const isShippingFeePaybackProduct =
     FEATURES.shippingFeePayback &&
+    // 🔴 환급 자격은 운영진 개최(LEGACY) 전용이다(서버 ShippingFeePaybackPolicy 가 flowType 을 강제).
+    // C2C 는 돈이 개최자 개인 계좌로 가서 플랫폼이 돌려줄 수 없는데, 이 게이트가 없으면
+    // 전액 0원 C2C 분철에 「배송비는 환급되니 걱정 마세요!」가 떠서 거짓 약속이 된다.
+    !isC2CProduct &&
     auctionOptions.length > 0 &&
     auctionOptions.every(
       (option) => priceToNumber(getBidBaseline(option)) === 0,
@@ -2976,6 +2980,9 @@ export function ProductDetail({
           errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
           errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
           errorMessage.includes("BUNCHEOL_HOST_CANNOT_PARTICIPATE") ||
+          // 서버 실문구는 「주최자는 자신의 분철에 참여할 수 없습니다」(BCH-066)다 — 이 단어가
+          // 빠져 있어 이 분기가 죽은 코드였고, 전부 아래 일반 403 문구로 떨어졌다.
+          errorMessage.includes("주최자") ||
           errorMessage.includes("개최자") ||
           errorMessage.includes("본인") ||
           errorMessage.includes("내가 연");
@@ -2993,8 +3000,10 @@ export function ProductDetail({
         } else if (didDeadlinePass) {
           setCheckoutError("참여 기한이 지났어요.");
         } else if (isForbidden) {
+          // 이 자리에 오는 403 은 대부분 가입 미완료(전화번호 없음, USR-018)다. 「테스트 리모콘」은
+          // staging 전용 도구라 운영 사용자가 보면 무슨 말인지 알 수 없다.
           setCheckoutError(
-            "참여 권한이 없어요. 테스트 리모콘에서 다른 계정으로 전환한 뒤 시도해 주세요.",
+            "지금 계정으로는 참여할 수 없어요. 마이페이지에서 가입 정보(전화번호)가 등록돼 있는지 확인해 주세요.",
           );
         } else {
           setCheckoutError(errorMessage);
