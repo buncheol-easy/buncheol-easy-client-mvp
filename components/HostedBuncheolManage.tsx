@@ -1364,9 +1364,10 @@ export function HostedBuncheolManage({
               </p>
               {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
                   유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
-              <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/40">
-                ⚠️ 모집 기한이 지나고 <b>2일(48시간)</b> 안에 확정하지 않으면
-                분철이 자동으로 취소돼요.
+              <p className="mt-1.5 text-[13px] font-medium leading-5 text-black/50">
+                모집 기한이 지나고{" "}
+                <span className="font-semibold">2일(48시간)</span> 안에 확정하지
+                않으면 분철이 자동으로 취소돼요.
               </p>
               <button
                 className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"

@@ -43,6 +43,10 @@ export class ApiRequestError extends Error {
 
 // 마이페이지 정산 계좌 미등록. 서버가 참여 요청에서 금액과 무관하게 계좌를 요구한다(서버 PR #151).
 export const USER_BANK_ACCOUNT_NOT_REGISTERED_CODE = "USR-025";
+// 개최자 본인 신청 차단(주최자는 자신의 분철에 참여 불가). 문자열 매칭 대신 이 코드로 판별한다.
+export const HOST_CANNOT_PARTICIPATE_CODE = "BCH-066";
+// 가입 미완료(전화번호 없음). 진입 가드가 놓친 경우의 참여 403 이 이 코드로 온다.
+export const PROFILE_INCOMPLETE_CODE = "USR-018";
 
 export type UserProfileStatus = {
   isProfileComplete: boolean;

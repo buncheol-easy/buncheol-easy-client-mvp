@@ -14,6 +14,8 @@ import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
   ApiRequestError,
+  HOST_CANNOT_PARTICIPATE_CODE,
+  PROFILE_INCOMPLETE_CODE,
   USER_BANK_ACCOUNT_NOT_REGISTERED_CODE,
   addBuncheolBookmark,
   deleteBuncheol,
@@ -2976,16 +2978,20 @@ export function ProductDetail({
           error instanceof ApiRequestError &&
           error.code === USER_BANK_ACCOUNT_NOT_REGISTERED_CODE;
         const didDeadlinePass = isDeadlineClosed(product.deadline);
+        const errorCode =
+          error instanceof ApiRequestError ? error.code : undefined;
+        // 이 분기는 문구만이 아니라 화면 모드(isHostedByMeFromApi → CTA 「내 분철 관리하기」)까지
+        // 뒤집는다 — 그런 부작용은 문자열 추정이 아니라 확정 신호(에러 코드)에만 물린다.
+        // 문자열 매칭은 코드가 없는 구 응답 폴백으로만 남긴다. 서버 실문구는 「주최자는 자신의
+        // 분철에 참여할 수 없습니다」인데, 「주최자」는 서버 공용 어휘라 넓게 걸면 남의 분철에서
+        // 오탐으로 관리 화면 CTA 가 뜬다.
         const isHostParticipationBlocked =
-          errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
-          errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
-          errorMessage.includes("BUNCHEOL_HOST_CANNOT_PARTICIPATE") ||
-          // 서버 실문구는 「주최자는 자신의 분철에 참여할 수 없습니다」(BCH-066)다 — 이 단어가
-          // 빠져 있어 이 분기가 죽은 코드였고, 전부 아래 일반 403 문구로 떨어졌다.
-          errorMessage.includes("주최자") ||
-          errorMessage.includes("개최자") ||
-          errorMessage.includes("본인") ||
-          errorMessage.includes("내가 연");
+          errorCode === HOST_CANNOT_PARTICIPATE_CODE ||
+          (errorCode === undefined &&
+            (errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
+              errorMessage.includes("주최자") ||
+              errorMessage.includes("개최자")));
+        const isProfileIncomplete = errorCode === PROFILE_INCOMPLETE_CODE;
 
         if (needsBankAccount) {
           // 시트는 배경 탭으로 닫힌다 — 흔적을 안 남기면 "참여하기를 눌렀는데 아무 일도 없는 화면"이 된다.
@@ -2999,11 +3005,16 @@ export function ProductDetail({
           );
         } else if (didDeadlinePass) {
           setCheckoutError("참여 기한이 지났어요.");
-        } else if (isForbidden) {
-          // 이 자리에 오는 403 은 대부분 가입 미완료(전화번호 없음, USR-018)다. 「테스트 리모콘」은
-          // staging 전용 도구라 운영 사용자가 보면 무슨 말인지 알 수 없다.
+        } else if (isProfileIncomplete) {
+          // 평소엔 진입 가드가 /signup/profile 로 보내지만, 가드의 상태 확인이 실패하면 여기까지
+          // 온다 — 안내 동선을 그 가드와 같은 곳(가입 정보 입력)으로 맞춘다.
           setCheckoutError(
-            "지금 계정으로는 참여할 수 없어요. 마이페이지에서 가입 정보(전화번호)가 등록돼 있는지 확인해 주세요.",
+            "가입 정보(전화번호) 등록이 아직 안 됐어요. 가입 정보를 입력하면 참여할 수 있어요.",
+          );
+        } else if (isForbidden) {
+          // 「테스트 리모콘」은 staging 전용 도구라 운영 사용자가 보면 무슨 말인지 알 수 없다.
+          setCheckoutError(
+            "지금 계정으로는 참여할 수 없어요. 문제가 계속되면 고객센터로 문의해 주세요.",
           );
         } else {
           setCheckoutError(errorMessage);
