@@ -26,6 +26,19 @@ function getHashToken(name: string) {
   return hashParams.get(name) ?? undefined;
 }
 
+// 🔴 토큰을 읽는 즉시 주소에서 지운다. 프래그먼트는 서버 로그에는 안 남지만 브라우저 히스토리·
+// 북마크·분석 SDK 의 URL 수집에는 그대로 실린다 — 서버 OAuth2LoginSuccessHandler 주석이
+// 명시한 「클라 replaceState 후속 조치」가 이것이다.
+function stripTokenFragment() {
+  if (window.location.hash.includes("accessToken")) {
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + window.location.search,
+    );
+  }
+}
+
 export function AuthCallbackContent({
   initialAccessToken,
   returnHref,
@@ -35,6 +48,7 @@ export function AuthCallbackContent({
 
   useEffect(() => {
     const accessToken = initialAccessToken ?? getHashToken("accessToken");
+    stripTokenFragment();
     const storedReturnHref = window.sessionStorage.getItem(
       authReturnHrefStorageKey,
     );
