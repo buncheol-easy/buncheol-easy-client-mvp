@@ -12,6 +12,7 @@ import {
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
   confirmBundlePayment,
+  isSyntheticParticipantName,
   releaseBundle,
   requestBuncheolDetail,
   requestBuncheolManagement,
@@ -71,7 +72,10 @@ function formatWonAmount(value: number | null | undefined) {
 function getDepositorName(participant: BuncheolManagementParticipant) {
   // 파서(lib/auth-api.ts)가 depositorName 안에서 이미 refundAccount.holder 를 흡수하므로
   // 여기서 holder 를 다시 보면 도달 불가 분기가 된다 — 닉네임 폴백만 남긴다.
-  return participant.depositorName || participant.participantNickname;
+  const name = participant.depositorName || participant.participantNickname;
+  // 파서 합성 폴백(「참여 {id}」)은 통장 대조에 쓸 수 없다 — 입금자명 노출 지점 전부가
+  // 이 함수를 거치므로 여기 한 곳에서 흡수한다.
+  return isSyntheticParticipantName(name) ? "확인 필요" : name;
 }
 
 function formatKoreaDateTime(value: string | undefined) {
@@ -804,8 +808,8 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "성사 확정",
       description: isUnderMinHeadcount
-        // 한 문장 안에서 분모(명)·분자 단위를 섞지 않는다 — 진행률 라벨(:537)과 같은 규칙.
-        ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}명만 신청했어요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
+        // 자리 수를 「명」으로 재라벨링하지 않는다 — 문장을 쪼개 단위 혼용 자체를 없앤다.
+        ? `최소 진행 인원 ${minHeadcount}명을 아직 채우지 못했어요. 지금까지 신청은 ${applicantCount}${countUnit}예요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
         : `신청자 ${applicantCount}${countUnit} 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
@@ -1358,9 +1362,7 @@ export function HostedBuncheolManage({
                 성사 확정
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                지금까지 신청 {c2cAppliedCount}
-                {countUnit}. 확정하면 신청자 전원에게 입금 계좌와 24시간
-                기한이 담긴 알림톡이 발송돼요.
+                {`지금까지 신청 ${c2cAppliedCount}${countUnit}예요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
               </p>
               {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
                   유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
@@ -1456,7 +1458,9 @@ export function HostedBuncheolManage({
           (refundTargetParticipants.length > 0 || sentButUnconfirmedCount > 0) ? (
             <section className="mt-6 rounded-[1.05rem] border border-black/10 bg-[#f7f7f7] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                환불이 필요한 참여 {refundTargetParticipants.length}건
+                {refundTargetParticipants.length > 0
+                  ? `환불이 필요한 참여 ${refundTargetParticipants.length}건`
+                  : "환불 확인이 필요한 참여"}
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
                 {refundTargetParticipants.length > 0
@@ -1671,7 +1675,7 @@ export function HostedBuncheolManage({
                               파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
                               같은 이름이 두 줄 뜬다. */}
                           {head.participantNickname !== depositorName &&
-                          !head.participantNickname.startsWith("참여 ") ? (
+                          !isSyntheticParticipantName(head.participantNickname) ? (
                             <p className="truncate text-[13px] font-semibold text-black/55">
                               <span className="mr-1.5 text-black/35">참여자</span>
                               {head.participantNickname}
@@ -2035,8 +2039,12 @@ export function HostedBuncheolManage({
                                           이 줄이 실명으로 바뀐다 — 라벨과 값이 어긋나고 바로 아래
                                           "입금자명"과 같은 값이 두 번 뜨며 닉네임이 화면에서 사라진다.
                                           이 줄은 닉네임 전용이다. */}
-                                      {matchedParticipant?.participantNickname ??
-                                        "-"}
+                                      {matchedParticipant?.participantNickname &&
+                                      !isSyntheticParticipantName(
+                                        matchedParticipant.participantNickname,
+                                      )
+                                        ? matchedParticipant.participantNickname
+                                        : "-"}
                                     </p>
                                     {/* 통장에 찍히는 건 예금주명이라, 닉네임(참여자)만으로는 대조가 안 된다 (docs/53 Q-18).
                                         C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}
