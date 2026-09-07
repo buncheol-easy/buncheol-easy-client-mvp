@@ -10,8 +10,10 @@ export const metadata: Metadata = {
 };
 
 type LoginCallbackPageProps = {
+  // ⚠️ accessToken 은 받지 않는다 — 서버는 프래그먼트(#accessToken=…)로만 보낸다
+  // (OAuth2LoginSuccessHandler 실측). 쿼리 입구를 열어 두면 요청 라인·프록시 로그·
+  // Referer 에 토큰이 실리는 경로가 생긴다.
   searchParams: Promise<{
-    accessToken?: string | string[];
     returnTo?: string | string[];
   }>;
 };
@@ -23,12 +25,11 @@ function getFirstSearchParam(value: string | string[] | undefined) {
 export default async function LoginCallbackPage({
   searchParams,
 }: LoginCallbackPageProps) {
-  const { accessToken, returnTo } = await searchParams;
+  const { returnTo } = await searchParams;
 
   return (
     <AuthCallbackContent
-      initialAccessToken={getFirstSearchParam(accessToken)}
-      returnHref={getOptionalSafeInternalHref(returnTo)}
+      returnHref={getOptionalSafeInternalHref(getFirstSearchParam(returnTo))}
     />
   );
 }

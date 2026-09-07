@@ -9,9 +9,9 @@ import {
 } from "@/lib/auth-store";
 import { requestUserProfileStatus } from "@/lib/auth-api";
 import { getSafeInternalHref } from "@/lib/auth-navigation";
+import { AUTH_TOKEN_PARAM } from "@/lib/auth-token-param";
 
 type AuthCallbackContentProps = {
-  initialAccessToken?: string;
   returnHref?: string;
 };
 
@@ -26,15 +26,34 @@ function getHashToken(name: string) {
   return hashParams.get(name) ?? undefined;
 }
 
+// 🔴 토큰을 읽는 즉시 주소에서 지운다. 프래그먼트는 서버 로그에는 안 남지만 브라우저 히스토리·
+// 북마크·분석 SDK 의 URL 수집에는 그대로 실린다 — 서버 OAuth2LoginSuccessHandler 주석이
+// 명시한 「클라 replaceState 후속 조치」가 이것이다. 서버는 프래그먼트로만 보내지만,
+// 쿼리로 들어온 경우까지 방어적으로 지운다(쿼리는 프록시 로그·Referer 에도 실린다).
+function stripTokenFromUrl() {
+  const url = new URL(window.location.href);
+  const hasHashToken = url.hash.includes(AUTH_TOKEN_PARAM);
+  const hasQueryToken = url.searchParams.has(AUTH_TOKEN_PARAM);
+  if (!hasHashToken && !hasQueryToken) {
+    return;
+  }
+  url.searchParams.delete(AUTH_TOKEN_PARAM);
+  window.history.replaceState(
+    window.history.state,
+    "",
+    url.pathname + url.search,
+  );
+}
+
 export function AuthCallbackContent({
-  initialAccessToken,
   returnHref,
 }: AuthCallbackContentProps) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    const accessToken = initialAccessToken ?? getHashToken("accessToken");
+    const accessToken = getHashToken(AUTH_TOKEN_PARAM);
+    stripTokenFromUrl();
     const storedReturnHref = window.sessionStorage.getItem(
       authReturnHrefStorageKey,
     );
@@ -93,7 +112,7 @@ export function AuthCallbackContent({
     return () => {
       isActive = false;
     };
-  }, [initialAccessToken, returnHref, router]);
+  }, [returnHref, router]);
 
   return (
     <main className="system-chrome-white system-chrome-bottom-black flex h-[100dvh] items-center justify-center bg-white px-6 text-center text-[#111111]">
