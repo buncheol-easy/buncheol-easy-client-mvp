@@ -860,11 +860,17 @@ function hasBidRecordPaymentTrace(bid: BidRecord) {
 // 취소됐어도 개최자에게 물을 게 남은 경우 — C2C 에서 돈이 오간 자리다. 오픈채팅을 끊으면 유일한
 // 인앱 연락 수단이 사라지는데, 화면은 대금을 만진 적 없는 분철이지로 그를 보낸다.
 function stillNeedsHostContact(bid: BidRecord) {
-  if (!isC2CBidRecord(bid) || !hasBidRecordPaymentTrace(bid)) {
+  if (!isC2CBidRecord(bid)) {
     return false;
   }
   const kind = getBidRecordCancellationKind(bid);
-  return kind === "HOST_RELEASED" || kind === "BUNCHEOL_CANCELLED";
+  // 개최자가 뺀 건은 흔적이 없어도 연다 — 「보냈어요」 없이 개최자가 바로 입금확인한 뒤
+  // 취소된 사람은 흔적이 비는데 돈을 낸 사람이고, 취소 행에는 paidAt 이 안 실려 클라가
+  // 그를 식별할 수 없다. 문구가 "개최자에게 알려 주세요"라면 닿을 수단도 있어야 한다.
+  if (kind === "HOST_RELEASED") {
+    return true;
+  }
+  return kind === "BUNCHEOL_CANCELLED" && hasBidRecordPaymentTrace(bid);
 }
 
 // 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
@@ -898,8 +904,8 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
         : !isC2C
           ? "개최자가 참여를 뺐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
           : hasTrace
-            ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 개최자에게 먼저 알려 주세요 — 대금은 개최자 계좌로 갔어요. 연락이 어려우면 분철이지가 확인을 도와드릴게요."
-            : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주세요.",
+            ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 개최자에게 먼저 알려 주세요 — 대금은 개최자 계좌로 갔어요. 연락이 어려우면 고객센터로 문의해 주세요."
+            : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주시고, 연락이 어려우면 고객센터로 문의해 주세요.",
     };
   }
 
@@ -930,7 +936,7 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     description: isFreeBidRecord(bid)
       ? buncheolCancelDescription
       : isC2C
-        ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 보냈다면 환불은 개최자가 진행해요 — 지연되면 분철이지로 문의해 주세요.`
+        ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 보냈다면 환불은 개최자가 진행해요 — 지연되면 고객센터로 문의해 주세요.`
         : `${buncheolCancelDescription} 이미 입금했다면 등록한 환불 계좌로 환불돼요.`,
   };
 }
@@ -1963,13 +1969,6 @@ export function BidHistoryContent({
   const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
-  // 🔴 이름을 <b>금액과 같은 모수</b>에서 뽑는다. 자리 1건에서 뽑으면 「자리 2개 합계」 아래에
-  // 칩이 하나만 있는 화면이 된다 — 참여자가 실제로 이체하는 화면이고, 받은 알림톡은 두 이름을
-  // 다 나열하므로 문자와 화면이 어긋난다.
-  // ⚠️ 라벨로 중복 제거하지 마라. memberName 이 빈 자리는 둘 다 "멤버 확인 필요" 가 되어
-  // 하나로 접히고, 그러면 고치려던 「합계는 2자리인데 칩은 1개」가 그대로 재현된다.
-  // ⚠️ 카드는 취소분까지 취소선으로 그리고 시트는 이체에 들어가는 자리만 그린다 — 의도된 차이다.
-  // 시트는 "지금 얼마를 보내나" 를 말하는 자리라 취소분이 끼면 금액과 칩이 어긋난다.
   const selectedPaymentStatusLabel = selectedPaymentBid
     ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
     : "";
@@ -4674,6 +4673,10 @@ export function BidHistoryContent({
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
               </p>
+              {/* 🔴 칩은 금액과 같은 모수(paymentAmountSources)에서 뽑는다 — 자리 1건에서 뽑으면
+                  「자리 2개 합계」 아래 칩이 하나만 남고, 알림톡은 두 이름을 다 나열해 어긋난다.
+                  ⚠️ 라벨로 중복 제거 금지: memberName 빈 자리들이 "멤버 확인 필요" 하나로 접힌다.
+                  카드(취소분 취소선 포함)와 시트(이체분만)는 의도된 차이다. */}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {paymentAmountSources.map((slot) => (
                   <span

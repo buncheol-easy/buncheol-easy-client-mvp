@@ -3546,6 +3546,16 @@ function getBuncheolManagementDeliveryFromRecord(
   };
 }
 
+
+// 파서가 이름을 전혀 못 찾을 때 만드는 합성 폴백(「참여 {id}」) 판별. 화면에 그대로 노출하면
+// 개최자가 통장 대조에 쓸 수 없는 문자열이 이름 자리에 찍힌다. 서버 Nickname 정규식이 공백을
+// 금지하므로(^[가-힣a-zA-Z0-9]+$) 실제 닉네임과는 절대 충돌하지 않는다.
+export function isSyntheticParticipantName(
+  name: string | null | undefined,
+): boolean {
+  return typeof name === "string" && name.startsWith("참여 ");
+}
+
 function getBuncheolManagementParticipantFromRecord(
   record: Record<string, unknown>,
   fallback: {
