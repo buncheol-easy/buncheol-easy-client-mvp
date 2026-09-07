@@ -804,7 +804,8 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "성사 확정",
       description: isUnderMinHeadcount
-        ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}${countUnit}만 신청했어요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
+        // 한 문장 안에서 분모(명)·분자 단위를 섞지 않는다 — 진행률 라벨(:537)과 같은 규칙.
+        ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}명만 신청했어요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
         : `신청자 ${applicantCount}${countUnit} 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
@@ -1358,9 +1359,8 @@ export function HostedBuncheolManage({
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
                 지금까지 신청 {c2cAppliedCount}
-                {countUnit}
-                이에요. 확정하면 신청자
-                전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.
+                {countUnit}. 확정하면 신청자 전원에게 입금 계좌와 24시간
+                기한이 담긴 알림톡이 발송돼요.
               </p>
               {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
                   유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
@@ -1448,16 +1448,20 @@ export function HostedBuncheolManage({
 
           {/* 입금 확인된 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
               LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다.
-              ⚠️ 노출 조건이 cancelledParticipants 기준이다. refundTargetParticipants 로 좁히면
-              취소분이 전부 「보냈어요만」일 때 섹션째 사라져 안내조차 안 나온다. */}
-          {isC2C && cancelledParticipants.length > 0 ? (
+              ⚠️ 노출 조건: 보여줄 게 있을 때만 — 환불 대상 또는 「보냈어요」 미확인 건.
+              cancelledParticipants 전체로 열면 흔한 경우(신청 취소·제외뿐)에 「0건」 헤더와
+              "아래 계좌로 환불해 주세요" 만 있는 빈 껍데기가 뜬다. refundTargetParticipants 로만
+              좁히면 취소분이 전부 「보냈어요만」일 때 섹션째 사라져 안내조차 안 나온다. */}
+          {isC2C &&
+          (refundTargetParticipants.length > 0 || sentButUnconfirmedCount > 0) ? (
             <section className="mt-6 rounded-[1.05rem] border border-black/10 bg-[#f7f7f7] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 환불이 필요한 참여 {refundTargetParticipants.length}건
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                입금 확인된 취소 건이에요. 통장을 확인하고 아래 계좌로 환불해
-                주세요.
+                {refundTargetParticipants.length > 0
+                  ? "입금 확인된 취소 건이에요. 통장을 확인하고 아래 계좌로 환불해 주세요."
+                  : "환불 계좌를 보여드릴 확정 건은 없어요. 아래 안내를 확인해 주세요."}
               </p>
               <div className="mt-3 space-y-2">
                 {refundTargetParticipants.map((participant) => (
@@ -1666,7 +1670,8 @@ export function HostedBuncheolManage({
                           {/* ⚠️ 값이 같으면 감춘다. 입금자명은 비면 닉네임으로 폴백하고(getDepositorName),
                               파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
                               같은 이름이 두 줄 뜬다. */}
-                          {head.participantNickname !== depositorName ? (
+                          {head.participantNickname !== depositorName &&
+                          !head.participantNickname.startsWith("참여 ") ? (
                             <p className="truncate text-[13px] font-semibold text-black/55">
                               <span className="mr-1.5 text-black/35">참여자</span>
                               {head.participantNickname}

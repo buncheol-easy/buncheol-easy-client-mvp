@@ -1854,12 +1854,15 @@ export function ProductDetail({
   // 묶음 재사용 여부를 <b>실제로 결정하는 쪽</b>이다(server#178 inheritanceApplies). 둘이 갈리면
   // 화면이 "배송비 0원"이라 해 놓고 서버가 부과하거나, 고를 수 있다고 해 놓고 서버가 거부한다.
   // 서버가 참이라고 하면 참으로 본다 — 안전한 쪽(고를 수 없음)으로 기운다.
-  const isAdditionalC2CApplication =
-    (isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct) ||
-    shippingInheritanceAppliesFromApi;
   // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
   const isRebundledC2CApplication =
     hasMyServerParticipation && isC2CCollectingProduct;
+  // ⚠️ 재번들과 상호배타를 코드로 유지한다 — 서버 신호가 낡은 응답(확정 직전 조회)으로 참이어도
+  // 「배송비 0원」과 「배송비 또 부과」가 한 화면에 같이 찍히면 안 된다. 재번들 판정이 이긴다.
+  const isAdditionalC2CApplication =
+    !isRebundledC2CApplication &&
+    isC2CProduct &&
+    (hasMyServerParticipation || shippingInheritanceAppliesFromApi);
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
   // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct

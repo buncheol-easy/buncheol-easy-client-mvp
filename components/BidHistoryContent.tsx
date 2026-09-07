@@ -899,7 +899,7 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
           ? "개최자가 참여를 뺐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
           : hasTrace
             ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 개최자에게 먼저 알려 주세요 — 대금은 개최자 계좌로 갔어요. 연락이 어려우면 분철이지가 확인을 도와드릴게요."
-            : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주세요.",
+            : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주시고, 연락이 어려우면 분철이지로 문의해 주세요.",
     };
   }
 
@@ -1963,13 +1963,6 @@ export function BidHistoryContent({
   const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
-  // 🔴 이름을 <b>금액과 같은 모수</b>에서 뽑는다. 자리 1건에서 뽑으면 「자리 2개 합계」 아래에
-  // 칩이 하나만 있는 화면이 된다 — 참여자가 실제로 이체하는 화면이고, 받은 알림톡은 두 이름을
-  // 다 나열하므로 문자와 화면이 어긋난다.
-  // ⚠️ 라벨로 중복 제거하지 마라. memberName 이 빈 자리는 둘 다 "멤버 확인 필요" 가 되어
-  // 하나로 접히고, 그러면 고치려던 「합계는 2자리인데 칩은 1개」가 그대로 재현된다.
-  // ⚠️ 카드는 취소분까지 취소선으로 그리고 시트는 이체에 들어가는 자리만 그린다 — 의도된 차이다.
-  // 시트는 "지금 얼마를 보내나" 를 말하는 자리라 취소분이 끼면 금액과 칩이 어긋난다.
   const selectedPaymentStatusLabel = selectedPaymentBid
     ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
     : "";
@@ -4674,6 +4667,10 @@ export function BidHistoryContent({
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
               </p>
+              {/* 🔴 칩은 금액과 같은 모수(paymentAmountSources)에서 뽑는다 — 자리 1건에서 뽑으면
+                  「자리 2개 합계」 아래 칩이 하나만 남고, 알림톡은 두 이름을 다 나열해 어긋난다.
+                  ⚠️ 라벨로 중복 제거 금지: memberName 빈 자리들이 "멤버 확인 필요" 하나로 접힌다.
+                  카드(취소분 취소선 포함)와 시트(이체분만)는 의도된 차이다. */}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {paymentAmountSources.map((slot) => (
                   <span
