@@ -14,6 +14,8 @@ import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
   ApiRequestError,
+  HOST_CANNOT_PARTICIPATE_CODE,
+  PROFILE_INCOMPLETE_CODE,
   USER_BANK_ACCOUNT_NOT_REGISTERED_CODE,
   addBuncheolBookmark,
   deleteBuncheol,
@@ -30,6 +32,7 @@ import {
   type BankAccountInfo,
   type BuncheolManagementOption,
   type CvsStore,
+  type RequestedShippingAddress,
 } from "@/lib/auth-api";
 import { trackEvent } from "@/lib/analytics";
 import { PRODUCT_ARTIST_ENTRY_INDEX_KEY } from "@/lib/artist-browse";
@@ -1175,6 +1178,15 @@ export function ProductDetail({
   const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
     product.openChatUrl ?? null,
   );
+  // 상속 배송지도 같은 이유로 로컬에 둔다 — prop 은 마운트 시점 응답이라 신청해도 갱신되지 않고,
+  // 그러면 "첫 신청과 묶인다" 판정만 켜지고 주소는 안 뜨는 어긋난 화면이 된다.
+  const [inheritedShippingFromApi, setInheritedShippingFromApi] =
+    useState<RequestedShippingAddress | null>(
+      product.myInheritedShippingAddress ?? null,
+    );
+  // 판정 불리언도 같이 로컬로 둔다 — 주소만 갱신하고 판정은 prop 에 남기면 둘이 갈린다.
+  const [shippingInheritanceAppliesFromApi, setShippingInheritanceAppliesFromApi] =
+    useState(product.myShippingInheritanceApplies === true);
   const [currentProductImageIndex, setCurrentProductImageIndex] = useState(0);
   const [productImageDragOffset, setProductImageDragOffset] = useState(0);
   const [isProductImageDragging, setIsProductImageDragging] = useState(false);
@@ -1781,6 +1793,10 @@ export function ProductDetail({
   // 옵션 가격으로 판정하고, 플래그가 꺼지면 이벤트 UI 전체가 사라진다.
   const isShippingFeePaybackProduct =
     FEATURES.shippingFeePayback &&
+    // 🔴 환급 자격은 운영진 개최(LEGACY) 전용이다(서버 ShippingFeePaybackPolicy 가 flowType 을 강제).
+    // C2C 는 돈이 개최자 개인 계좌로 가서 플랫폼이 돌려줄 수 없는데, 이 게이트가 없으면
+    // 전액 0원 C2C 분철에 「배송비는 환급되니 걱정 마세요!」가 떠서 거짓 약속이 된다.
+    !isC2CProduct &&
     auctionOptions.length > 0 &&
     auctionOptions.every(
       (option) => priceToNumber(getBidBaseline(option)) === 0,
@@ -1831,13 +1847,21 @@ export function ProductDetail({
   const hasMyServerParticipation = auctionOptions.some(
     (option) => option.participatedByMe === true,
   );
-  // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 성사 확정 전 재참여만
-  // 해당한다: 확정 뒤 추가 모집은 서버가 새 묶음을 만들고 배송비를 다시 부과한다.
-  const isAdditionalC2CApplication =
-    isC2CProduct && hasMyServerParticipation && !isC2CCollectingProduct;
   // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
   const isRebundledC2CApplication =
     hasMyServerParticipation && isC2CCollectingProduct;
+  // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 성사 확정 전 재참여만
+  // 해당한다: 확정 뒤 추가 모집은 서버가 새 묶음을 만들고 배송비를 다시 부과한다.
+  //
+  // 🔴 서버 신호(server#178 inheritanceApplies)를 OR 로 얹되 <b>재번들 판정이 이긴다</b> —
+  // 낡은 응답(확정 직전 조회)으로 신호가 남아 있으면 「배송비 0원」과 「배송비 또 부과」가
+  // 한 화면에 같이 찍히기 때문이다. 서버 쪽도 상속 판정을 모집중(RECRUITING)으로 게이트하므로
+  // (ParticipationDomainService.inheritanceAppliesTo = isC2c && RECRUITING) 입금 수집중에
+  // 신호가 참인 조합은 낡은 응답뿐이다 — 신선한 응답에서 두 판정이 충돌할 일은 없다.
+  const isAdditionalC2CApplication =
+    !isRebundledC2CApplication &&
+    isC2CProduct &&
+    (hasMyServerParticipation || shippingInheritanceAppliesFromApi);
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
   // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct
@@ -2060,8 +2084,18 @@ export function ProductDetail({
   // 입금수집 화면으로 보이거나, 다른 분철로 넘어갔을 때 앞 분철의 상태가 남는다.
   useEffect(() => {
     setOpenChatUrlFromApi(product.openChatUrl ?? null);
+    setInheritedShippingFromApi(product.myInheritedShippingAddress ?? null);
+    setShippingInheritanceAppliesFromApi(
+      product.myShippingInheritanceApplies === true,
+    );
     setStatusFromApi(null);
-  }, [product.id, product.openChatUrl, product.status]);
+  }, [
+    product.id,
+    product.myInheritedShippingAddress,
+    product.myShippingInheritanceApplies,
+    product.openChatUrl,
+    product.status,
+  ]);
 
   useEffect(() => {
     setAuctionOptions(product.options);
@@ -2361,6 +2395,12 @@ export function ProductDetail({
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
       setIsHostedByMeFromApi(isHosted);
       setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
+      setInheritedShippingFromApi(
+        refreshedProduct.myInheritedShippingAddress ?? null,
+      );
+      setShippingInheritanceAppliesFromApi(
+        refreshedProduct.myShippingInheritanceApplies === true,
+      );
       // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
       setAuctionOptions(refreshedProduct.options);
@@ -2940,13 +2980,20 @@ export function ProductDetail({
           error instanceof ApiRequestError &&
           error.code === USER_BANK_ACCOUNT_NOT_REGISTERED_CODE;
         const didDeadlinePass = isDeadlineClosed(product.deadline);
+        const errorCode =
+          error instanceof ApiRequestError ? error.code : undefined;
+        // 이 분기는 문구만이 아니라 화면 모드(isHostedByMeFromApi → CTA 「내 분철 관리하기」)까지
+        // 뒤집는다 — 그런 부작용은 문자열 추정이 아니라 확정 신호(에러 코드)에만 물린다.
+        // 문자열 매칭은 코드가 없는 구 응답 폴백으로만 남긴다. 서버 실문구는 「주최자는 자신의
+        // 분철에 참여할 수 없습니다」인데, 「주최자」는 서버 공용 어휘라 넓게 걸면 남의 분철에서
+        // 오탐으로 관리 화면 CTA 가 뜬다.
         const isHostParticipationBlocked =
-          errorMessage.includes("PARTICIPATION_HOST_CANNOT_PARTICIPATE") ||
-          errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
-          errorMessage.includes("BUNCHEOL_HOST_CANNOT_PARTICIPATE") ||
-          errorMessage.includes("개최자") ||
-          errorMessage.includes("본인") ||
-          errorMessage.includes("내가 연");
+          errorCode === HOST_CANNOT_PARTICIPATE_CODE ||
+          (errorCode === undefined &&
+            (errorMessage.includes("HOST_CANNOT_PARTICIPATE") ||
+              errorMessage.includes("주최자") ||
+              errorMessage.includes("개최자")));
+        const isProfileIncomplete = errorCode === PROFILE_INCOMPLETE_CODE;
 
         if (needsBankAccount) {
           // 시트는 배경 탭으로 닫힌다 — 흔적을 안 남기면 "참여하기를 눌렀는데 아무 일도 없는 화면"이 된다.
@@ -2960,9 +3007,16 @@ export function ProductDetail({
           );
         } else if (didDeadlinePass) {
           setCheckoutError("참여 기한이 지났어요.");
-        } else if (isForbidden) {
+        } else if (isProfileIncomplete) {
+          // 평소엔 진입 가드가 /signup/profile 로 보내지만, 가드의 상태 확인이 실패하면 여기까지
+          // 온다 — 안내 동선을 그 가드와 같은 곳(가입 정보 입력)으로 맞춘다.
           setCheckoutError(
-            "참여 권한이 없어요. 테스트 리모콘에서 다른 계정으로 전환한 뒤 시도해 주세요.",
+            "가입 정보(전화번호) 등록이 아직 안 됐어요. 가입 정보를 입력하면 참여할 수 있어요.",
+          );
+        } else if (isForbidden) {
+          // 「테스트 리모콘」은 staging 전용 도구라 운영 사용자가 보면 무슨 말인지 알 수 없다.
+          setCheckoutError(
+            "지금 계정으로는 참여할 수 없어요. 문제가 계속되면 고객센터로 문의해 주세요.",
           );
         } else {
           setCheckoutError(errorMessage);
@@ -4491,16 +4545,28 @@ export function ProductDetail({
                           {/* docs/46 §4.7-A1 의 배송지 스냅샷 강제는 이제 <b>성사 확정 전</b> 재신청에만
                               해당한다 — 확정 뒤 추가 모집은 새 묶음이라 배송지를 다시 고른다. 상속 구간에서만
                               현재 선택값 대신 문구로 대체한다(선택값이 실제 배송지와 다를 수 있으므로). */}
+                          {/* 상속 구간에서는 서버가 준 <b>그 묶음의 실제 주소</b>를 보여준다 — 어떤 배송지로
+                              신청했는지 잊었을 수 있어서다. 서버가 값을 못 주면(옛 응답·주소 삭제) 기존 문구로
+                              떨어지되, 선택 UI 는 되살리지 않는다 — 고르게 해 봐야 서버가 거부한다. */}
                           <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
                             {isAdditionalC2CApplication
-                              ? "첫 신청 때 선택한 배송지"
+                              ? inheritedShippingFromApi
+                                ? `${getConvenienceStoreLabel(inheritedShippingFromApi.storeType)} ${getDeliveryAddressDisplayBranchName(
+                                    {
+                                      branchName:
+                                        inheritedShippingFromApi.storeName,
+                                      storeType:
+                                        inheritedShippingFromApi.storeType,
+                                    },
+                                  )}`
+                                : "첫 신청 때 선택한 배송지"
                               : checkoutDeliveryAddress
                                 ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
                                 : "등록된 배송지 없음"}
                           </p>
                           <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-5 text-black/40">
                             {isAdditionalC2CApplication
-                              ? "첫 신청 배송지로 함께 배송돼요."
+                              ? "첫 신청 배송지로 함께 배송돼요. 변경할 수 없어요."
                               : checkoutDeliveryAddress?.address ??
                                 "배송지를 등록해 주세요."}
                           </p>

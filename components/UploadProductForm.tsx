@@ -3061,46 +3061,55 @@ export function UploadProductForm({
                   )}
                 {targetMembers.length > 0 ? (
                   <div ref={registerSubmitField("minHeadcount")}>
-                    <label className="mt-4 block rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
+                    {/* 🔴 <label> 로 감싸지 마라. htmlFor 없는 label 은 안의 첫 labelable 요소와 짝지어지고,
+                        여기서 그건 「−」 버튼이라 카드 아무 데나 눌러도 숫자가 줄어든다(실측: 잘못 「−」가 되는
+                        면적이 버튼 본체의 21배). 숫자는 input 이 아니라 텍스트라 라벨 대상 자체가 없고,
+                        두 버튼은 각자 aria-label 을 갖고 있어 label 을 없애도 잃는 게 없다. */}
+                    <div className="mt-4 rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
                       <span className="text-[13px] font-semibold text-black/45">
                         최소 진행 인원
                       </span>
-                    <div className="mt-4 grid grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] p-2">
-                      <button
-                        aria-label="최소 진행 인원 줄이기"
-                        className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-white text-black shadow-[0_4px_12px_rgba(0,0,0,0.08)] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none"
-                        disabled={!canDecreaseMinHeadcount}
-                        onClick={() =>
-                          updateMinHeadcount(String(selectedMinHeadcount - 1))
-                        }
-                        type="button"
+                      {/* label 을 걷어내면서 사라진 "제목 ↔ 컨트롤" 연결을 그룹 이름으로 대신 준다. */}
+                      <div
+                        aria-label="최소 진행 인원"
+                        className="mt-4 grid grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] p-2"
+                        role="group"
                       >
-                        <MinusIcon />
-                      </button>
-                      <div className="min-w-0 text-center">
-                        <p className="text-[24px] font-bold leading-none tracking-[-0.04em] text-black">
-                          {selectedMinHeadcount}
-                          <span className="ml-1 text-[15px] font-semibold text-black/45">
-                            명
-                          </span>
-                        </p>
-                        <p className="mt-1 text-[12px] font-semibold text-black/35">
-                          최대 {targetMembers.length}명
-                        </p>
+                        <button
+                          aria-label="최소 진행 인원 줄이기"
+                          className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-white text-black shadow-[0_4px_12px_rgba(0,0,0,0.08)] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none"
+                          disabled={!canDecreaseMinHeadcount}
+                          onClick={() =>
+                            updateMinHeadcount(String(selectedMinHeadcount - 1))
+                          }
+                          type="button"
+                        >
+                          <MinusIcon />
+                        </button>
+                        <div className="min-w-0 text-center">
+                          <p className="text-[24px] font-bold leading-none tracking-[-0.04em] text-black">
+                            {selectedMinHeadcount}
+                            <span className="ml-1 text-[15px] font-semibold text-black/45">
+                              명
+                            </span>
+                          </p>
+                          <p className="mt-1 text-[12px] font-semibold text-black/35">
+                            최대 {targetMembers.length}명
+                          </p>
+                        </div>
+                        <button
+                          aria-label="최소 진행 인원 늘리기"
+                          className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-[#F3FFC6] text-black shadow-[0_4px_12px_rgba(190,230,70,0.2)] ring-1 ring-[#CDEB55] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none disabled:ring-0"
+                          disabled={!canIncreaseMinHeadcount}
+                          onClick={() =>
+                            updateMinHeadcount(String(selectedMinHeadcount + 1))
+                          }
+                          type="button"
+                        >
+                          <PlusIcon />
+                        </button>
                       </div>
-                      <button
-                        aria-label="최소 진행 인원 늘리기"
-                        className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-[#F3FFC6] text-black shadow-[0_4px_12px_rgba(190,230,70,0.2)] ring-1 ring-[#CDEB55] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none disabled:ring-0"
-                        disabled={!canIncreaseMinHeadcount}
-                        onClick={() =>
-                          updateMinHeadcount(String(selectedMinHeadcount + 1))
-                        }
-                        type="button"
-                      >
-                        <PlusIcon />
-                      </button>
-                      </div>
-                    </label>
+                    </div>
                     {renderSubmitFieldError("minHeadcount")}
                   </div>
                 ) : null}

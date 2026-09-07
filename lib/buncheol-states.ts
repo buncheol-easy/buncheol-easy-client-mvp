@@ -192,3 +192,14 @@ export function getDeliveryStatusLabel(status: string | null | undefined) {
     DELIVERY_STATUS_LABELS[normalizedStatus as DeliveryStatus] ?? ""
   );
 }
+
+/**
+ * 참여 카운트의 단위. C2C 는 한 사람이 자리를 여러 개 잡을 수 있어 자리 ≠ 사람이고,
+ * LEGACY 는 1인 1자리라 자리 = 사람이다.
+ *
+ * ⚠️ 이 함수가 바꾸는 것은 <b>표기뿐</b>이다. 숫자를 사람 수로 바꾸면 서버의 최소 진행 인원
+ * 판정(자리 수 기준)과 화면이 갈린다.
+ */
+export function getCountUnit(flowType?: string | null) {
+  return getFlowType(flowType) === "C2C" ? "자리" : "명";
+}

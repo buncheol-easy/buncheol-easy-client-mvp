@@ -78,7 +78,13 @@ export function stripLeadingConvenienceStoreLabel(
   return result;
 }
 
-export function getDeliveryAddressDisplayBranchName(address: DeliveryAddress) {
+// 🔴 인자를 DeliveryAddress 전체로 받지 않는다. 서버가 표시용으로만 내려주는 묶음 배송지
+// (server#178: {storeType, storeName})에는 id·address 가 없고, 그 값을 억지로 DeliveryAddress 로
+// 만들면 「배송지 고정 · 변경 불가」 자리에서 유저 주소 목록과 섞일 길이 생긴다. 이 함수가 실제로
+// 읽는 두 칸만 요구하면 그 위험 없이 양쪽을 같은 표기 규칙으로 그린다.
+export function getDeliveryAddressDisplayBranchName(
+  address: Pick<DeliveryAddress, "branchName" | "storeType">,
+) {
   const cleanedBranchName =
     cleanBrokenDeliveryAddressText(address.branchName) || address.branchName;
 

@@ -12,6 +12,7 @@ import {
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
   confirmBundlePayment,
+  isSyntheticParticipantName,
   releaseBundle,
   requestBuncheolDetail,
   requestBuncheolManagement,
@@ -37,6 +38,7 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
   isParticipationPaymentSentStatus,
+  getCountUnit,
 } from "@/lib/buncheol-states";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
 import {
@@ -70,7 +72,10 @@ function formatWonAmount(value: number | null | undefined) {
 function getDepositorName(participant: BuncheolManagementParticipant) {
   // 파서(lib/auth-api.ts)가 depositorName 안에서 이미 refundAccount.holder 를 흡수하므로
   // 여기서 holder 를 다시 보면 도달 불가 분기가 된다 — 닉네임 폴백만 남긴다.
-  return participant.depositorName || participant.participantNickname;
+  const name = participant.depositorName || participant.participantNickname;
+  // 파서 합성 폴백(「참여 {id}」)은 통장 대조에 쓸 수 없다 — 입금자명 노출 지점 전부가
+  // 이 함수를 거치므로 여기 한 곳에서 흡수한다.
+  return isSyntheticParticipantName(name) ? "확인 필요" : name;
 }
 
 function formatKoreaDateTime(value: string | undefined) {
@@ -261,7 +266,9 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
 
-function getReleaseBlockedReason(releasability: string | null | undefined) {
+// ⚠️ 인자를 optional 로 두지 않는다. undefined 를 받으면 호출부가 「막힌 자리 없음」을 넘겨도
+// default 문구가 뜬다. null 은 서버가 판정을 못 준 경우(구 응답·미연결 행)라 받아야 한다.
+function getReleaseBlockedReason(releasability: string | null) {
   switch (releasability) {
     case "RECRUITING":
       return "모집 중에는 뺄 수 없어요.";
@@ -271,6 +278,8 @@ function getReleaseBlockedReason(releasability: string | null | undefined) {
       return "입금 확인된 자리가 있어 뺄 수 없어요.";
     case "ALREADY_CLOSED":
       return "이미 정리된 참여예요.";
+    // 호출부가 막힌 자리가 있을 때만 부르므로 지금은 도달하지 않는다. 방어용으로 남긴다 —
+    // 다른 호출부가 생겼을 때 RELEASABLE 이 default 문구로 떨어지면 이 PR 의 버그가 재발한다.
     case "RELEASABLE":
       return null;
     // 판정이 없는 구 응답 — 버튼은 흐려 두되 사유를 단정하지 않는다.
@@ -507,13 +516,28 @@ export function HostedBuncheolManage({
   // 취소분은 서버가 participants 와 분리해 내려준다 — 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
   const cancelledParticipants = detail?.cancelledParticipants ?? [];
   // 취소분 대다수는 입금 기한 만료라 돈이 오간 적이 없고, 같은 사람이 재참여해 활성으로도 있다.
-  const refundTargetParticipants = cancelledParticipants.filter(
-    (participant) =>
-      Boolean(participant.confirmedAt) || Boolean(participant.paymentSentAt),
+  // 🔴 판정 키는 <b>입금확인 시각 하나</b>다. 서버의 needsHostRefund 와 반드시 같아야 한다 —
+  // 여기만 「보냈어요」를 포함하면 목록에는 뜨는데 서버가 계좌를 안 내려 <b>계좌가 빈 행</b>이 된다.
+  // 「보냈어요」는 자기신고라 개최자가 통장에서 확인한 적이 없는 돈이다.
+  const refundTargetParticipants = cancelledParticipants.filter((participant) =>
+    Boolean(participant.confirmedAt),
   );
-  const unpaidCancelledCount =
-    cancelledParticipants.length - refundTargetParticipants.length;
+  // 🔴 「보냈어요」만 하고 확인 전에 빠진 건을 <b>따로 센다</b>. 이걸 「금액 없음」에 섞으면
+  // 개최자가 "환불할 금액이 없어요" 를 읽는데 실제로는 통장에 돈이 있을 수 있다 —
+  // 「제외」가 기한 뒤에만 열리는 이유가 "이체가 통장에 늦게 찍히는 일이 흔해서" 다.
+  // 계좌를 못 보여주는 것과 존재 자체를 부정하는 것은 다르다.
+  const sentButUnconfirmedCount = cancelledParticipants.filter(
+    (participant) => !participant.confirmedAt && participant.paymentSentAt,
+  ).length;
+  const noTraceCancelledCount =
+    cancelledParticipants.length -
+    refundTargetParticipants.length -
+    sentButUnconfirmedCount;
   const minHeadcount = detail?.minHeadcount ?? 0;
+  // ⚠️ 여기만 「명」으로 남긴다. 분자(confirmedCount)는 C2C 에서 자리 수지만, 분모
+  // (minHeadcount)는 개최자가 「최소 진행 인원」으로 입력한 정책값이다. 분자만 「자리」로 바꾸면
+  // 「4자리 / 5명」이 되고, 분모까지 바꾸는 것은 그 입력 항목의 의미를 바꾸는 <b>정책 결정</b>이라
+  // 화면에서 임의로 정하지 않는다. 서버는 이 둘을 자리 수로 비교한다.
   const confirmedProgressLabel = minHeadcount
     ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
     : `${confirmedCount}\uba85`;
@@ -544,6 +568,8 @@ export function HostedBuncheolManage({
     ).length ?? 0;
   // ── C2C 파생값 (docs/46 §4.6 — 관리 응답은 활성 참여 전건을 내려준다) ──
   const isC2C = getFlowType(detail?.flowType) === "C2C";
+  // 아래 카운트들은 전부 자리 수다(멤버 슬롯 점유 건수). 규약은 getCountUnit 참조.
+  const countUnit = getCountUnit(detail?.flowType);
   const activeC2CParticipants = (detail?.participants ?? []).filter(
     (participant) => !isParticipationCancelledStatus(participant.status),
   );
@@ -570,7 +596,7 @@ export function HostedBuncheolManage({
     c2cUnpaidActiveCount === 0 && c2cConfirmedCount > 0;
   // 🔴 배송 집계는 <b>배송 단위</b>다. 참여 단위로 세면 한 묶음의 두 슬롯이 같은 배송을 물고 있을 때
   // 목록에는 운송장 입력칸이 1개인데 "운송장 대기 2건" 으로 뜬다. deliveryId 로 중복을 제거한다.
-  // 배송 스냅샷은 입금 전에도 생기므로(참여 생성 시 배송지 전송) 입금확인된 건만 대기로 센다.
+  // 배송 스냅샷은 입금확인 시점에 생긴다(서버 DeliverySnapshotCreator). 방어적으로 확인된 건만 센다.
   const c2cDeliveries = new Map<
     string,
     { confirmed: boolean; trackingNumber?: string | null }
@@ -782,8 +808,9 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "성사 확정",
       description: isUnderMinHeadcount
-        ? `최소 진행 인원 ${minHeadcount}명 중 ${applicantCount}명만 신청했어요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
-        : `신청자 ${applicantCount}명 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
+        // 자리 수를 「명」으로 재라벨링하지 않는다 — 문장을 쪼개 단위 혼용 자체를 없앤다.
+        ? `최소 진행 인원 ${minHeadcount}명을 아직 채우지 못했어요. 지금까지 신청은 ${applicantCount}${countUnit}예요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
+        : `신청자 ${applicantCount}${countUnit} 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runConfirmRecruitment(applicantCount);
@@ -811,7 +838,7 @@ export function HostedBuncheolManage({
 
       await reloadManagementDetail(accessToken);
       setMessage(
-        `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}명에게 입금 안내가 발송됐어요.`,
+        `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}${countUnit}에 입금 안내가 발송됐어요.`,
       );
     } catch (error: unknown) {
       setMessage(
@@ -838,7 +865,7 @@ export function HostedBuncheolManage({
         setConfirmSheetRequest(null);
         void runFinalizeCollected();
       },
-      title: `입금한 ${c2cConfirmedCount}명으로 진행할까요?`,
+      title: `입금한 ${c2cConfirmedCount}${countUnit}로 진행할까요?`,
     });
   }
 
@@ -1222,7 +1249,7 @@ export function HostedBuncheolManage({
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">{"\ucc38\uc5ec"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${participantCount}\uba85`}
+                  {`${participantCount}${countUnit}`}
                 </p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1230,7 +1257,7 @@ export function HostedBuncheolManage({
                   {"\uc785\uae08 \ub300\uae30"}
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${isC2C ? c2cAwaitingCount : awaitingPaymentCount}\uba85`}
+                  {`${isC2C ? c2cAwaitingCount : awaitingPaymentCount}${countUnit}`}
                 </p>
               </div>
               {isC2C ? (
@@ -1240,7 +1267,7 @@ export function HostedBuncheolManage({
                       {"\uc2e0\uccad"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cAppliedCount}\uba85`}
+                      {`${c2cAppliedCount}${countUnit}`}
                     </p>
                   </div>
                   <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1248,7 +1275,7 @@ export function HostedBuncheolManage({
                       {"\ubcf4\ub0c8\uc5b4\uc694"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cPaymentSentCount}\uba85`}
+                      {`${c2cPaymentSentCount}${countUnit}`}
                     </p>
                   </div>
                 </>
@@ -1335,8 +1362,14 @@ export function HostedBuncheolManage({
                 성사 확정
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                지금까지 신청 {c2cAppliedCount}명이에요. 확정하면 신청자
-                전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.
+                {`지금까지 신청 ${c2cAppliedCount}${countUnit}예요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
+              </p>
+              {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
+                  유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
+              <p className="mt-1.5 text-[13px] font-medium leading-5 text-black/50">
+                모집 기한이 지나고{" "}
+                <span className="font-semibold">2일(48시간)</span> 안에 확정하지
+                않으면 분철이 자동으로 취소돼요.
               </p>
               <button
                 className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
@@ -1369,8 +1402,9 @@ export function HostedBuncheolManage({
                 ) : null}
               </div>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                입금 확인 {c2cConfirmedCount}명 · 입금 대기 {c2cAwaitingCount}명
-                · 보냈어요 {c2cPaymentSentCount}명
+                {/* ⚠️ 한 줄로 붙인다. 값 뒤에서 줄을 바꾸면 다음 텍스트 노드의 <b>선두 개행+들여쓰기가
+                    통째로 버려져</b> 공백이 사라진다("1자리· 보냈어요"). 아래 「입금한{" "}」이 같은 이유다. */}
+                {`입금 확인 ${c2cConfirmedCount}${countUnit} · 입금 대기 ${c2cAwaitingCount}${countUnit} · 보냈어요 ${c2cPaymentSentCount}${countUnit}`}
               </p>
               {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를
                   통과한다. 전원 입금이면 입금확인 경로에서 자동으로 CONFIRMED 가 되므로, 이 버튼이 실제로
@@ -1392,11 +1426,12 @@ export function HostedBuncheolManage({
                   >
                     {pendingC2CAction === "finalize-collected"
                       ? "확정하는 중"
-                      : `입금한 ${c2cConfirmedCount}명으로 진행 확정`}
+                      : `입금한 ${c2cConfirmedCount}${countUnit}로 진행 확정`}
                   </button>
                   <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
                     입금을 기다리는 참여가 더 없어요. 확정하면 입금한{" "}
-                    {c2cConfirmedCount}명으로 분철을 진행해요.
+                    {c2cConfirmedCount}
+                    {countUnit}로 분철을 진행해요.
                   </p>
                 </>
               ) : c2cUnpaidActiveCount > 0 ? (
@@ -1413,16 +1448,24 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
-          {/* 입금 흔적이 있는 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
-              LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다. */}
-          {isC2C && refundTargetParticipants.length > 0 ? (
+          {/* 입금 확인된 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
+              LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다.
+              ⚠️ 노출 조건: 보여줄 게 있을 때만 — 환불 대상 또는 「보냈어요」 미확인 건.
+              cancelledParticipants 전체로 열면 흔한 경우(신청 취소·제외뿐)에 「0건」 헤더와
+              "아래 계좌로 환불해 주세요" 만 있는 빈 껍데기가 뜬다. refundTargetParticipants 로만
+              좁히면 취소분이 전부 「보냈어요만」일 때 섹션째 사라져 안내조차 안 나온다. */}
+          {isC2C &&
+          (refundTargetParticipants.length > 0 || sentButUnconfirmedCount > 0) ? (
             <section className="mt-6 rounded-[1.05rem] border border-black/10 bg-[#f7f7f7] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                환불이 필요한 참여 {refundTargetParticipants.length}건
+                {refundTargetParticipants.length > 0
+                  ? `환불이 필요한 참여 ${refundTargetParticipants.length}건`
+                  : "환불 확인이 필요한 참여"}
               </p>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                입금 내역이 있는 취소 건이에요. 통장을 확인하고 아래 계좌로
-                환불해 주세요.
+                {refundTargetParticipants.length > 0
+                  ? "입금 확인된 취소 건이에요. 통장을 확인하고 아래 계좌로 환불해 주세요."
+                  : "환불 계좌를 보여드릴 확정 건은 없어요. 아래 안내를 확인해 주세요."}
               </p>
               <div className="mt-3 space-y-2">
                 {refundTargetParticipants.map((participant) => (
@@ -1433,7 +1476,10 @@ export function HostedBuncheolManage({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
-                          {participant.participantNickname}
+                          {/* 🔴 통장 대조가 필요한 섹션이라 닉네임이 아니라 <b>입금자명</b>을 쓴다 —
+                            바로 위 문구가 "통장을 확인하고" 이고, getDepositorName 규약이
+                            "확인 시트 문구와 목록 행이 반드시 같은 값" 을 요구한다. */}
+                        {getDepositorName(participant)}
                         </p>
                         {/* 파서 최종 폴백이 리터럴 "멤버" 라 그대로 찍으면 의미 없는 줄이 된다. */}
                         {participant.memberName && participant.memberName !== "멤버" ? (
@@ -1441,10 +1487,9 @@ export function HostedBuncheolManage({
                             {participant.memberName}
                           </p>
                         ) : null}
+                        {/* 목록이 confirmedAt 로 좁혀져 있어 여기 오는 건 전부 확인된 건이다. */}
                         <p className="mt-1 text-[12px] font-semibold text-black/45">
-                          {participant.confirmedAt
-                            ? "입금 확인됨"
-                            : "입금 확인 전 · 보냈어요 표시만 있음"}
+                          입금 확인됨
                         </p>
                       </div>
                       <p className="shrink-0 text-[14px] font-semibold tabular-nums">
@@ -1465,9 +1510,16 @@ export function HostedBuncheolManage({
                   </div>
                 ))}
               </div>
-              {unpaidCancelledCount > 0 ? (
-                <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
-                  입금 전에 취소된 참여 {unpaidCancelledCount}건은 환불할 금액이
+              {sentButUnconfirmedCount > 0 ? (
+                <p className="mt-3 text-[12px] font-medium leading-5 text-black/55">
+                  입금 확인 전에 빠진 참여 {sentButUnconfirmedCount}건이 있어요.
+                  보냈다고 표시했지만 확인되지 않은 건이라 계좌를 보여드리지
+                  않아요 — 통장에 늦게 찍힌 이체가 있는지 확인해 주세요.
+                </p>
+              ) : null}
+              {noTraceCancelledCount > 0 ? (
+                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                  입금 전에 취소된 참여 {noTraceCancelledCount}건은 환불할 금액이
                   없어 여기 표시하지 않아요.
                 </p>
               ) : null}
@@ -1535,10 +1587,16 @@ export function HostedBuncheolManage({
                     (slot) => slot.releasability !== "RELEASABLE",
                   );
                   const canRelease = !blockedSlot && Boolean(bundle.bundleId);
-                  const releaseBlockedReason = bundle.bundleId
-                    ? getReleaseBlockedReason(blockedSlot?.releasability)
-                    : // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
-                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.";
+                  // 🔴 막힌 자리가 있을 때만 사유를 만든다 — 「막힌 자리 없음」과 「판정값 없음」이
+                  // 둘 다 undefined 라, 그냥 넘기면 제외 가능한 묶음에도 default 문구가 붙는다.
+                  const releaseBlockedReason = !bundle.bundleId
+                    ? // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
+                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요."
+                    : blockedSlot
+                      ? // 슬롯 필드는 optional 이라 undefined 가 올 수 있다. 「판정값 없음」은
+                        // null 로 명시해 넘긴다 — 그게 default 문구가 나와야 하는 유일한 경우다.
+                        getReleaseBlockedReason(blockedSlot.releasability ?? null)
+                      : null;
                   const isBundleConfirming =
                     pendingC2CAction === `confirm:${bundle.key}`;
                   const isBundleReleasing =
@@ -1567,7 +1625,10 @@ export function HostedBuncheolManage({
                   }[] = [];
 
                   for (const slot of bundle.slots) {
-                    // 배송 스냅샷은 신청 시점에 생기므로, 확정 전에는 지점명·연락처를 그리지 않는다.
+                    // 배송 스냅샷은 입금확인 시점에 생긴다(서버 DeliverySnapshotCreator).
+                    // 🔴 이 isSlotConfirmed 필터가 아래 운송장 입력칸의 게이트를 대신한다 — 분철 확정
+                    // 게이트(#183)를 뗀 뒤 「입금확인된 자리만 운송장을 받는다」는 규칙은 여기 한 곳이
+                    // 지킨다. 이 조건을 완화하면 미확인 자리에 입력칸이 열린다.
                     // 판정은 묶음 전체가 아니라 배송을 문 슬롯 기준 — 전체로 보면 부분 확정 묶음에서
                     // 이미 확정된 자리의 운송장 입력칸까지 사라진다.
                     const isSlotConfirmed =
@@ -1610,7 +1671,17 @@ export function HostedBuncheolManage({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {/* ⚠️ 값이 같으면 감춘다. 입금자명은 비면 닉네임으로 폴백하고(getDepositorName),
+                              파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
+                              같은 이름이 두 줄 뜬다. */}
+                          {head.participantNickname !== depositorName &&
+                          !isSyntheticParticipantName(head.participantNickname) ? (
+                            <p className="truncate text-[13px] font-semibold text-black/55">
+                              <span className="mr-1.5 text-black/35">참여자</span>
+                              {head.participantNickname}
+                            </p>
+                          ) : null}
+                          <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.04em]">
                             입금자명 {depositorName}
                           </p>
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
@@ -1705,12 +1776,11 @@ export function HostedBuncheolManage({
                       {bundleDeliveries.length > 0 ? (
                         <div className="mt-3 space-y-3 border-t border-black/[0.06] pt-3">
                           {bundleDeliveries.map((entry) => {
+                            // 분철 확정 게이트 없음 — 입금확인 판정은 위 isSlotConfirmed
+                            // 필터가 대신한다(#183). 서버도 같은 축(자리 CONFIRMED)만 본다.
                             const hasTracking = Boolean(
                               entry.delivery.trackingNumber,
                             );
-                            // 자리 확정 여부는 위에서 이미 걸렀으므로 분철 확정만 남는다.
-                            const canRegisterTracking =
-                              detail.status === "CONFIRMED";
                             const isRegistering =
                               pendingC2CAction === `tracking:${entry.ownerId}`;
                             const trackingInput =
@@ -1741,30 +1811,26 @@ export function HostedBuncheolManage({
                                 ) : (
                                   <div className="mt-2 flex gap-2">
                                     <input
-                                      className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black disabled:bg-black/[0.03]"
-                                      disabled={!canRegisterTracking}
+                                      className="h-10 min-w-0 flex-1 rounded-[0.7rem] border border-black/10 px-3 text-[13px] outline-none placeholder:text-black/25 focus:border-black"
                                       inputMode="numeric"
-                                      onChange={(event) =>
+                                      // 🔴 updater 는 렌더 단계에서 늦게 불려 그때 currentTarget 은
+                                      // null 이다 — 값을 밖에서 먼저 꺼내야 한다.
+                                      onChange={(event) => {
+                                        const trackingNumber =
+                                          event.currentTarget.value;
                                         setParticipantTrackingInputs(
                                           (inputs) => ({
                                             ...inputs,
-                                            [entry.ownerId]:
-                                              event.currentTarget.value,
+                                            [entry.ownerId]: trackingNumber,
                                           }),
-                                        )
-                                      }
-                                      // 버튼을 흐리기만 하면 개최자가 이유를 못 찾는다 — 「제외」와 같은 규칙.
-                                      placeholder={
-                                        canRegisterTracking
-                                          ? "운송장 번호 입력"
-                                          : "분철 진행 확정 후 등록 가능"
-                                      }
+                                        );
+                                      }}
+                                      placeholder="운송장 번호 입력"
                                       value={trackingInput}
                                     />
                                     <button
                                       className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
                                       disabled={
-                                        !canRegisterTracking ||
                                         trackingInput.trim().length === 0 ||
                                         pendingC2CAction !== null
                                       }
@@ -1814,8 +1880,9 @@ export function HostedBuncheolManage({
                 const isPaymentConfirmed =
                   isParticipationConfirmedStatus(option.winner?.paymentStatus) ||
                   Boolean(option.winner?.paymentConfirmedAt);
-                // 운송장 등록은 분철이 진행확정(CONFIRMED)된 뒤에만 가능하다 — 모집중 발송 후
-                // 분철이 무산(최소 인원 미달 취소)되는 모순을 막는 서버 가드(DLV-009)와 동일 조건.
+                // (LEGACY 한정) 운송장 등록은 분철이 진행확정(CONFIRMED)된 뒤에만 가능하다 —
+                // 모집중 발송 후 분철이 무산(최소 인원 미달 취소)되는 모순을 막는 서버 가드(DLV-009)와
+                // 동일 조건. #183 이 이 가드를 LEGACY 한정으로 좁혔으므로 C2C 분기에는 없다.
                 // 중앙 confirmed 계열(PAID 등 동의어 포함)로 넓히지 않고 서버 가드와 같은
                 // 정확한 CONFIRMED 비교를 의도적으로 유지한다.
                 const isBuncheolConfirmedForShipping =
@@ -1972,8 +2039,12 @@ export function HostedBuncheolManage({
                                           이 줄이 실명으로 바뀐다 — 라벨과 값이 어긋나고 바로 아래
                                           "입금자명"과 같은 값이 두 번 뜨며 닉네임이 화면에서 사라진다.
                                           이 줄은 닉네임 전용이다. */}
-                                      {matchedParticipant?.participantNickname ??
-                                        "-"}
+                                      {matchedParticipant?.participantNickname &&
+                                      !isSyntheticParticipantName(
+                                        matchedParticipant.participantNickname,
+                                      )
+                                        ? matchedParticipant.participantNickname
+                                        : "-"}
                                     </p>
                                     {/* 통장에 찍히는 건 예금주명이라, 닉네임(참여자)만으로는 대조가 안 된다 (docs/53 Q-18).
                                         C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}

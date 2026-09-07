@@ -54,6 +54,7 @@ import {
   type BankAccountInfo,
   type MyHostedBuncheol,
   type MyParticipation,
+  type RequestedShippingAddress,
   type ShippingFeePaybackInfo,
 } from "@/lib/auth-api";
 import {
@@ -74,6 +75,7 @@ import {
   isParticipationPaymentSentStatus,
   isUserCancelledReason,
   USER_CANCELLED_REASON,
+  getCountUnit,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -578,6 +580,8 @@ type BidRecord = {
   // 필드가 없는 구 응답이면 null.
   cancellability?: string | null;
   shippingAddress?: DeliveryAddress | null;
+  // 이 참여가 속한 묶음의 배송지(server#178). 배송 스냅샷과 달리 입금확인 전에도 온다.
+  requestedShippingAddress?: RequestedShippingAddress | null;
   shippingFee?: number | null;
   trackingNumber?: string | null;
   hostBankAccount?: BankAccountInfo | null;
@@ -731,6 +735,12 @@ function getBidRecordCancellationKind(bid: BidRecord) {
     return "USER_CANCELLED";
   }
 
+  // 개최자가 뺀 자리. 만료와 뭉뚱그리면 주체·사실·문의처가 모두 틀린다 — C2C 는 돈이 개최자
+  // 계좌로 가므로 「분철이지로 문의」가 오안내다.
+  if (bid.cancelReason === "HOST_RELEASED") {
+    return "HOST_RELEASED";
+  }
+
   if (bid.cancelReason === "PAYMENT_TIMEOUT") {
     return "PAYMENT_TIMEOUT";
   }
@@ -742,12 +752,15 @@ function getBidRecordCancellationKind(bid: BidRecord) {
     return "BUNCHEOL_CANCELLED";
   }
 
-  return "PAYMENT_TIMEOUT";
+  // 🔴 모르는 사유의 기본값은 <b>flow 로 갈린다</b>. C2C 는 돈이 개최자에게 있으니 「개최자가 뺐다」가
+  // 최악의 경우에도 물어볼 상대를 맞게 가리킨다. LEGACY 는 「제외」 자체가 없고 환불 주체가
+  // 플랫폼이라, 같은 기본값을 쓰면 일어날 수 없는 사건을 단정하고 문의처까지 틀리게 보낸다.
+  return isC2CBidRecord(bid) ? "HOST_RELEASED" : "PAYMENT_TIMEOUT";
 }
 
 // 참여 내역 목록에서 감출 참여 (docs/56 H-05). 자발 취소(본인 귀책)만 감춘다 —
 // 분철 취소·입금 기한 만료는 사용자 귀책이 아니고, 알림톡을 못 본 사용자에게는 유일한 흔적이다.
-// 사유를 알 수 없는 취소는 getBidRecordCancellationKind 가 PAYMENT_TIMEOUT 으로 떨어뜨리므로
+// 사유를 알 수 없는 취소는 getBidRecordCancellationKind 가 자발 취소가 아닌 쪽으로 떨어뜨리므로
 // 자동으로 남는 쪽이 된다.
 // 입금 흔적(보냈어요 마킹·확인 완료·paidAt)이 있으면 사유가 USER_CANCELLED 여도 남긴다 —
 // 서버가 참여자 요청에 의한 CS 취소를 같은 사유로 기록하면 환불을 추적할 유일한 근거가 사라진다.
@@ -836,6 +849,30 @@ function isFreeBidRecord(bid: BidRecord) {
   return bid.amount === 0 && (bid.shippingFee ?? 0) === 0;
 }
 
+// 취소 카드에서 살아남는 유일한 입금 흔적. 취소 행은 상세 보강을 타지 않아 paidAt 이 안 채워진다.
+function hasBidRecordPaymentTrace(bid: BidRecord) {
+  return (
+    Boolean(bid.paymentSentAt) ||
+    isParticipationPaymentSentStatus(bid.participationStatus)
+  );
+}
+
+// 취소됐어도 개최자에게 물을 게 남은 경우 — C2C 에서 돈이 오간 자리다. 오픈채팅을 끊으면 유일한
+// 인앱 연락 수단이 사라지는데, 화면은 대금을 만진 적 없는 분철이지로 그를 보낸다.
+function stillNeedsHostContact(bid: BidRecord) {
+  if (!isC2CBidRecord(bid)) {
+    return false;
+  }
+  const kind = getBidRecordCancellationKind(bid);
+  // 개최자가 뺀 건은 흔적이 없어도 연다 — 「보냈어요」 없이 개최자가 바로 입금확인한 뒤
+  // 취소된 사람은 흔적이 비는데 돈을 낸 사람이고, 취소 행에는 paidAt 이 안 실려 클라가
+  // 그를 식별할 수 없다. 문구가 "개최자에게 알려 주세요"라면 닿을 수단도 있어야 한다.
+  if (kind === "HOST_RELEASED") {
+    return true;
+  }
+  return kind === "BUNCHEOL_CANCELLED" && hasBidRecordPaymentTrace(bid);
+}
+
 // 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
 // (CANCELLED = 최소 인원 미달 자동 취소, HOST_CANCELLED = 개최자 취소 — 워딩은 "개최자 사정"으로 완곡하게).
 function getBidRecordCancellationNotice(bid: BidRecord) {
@@ -852,6 +889,23 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
       label: "참여 취소됨",
       description:
         "직접 취소한 참여예요. 분철이 모집 중이면 다시 신청할 수 있어요.",
+    };
+  }
+
+  if (cancellationKind === "HOST_RELEASED") {
+    // 돈을 누가 갖고 있나로 갈린다 — C2C 는 개최자 개인계좌, LEGACY 는 플랫폼이다.
+    // ⚠️ 흔적이 없다고 「낼 게 없다」고 단정하지 않는다. 「보냈어요」를 거치지 않고 개최자가 바로
+    // 입금확인한 자리는 취소 후 paymentSentAt 이 비는데, 그 사람은 돈을 낸 사람이다.
+    const hasTrace = hasBidRecordPaymentTrace(bid);
+    return {
+      label: "개최자가 뺐어요",
+      description: isFreeBidRecord(bid)
+        ? "개최자가 참여를 뺐어요."
+        : !isC2C
+          ? "개최자가 참여를 뺐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
+          : hasTrace
+            ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 개최자에게 먼저 알려 주세요 — 대금은 개최자 계좌로 갔어요. 연락이 어려우면 고객센터로 문의해 주세요."
+            : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주시고, 연락이 어려우면 고객센터로 문의해 주세요.",
     };
   }
 
@@ -882,7 +936,7 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     description: isFreeBidRecord(bid)
       ? buncheolCancelDescription
       : isC2C
-        ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 입금했다면 분철이지로 문의해 주세요.`
+        ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 보냈다면 환불은 개최자가 진행해요 — 지연되면 고객센터로 문의해 주세요.`
         : `${buncheolCancelDescription} 이미 입금했다면 등록한 환불 계좌로 환불돼요.`,
   };
 }
@@ -1405,6 +1459,8 @@ function getBidRecordFromParticipation(
     rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
+    // ⚠️ 여기에는 캐시 폴백을 붙이지 않는다 — 캐시에 없는 값이고, 붙일 곳도 아니다.
+    requestedShippingAddress: participation.requestedShippingAddress ?? null,
     shippingFee: participation.shippingFee ?? null,
     trackingNumber: participation.trackingNumber,
     // 개최자 계좌는 세션 캐시에 저장하지 않으므로(v3) 서버 응답에만 의존한다.
@@ -1445,6 +1501,18 @@ function getCachedBuncheolDetail(
 function isBuncheolDetailInaccessible(bid: BidRecord) {
   return (
     isBidRecordCancelled(bid) || isBuncheolDeletedStatus(bid.buncheolStatus)
+  );
+}
+
+/** 내 참여 목록을 서버에서 다시 읽어 카드로 만든다. 모듈 스코프 — 폴링 effect 의 deps 에 걸리지 않게. */
+async function fetchBidRecords(accessToken: string): Promise<BidRecord[]> {
+  const participations = await requestMyParticipations(accessToken);
+  const buncheolDetailCache: BuncheolDetailCache = new Map();
+
+  return Promise.all(
+    participations.map((participation) =>
+      getBidRecordWithShippingData(accessToken, participation, buncheolDetailCache),
+    ),
   );
 }
 
@@ -1715,6 +1783,10 @@ export function BidHistoryContent({
   const [isAddressSheetClosing, setIsAddressSheetClosing] = useState(false);
   const addressSheetCloseTimerRef = useRef<number | null>(null);
   const paymentStoreTypeRequestIdRef = useRef(0);
+  // 목록 전체를 갈아치우는 writer 가 둘이다(폴링 · 취소 후 재조회). 응답 도착 순서가
+  // 보장되지 않아, 취소 직전 출발한 폴링이 늦게 도착하면 낡은 배송비가 다시 깔린다.
+  // 세대를 올려 늦게 온 응답을 버린다 — paymentStoreTypeRequestIdRef 와 같은 방식.
+  const bidRecordsGenerationRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -1853,17 +1925,23 @@ export function BidHistoryContent({
           availablePaymentStoreTypes.includes(address.storeType),
         )
       : prioritizedDeliveryAddresses;
-  const selectedEligiblePaymentAddress =
-    eligiblePaymentAddresses.find(
-      (address) => address.id === selectedPaymentAddressId,
-    ) ?? null;
-  const lockedPaymentDeliveryAddress =
-    selectedPaymentBid?.shippingAddress ?? null;
-  const paymentDeliveryAddress =
-    lockedPaymentDeliveryAddress ??
-    selectedEligiblePaymentAddress ??
-    eligiblePaymentAddresses[0] ??
-    null;
+  // 🔴 근거는 <b>서버가 준 값뿐</b>이다. 없으면 "확인 중" 으로 둔다 — 이 자리엔 「배송지 고정 ·
+  // 변경 불가」 라벨이 붙어 있어서, 유저의 배송지 목록으로 채우면 <b>실제로 가지 않을 주소를 확신에
+  // 차서</b> 보여주게 된다. 정보가 없는 것보다 나쁘다.
+  //
+  // 두 출처 다 서버 값이라 이건 폴백이 아니다 — 입금확인 뒤에는 배송 스냅샷(shippingAddress)이 정본이고,
+  // 그 전에는 묶음 배송지(requestedShippingAddress)가 정본이다 (server#178).
+  const paymentDeliveryAddress: Pick<
+    DeliveryAddress,
+    "branchName" | "storeType"
+  > | null = selectedPaymentBid?.shippingAddress
+    ? selectedPaymentBid.shippingAddress
+    : selectedPaymentBid?.requestedShippingAddress
+      ? {
+          branchName: selectedPaymentBid.requestedShippingAddress.storeName,
+          storeType: selectedPaymentBid.requestedShippingAddress.storeType,
+        }
+      : null;
   // 🔴 시트가 보여주는 금액은 <b>묶음 합계</b>여야 한다 — 이체가 한 번이기 때문이다.
   // ⚠️ 액션 대상과 금액 대상은 다르다 — 액션은 서버 CAS 가 옮길 자리(AWAITING 만), 금액은 그 이체에
   // 들어간 자리다. 같은 함수를 쓰면 마킹 후 목록이 비어 총액이 한 자리로 떨어진다.
@@ -1891,9 +1969,6 @@ export function BidHistoryContent({
   const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
-  const selectedPaymentOptionLabels = selectedPaymentBid
-    ? getBidRecordOptionLabels(selectedPaymentBid)
-    : [];
   const selectedPaymentStatusLabel = selectedPaymentBid
     ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
     : "";
@@ -2163,20 +2238,13 @@ export function BidHistoryContent({
         return;
       }
 
-      try {
-        const participations = await requestMyParticipations(accessToken);
-        const buncheolDetailCache: BuncheolDetailCache = new Map();
-        const bidRecords = await Promise.all(
-          participations.map((participation) =>
-            getBidRecordWithShippingData(
-              accessToken,
-              participation,
-              buncheolDetailCache,
-            ),
-          ),
-        );
+      const generation = bidRecordsGenerationRef.current;
 
-        if (isActive) {
+      try {
+        const bidRecords = await fetchBidRecords(accessToken);
+
+        // 그 사이 취소 후 재조회가 세대를 올렸으면 이 응답은 낡았다 — 버린다.
+        if (isActive && bidRecordsGenerationRef.current === generation) {
           setApiBidRecords(bidRecords);
         }
       } catch {
@@ -2790,7 +2858,11 @@ export function BidHistoryContent({
     const returnState: AddressReturnState = {
       source: "bids",
       bidId: selectedPaymentBidId,
-      addressId: selectedPaymentAddressId ?? paymentDeliveryAddress?.id ?? null,
+      // 표시용 묶음 배송지에는 id 가 없다(server#178) — 그래서 폴백을 뺐다.
+      // ⚠️ selectedPaymentAddressId 자체는 "유저가 고른 값"이 아니다. openPaymentSheet 가 시트를
+      // 열 때 기본 배송지 id 로 미리 채운다. 즉 이 변경은 그 상태가 null 인 구간에서만 차이가 나고,
+      // 실질적으로는 no-op 에 가깝다. 프리셋까지 걷는 것은 이 PR 범위가 아니다.
+      addressId: selectedPaymentAddressId,
     };
 
     window.sessionStorage.removeItem(lastAddedDeliveryAddressIdKey);
@@ -2939,7 +3011,7 @@ export function BidHistoryContent({
     const paymentSheetSlot =
       slots.find((slot) => canViewBidRecordPaymentSheet(slot, now)) ?? head;
     const safeOpenChatHref =
-      isC2CBidRecord(head) && !isCancelled
+      isC2CBidRecord(head) && (!isCancelled || stillNeedsHostContact(head))
         ? getSafeOpenChatHref(head.openChatUrl)
         : null;
     // 진행바는 묶음이 하나다. 자리마다 상태가 갈리면 가장 뒤처진 자리를 쓴다 — 앞선 자리를 쓰면
@@ -3451,22 +3523,42 @@ export function BidHistoryContent({
 
     try {
       await cancelParticipation(accessToken, bid.id);
-      setApiBidRecords((records) =>
-        records
-          ? records.map((record) =>
-              record.id === bid.id
-                ? {
-                    ...record,
-                    participationStatus: "CANCELLED",
-                    cancelReason: USER_CANCELLED_REASON,
-                  }
-                : record,
-            )
-          : records,
-      );
+      const cancelPatch = (records: BidRecord[]) =>
+        records.map((record) =>
+          record.id === bid.id
+            ? {
+                ...record,
+                participationStatus: "CANCELLED",
+                cancelReason: USER_CANCELLED_REASON,
+              }
+            : record,
+        );
+
+      setApiBidRecords((records) => (records ? cancelPatch(records) : records));
       setHistoryMessage("");
       // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
+      // ⚠️ 재조회보다 <b>먼저</b> 알린다 — 재조회는 참여 건마다 상세를 더 부를 수 있어 수 초가
+      // 걸리고, 그동안 토스트가 안 뜨면 사용자가 다시 누른다.
       showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
+
+      // 🔴 배송비는 "살아 있는 자리 중 가장 먼저 만들어진 것" 이 진다 — 그 판정을 서버가 읽는
+      // 시점에 하므로, 취소하면 남은 자리의 배송비가 바뀐다. 다시 묻지 않으면 남은 카드가
+      // 배송비 0원인 채로 남아 참여자가 틀린 금액을 이체한다.
+      const generation = (bidRecordsGenerationRef.current += 1);
+
+      try {
+        const records = await fetchBidRecords(accessToken);
+
+        if (bidRecordsGenerationRef.current === generation) {
+          // ⚠️ 낙관 패치를 다시 얹는다. 서버가 아직 취소를 반영하지 않은 응답을 주면(읽기 지연)
+          // 방금 지운 카드가 되살아나, "취소했어요" 토스트와 살아 있는 취소 버튼이 같이 뜬다.
+          setApiBidRecords(cancelPatch(records));
+        }
+      } catch {
+        // 취소 자체는 이미 성공했다. 여기서 토스트를 띄우면 "취소했어요" 와 "실패했어요" 가
+        // 같이 떠 혼란스럽다. ⚠️ 폴링이 항상 따라잡지는 않는다 — shouldRefreshPaymentState 가
+        // 거짓이면(남은 카드가 전부 확정·레거시) 폴링 자체가 돌지 않아 새로고침까지 남는다.
+      }
     } catch (error: unknown) {
       const failureMessage =
         error instanceof Error
@@ -3820,7 +3912,7 @@ export function BidHistoryContent({
               const cancelBlockedNotice = getBidRecordCancelBlockedNotice(bid);
               const isActionPending = pendingParticipationId !== null;
               const safeOpenChatHref =
-                isC2C && !isCancelled
+                isC2C && (!isCancelled || stillNeedsHostContact(bid))
                   ? getSafeOpenChatHref(bid.openChatUrl)
                   : null;
               const progressSteps = getBidRecordProgressSteps(bid, now);
@@ -4254,6 +4346,8 @@ export function BidHistoryContent({
                   product.optionCount ??
                   product.targetMembers?.length ??
                   product.options.length;
+                const countUnit = getCountUnit(product.flowType);
+                // 아래 participantCount 는 <b>자리 수</b>다 — 규약은 getCountUnit 참조.
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,
@@ -4321,7 +4415,8 @@ export function BidHistoryContent({
                             멤버 {optionCount}명
                           </span>
                           <span className="rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
-                            참여 {participantCount}명
+                            참여 {participantCount}
+                            {countUnit}
                           </span>
                           <span className="max-w-full truncate rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                             마감 {product.deadline}
@@ -4478,9 +4573,10 @@ export function BidHistoryContent({
               {isHostingHelpSheet ? null : isStatusGuideC2C ? (
                 <>
                   <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
-                    성사가 확정되지 않거나 입금 기한이 지나면 참여가 취소될 수
-                    있어요. 입금 전이었다면 돌려받을 금액이 없고, 이미
-                    입금했다면 분철이지로 문의해 주세요.
+                    성사가 확정되지 않으면 참여가 취소돼요. 입금 기한이 지나도
+                    자동으로 취소되진 않지만, 그때부터 개최자가 참여를 뺄 수
+                    있어요. 입금 전이었다면 돌려받을 금액이 없고, 이미 보냈다면
+                    개최자에게 먼저 알려 주세요.
                   </p>
                   <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
                     성사 확정 전까지는 참여를 직접 취소할 수 있어요. 확정된
@@ -4577,13 +4673,17 @@ export function BidHistoryContent({
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
               </p>
+              {/* 🔴 칩은 금액과 같은 모수(paymentAmountSources)에서 뽑는다 — 자리 1건에서 뽑으면
+                  「자리 2개 합계」 아래 칩이 하나만 남고, 알림톡은 두 이름을 다 나열해 어긋난다.
+                  ⚠️ 라벨로 중복 제거 금지: memberName 빈 자리들이 "멤버 확인 필요" 하나로 접힌다.
+                  카드(취소분 취소선 포함)와 시트(이체분만)는 의도된 차이다. */}
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {selectedPaymentOptionLabels.map((optionLabel) => (
+                {paymentAmountSources.map((slot) => (
                   <span
                     className="rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold tracking-[-0.04em] text-black/65"
-                    key={optionLabel}
+                    key={slot.id}
                   >
-                    {optionLabel}
+                    {getBidRecordOptionLabels(slot)[0]}
                   </span>
                 ))}
               </div>
@@ -4889,9 +4989,10 @@ export function BidHistoryContent({
               {eligiblePaymentAddresses.map((address) => {
                 const isDefault =
                   address.id === defaultAddressIds[address.storeType];
-                const isSelected =
-                  address.id ===
-                  (selectedPaymentAddressId ?? paymentDeliveryAddress?.id);
+                // 표시용 배송지에는 id 가 없어 비교 대상에서 뺐다.
+                // ⚠️ 이 시트는 현재 <b>도달 불가</b>다 — 여는 입구가 「+ 새 배송지 추가」 뒤 복귀
+                // 경로뿐이고, 그 경로 자체가 이 시트 안에서만 시작된다. 정리는 별건으로 둔다.
+                const isSelected = address.id === selectedPaymentAddressId;
 
                 return (
                   <div
