@@ -1,5 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { clearAuthCookies, clearAuthState } from "@/lib/auth-store";
+import {
+  authSignupProfileDraftStorageKey,
+  clearAuthCookies,
+  clearAuthState,
+} from "@/lib/auth-store";
 import { clearDeliveryAddressState } from "@/lib/delivery-address-store";
 import { clearHostedProducts } from "@/lib/hosted-products-store";
 import {
@@ -37,6 +41,9 @@ export function clearUserSessionState(queryClient: QueryClient) {
 
   try {
     window.sessionStorage.removeItem(profileCompleteCacheKey);
+    // 🔴 가입 초안(이름·닉네임·전화번호)도 계정 스코프다. 안 지우면 A 가 가입하다 만 초안이
+    // 같은 탭의 다음 가입자 B 입력칸에 미리 채워진다 — 남의 개인정보 프리필.
+    window.sessionStorage.removeItem(authSignupProfileDraftStorageKey);
   } catch {
     // 세션 저장소 접근 불가(사파리 프라이빗 등)는 무시한다 — 캐시가 없으면 가드가 다시 조회할 뿐이다.
   }

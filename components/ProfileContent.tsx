@@ -782,7 +782,8 @@ export function ProfileContent({
                   적혀 있었다. 입금 확인이 지연되는 실제 원인이라 여기서 한 번 짚는다. */}
               <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
                 환불과 개최 입금을 받는 계좌예요. 예금주명은 입금자명 확인에도
-                쓰여요.
+                쓰여요. 이미 진행 중인 참여·분철에는 그 시점의 계좌가 쓰이고,
+                여기서 바꿔도 소급되지 않아요.
               </p>
             </div>
             {authState.isLoggedIn &&
