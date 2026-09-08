@@ -133,6 +133,17 @@ export function BoardDetailContent({
               </h2>
             </section>
 
+            {post.imageUrl ? (
+              <section className="mt-3 overflow-hidden rounded-[1.15rem] border border-black/10 bg-[#f7f7f7]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  alt="공지 이미지"
+                  className="block w-full"
+                  src={post.imageUrl}
+                />
+              </section>
+            ) : null}
+
             <section className="mt-3 rounded-[1.15rem] bg-[#f7f7f7] px-4 py-5">
               <div className="grid gap-4">
                 {post.body.map((paragraph, index) => (
