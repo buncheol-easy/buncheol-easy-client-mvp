@@ -23,9 +23,11 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { isCardDeadlineOpen } from "@/components/ProductCard";
 import {
   isBuncheolCancelledStatus,
   isBuncheolDeletedStatus,
+  isBuncheolPaymentCollectingStatus,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
@@ -208,15 +210,26 @@ export function FavoritesContent({
     sort,
   ]);
 
-  // 마감 제외·정렬은 서버가 판정한 순서를 그대로 쓴다 — 클라에서 다시 걸거나 다시 정렬하면
+  // 마감 제외·정렬은 서버 판정을 그대로 쓴다 — 클라에서 다시 걸거나 다시 정렬하면
   // 서버가 일부러 남긴 입금 진행중(PAYMENT_COLLECTING) 분철이 사라지고, 모집중 우선 그룹 정렬이 깨진다.
+  // 단 서버 hideClosed 는 status 기준이라, 스케줄러가 상태를 넘기기 전의 「마감시각 지난
+  // RECRUITING」은 카드가 '모집 종료'로 그리는데도 남는다 — 그 창만 클라에서 보충한다.
   const filteredProducts = useMemo(() => {
     const sourceProducts = apiFavoriteProducts ?? [];
 
-    return sourceProducts.filter(
-      (product) => !isCancelledOrDeletedProductStatus(product.status),
-    );
-  }, [apiFavoriteProducts]);
+    return sourceProducts.filter((product) => {
+      if (isCancelledOrDeletedProductStatus(product.status)) {
+        return false;
+      }
+
+      // PAYMENT_COLLECTING 은 마감시각이 지나도 추가 신청이 가능하므로 남긴다.
+      return !(
+        hideClosed &&
+        !isBuncheolPaymentCollectingStatus(product.status) &&
+        !isCardDeadlineOpen(product.deadline)
+      );
+    });
+  }, [apiFavoriteProducts, hideClosed]);
   const isFavoriteProductsLoading =
     authState.isLoggedIn && apiFavoriteProducts === null;
 

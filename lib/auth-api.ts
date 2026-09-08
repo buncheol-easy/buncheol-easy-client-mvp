@@ -5697,15 +5697,15 @@ function getRecentSearchKeywordFromRecord(
   record: Record<string, unknown>,
 ): RecentSearchKeyword | null {
   const keyword = getStringValue(record, ["keyword", "text", "query"]).trim();
+  // id 는 삭제 API 의 경로 파라미터가 되므로 keyword 폴백을 두지 않는다 — 가짜 id 로 DELETE 가
+  // 매번 404 나는 것보다 해당 레코드를 버리는 쪽이 안전하다.
+  const id = getStringValue(record, ["id", "searchKeywordId"]);
 
-  if (!keyword) {
+  if (!keyword || !id) {
     return null;
   }
 
-  return {
-    id: getStringValue(record, ["id", "searchKeywordId"]) || keyword,
-    keyword,
-  };
+  return { id, keyword };
 }
 
 export async function requestGroups(keyword = ""): Promise<ApiGroup[]> {

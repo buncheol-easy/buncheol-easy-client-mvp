@@ -909,24 +909,38 @@ export function SearchExperience({
   }
 
   function handleDeleteRecentSearch(search: RecentSearchItem) {
+    const removedIndex = recentSearchItems.findIndex(
+      (item) => item.id === search.id,
+    );
+
     setApiRecentSearches((current) =>
       current ? current.filter((item) => item.id !== search.id) : current,
     );
 
-    getFreshAccessToken()
-      .then((accessToken) =>
-        accessToken
-          ? deleteRecentSearchKeyword(accessToken, search.id)
-          : undefined,
-      )
-      .catch(() => {
-        // 서버 삭제가 실패하면 되살린다 — 화면에서만 지워지면 새로고침 때 되돌아온다.
-        setApiRecentSearches((current) =>
-          current && !current.some((item) => item.id === search.id)
-            ? [...current, search]
-            : current,
-        );
+    // 서버 삭제가 안 나갔으면 원래 자리로 되살린다 — 화면에서만 지워지면 새로고침 때 되돌아온다.
+    const restore = () => {
+      setApiRecentSearches((current) => {
+        if (!current || current.some((item) => item.id === search.id)) {
+          return current;
+        }
+
+        const restored = [...current];
+        restored.splice(Math.max(removedIndex, 0), 0, search);
+        return restored;
       });
+    };
+
+    getFreshAccessToken()
+      .then((accessToken) => {
+        if (!accessToken) {
+          // getFreshAccessToken 은 재발급 실패 시 throw 가 아니라 null 을 돌려준다.
+          restore();
+          return;
+        }
+
+        return deleteRecentSearchKeyword(accessToken, search.id);
+      })
+      .catch(restore);
   }
 
   function renderRecentSearches() {
