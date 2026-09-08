@@ -138,7 +138,8 @@ function toPublicPreviewProduct(
       ? "로그인 후 구매와 상세 정보를 확인할 수 있어요."
       : "최신 정보를 불러오지 못해 목록에 공개됐던 정보를 표시하고 있어요. 새로고침하면 다시 시도해요.",
     isApiProduct: true,
-    isBidUnavailable: false,
+    // 캐시에 상태가 없으면 참여 CTA 를 닫는다 — 판정 모듈이 빈 상태를 모집중으로 접기 때문.
+    isBidUnavailable: !requiresLogin && !item.status,
     isPublicPreview: requiresLogin,
     options: [
       {
@@ -180,6 +181,8 @@ export function ApiProductDetail({
   const [message, setMessage] = useState("분철 정보를 불러오고 있습니다.");
   // 상세 조회 실패 시 안내 문구만 남는 막다른 길이 되지 않도록 홈 이동 버튼을 함께 노출한다.
   const [hasLoadError, setHasLoadError] = useState(false);
+  // 404 전용 — 참여·입금 이력이 있는 사용자가 환불 확인 경로를 잃지 않게 참여 내역 링크를 함께 띄운다.
+  const [isNotFoundError, setIsNotFoundError] = useState(false);
   // 직접 진입(크롤러·URL 입력·외부 공유 링크)은 슬라이드 인 출발점이 없으므로
   // 셸 정착을 기다리지 않고 곧바로 상세를 그린다 — 이 경로가 있어야 서버 HTML 에
   // initialProduct 내용이 실제 렌더 텍스트로 실린다. (returnSource/returnQuery 는
@@ -233,6 +236,7 @@ export function ApiProductDetail({
       if (isActive) {
         setMessage("분철 정보를 불러오고 있습니다.");
         setHasLoadError(false);
+        setIsNotFoundError(false);
       }
     });
 
@@ -349,6 +353,7 @@ export function ApiProductDetail({
         if (isNotFound) {
           setMessage("삭제되었거나 더 이상 확인할 수 없는 분철이에요.");
           setHasLoadError(true);
+          setIsNotFoundError(true);
           return;
         }
 
@@ -413,6 +418,14 @@ export function ApiProductDetail({
               href="/"
             >
               홈으로 가기
+            </Link>
+          ) : null}
+          {isNotFoundError ? (
+            <Link
+              className="mt-3 inline-flex items-center justify-center rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.04em] text-black/45"
+              href="/profile/bids"
+            >
+              참여 내역에서 확인하기
             </Link>
           ) : null}
         </div>
