@@ -25,6 +25,7 @@ import { SearchHeader } from "@/components/SearchHeader";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 import {
   addFavoriteGroup,
+  deleteRecentSearchKeyword,
   removeFavoriteGroup,
   requestBuncheols,
   requestFavoriteGroups,
@@ -63,6 +64,7 @@ type SearchExperienceProps = {
 };
 
 type RecentSearchItem = {
+  id: string;
   label: string;
 };
 
@@ -388,6 +390,7 @@ export function SearchExperience({
 
         setApiRecentSearches(
           result.searchKeywords.map((searchKeyword) => ({
+            id: searchKeyword.id,
             label: searchKeyword.keyword,
           })),
         );
@@ -905,6 +908,56 @@ export function SearchExperience({
     lastResultScrollTopRef.current = nextScrollTop;
   }
 
+  function handleDeleteRecentSearch(search: RecentSearchItem) {
+    setApiRecentSearches((current) =>
+      current ? current.filter((item) => item.id !== search.id) : current,
+    );
+
+    getFreshAccessToken()
+      .then((accessToken) =>
+        accessToken
+          ? deleteRecentSearchKeyword(accessToken, search.id)
+          : undefined,
+      )
+      .catch(() => {
+        // 서버 삭제가 실패하면 되살린다 — 화면에서만 지워지면 새로고침 때 되돌아온다.
+        setApiRecentSearches((current) =>
+          current && !current.some((item) => item.id === search.id)
+            ? [...current, search]
+            : current,
+        );
+      });
+  }
+
+  function renderRecentSearches() {
+    return (
+      <div className="mt-4 flex flex-wrap gap-3">
+        {recentSearchItems.map((search) => (
+          <span
+            className="inline-flex h-10 items-center rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-white"
+            key={search.id}
+          >
+            <button
+              className="inline-flex h-full items-center pl-5"
+              onClick={() => handleSearch(search.label)}
+              type="button"
+            >
+              {search.label}
+            </button>
+            <button
+              aria-label={`${search.label} 최근 검색어 삭제`}
+              className="inline-flex h-full items-center pl-2 pr-5"
+              onClick={() => handleDeleteRecentSearch(search)}
+              type="button"
+            >
+              <CloseIcon />
+            </button>
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   function renderRecentSearchSkeleton() {
     return (
       <div aria-label="최근 검색어를 불러오는 중" className="mt-4 flex flex-wrap gap-3" role="status">
@@ -1145,23 +1198,9 @@ export function SearchExperience({
                     <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
                       최근 검색어
                     </h2>
-                    {isRecentSearchesLoading ? (
-                      renderRecentSearchSkeleton()
-                    ) : (
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        {recentSearchItems.map((search) => (
-                          <button
-                            key={search.label}
-                            onClick={() => handleSearch(search.label)}
-                            className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
-                            type="button"
-                          >
-                            <span>{search.label}</span>
-                            <CloseIcon />
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {isRecentSearchesLoading
+                      ? renderRecentSearchSkeleton()
+                      : renderRecentSearches()}
                   </section>
 
                   <section className="mt-20">
@@ -1241,23 +1280,9 @@ export function SearchExperience({
                 <h2 className="text-[28px] font-semibold tracking-[-0.06em]">
                   최근 검색어
                 </h2>
-                {isRecentSearchesLoading ? (
-                  renderRecentSearchSkeleton()
-                ) : (
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {recentSearchItems.map((search) => (
-                      <button
-                        key={search.label}
-                        className="inline-flex h-10 items-center gap-2 rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.04em] text-white"
-                        onClick={() => handleSearch(search.label)}
-                        type="button"
-                      >
-                        <span>{search.label}</span>
-                        <CloseIcon />
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {isRecentSearchesLoading
+                  ? renderRecentSearchSkeleton()
+                  : renderRecentSearches()}
               </section>
 
               <section className="mt-20">

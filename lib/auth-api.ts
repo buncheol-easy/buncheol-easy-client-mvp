@@ -220,6 +220,7 @@ export type InboxMessageSummary = {
 
 export type InboxMessageDetail = InboxMessageSummary & {
   description: string;
+  imageUrl?: string;
   linkPath?: string;
   reference?: string;
 };
@@ -5474,6 +5475,9 @@ function getInboxMessageDetailFromRecord(
         "body",
         "message",
       ]) ?? "",
+    imageUrl:
+      getOptionalStringValue(record, ["imageUrl", "image", "imagePath"]) ??
+      undefined,
     linkPath:
       getOptionalStringValue(record, [
         "linkPath",
@@ -5764,6 +5768,26 @@ export async function requestGroupsByMemberKeyword(
     .filter(isRecord)
     .map(getApiGroupWithMembersFromRecord)
     .filter((group): group is ApiGroupWithMembers => group !== null);
+}
+
+export async function deleteRecentSearchKeyword(
+  accessToken: string,
+  searchId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/search-keywords/recent/${encodeURIComponent(
+      searchId,
+    )}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
 }
 
 export async function requestRecentSearchKeywords(
