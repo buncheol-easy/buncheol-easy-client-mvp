@@ -11,6 +11,7 @@ import {
 import { trackEvent } from "@/lib/analytics";
 import type { ProductCardItem } from "@/components/ProductCard";
 import {
+  ApiRequestError,
   requestBuncheolBookmarkStatus,
   requestBuncheolDetail,
   requestBuncheolManagement,
@@ -135,7 +136,7 @@ function toPublicPreviewProduct(
     courier: lockedLabel,
     description: requiresLogin
       ? "로그인 후 구매와 상세 정보를 확인할 수 있어요."
-      : "목록에 공개된 분철 정보를 표시하고 있어요.",
+      : "최신 정보를 불러오지 못해 목록에 공개됐던 정보를 표시하고 있어요. 새로고침하면 다시 시도해요.",
     isApiProduct: true,
     isBidUnavailable: false,
     isPublicPreview: requiresLogin,
@@ -152,7 +153,8 @@ function toPublicPreviewProduct(
     ],
     purchaseSource: lockedLabel,
     shippingMethods: [{ name: lockedLabel, price: "-" }],
-    status: requiresLogin ? "PUBLIC_PREVIEW" : "RECRUITING",
+    // 실패 폴백에서 "모집 중"을 지어내지 않는다 — 카드가 마지막으로 본 상태를 그대로 쓴다.
+    status: requiresLogin ? "PUBLIC_PREVIEW" : item.status,
   };
 }
 
@@ -331,13 +333,25 @@ export function ApiProductDetail({
           return;
         }
 
-        if (publicCard) {
+        // 404(삭제·개최자 취소)는 캐시 프리뷰로 덮지 않는다 — 이미 사라진 분철이
+        // 카드에 남은 옛 정보로 계속 살아 있는 것처럼 보인다.
+        const isNotFound =
+          error instanceof ApiRequestError && error.status === 404;
+
+        if (publicCard && !isNotFound) {
           setProduct(toPublicPreviewProduct(publicCard, requiresLogin));
           setMessage("");
           return;
         }
 
         setProduct(null);
+
+        if (isNotFound) {
+          setMessage("삭제되었거나 더 이상 확인할 수 없는 분철이에요.");
+          setHasLoadError(true);
+          return;
+        }
+
         // HTTP/2 는 statusText 가 빈 문자열이라 메시지가 비거나, 백엔드 영문 원문이
         // 그대로 올 수 있어 비어 있으면 한국어 기본 문구로 대체한다.
         const rawMessage = error instanceof Error ? error.message.trim() : "";
