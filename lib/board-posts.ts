@@ -14,6 +14,7 @@ export type BoardPost = {
   isPinned?: boolean;
   summary: string;
   body: string[];
+  imageUrl?: string;
   action?: {
     href: string;
     label: string;
@@ -96,6 +97,7 @@ export function getBoardPostFromInboxMessage(
     body: getBodyParagraphs(detail.description, summary),
     category: getBoardCategoryFromInboxType(message.type),
     date: formatBoardDate(message.createdAt),
+    imageUrl: detail.imageUrl || undefined,
     isNew: isRecentlyCreated(message.createdAt),
     isPinned: message.pinned,
     summary,

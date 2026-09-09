@@ -284,9 +284,12 @@ export function ShippingFeePaybackSheet({
               </p>
             )}
             <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
-              후기 확인이 끝나면 배송비 {paybackAmountLabel}을 위 계좌로 보내드려요.
+              {refundAccount
+                ? `후기 확인이 끝나면 배송비 ${paybackAmountLabel}을 위 계좌로 보내드려요.`
+                : `후기 확인이 끝나면 배송비 ${paybackAmountLabel}을 참여할 때 등록한 환불 계좌로 보내드려요.`}
               <br />
-              계좌 정보 수정은 마이페이지에서 할 수 있어요.
+              참여 시점에 등록된 계좌로만 보낼 수 있어서, 계좌가 바뀌었다면
+              고객센터로 알려 주세요.
             </p>
           </div>
 

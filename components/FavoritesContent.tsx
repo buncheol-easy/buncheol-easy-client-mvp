@@ -23,18 +23,17 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { isCardDeadlineOpen } from "@/components/ProductCard";
 import {
   isBuncheolCancelledStatus,
   isBuncheolDeletedStatus,
+  isBuncheolPaymentCollectingStatus,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 
 type FavoriteFilter = "all" | "favoriteArtist";
 type FavoriteSort = "deadline" | "recent";
-type FavoriteProductCardItem = ProductCardItem & {
-  favoritedOrder: number;
-};
 type FavoritesViewState = {
   filter?: FavoriteFilter;
   hideClosed?: boolean;
@@ -49,51 +48,9 @@ export const FAVORITES_SKIP_ENTER_KEY = "skip-favorites-enter-animation";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 const FAVORITES_VIEW_STATE_KEY = "favorites-view-state";
 
-// Deadline strings are entered as Korea-local cutoff times.
-const kstOffsetHours = 9;
-
-function parseDeadline(deadline: string) {
-  const match = deadline
-    .trim()
-    .match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})(?::\d{2})?)?/);
-
-  if (!match) {
-    return new Date(Number.NaN);
-  }
-
-  const [, year, month, day, hour = "0"] = match;
-
-  return new Date(
-    Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hour) - kstOffsetHours,
-    ),
-  );
-}
-
-function isClosed(deadline: string, now: Date) {
-  const deadlineDate = parseDeadline(deadline);
-
-  if (Number.isNaN(deadlineDate.getTime())) {
-    return false;
-  }
-
-  return deadlineDate.getTime() <= now.getTime();
-}
-
-function isClosedByStatus(status: string | undefined) {
-  return Boolean(status && status.toUpperCase() !== "RECRUITING");
-}
-
 // 취소(개최자 취소 HOST_CANCELLED 포함)·삭제된 분철은 찜 목록에서 숨긴다.
 function isCancelledOrDeletedProductStatus(status: string | undefined) {
   return isBuncheolCancelledStatus(status) || isBuncheolDeletedStatus(status);
-}
-
-function shouldHideClosedProduct(product: ProductCardItem, now: Date) {
-  return isClosedByStatus(product.status) || isClosed(product.deadline, now);
 }
 
 function takeShouldSkipFavoritesEnter() {
@@ -172,9 +129,8 @@ export function FavoritesContent({
   const [hideClosed, setHideClosed] = useState(
     initialViewState.hideClosed ?? false,
   );
-  const [now, setNow] = useState(() => new Date());
   const [apiFavoriteProducts, setApiFavoriteProducts] = useState<
-    FavoriteProductCardItem[] | null
+    ProductCardItem[] | null
   >(null);
   const [favoriteMessage, setFavoriteMessage] = useState("");
   const authState = useSyncExternalStore(
@@ -198,14 +154,6 @@ export function FavoritesContent({
       window.cancelAnimationFrame(frame);
     };
   }, [authState.isLoggedIn, router]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 60_000);
-
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const accessToken = authState.accessToken;
@@ -234,10 +182,7 @@ export function FavoritesContent({
         }
 
         setApiFavoriteProducts(
-          items.map((item, index) => ({
-            ...mergeCachedProductImage(toProductCardItem(item)),
-            favoritedOrder: items.length - index,
-          })),
+          items.map((item) => mergeCachedProductImage(toProductCardItem(item))),
         );
         setFavoriteMessage("");
       })
@@ -265,32 +210,26 @@ export function FavoritesContent({
     sort,
   ]);
 
+  // 마감 제외·정렬은 서버 판정을 그대로 쓴다 — 클라에서 다시 걸거나 다시 정렬하면
+  // 서버가 일부러 남긴 입금 진행중(PAYMENT_COLLECTING) 분철이 사라지고, 모집중 우선 그룹 정렬이 깨진다.
+  // 단 서버 hideClosed 는 status 기준이라, 스케줄러가 상태를 넘기기 전의 「마감시각 지난
+  // RECRUITING」은 카드가 '모집 종료'로 그리는데도 남는다 — 그 창만 클라에서 보충한다.
   const filteredProducts = useMemo(() => {
     const sourceProducts = apiFavoriteProducts ?? [];
 
-    return sourceProducts
-      .filter((product) => {
-        if (isCancelledOrDeletedProductStatus(product.status)) {
-          return false;
-        }
+    return sourceProducts.filter((product) => {
+      if (isCancelledOrDeletedProductStatus(product.status)) {
+        return false;
+      }
 
-        if (hideClosed && shouldHideClosedProduct(product, now)) {
-          return false;
-        }
-
-        return true;
-      })
-      .sort((left, right) => {
-        if (sort === "recent") {
-          return right.favoritedOrder - left.favoritedOrder;
-        }
-
-        return (
-          parseDeadline(left.deadline).getTime() -
-          parseDeadline(right.deadline).getTime()
-        );
-      });
-  }, [apiFavoriteProducts, hideClosed, now, sort]);
+      // PAYMENT_COLLECTING 은 마감시각이 지나도 추가 신청이 가능하므로 남긴다.
+      return !(
+        hideClosed &&
+        !isBuncheolPaymentCollectingStatus(product.status) &&
+        !isCardDeadlineOpen(product.deadline)
+      );
+    });
+  }, [apiFavoriteProducts, hideClosed]);
   const isFavoriteProductsLoading =
     authState.isLoggedIn && apiFavoriteProducts === null;
 

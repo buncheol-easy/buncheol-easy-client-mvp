@@ -217,7 +217,7 @@ function getReadableDeadlineBadge(deadline: string) {
   };
 }
 
-function isCardDeadlineOpen(deadline: string) {
+export function isCardDeadlineOpen(deadline: string) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
   return Number.isNaN(deadlineDate.getTime())

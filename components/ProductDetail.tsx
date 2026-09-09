@@ -1927,7 +1927,8 @@ export function ProductDetail({
       : isC2CProduct
       ? isC2CCollectingProduct
         ? "개최자가 성사를 확정했어요. 참여자 입금이 모두 확인되면 진행이 확정돼요."
-        : "신청이 모이면 개최자가 성사 여부를 확정해요. 확정되면 입금 안내를 보내드려요."
+        : // 마감+48시간 미확정 자동 취소(서버 C2C_CONFIRM_GRACE) — 신청자에게도 이 시계를 알린다.
+          "신청이 모이면 개최자가 성사 여부를 확정해요. 확정되면 입금 안내를 보내드려요. 신청 기한이 지난 뒤 2일(48시간) 안에 확정되지 않으면 신청은 자동으로 취소돼요."
       : remainingHeadcount === null
         ? "개최자가 정한 진행 기준을 확인하고 있어요."
         : remainingHeadcount > 0

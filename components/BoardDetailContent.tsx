@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { BackIcon, BidIcon } from "@/components/icons";
 import type { BoardCategory, BoardPost } from "@/lib/board-posts";
 
@@ -48,6 +49,7 @@ export function BoardDetailContent({
   post,
 }: BoardDetailContentProps) {
   const router = useRouter();
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
 
   function handleBack() {
     if (onBack) {
@@ -132,6 +134,18 @@ export function BoardDetailContent({
                 {post.title}
               </h2>
             </section>
+
+            {post.imageUrl && post.imageUrl !== failedImageUrl ? (
+              <section className="mt-3 overflow-hidden rounded-[1.15rem] border border-black/10 bg-[#f7f7f7]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  alt={`${post.title} 이미지`}
+                  className="block w-full"
+                  onError={() => setFailedImageUrl(post.imageUrl ?? null)}
+                  src={post.imageUrl}
+                />
+              </section>
+            ) : null}
 
             <section className="mt-3 rounded-[1.15rem] bg-[#f7f7f7] px-4 py-5">
               <div className="grid gap-4">
