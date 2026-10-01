@@ -27,6 +27,7 @@ import {
 } from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
+import { FloatingHelpButton } from "@/components/FloatingHelpButton";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
@@ -1050,24 +1051,17 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           </div>
         </section>
 
-        {/* 우하단 도움말 버튼(bottom-5 + h-12 = 68px)이 스크롤 맨 아래에서 푸터를 덮는다.
-            스크롤 컨테이너에 여백을 주면 푸터가 바닥에서 떠 보이므로 푸터 아래에만 확보한다 (docs/53 Q-21). */}
-        <div className="mt-auto pb-20 pt-8">
-          <BusinessFooter />
+        <div className="mt-auto pt-8">
+          <BusinessFooter clearsFloatingHelpButton />
         </div>
         </div>
       </div>
 
-      <button
-        aria-label="분철이지 이용 방법 보기"
-        className={`motion-icon-button floating-help-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)] ${
-          isChromeScrolledAway ? "floating-help-button--scrolled-away" : ""
-        }`}
+      <FloatingHelpButton
+        isScrolledAway={isChromeScrolledAway}
+        label="분철이지 이용 방법 보기"
         onClick={openUsageHelpSheet}
-        type="button"
-      >
-        ?
-      </button>
+      />
 
       {isUsageHelpSheetOpen ? (
         <div

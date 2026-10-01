@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { floatingHelpButtonClearanceClassName } from "@/components/FloatingHelpButton";
 
 const policyLinks = [
   { href: "/intro", label: "서비스 소개" },
@@ -30,7 +31,7 @@ const businessInfoRows = [
 ];
 
 type BusinessFooterProps = {
-  variant?: "full" | "compact";
+  clearsFloatingHelpButton?: boolean;
 };
 
 function openKbEscrowAuth() {
@@ -47,13 +48,13 @@ function openKbEscrowAuth() {
   );
 }
 
-export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
-  const isCompact = variant === "compact";
-
+export function BusinessFooter({
+  clearsFloatingHelpButton = false,
+}: BusinessFooterProps) {
   return (
     <footer
-      className={`border-t border-black/10 bg-[#f7f7f7] text-black ${
-        isCompact ? "px-4 pb-7 pt-4" : "px-5 pb-9 pt-5"
+      className={`border-t border-black/10 bg-[#f7f7f7] px-4 pt-4 text-black ${
+        clearsFloatingHelpButton ? floatingHelpButtonClearanceClassName : "pb-7"
       }`}
     >
       <div className="flex items-center justify-between gap-4">
@@ -88,9 +89,7 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
 
       <nav
         aria-label="정책 링크"
-        className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${
-          isCompact ? "mt-3" : "mt-4"
-        }`}
+        className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5"
       >
         {policyLinks.map((link) => (
           <Link
@@ -107,18 +106,8 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
         ))}
       </nav>
 
-      <div
-        className={`border-t border-black/10 ${
-          isCompact ? "mt-3 pt-3" : "mt-4 pt-3.5"
-        }`}
-      >
-        <dl
-          className={`grid grid-cols-2 gap-x-4 font-medium tracking-[-0.02em] ${
-            isCompact
-              ? "gap-y-1 text-[10px] leading-[0.9rem]"
-              : "gap-y-1.5 text-[10.5px] leading-4"
-          }`}
-        >
+      <div className="mt-3 border-t border-black/10 pt-3">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] font-medium leading-[0.9rem] tracking-[-0.02em]">
           {businessInfoRows.map((row) => (
             <div
               className={row.full ? "col-span-2" : "min-w-0"}
@@ -135,13 +124,7 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
         </dl>
       </div>
 
-      <div
-        className={`space-y-1.5 border-l-2 border-black/18 pl-3 font-medium tracking-[-0.02em] text-black/50 ${
-          isCompact
-            ? "mt-3 text-[10px] leading-4"
-            : "mt-3.5 text-[10.5px] leading-5"
-        }`}
-      >
+      <div className="mt-3 space-y-1.5 border-l-2 border-black/18 pl-3 text-[10px] font-medium leading-4 tracking-[-0.02em] text-black/50">
         <p>
           분철이지가 직접 개최하는 분철은 분철이지가 통신판매 당사자이며,
           상품·거래 정보와 청약철회·환불 등 거래에 관한 책임은 분철이지에
@@ -161,11 +144,7 @@ export function BusinessFooter({ variant = "compact" }: BusinessFooterProps) {
           에서 확인할 수 있습니다.
         </p>
       </div>
-      <p
-        className={`text-[10px] font-medium tracking-[-0.02em] text-black/36 ${
-          isCompact ? "mt-3" : "mt-3.5"
-        }`}
-      >
+      <p className="mt-3 text-[10px] font-medium tracking-[-0.02em] text-black/36">
         © 2026 분철이지
       </p>
     </footer>
