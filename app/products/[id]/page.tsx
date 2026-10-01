@@ -7,11 +7,13 @@ import { UploadedProductDetail } from "@/components/UploadedProductDetail";
 import { isGroupIdShape } from "@/lib/artist-browse";
 import {
   ApiRequestError,
+  type BuncheolDetail,
   requestBuncheolDetail,
   toProductDetailItem,
 } from "@/lib/auth-api";
 import { isBuncheolDeletedStatus } from "@/lib/buncheol-states";
 import type { ProductDetailItem } from "@/lib/mock-products";
+import { formatMemberNamesForSearch } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
@@ -44,6 +46,23 @@ function formatBuncheolPageTitle(groupName: string, title: string) {
   return base.includes("분철") ? base : `${base} 분철`;
 }
 
+// 검색 결과 설명문. 본문 발췌는 이모지·줄바꿈이 섞여 네이버가 쓰지 않고 페이지의 다른 글로 대체했다.
+// 모집 상태·마감일은 넣지 않는다 — 검색 결과는 몇 주씩 갱신되지 않아 금방 틀린 말이 된다.
+function buildBuncheolSearchDescription(detail: BuncheolDetail, title: string) {
+  const subject = detail.groupName.trim() ? `${detail.groupName.trim()} 분철` : title;
+  const memberNames = formatMemberNamesForSearch(
+    detail.members.map((member) => member.name),
+  );
+  const prices = detail.members
+    .map((member) => member.bidMinPrice)
+    .filter((price) => Number.isFinite(price) && price >= 0);
+  const priceLabel =
+    prices.length > 0 ? ` ${Math.min(...prices).toLocaleString("ko-KR")}원부터` : "";
+  const lineup = memberNames ? ` · ${memberNames} 멤버별${priceLabel}` : "";
+
+  return `${subject}${lineup}. 분철이지에서 원하는 멤버를 골라 참여하고 입금 확인부터 배송까지 한 화면에서 확인하세요.`;
+}
+
 export async function generateMetadata({
   params,
 }: ProductDetailPageProps): Promise<Metadata> {
@@ -57,12 +76,12 @@ export async function generateMetadata({
   try {
     const detail = await getBuncheolDetailCached(id);
     const title = formatBuncheolPageTitle(detail.groupName, detail.title);
-    const trimmedDescription = detail.description?.trim() ?? "";
-    const description =
-      (trimmedDescription.length > 90
-        ? `${trimmedDescription.slice(0, 90)}…`
-        : trimmedDescription) ||
-      `${title} — 멤버별 포토카드를 나눠 사고 모아 보세요.`;
+    const description = buildBuncheolSearchDescription(detail, title);
+    // 공유 미리보기(카카오톡·X)는 개최자가 쓴 본문 발췌를 그대로 보여 준다.
+    const trimmedBody = detail.description?.trim() ?? "";
+    const shareDescription =
+      (trimmedBody.length > 90 ? `${trimmedBody.slice(0, 90)}…` : trimmedBody) ||
+      description;
     // thumbnailUrl 은 파서가 thumbnail 플래그 → 첫 이미지 순으로 이미 보정해 내려준다.
     const imageUrl = detail.thumbnailUrl;
 
@@ -76,7 +95,7 @@ export async function generateMetadata({
         siteName: "분철이지",
         locale: "ko_KR",
         title,
-        description,
+        description: shareDescription,
         url: `/products/${id}`,
         images: [imageUrl ?? "/brand/logo-black.png"],
       },
