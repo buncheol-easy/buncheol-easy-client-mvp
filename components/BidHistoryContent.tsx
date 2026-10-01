@@ -37,6 +37,7 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { EmptyState } from "@/components/EmptyState";
+import { FloatingHelpButton } from "@/components/FloatingHelpButton";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
@@ -4464,16 +4465,11 @@ export function BidHistoryContent({
         </div>
       </main>
 
-      <button
-        aria-label={isHostingHelpSheet ? "개최 진행 안내 보기" : "참여 상태 안내 보기"}
-        className={`motion-icon-button floating-help-button absolute bottom-5 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full bg-black text-[18px] font-semibold text-[#D7FF5F] shadow-[0_14px_30px_rgba(0,0,0,0.28)] ${
-          isChromeScrolledAway ? "floating-help-button--scrolled-away" : ""
-        }`}
+      <FloatingHelpButton
+        isScrolledAway={isChromeScrolledAway}
+        label={isHostingHelpSheet ? "개최 진행 안내 보기" : "참여 상태 안내 보기"}
         onClick={openStatusHelpSheet}
-        type="button"
-      >
-        ?
-      </button>
+      />
 
       {isStatusHelpSheetOpen ? (
         <div

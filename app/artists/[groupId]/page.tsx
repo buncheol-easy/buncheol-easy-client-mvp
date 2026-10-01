@@ -9,9 +9,15 @@ import {
   ApiRequestError,
   requestBuncheols,
   requestGroupDetail,
+  requestGroups,
   toProductCardItem,
 } from "@/lib/auth-api";
 import { FEATURES } from "@/lib/feature-flags";
+import {
+  formatMemberNamesForSearch,
+  getArtistSearchName,
+  isArtistPageIndexable,
+} from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
@@ -28,6 +34,13 @@ const getGroupDetailCached = cache((groupId: string) =>
   requestGroupDetail(groupId),
 );
 
+const getGroupBuncheolsCached = cache((groupId: string) =>
+  requestBuncheols(undefined, { groupId, size: ARTIST_PAGE_SIZE }),
+);
+
+// 별칭은 그룹 상세 응답에 없고 그룹 목록 응답에만 있다.
+const getGroupsCached = cache(() => requestGroups());
+
 type ArtistPageProps = {
   params: Promise<{ groupId: string }>;
 };
@@ -43,15 +56,32 @@ export async function generateMetadata({
 
   try {
     const group = await getGroupDetailCached(groupId);
-    const title = `${group.name} 분철`;
-    const description =
-      group.recruitingBuncheolCount > 0
-        ? `${group.name} 분철 ${group.recruitingBuncheolCount}건 모집중. 멤버별 포토카드를 나눠 사고 모아 보세요.`
-        : `${group.name} 분철을 한곳에서. 멤버별 포토카드를 나눠 사고 모아 보세요.`;
+    const [buncheolsResult, groupsResult] = await Promise.allSettled([
+      getGroupBuncheolsCached(groupId),
+      getGroupsCached(),
+    ]);
+    const aliases =
+      groupsResult.status === "fulfilled"
+        ? groupsResult.value.find((item) => item.id === group.id)?.aliases
+        : undefined;
+    const searchName = getArtistSearchName(group.name, aliases);
+    const title = `${searchName} 분철`;
+    const memberNames = formatMemberNamesForSearch(
+      group.members.map((member) => member.name),
+    );
+    // 모집 건수·상태는 넣지 않는다 — 검색 결과는 몇 주씩 갱신되지 않아 금방 틀린 말이 된다.
+    const description = memberNames
+      ? `${searchName} 분철 모음. ${memberNames} 멤버별 포토카드를 나눠 사고 모아 보세요.`
+      : `${searchName} 분철 모음. 멤버별 포토카드를 나눠 사고 모아 보세요.`;
+    // 목록 조회가 실패하면 색인을 유지한다 — 일시 오류로 멀쩡한 페이지가 검색에서 빠지는 쪽이 더 손해다.
+    const indexable =
+      buncheolsResult.status === "rejected" ||
+      isArtistPageIndexable(group.id, buncheolsResult.value.length);
 
     return {
       title,
       description,
+      ...(indexable ? {} : { robots: { index: false, follow: true } }),
       alternates: { canonical: `/artists/${groupId}` },
       openGraph: {
         type: "website",
@@ -107,10 +137,7 @@ export default async function ArtistPage({ params }: ArtistPageProps) {
   let initialItems: ProductCardItem[] = [];
 
   try {
-    const summaries = await requestBuncheols(undefined, {
-      groupId,
-      size: ARTIST_PAGE_SIZE,
-    });
+    const summaries = await getGroupBuncheolsCached(groupId);
     initialItems = summaries.map(toProductCardItem);
   } catch (error) {
     console.warn(`[artists] 분철 목록 조회 실패 (groupId=${groupId})`, error);

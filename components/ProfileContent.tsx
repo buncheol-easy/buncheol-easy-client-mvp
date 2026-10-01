@@ -1086,7 +1086,7 @@ export function ProfileContent({
         </button>
 
         <div className="relative -mx-4 -mb-6 mt-auto bg-[#f7f7f7] pt-6">
-          <BusinessFooter variant="compact" />
+          <BusinessFooter />
         </div>
         </div>
       </main>
