@@ -1,7 +1,12 @@
 import type { MetadataRoute } from "next";
-import { requestAllBuncheols, requestGroups } from "@/lib/auth-api";
+import {
+  type BuncheolSummary,
+  requestAllBuncheols,
+  requestGroups,
+} from "@/lib/auth-api";
 import { isBuncheolCancelledStatus } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
+import { isArtistPageIndexable } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
 
 // 분철 목록이 수시로 열리고 닫히므로 1시간마다 재생성한다.
@@ -31,24 +36,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     url: `${SITE_URL}${route}`,
   }));
 
-  let artistEntries: MetadataRoute.Sitemap = [];
-
-  if (FEATURES.artistBrowse) {
-    try {
-      const groups = await requestGroups();
-      artistEntries = groups.map((group) => ({
-        url: `${SITE_URL}/artists/${group.id}`,
-      }));
-    } catch (error) {
-      // 그룹 조회 실패 시 아티스트 경로만 빠진다 — 분철 상세는 그대로 색인된다.
-      console.warn("[sitemap] 그룹 목록 조회 실패 — 아티스트 경로를 제외합니다.", error);
-    }
-  }
-
+  let buncheols: BuncheolSummary[] = [];
   let productEntries: MetadataRoute.Sitemap = [];
 
   try {
-    const buncheols = await requestAllBuncheols(undefined, {
+    buncheols = await requestAllBuncheols(undefined, {
       size: SITEMAP_PAGE_SIZE,
     });
 
@@ -81,6 +73,48 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // 빌드·재생성 시점에 백엔드 조회가 실패하면 정적 경로만으로 제공된다.
     // 무음으로 두면 1시간짜리 반쪽 사이트맵이 배포돼도 알 수 없으니 로그를 남긴다.
     console.warn("[sitemap] 분철 목록 조회 실패 — 정적 경로만 포함합니다.", error);
+  }
+
+  let artistEntries: MetadataRoute.Sitemap = [];
+
+  if (FEATURES.artistBrowse) {
+    try {
+      const groups = await requestGroups();
+      // 분철 목록 응답에는 그룹 id 가 없고 groupName 만 있어 이름으로 맞춘다. 집계 대상은
+      // 아티스트 페이지가 카드로 보여주는 범위(삭제 제외 전부)와 같아야 메타 robots 와 어긋나지 않는다.
+      const buncheolCountByGroupName = new Map<string, number>();
+
+      for (const item of buncheols) {
+        buncheolCountByGroupName.set(
+          item.groupName,
+          (buncheolCountByGroupName.get(item.groupName) ?? 0) + 1,
+        );
+      }
+
+      const groupNames = new Set(groups.map((group) => group.name));
+      const unmatchedNames = [...buncheolCountByGroupName.keys()].filter(
+        (name) => !groupNames.has(name),
+      );
+
+      if (unmatchedNames.length > 0) {
+        console.warn(
+          "[sitemap] 그룹 목록과 이름이 맞지 않는 분철 그룹이 있어 아티스트 경로에서 빠집니다.",
+          unmatchedNames,
+        );
+      }
+
+      artistEntries = groups
+        .filter((group) =>
+          isArtistPageIndexable(
+            group.id,
+            buncheolCountByGroupName.get(group.name) ?? 0,
+          ),
+        )
+        .map((group) => ({ url: `${SITE_URL}/artists/${group.id}` }));
+    } catch (error) {
+      // 그룹 조회 실패 시 아티스트 경로만 빠진다 — 분철 상세는 그대로 색인된다.
+      console.warn("[sitemap] 그룹 목록 조회 실패 — 아티스트 경로를 제외합니다.", error);
+    }
   }
 
   return [...staticEntries, ...artistEntries, ...productEntries];
