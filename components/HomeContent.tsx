@@ -1050,10 +1050,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           </div>
         </section>
 
-        {/* 우하단 도움말 버튼(bottom-5 + h-12 = 68px)이 스크롤 맨 아래에서 푸터를 덮는다.
-            스크롤 컨테이너에 여백을 주면 푸터가 바닥에서 떠 보이므로 푸터 아래에만 확보한다 (docs/53 Q-21). */}
-        <div className="mt-auto pb-20 pt-8">
-          <BusinessFooter />
+        {/* 우하단 도움말 버튼(bottom-5 + h-12 = 68px)이 스크롤 맨 아래에서 푸터 문구를 덮지 않게
+            푸터 아래 여백을 둔다. 여백이 푸터 배경 밖에 있으면 바닥에 흰 띠로 남는다. */}
+        <div className="mt-auto pt-8">
+          <div className="bg-[#f7f7f7] pb-12">
+            <BusinessFooter />
+          </div>
         </div>
         </div>
       </div>
