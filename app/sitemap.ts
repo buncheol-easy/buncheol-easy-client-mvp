@@ -37,12 +37,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
 
   let buncheols: BuncheolSummary[] = [];
+  let buncheolsLoaded = false;
   let productEntries: MetadataRoute.Sitemap = [];
 
   try {
     buncheols = await requestAllBuncheols(undefined, {
       size: SITEMAP_PAGE_SIZE,
     });
+    buncheolsLoaded = true;
 
     if (buncheols.length >= SITEMAP_MAX_ITEMS) {
       console.warn(
@@ -103,12 +105,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         );
       }
 
+      // 분철 목록을 못 받았으면 판정을 건너뛰고 전부 넣는다 — 아티스트 페이지 메타와 같은 fail-open.
       artistEntries = groups
-        .filter((group) =>
-          isArtistPageIndexable(
-            group.id,
-            buncheolCountByGroupName.get(group.name) ?? 0,
-          ),
+        .filter(
+          (group) =>
+            !buncheolsLoaded ||
+            isArtistPageIndexable(
+              group.id,
+              buncheolCountByGroupName.get(group.name) ?? 0,
+            ),
         )
         .map((group) => ({ url: `${SITE_URL}/artists/${group.id}` }));
     } catch (error) {
