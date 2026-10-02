@@ -36,6 +36,8 @@ export type ProductDetailItem = ProductCardItem & {
   // 개최자 취소 가능 여부·사유 — 개최 목록(GET /v1/buncheols/me)이 서버 판정을 그대로 내려준다 (docs/56 S-2).
   // 없으면(구 응답·개최 목록이 아닌 경로) 판정 불가로 보고 삭제 버튼을 남긴다.
   hostCancellability?: string | null;
+  // 분철이 끝났는지(서버 판정) — 개최 목록에서만 채운다. 없으면(구 응답·다른 경로) null/undefined.
+  hostEnded?: boolean | null;
   courier: string;
   description: string;
   deadline: string;
