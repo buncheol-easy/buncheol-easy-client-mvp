@@ -101,6 +101,88 @@ export function getBuncheolStatusBadgeLabel(status: string | null | undefined) {
 }
 
 // ---------------------------------------------------------------------------
+// 개최 목록 카드 · 개최 관리 화면 머리 (개최자 전용 표시)
+// ---------------------------------------------------------------------------
+
+export type HostedBuncheolStatusKind =
+  | "cancelled"
+  | "ended"
+  | "confirmed"
+  | "paymentCollecting"
+  | "recruitingClosed"
+  | "recruiting";
+
+const HOSTED_BUNCHEOL_STATUS_LABELS: Record<HostedBuncheolStatusKind, string> =
+  {
+    cancelled: "취소",
+    ended: "종료",
+    confirmed: "진행 확정",
+    paymentCollecting: "입금 진행",
+    recruitingClosed: "모집 종료",
+    recruiting: "모집 중",
+  };
+
+type HostedBuncheolStatusInput = {
+  status: string | null | undefined;
+  // 서버 판정(진행확정 ∧ 미확정 참여 0 ∧ 확정 참여 전원 편의점 도착). 진행확정이 아니면 서버는 늘 false,
+  // 구 응답이면 null.
+  ended: boolean | null | undefined;
+};
+
+function getHostedBuncheolStatusKind({
+  ended,
+  isDeadlinePassed,
+  status,
+}: HostedBuncheolStatusInput & {
+  isDeadlinePassed: boolean;
+}): HostedBuncheolStatusKind {
+  if (isBuncheolCancelledStatus(status)) {
+    return "cancelled";
+  }
+
+  if (isBuncheolConfirmedStatus(status)) {
+    return ended === true ? "ended" : "confirmed";
+  }
+
+  if (isBuncheolPaymentCollectingStatus(status)) {
+    return "paymentCollecting";
+  }
+
+  if (isBuncheolRecruitingStatus(status) && !isDeadlinePassed) {
+    return "recruiting";
+  }
+
+  // 마감 지난 모집(C2C 48시간 유예 포함)과 알 수 없는 상태.
+  return "recruitingClosed";
+}
+
+// 공용 getBuncheolStatusBadgeLabel 을 이 용도로 바꾸거나 deadline 인자를 붙이지 마라 — 공용 쪽은
+// 마감을 모르므로 C2C 48시간 유예 구간이 「모집 중」으로 돌아간다(docs/98 §5-C).
+export function getHostedBuncheolStatusBadge(
+  input: HostedBuncheolStatusInput & { isDeadlinePassed: boolean },
+) {
+  const kind = getHostedBuncheolStatusKind(input);
+
+  return { kind, label: HOSTED_BUNCHEOL_STATUS_LABELS[kind] };
+}
+
+// 개최 목록 「종료」 탭(값 closed) 판정 = 취소 ∨ (진행확정 ∧ ended). ended 가 없는 구 응답이면 null —
+// 화면은 기존 규칙으로 폴백한다(서버 롤백 시 지금과 같은 분류).
+export function isHostedBuncheolClosed({
+  ended,
+  status,
+}: HostedBuncheolStatusInput) {
+  if (typeof ended !== "boolean") {
+    return null;
+  }
+
+  return (
+    isBuncheolCancelledStatus(status) ||
+    (isBuncheolConfirmedStatus(status) && ended)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 참여(participation) 상태
 // ---------------------------------------------------------------------------
 

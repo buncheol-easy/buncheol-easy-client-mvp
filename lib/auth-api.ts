@@ -458,6 +458,8 @@ export type BuncheolManagementDetail = {
   cancelledParticipants: BuncheolManagementParticipant[];
   confirmedCount?: number;
   deadline: string;
+  // 개최 목록(MyHostedBuncheol.ended)과 같은 서버 판정. 구 응답이면 null.
+  ended: boolean | null;
   // 분철 flow_type — 없으면 LEGACY 취급 (getFlowType).
   flowType?: string | null;
   groupName: string;
@@ -550,6 +552,9 @@ export type MyHostedBuncheol = BuncheolSummary & {
   // 필드가 없는 구 응답이면 null — 화면은 삭제 버튼을 남기는 쪽으로 폴백한다.
   cancellability?: string | null;
   createdAt: string;
+  // 서버 판정 — 진행확정이고 확정 참여 전원의 택배가 편의점에 도착했으면 true. 진행확정이 아니면 늘 false.
+  // 필드가 없는 구 응답이면 null — 개최 목록 탭은 기존 규칙으로 폴백한다.
+  ended: boolean | null;
   memberSlotCount: number;
 };
 
@@ -3883,6 +3888,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     deadline:
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||
       getStringValue(responseData, ["deadline", "buncheolDeadline"]),
+    ended: getOptionalBooleanValue(data, ["ended"]) ?? null,
     flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     groupName:
       getStringValue(data, ["groupName", "group"]) ||
@@ -4889,6 +4895,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
         cancellability:
           getOptionalStringValue(record, ["cancellability"]) ?? null,
         createdAt: summary.createdAt ?? "",
+        ended: getOptionalBooleanValue(record, ["ended"]) ?? null,
         memberSlotCount:
           summary.memberSlotCount ??
           getNumberValue(record, ["memberSlotCount"]) ??
