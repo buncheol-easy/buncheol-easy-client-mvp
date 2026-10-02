@@ -26,11 +26,10 @@ import {
   type BuncheolManagementWinner,
 } from "@/lib/auth-api";
 import {
-  getBuncheolStatusBadgeLabel,
   getDeliveryStatusLabel as getCentralDeliveryStatusLabel,
   getFlowType,
+  getHostedBuncheolStatusBadge,
   isBuncheolCancelledStatus,
-  isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
   isParticipationAppliedStatus,
@@ -130,8 +129,13 @@ function getWinnerBidAmount(option: BuncheolManagementOption) {
   return option.winner?.paymentAmount ?? option.winner?.bidAmount ?? null;
 }
 
-function getBuncheolStatusLabel(detail: BuncheolManagementDetail) {
-  return getBuncheolStatusBadgeLabel(detail.status);
+// 개최 목록 카드와 같은 함수 — 카드 「종료」를 눌러 들어왔는데 머리가 「진행 확정」이면 두 화면이 갈린다.
+function getManagementStatusBadge(detail: BuncheolManagementDetail) {
+  return getHostedBuncheolStatusBadge({
+    ended: detail.ended,
+    isDeadlinePassed: isPastDateTime(detail.deadline),
+    status: detail.status,
+  });
 }
 
 function isPastDateTime(value: string | undefined) {
@@ -1152,6 +1156,8 @@ export function HostedBuncheolManage({
     );
   }
 
+  const managementStatusBadge = getManagementStatusBadge(detail);
+
   return (
     <main className="system-chrome-white system-chrome-bottom-white h-full bg-white">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
@@ -1197,12 +1203,12 @@ export function HostedBuncheolManage({
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${
-                    isBuncheolConfirmedStatus(detail.status)
+                    managementStatusBadge.kind === "confirmed"
                       ? "bg-white text-black"
                       : "bg-white/12 text-white/75"
                   }`}
                 >
-                  {getBuncheolStatusLabel(detail)}
+                  {managementStatusBadge.label}
                 </span>
               </div>
 

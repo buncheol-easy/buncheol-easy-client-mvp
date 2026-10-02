@@ -61,6 +61,8 @@ import {
 import {
   getBuncheolStatusBadgeLabel,
   getFlowType,
+  getHostedBuncheolStatusBadge,
+  type HostedBuncheolStatusKind,
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
   isBuncheolDeletedStatus,
@@ -69,6 +71,7 @@ import {
   isBuncheolRecruitingStatus,
   isDeliveryCompletedStatus,
   isDeliveryShippingStatus,
+  isHostedBuncheolClosed,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
   isParticipationCancelledStatus,
@@ -489,7 +492,7 @@ const hostingStatusGuide = [
   {
     icon: PackageCheckIcon,
     label: "배송 완료",
-    description: "참여자가 편의점에서 받고 수령을 확인하면 분철이 끝나요.",
+    description: "모든 참여자의 택배가 편의점에 도착하면 분철이 종료돼요.",
   },
 ] as const satisfies readonly StatusGuideItem[];
 
@@ -1295,11 +1298,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     : "진행 중인 참여예요.";
 }
 
-function isHostedProductClosed(product: ProductDetailItem, now: Date) {
-  if (product.status && !isBuncheolRecruitingStatus(product.status)) {
-    return true;
-  }
-
+function isHostedProductDeadlinePassed(product: ProductDetailItem, now: Date) {
   const deadlineDate = parseHistoryDeadline(product.deadline);
 
   return (
@@ -1307,6 +1306,36 @@ function isHostedProductClosed(product: ProductDetailItem, now: Date) {
     deadlineDate.getTime() <= now.getTime()
   );
 }
+
+// 「종료」 탭(값 closed) 판정. 서버 ended 가 없는 구 응답이면 기존 규칙(모집 중이 아니거나 마감 지남)으로
+// 폴백한다 — 서버 롤백 안전망이라 지우지 않는다(docs/99 §4-1).
+function isHostedProductClosed(product: ProductDetailItem, now: Date) {
+  const closedByServer = isHostedBuncheolClosed({
+    ended: product.hostEnded,
+    status: product.status,
+  });
+
+  if (closedByServer !== null) {
+    return closedByServer;
+  }
+
+  if (product.status && !isBuncheolRecruitingStatus(product.status)) {
+    return true;
+  }
+
+  return isHostedProductDeadlinePassed(product, now);
+}
+
+const hostedStatusBadgeClassNames: Record<HostedBuncheolStatusKind, string> = {
+  recruiting:
+    "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]",
+  // 입금 진행은 끝난 분철이 아니다 — 회색(끝남)으로 묶지 않는다(docs/98 §5-C, 공개 카드와 같은 취급).
+  paymentCollecting: "bg-[#E4F6A5] text-black/70",
+  confirmed: "bg-[#E4F6A5] text-black/70",
+  recruitingClosed: "bg-[#f3f3f3] text-black/50",
+  ended: "bg-[#f3f3f3] text-black/50",
+  cancelled: "bg-[#f3f3f3] text-black/50",
+};
 
 // 개최 시각(ms). 값이 없거나 못 읽으면 null — 정렬에서 맨 뒤로 보낸다.
 function getHostedProductOpenedAtTime(product: ProductDetailItem) {
@@ -1657,6 +1686,7 @@ function getHostedProductFromBuncheol(
     id: buncheol.id,
     buncheolId: buncheol.id,
     hostCancellability: buncheol.cancellability ?? null,
+    hostEnded: buncheol.ended,
     title: buncheol.title,
     member: `멤버 ${buncheol.memberSlotCount}명`,
     optionCount: buncheol.memberSlotCount,
@@ -3793,7 +3823,7 @@ export function BidHistoryContent({
             tabs={[
               { label: "전체", value: "all" },
               { label: "진행 중", value: "active" },
-              { label: "모집 종료", value: "closed" },
+              { label: "종료", value: "closed" },
             ]}
             value={hostedFilter}
           />
@@ -4308,13 +4338,13 @@ export function BidHistoryContent({
                       }}
                       description={
                         hostedFilter === "active"
-                          ? "모집 중인 분철이 생기면 여기에 보여요."
-                          : "모집이 끝나면 여기로 옮겨져요."
+                          ? "모집·입금·배송이 진행 중인 분철이 여기에 보여요."
+                          : "배송까지 끝나거나 취소된 분철이 여기로 옮겨져요."
                       }
                       title={
                         hostedFilter === "active"
                           ? "진행 중인 분철이 없어요"
-                          : "모집이 끝난 분철이 없어요"
+                          : "종료된 분철이 없어요"
                       }
                     />
                   ) : (
@@ -4341,8 +4371,14 @@ export function BidHistoryContent({
               {!isHostedProductsLoading && hostedRecords.length > 0 ? (
               <div className="content-reveal space-y-3">
               {hostedRecords.map((product) => {
-                const isClosed = isHostedProductClosed(product, now);
-                const isCancelled = isBuncheolCancelledStatus(product.status);
+                const statusBadge = getHostedBuncheolStatusBadge({
+                  ended: product.hostEnded,
+                  isDeadlinePassed: isHostedProductDeadlinePassed(
+                    product,
+                    now,
+                  ),
+                  status: product.status,
+                });
                 const optionCount =
                   product.optionCount ??
                   product.targetMembers?.length ??
@@ -4391,20 +4427,10 @@ export function BidHistoryContent({
                           </div>
                           <span
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              isBuncheolConfirmedStatus(product.status)
-                                ? "bg-[#E4F6A5] text-black/70"
-                                : isClosed
-                                  ? "bg-[#f3f3f3] text-black/50"
-                                  : "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
+                              hostedStatusBadgeClassNames[statusBadge.kind]
                             }`}
                           >
-                            {isCancelled
-                              ? "취소"
-                              : isBuncheolConfirmedStatus(product.status)
-                                ? "진행 확정"
-                                : isClosed
-                                  ? "모집 종료"
-                                  : "모집 중"}
+                            {statusBadge.label}
                           </span>
                         </div>
                         {/* 부제에서 "멤버 N명"을 뺐다 — 바로 아래 칩이 같은 말을 반복하고 있었다. */}
