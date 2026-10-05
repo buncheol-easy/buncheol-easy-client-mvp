@@ -22,7 +22,12 @@ import {
   subscribeAuthState,
   writeAuthTokens,
 } from "@/lib/auth-store";
-import { isValidPhoneNumber, sanitizePhoneNumber } from "@/lib/phone-number";
+import {
+  isValidPhoneNumber,
+  PHONE_NUMBER_HINT,
+  sanitizePhoneNumber,
+  shouldShowPhoneNumberHint,
+} from "@/lib/phone-number";
 
 type SignupProfileDraft = {
   isAgeConfirmed?: boolean;
@@ -346,6 +351,11 @@ export function SignupProfileContent() {
                 placeholder="01012345678"
                 value={phoneNumber}
               />
+              {shouldShowPhoneNumberHint(phoneNumber.trim()) ? (
+                <span className="mt-1.5 block text-[12px] font-medium text-[#c03131]">
+                  {PHONE_NUMBER_HINT}
+                </span>
+              ) : null}
             </label>
           </div>
 

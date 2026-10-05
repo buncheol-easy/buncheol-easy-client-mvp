@@ -9,3 +9,10 @@ export function sanitizePhoneNumber(value: string) {
 export function isValidPhoneNumber(value: string) {
   return phoneNumberPattern.test(value);
 }
+
+export const PHONE_NUMBER_HINT = "휴대폰 번호 11자리를 입력해 주세요.";
+
+// 다 입력한 듯한 길이(10자리)부터 안내한다 — 입력 중 글자마다 경고가 깜빡이지 않게.
+export function shouldShowPhoneNumberHint(value: string) {
+  return value.length >= 10 && !isValidPhoneNumber(value);
+}

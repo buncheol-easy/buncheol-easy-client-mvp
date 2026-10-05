@@ -22,7 +22,12 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { FEATURES } from "@/lib/feature-flags";
-import { isValidPhoneNumber, sanitizePhoneNumber } from "@/lib/phone-number";
+import {
+  isValidPhoneNumber,
+  PHONE_NUMBER_HINT,
+  sanitizePhoneNumber,
+  shouldShowPhoneNumberHint,
+} from "@/lib/phone-number";
 import { clearUserSessionState } from "@/lib/user-session";
 
 type ProfileAccountContentProps = {
@@ -521,6 +526,11 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                     value={form.phoneNumber}
                   />
                 </label>
+                {shouldShowPhoneNumberHint(form.phoneNumber.trim()) ? (
+                  <p className="break-keep text-[12px] font-medium leading-5 text-[#c03131]">
+                    {PHONE_NUMBER_HINT}
+                  </p>
+                ) : null}
                 {/* 배송 연락처는 입금확인 시점에 박제된다(서버 DeliverySnapshotCreator) —
                     안내 없이 바꾸면 "왜 옛 번호로 오지?"가 CS 로 돌아온다. */}
                 <p className="break-keep text-[12px] font-medium leading-5 text-black/35">
