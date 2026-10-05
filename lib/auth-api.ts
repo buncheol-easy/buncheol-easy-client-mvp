@@ -103,9 +103,11 @@ export function isUserProfileComplete(
 ) {
   const phoneNumber = profile?.phoneNumber.replace(/\D/g, "") ?? "";
 
+  // 번호는 서버 profileCompleted 와 같은 기준(번호 보유)만 본다. 형식(isValidPhoneNumber)까지 보면 서버가 완료로
+  // 보는 회원(예: 10자리 번호)이 /profile ↔ /signup/profile 을 끝없이 오간다. 형식은 입력 단계에서 막는다.
   return (
     /^[가-힣A-Za-z0-9]{1,20}$/.test(profile?.nickname.trim() ?? "") &&
-    /^01\d{8,9}$/.test(phoneNumber)
+    phoneNumber.length > 0
   );
 }
 

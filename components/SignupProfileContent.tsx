@@ -22,6 +22,7 @@ import {
   subscribeAuthState,
   writeAuthTokens,
 } from "@/lib/auth-store";
+import { isValidPhoneNumber, sanitizePhoneNumber } from "@/lib/phone-number";
 
 type SignupProfileDraft = {
   isAgeConfirmed?: boolean;
@@ -46,10 +47,6 @@ function getSafeReturnHref(value: string | null | undefined) {
   }
 
   return safeValue;
-}
-
-function sanitizePhoneNumber(value: string) {
-  return value.replace(/\D/g, "").slice(0, 11);
 }
 
 function readSignupProfileDraft(): SignupProfileDraft | null {
@@ -138,7 +135,7 @@ export function SignupProfileContent() {
   const canSave =
     /^[가-힣A-Za-z]{1,30}$/.test(name.trim()) &&
     /^[가-힣A-Za-z0-9]{1,20}$/.test(nickname.trim()) &&
-    /^01\d{8,9}$/.test(phoneNumber.trim()) &&
+    isValidPhoneNumber(phoneNumber.trim()) &&
     isAgeConfirmed &&
     isTermsAgreed &&
     isPrivacyAgreed;

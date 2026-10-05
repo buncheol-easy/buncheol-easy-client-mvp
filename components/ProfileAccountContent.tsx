@@ -22,6 +22,7 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { FEATURES } from "@/lib/feature-flags";
+import { isValidPhoneNumber, sanitizePhoneNumber } from "@/lib/phone-number";
 import { clearUserSessionState } from "@/lib/user-session";
 
 type ProfileAccountContentProps = {
@@ -51,10 +52,6 @@ function getProfileForm(profile: UserProfile | null) {
     nickname: profile?.nickname ?? "",
     phoneNumber: profile?.phoneNumber ?? "",
   };
-}
-
-function sanitizePhoneNumber(value: string) {
-  return value.replace(/\D/g, "").slice(0, 11);
 }
 
 function getProviderLabel(provider: string | undefined) {
@@ -160,7 +157,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
   const canSave =
     (form.name.trim() === "" || /^[가-힣A-Za-z]{1,30}$/.test(form.name.trim())) &&
     /^[가-힣A-Za-z0-9]{1,20}$/.test(form.nickname.trim()) &&
-    /^01\d{8,9}$/.test(form.phoneNumber.trim());
+    isValidPhoneNumber(form.phoneNumber.trim());
 
   useEffect(() => {
     let isActive = true;
