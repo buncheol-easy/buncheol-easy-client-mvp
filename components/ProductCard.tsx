@@ -307,8 +307,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const availableMemberSummary = availableMemberNames?.length
     ? getAvailableMemberSummary(availableMemberNames)
     : "";
-  const isNewProduct = isRecentlyUploaded(item.uploadedAt);
-  // 구매 유인 배지라 아직 참여할 수 있는 카드에만 띄운다(마감·취소 카드에선 소음).
+  // '신규'·'배송비 0원 이벤트'는 구매 유인 배지라 아직 참여할 수 있는 카드에만 띄운다(마감·취소 카드에선 소음).
+  const isNewProduct = !shouldDimCard && isRecentlyUploaded(item.uploadedAt);
   // 환급 이벤트 배지도 배송비 이야기라, 한 카드에 둘 다 띄우면 어느 쪽이 무료인지 흐려진다.
   const showFreeShippingBadge =
     item.isFreeShippingEvent === true &&

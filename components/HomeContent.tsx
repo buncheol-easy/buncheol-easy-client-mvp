@@ -28,7 +28,6 @@ import {
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { FloatingHelpButton } from "@/components/FloatingHelpButton";
-import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
@@ -53,10 +52,6 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
-import {
-  isBuncheolPaymentCollectingStatus,
-  isBuncheolPurchasableStatus,
-} from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import {
   bannersQueryKey,
@@ -509,32 +504,17 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       ),
     [favoritedGroups],
   );
-  const visibleListings = useMemo(() => {
-    const scoped =
+  // 서버 순서(모집 중·입금 진행 → 진행 확정 → 인원 미달 취소)가 정본이다 — 클라에서 다시
+  // 정렬하면 마감된 두 묶음(진행 확정·미달 취소)이 섞인다.
+  const visibleListings = useMemo(
+    () =>
       favoriteGroupNames.size > 0
         ? listings.filter((item) =>
             favoriteGroupNames.has(normalizeGroupSearchText(item.era ?? "")),
           )
-        : listings;
-
-    // 진행중이 항상 마감분보다 앞. 같은 묶음 안에서는 최신 개최순.
-    // 진행중 판정은 카드 배지와 같은 상태 기준을 쓴다 — deadline 이 지났는데 마감 스케줄러가
-    // 아직 안 돈 분철은 잠깐 진행중으로 남지만, 배지 표시와 어긋나지 않는 편이 낫다.
-    const isOngoing = (item: ProductCardItem) =>
-      isBuncheolPurchasableStatus(item.status) ||
-      isBuncheolPaymentCollectingStatus(item.status);
-    const openedAt = (item: ProductCardItem) => {
-      const parsed = item.createdAt ? Date.parse(item.createdAt) : Number.NaN;
-
-      return Number.isNaN(parsed) ? 0 : parsed;
-    };
-
-    return [...scoped].sort((left, right) => {
-      const ongoingDiff = Number(isOngoing(right)) - Number(isOngoing(left));
-
-      return ongoingDiff !== 0 ? ongoingDiff : openedAt(right) - openedAt(left);
-    });
-  }, [favoriteGroupNames, listings]);
+        : listings,
+    [favoriteGroupNames, listings],
+  );
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
     const scrollElement = event.currentTarget;
