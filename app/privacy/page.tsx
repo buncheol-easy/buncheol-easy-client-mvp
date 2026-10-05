@@ -1,5 +1,6 @@
 import { PolicyPageContent } from "@/components/PolicyPageContent";
 import { buildPageMetadata } from "@/lib/seo";
+import { CONTACT_EMAIL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -121,7 +122,7 @@ export default function PrivacyPage() {
           title: "제11조 (개인정보 보호책임자)",
           items: [
             "개인정보 보호책임자: 신동운 / 대표",
-            "문의: teameasy024@gmail.com / 010-8678-2427",
+            `문의: ${CONTACT_EMAIL} / 010-8678-2427`,
             "카카오 채널: http://pf.kakao.com/_LqxnGX",
             "기타 개인정보 침해 신고·상담: 개인정보침해신고센터(privacy.go.kr / 국번없이 118), 대검찰청·경찰청 사이버수사",
           ],
