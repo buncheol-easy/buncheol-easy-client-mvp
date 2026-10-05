@@ -16,6 +16,10 @@ export const revalidate = 3600;
 const SITEMAP_PAGE_SIZE = 100;
 const SITEMAP_MAX_ITEMS = 20 * SITEMAP_PAGE_SIZE;
 
+// 프리렌더가 정적 생성 상한(staticPageGenerationTimeout 기본 60초)을 넘기면 빌드가 실패한다. 백엔드가
+// 매달려도 아래 폴백으로 떨어지게 조회마다 상한을 둔다 — 두 조회가 순차라 합이 60초 안에 들어야 한다.
+const SITEMAP_FETCH_TIMEOUT_MS = 10_000;
+
 // /search 는 feature flag off 로 홈으로 307 리다이렉트되므로 제외한다.
 // /artists(그룹 선택 화면) 는 favoriteArtists 가 켜지며 열렸지만, 색인 가치가 있는 건 그룹별
 // 랜딩인 /artists/[groupId] 라 목록 화면은 계속 제외하고 아래에서 그룹 경로만 동적으로 추가한다.
@@ -41,9 +45,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let productEntries: MetadataRoute.Sitemap = [];
 
   try {
-    buncheols = await requestAllBuncheols(undefined, {
-      size: SITEMAP_PAGE_SIZE,
-    });
+    buncheols = await requestAllBuncheols(
+      undefined,
+      { size: SITEMAP_PAGE_SIZE },
+      { signal: AbortSignal.timeout(SITEMAP_FETCH_TIMEOUT_MS) },
+    );
     buncheolsLoaded = true;
 
     if (buncheols.length >= SITEMAP_MAX_ITEMS) {
@@ -81,7 +87,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   if (FEATURES.artistBrowse) {
     try {
-      const groups = await requestGroups();
+      const groups = await requestGroups("", {
+        signal: AbortSignal.timeout(SITEMAP_FETCH_TIMEOUT_MS),
+      });
       // 분철 목록 응답에는 그룹 id 가 없고 groupName 만 있어 이름으로 맞춘다. 집계 대상은
       // 아티스트 페이지가 카드로 보여주는 범위(삭제 제외 전부)와 같아야 메타 robots 와 어긋나지 않는다.
       const buncheolCountByGroupName = new Map<string, number>();

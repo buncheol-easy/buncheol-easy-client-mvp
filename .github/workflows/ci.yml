@@ -62,14 +62,13 @@ jobs:
 
       - name: Build
         env:
-          # 빌드 시 프리렌더되는 / 와 /sitemap.xml 이 staging 실서버를 때리지 않게 한다.
+          # 빌드 시 프리렌더되는 /, /artists, /sitemap.xml 이 staging 실서버를 때리지 않게 한다.
           # 값을 비우면 lib/auth-api.ts 의 staging 폴백을 타므로 도달 불가 주소로 명시한다.
-          # 두 경로 모두 조회 실패 폴백이 있어(app/sitemap.ts, app/page.tsx) 빌드는 통과하고,
-          # 연결이 즉시 거절되므로 결정론적으로 끝난다 — sitemap 경로엔 타임아웃이 없어
-          # staging 이 매달리면 timeout-minutes 까지 대기하는 flaky red 가 난다.
+          # 세 경로 모두 조회 실패 폴백이 있어(app/page.tsx, app/artists/page.tsx, app/sitemap.ts)
+          # 빌드는 통과하고, 요청이 즉시 실패하므로 조회 상한까지 기다리지 않고 결정론적으로 끝난다.
           # ⚠️ 따라서 CI 빌드는 "API 미도달" 경로만 검증한다 — 실제 응답을 받아야 도는 코드
-          # (app/sitemap.ts 의 createdAt 파싱 등)는 배포 빌드에서 처음 실행된다. 그 빌드는
-          # 상한 없는 fetch 를 그대로 타므로 백엔드 지연이 곧 배포 실패다 (#102).
+          # (app/sitemap.ts 의 createdAt 파싱 등)는 배포 빌드에서 처음 실행된다. 그 빌드에서
+          # 백엔드가 매달리면 실패 대신 상한에 걸린 폴백(정적 경로만 담긴 사이트맵 등)이 구워진다.
           NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:9
         run: npm run build
 

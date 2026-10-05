@@ -4204,9 +4204,11 @@ export async function requestBuncheols(
   return summaries;
 }
 
+// 최대 20페이지 순차 조회라 자체 상한이 없다 — 빌드·ISR 경로의 호출부가 상한을 건다(signal 은 순회 전체에 걸린다).
 export async function requestAllBuncheols(
   accessToken?: string,
   params: BuncheolListParams = {},
+  options: { signal?: AbortSignal } = {},
 ) {
   const allSummaries: BuncheolSummary[] = [];
   let cursor = params.cursor;
@@ -4225,12 +4227,14 @@ export async function requestAllBuncheols(
       credentials: "omit",
       headers: getAuthHeaders(accessToken),
       method: "GET",
+      signal: options.signal,
     });
 
     if (response.status === 401 && accessToken) {
       response = await fetch(url, {
         credentials: "omit",
         method: "GET",
+        signal: options.signal,
       });
     }
 
@@ -5715,7 +5719,10 @@ function getRecentSearchKeywordFromRecord(
   return { id, keyword };
 }
 
-export async function requestGroups(keyword = ""): Promise<ApiGroup[]> {
+export async function requestGroups(
+  keyword = "",
+  options: { signal?: AbortSignal } = {},
+): Promise<ApiGroup[]> {
   const searchParams = keyword
     ? `?${new URLSearchParams({ keyword }).toString()}`
     : "";
@@ -5724,6 +5731,7 @@ export async function requestGroups(keyword = ""): Promise<ApiGroup[]> {
     {
       credentials: "omit",
       method: "GET",
+      signal: options.signal,
     },
   );
 
