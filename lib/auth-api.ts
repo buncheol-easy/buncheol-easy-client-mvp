@@ -4204,7 +4204,7 @@ export async function requestBuncheols(
   return summaries;
 }
 
-// 최대 20페이지 순차 조회라 자체 상한이 없다 — 빌드·ISR 경로의 호출부가 상한을 건다(signal 은 순회 전체에 걸린다).
+// signal 은 최대 20페이지 순회 전체에 걸린다. 중간에 끊기면 받은 페이지도 버리고 throw 한다.
 export async function requestAllBuncheols(
   accessToken?: string,
   params: BuncheolListParams = {},
