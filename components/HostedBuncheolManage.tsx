@@ -542,7 +542,7 @@ export function HostedBuncheolManage({
   const [deliveryStates, setDeliveryStates] = useState<
     Record<string, DeliveryState>
   >({});
-  // C2C 액션(성사 확정·부분 확정·입금확인·반려·운송장) 진행 중 식별자 — 중복 호출 방지.
+  // C2C 액션(성사 확정·부분 확정·입금확인·제외·운송장) 진행 중 식별자 — 중복 호출 방지.
   const [pendingC2CAction, setPendingC2CAction] = useState<string | null>(null);
   // 되돌리기 어려운 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
@@ -1088,6 +1088,11 @@ export function HostedBuncheolManage({
       return;
     }
 
+    if (!bundle.bundleId) {
+      setMessage("이 참여는 묶음 정보가 없어 확인할 수 없어요. 고객센터로 문의해 주세요.");
+      return;
+    }
+
     setPendingC2CAction(`confirm:${bundle.key}`);
 
     try {
@@ -1098,20 +1103,7 @@ export function HostedBuncheolManage({
         return;
       }
 
-      if (bundle.bundleId) {
-        await confirmBundlePayment(
-          accessToken,
-          bundle.bundleId,
-          expectedSlotIds,
-        );
-      } else {
-        // 묶음이 없는 구 행 폴백 — 신규 참여는 전부 묶음을 갖는다.
-        await requestPaymentConfirmation(
-          accessToken,
-          bundle.slots[0].participationId,
-          { ignoreConflict: true },
-        );
-      }
+      await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
 
       await reloadManagementDetail(accessToken);
       showToast("입금 확인이 완료됐어요.");

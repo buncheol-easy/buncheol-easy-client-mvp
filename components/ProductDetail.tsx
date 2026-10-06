@@ -50,6 +50,8 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
   isBuncheolRecruitingStatus,
+  isParticipationCancelledStatus,
+  isParticipationConfirmedStatus,
 } from "@/lib/buncheol-states";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
@@ -815,39 +817,18 @@ function getMyBidsFromOptions(options: ProductOption[]) {
   }, {});
 }
 
-function isConfirmedPurchaseStatus(status: string | undefined) {
-  const normalized = status?.toUpperCase();
-
-  return (
-    normalized === "CONFIRMED" ||
-    normalized === "PAYMENT_CONFIRMED" ||
-    normalized === "PAID"
-  );
-}
-
 function isConfirmedOptionPurchase(option: ProductOption) {
   const saleStatus = option.saleStatus?.toUpperCase();
 
   return Boolean(
     option.purchasePaymentConfirmedAt ||
       saleStatus === "SOLD" ||
-      isConfirmedPurchaseStatus(option.purchasePaymentStatus),
+      isParticipationConfirmedStatus(option.purchasePaymentStatus),
   );
 }
 
-function isInactiveOptionPurchaseStatus(status: string | undefined) {
-  return [
-    "CANCELLED",
-    "CANCELED",
-    "EXPIRED",
-    "FAILED",
-    "REFUNDED",
-    "REJECTED",
-  ].includes(status?.toUpperCase() ?? "");
-}
-
 function hasOptionPurchaseState(option: ProductOption) {
-  if (isInactiveOptionPurchaseStatus(option.purchasePaymentStatus)) {
+  if (isParticipationCancelledStatus(option.purchasePaymentStatus)) {
     return false;
   }
 
@@ -893,7 +874,7 @@ function toOptimisticSaleStatus(
     return "APPLIED";
   }
 
-  if (isConfirmedPurchaseStatus(status)) {
+  if (isParticipationConfirmedStatus(status)) {
     return "SOLD";
   }
 
@@ -1062,7 +1043,7 @@ function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
   }
 
   const participant = option.participants?.find(
-    (item) => !isInactiveOptionPurchaseStatus(item.status),
+    (item) => !isParticipationCancelledStatus(item.status),
   );
 
   if (!participant) {

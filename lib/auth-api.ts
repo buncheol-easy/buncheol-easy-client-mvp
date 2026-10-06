@@ -12,7 +12,7 @@ import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { FEATURES } from "@/lib/feature-flags";
 import {
   getBuncheolStatusBadgeLabel,
-  isBuncheolDeletedStatus,
+  isParticipationCancelledStatus,
 } from "@/lib/buncheol-states";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
@@ -321,7 +321,6 @@ export type BuncheolMember = {
   memberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
-  myRank?: number;
   name: string;
   participantCount: number;
   participatedByMe?: boolean;
@@ -499,7 +498,6 @@ export type MyParticipation = {
   // CANCELLABLE | BLOCKED_BY_STATUS | FLOW_NOT_SUPPORTED | BLOCKED_BY_HOST_CONFIRM.
   // 필드가 없는 구 응답이면 null — 화면은 취소 버튼을 남기는 쪽으로 폴백한다.
   cancellability?: string | null;
-  closedRank?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
   thumbnailUrl?: string;
@@ -515,9 +513,6 @@ export type MyParticipation = {
   paymentDueAt?: string | null;
   // C2C "보냈어요" 마킹 시각 — 마킹 안 했으면 null.
   paymentSentAt?: string | null;
-  // 개최자가 "입금 못 찾음"으로 되돌린 시각. 서버가 입금 대기 구간에서만 값을 채워 주므로
-  // 값이 있으면 곧 "재확인이 필요한 상태"다 (docs/53 Q-03).
-  paymentRejectedAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
   // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
@@ -2740,17 +2735,6 @@ function getBuncheolMemberFromRecord(
   };
 }
 
-function isInactiveBuncheolPaymentStatus(status: string | undefined) {
-  return [
-    "CANCELLED",
-    "CANCELED",
-    "EXPIRED",
-    "FAILED",
-    "REFUNDED",
-    "REJECTED",
-  ].includes(status?.toUpperCase() ?? "");
-}
-
 function getBuncheolParticipantOptionIdentity(record: Record<string, unknown>) {
   const nestedMemberRecord = [
     record.buncheolMember,
@@ -2830,7 +2814,7 @@ function mergeBuncheolMemberPurchaseStates(
       "status",
     ]);
 
-    return !isInactiveBuncheolPaymentStatus(status);
+    return !isParticipationCancelledStatus(status);
   });
 
   if (participantRecords.length === 0) {
@@ -2922,7 +2906,7 @@ function getInheritedShippingFromRecord(data: Record<string, unknown>): {
 
 function getMyParticipationBidsFromRecord(
   data: Record<string, unknown>,
-): Map<string, { bidAmount: number; participationId: string; rank?: number }> {
+): Map<string, { bidAmount: number; participationId: string }> {
   const myParticipation = getNestedData(data.myParticipation);
 
   if (!isRecord(myParticipation)) {
@@ -2952,20 +2936,14 @@ function getMyParticipationBidsFromRecord(
         buncheolMemberId &&
         participationId &&
         bidAmount !== null &&
-        !isInactiveBuncheolPaymentStatus(status)
+        !isParticipationCancelledStatus(status)
       ) {
-        bids.set(buncheolMemberId, {
-          bidAmount,
-          participationId,
-          rank:
-            getOptionalNumberValue(record, ["rank", "closedRank"]) ??
-            undefined,
-        });
+        bids.set(buncheolMemberId, { bidAmount, participationId });
       }
 
       return bids;
     },
-    new Map<string, { bidAmount: number; participationId: string; rank?: number }>(),
+    new Map<string, { bidAmount: number; participationId: string }>(),
   );
 }
 
@@ -2990,7 +2968,7 @@ function getMyParticipationMemberIdsFromRecord(
         "participationStatus",
       ]);
 
-      if (buncheolMemberId && !isInactiveBuncheolPaymentStatus(status)) {
+      if (buncheolMemberId && !isParticipationCancelledStatus(status)) {
         memberIds.add(buncheolMemberId);
       }
 
@@ -3042,7 +3020,6 @@ function getBuncheolDetailFromBody(body: unknown) {
           ...member,
           myBidAmount: myBid.bidAmount,
           myParticipationId: myBid.participationId,
-          myRank: myBid.rank,
           participatedByMe,
         };
       }),
@@ -4126,7 +4103,6 @@ export function toProductDetailItem(
       label: member.name,
       myBidAmount: member.myBidAmount,
       myParticipationId: member.myParticipationId,
-      myRank: member.myRank,
       participantCount: member.participantCount,
       participatedByMe: member.participatedByMe,
       price: formattedPrice,
@@ -4211,10 +4187,7 @@ export async function requestBuncheolPage(
   const items = getBuncheolList(body)
     .filter(isRecord)
     .map(getBuncheolSummaryFromRecord)
-    .filter(
-      (item): item is BuncheolSummary =>
-        item !== null && !isBuncheolDeletedStatus(item.status),
-    );
+    .filter((item): item is BuncheolSummary => item !== null);
 
   return { ...getBuncheolListPageInfo(body), items };
 }
@@ -4673,7 +4646,6 @@ export async function requestMyParticipations(accessToken: string) {
           getOptionalStringValue(record, ["cancelReason"]) ?? null,
         cancellability:
           getOptionalStringValue(record, ["cancellability"]) ?? null,
-        closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(
             lookupRecords,
@@ -4741,8 +4713,6 @@ export async function requestMyParticipations(accessToken: string) {
           null,
         paymentSentAt:
           getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
-        paymentRejectedAt:
-          getOptionalStringValue(record, ["paymentRejectedAt"]) ?? null,
         // 서버는 refundHolder 로 내려주지만, 환불계좌 객체째 실려오는 응답도 대비한다.
         // ⚠️ getNestedBankAccountInfo 를 쓰면 안 된다 — 키에서 못 찾을 때 최상위 record 를 스캔하고,
         // 그 후보 키에 hostAccountHolder·sellerAccountHolder 가 있어 개최자 예금주를 입금자명으로
@@ -4898,9 +4868,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
       (buncheol): buncheol is MyHostedBuncheol => buncheol !== null,
     );
 
-  return buncheols.filter(
-    (buncheol) => !isBuncheolDeletedStatus(buncheol.status),
-  );
+  return buncheols;
 }
 
 // 분철 상세 응답에는 bookmarked 필드가 없어, 상세 화면의 찜 상태는
@@ -4965,9 +4933,7 @@ export async function requestBookmarkedBuncheols(
       return summaries;
     }, []);
 
-  return summaries.filter(
-    (summary) => !isBuncheolDeletedStatus(summary.status),
-  );
+  return summaries;
 }
 
 export async function addBuncheolBookmark(
@@ -5041,23 +5007,14 @@ export async function requestPaymentConfirmation(
   participationId: string,
   options: { ignoreConflict?: boolean } = {},
 ) {
-  async function sendConfirmationRequest(path: string) {
-    return fetch(`${getVersionedApiBaseUrl()}${path}`, {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/confirm`,
+    {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
       method: "POST",
-    });
-  }
-
-  let response = await sendConfirmationRequest(
-    `/participations/${participationId}/confirm`,
+    },
   );
-
-  if (!response.ok && [404, 405].includes(response.status)) {
-    response = await sendConfirmationRequest(
-      `/participations/${participationId}/payment/confirm`,
-    );
-  }
 
   if (!response.ok) {
     if (options.ignoreConflict && response.status === 409) {
@@ -5139,27 +5096,8 @@ export async function requestBundlePaymentSent(
   }
 }
 
-// 묶음이 없는 참여(배포선 창에서 생긴 행)용 폴백. 신규 참여는 전부 묶음을 갖는다.
-export async function requestParticipationPaymentSent(
-  accessToken: string,
-  participationId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
-
-// C2C 참여자 자발 취소 — APPLIED(자유)·AWAITING_PAYMENT(허용)에서만 성공한다.
-// PAYMENT_SENT·CONFIRMED 는 서버가 거부(BCH-087)하며 FE 는 문의 안내로 유도한다 (docs/46 §4.4).
+// C2C 참여자 자발 취소. 허용 여부는 서버가 내려주는 cancellability 를 따른다 — 「보냈어요」·입금확인
+// 이후는 BCH-086(문의 안내), 성사 확정을 거친 입금 대기는 BCH-092(개최자 연락)로 거부된다.
 export async function cancelParticipation(
   accessToken: string,
   participationId: string,
@@ -5218,24 +5156,6 @@ export async function submitFeedback(
 
   if (!response.ok) {
     throw new ApiRequestError(await parseErrorMessage(response), response.status);
-  }
-}
-
-export async function requestPaymentExpiration(
-  accessToken: string,
-  participationId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment/expire`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
   }
 }
 

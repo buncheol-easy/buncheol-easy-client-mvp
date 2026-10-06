@@ -122,9 +122,9 @@ function getBuncheolStatusLabel(status: string) {
   const normalizedStatus = status.trim().toUpperCase();
   const labels: Record<string, string> = {
     CANCELLED: "취소",
-    CANCELED: "취소",
     CONFIRMED: "진행확정",
-    FINISHED: "진행확정",
+    HOST_CANCELLED: "개최자 취소",
+    PAYMENT_COLLECTING: "입금 수집중",
     RECRUITING: "모집중",
   };
 

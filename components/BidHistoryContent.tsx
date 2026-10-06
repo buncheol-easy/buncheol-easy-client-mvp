@@ -50,7 +50,6 @@ import {
   requestMyParticipations,
   requestParticipationPaymentDetail,
   requestBundlePaymentSent,
-  requestParticipationPaymentSent,
   toProductDetailItem,
   type BankAccountInfo,
   type MyHostedBuncheol,
@@ -65,7 +64,6 @@ import {
   type HostedBuncheolStatusKind,
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
-  isBuncheolDeletedStatus,
   isBuncheolHostCancelledStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
@@ -593,7 +591,6 @@ type BidRecord = {
   paidAt: string | null;
   participantCount: number;
   productId: string;
-  rank: number;
   courier?: string;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
@@ -610,7 +607,6 @@ type BidRecord = {
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
-  paymentRejectedAt?: string | null;
   createdAt?: string | null;
   participationStatus?: string;
   cancelReason?: string | null;
@@ -649,18 +645,8 @@ function isBidRecordPaymentReady(bid: BidRecord, now: Date) {
     return false;
   }
 
-  // C2C 는 확정 후 AWAITING_PAYMENT 에서만 입금 단계다 — LEGACY 의
-  // "마감+1순위" 폴백은 구 경매 응답 보정이라 C2C 에 적용하지 않는다.
-  if (isC2CBidRecord(bid)) {
-    return (
-      isParticipationAwaitingPaymentStatus(bid.participationStatus) &&
-      !isBidRecordPaymentExpired(bid, now)
-    );
-  }
-
   return (
-    (isParticipationAwaitingPaymentStatus(bid.participationStatus) ||
-      (isBidRecordClosed(bid, now) && bid.rank === 1)) &&
+    isParticipationAwaitingPaymentStatus(bid.participationStatus) &&
     !isBidRecordPaymentExpired(bid, now)
   );
 }
@@ -982,17 +968,11 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
 // 기한 경과 여부 — 표시 전용이라 아무것도 잠그지 않는다. C2C 기한은 "지나면 개최자가 정리에 나설 수
 // 있는 시각" 이지 참여가 죽는 시각이 아니다 (docs/71 §8-1).
 function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
-  const isC2C = isC2CBidRecord(bid);
-  // C2C 는 AWAITING_PAYMENT 만 기한 대상 — APPLIED(기한 없음)·PAYMENT_SENT(개최자 확인 대기)는 제외한다.
-  const isPaymentCandidate = isC2C
-    ? isParticipationAwaitingPaymentStatus(bid.participationStatus)
-    : isParticipationAwaitingPaymentStatus(bid.participationStatus) ||
-      (isBidRecordClosed(bid, now) && bid.rank === 1);
-
+  // AWAITING_PAYMENT 만 기한 대상 — APPLIED(기한 없음)·PAYMENT_SENT(개최자 확인 대기)는 제외한다.
   if (
     isBidRecordCancelled(bid) ||
     isBidRecordPaymentConfirmed(bid) ||
-    !isPaymentCandidate
+    !isParticipationAwaitingPaymentStatus(bid.participationStatus)
   ) {
     return false;
   }
@@ -1001,7 +981,7 @@ function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
     bid,
     bid.paymentDueAt,
     bid.createdAt,
-    isC2C,
+    isC2CBidRecord(bid),
   );
 
   return (
@@ -1302,11 +1282,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordPaymentReady(bid, now)) {
     // ⚠️ overdue 검사가 ready 보다 뒤에 있으면 도달하지 못한다 — C2C 는 기한이 지나도 ready 다.
     if (isBidRecordPaymentOverdue(bid, now)) {
-      // 재확인 요청(개최자가 입금 내역을 못 찾음)은 연장된 기한마저 지나도 여전히 가장 중요한
-      // 정보다. 이걸 가리면 이미 보낸 사람이 "지금 보내셔도 됩니다" 만 보고 중복 송금한다.
-      return isC2C && bid.paymentRejectedAt
-        ? "개최자가 입금 내역을 찾지 못했어요. 보낸 내역을 다시 확인해 주세요. 기한이 지나 개최자가 참여를 취소할 수도 있어요."
-        : "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
+      return "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
     }
 
     const remaining = formatPaymentRemainingTime(
@@ -1316,13 +1292,6 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
       bid.createdAt,
       isC2C,
     );
-
-    // 개최자가 "입금 못 찾음"으로 되돌린 경우. 서버가 입금 대기 구간에서만 값을 채우고 재마킹 시
-    // 지우므로, 값이 있으면 지금이 재확인 구간이다. "반려"라고 쓰면 취소로 오해해 문의가 몰린다
-    // (docs/53 Q-03, docs/54 2-1).
-    if (isC2C && bid.paymentRejectedAt) {
-      return `입금이 확인되지 않았어요 · 다시 확인해 주세요. 기한까지 ${remaining}`;
-    }
 
     return `입금 기한까지 ${remaining}`;
   }
@@ -1466,9 +1435,6 @@ function getBidRecordFromParticipation(
     participation.participationStatus ||
     cachedPayment?.participationStatus ||
     "";
-  const rank =
-    participation.closedRank ??
-    (isParticipationAwaitingPaymentStatus(participationStatus) ? 1 : 0);
   const shippingMethods = getShippingMethodsFromOptions(
     participation.shippingOptions ?? [],
   );
@@ -1513,7 +1479,6 @@ function getBidRecordFromParticipation(
     refundHolder: participation.refundHolder ?? null,
     bundleId: participation.bundleId ?? null,
     paymentSentAt: participation.paymentSentAt ?? null,
-    paymentRejectedAt: participation.paymentRejectedAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
       (typeof serverShippingFee === "number" ? participation.bidAmount : null),
@@ -1524,7 +1489,6 @@ function getBidRecordFromParticipation(
     participationStatus,
     cancelReason: participation.cancelReason ?? null,
     cancellability: participation.cancellability ?? null,
-    rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
     // ⚠️ 여기에는 캐시 폴백을 붙이지 않는다 — 캐시에 없는 값이고, 붙일 곳도 아니다.
@@ -1564,12 +1528,10 @@ function getCachedBuncheolDetail(
   return detailPromise;
 }
 
-// 취소·삭제된 분철은 상세 조회가 404 를 반환하므로 호출하지 않는다.
-// HOST_CANCELLED 는 isBidRecordCancelled 가 취소로 판정하므로 별도 검사가 필요 없다.
+// 개최자가 취소한 분철(HOST_CANCELLED)은 상세 조회가 404 를 반환하므로 호출하지 않는다.
+// HOST_CANCELLED 는 isBidRecordCancelled 가 취소로 판정한다.
 function isBuncheolDetailInaccessible(bid: BidRecord) {
-  return (
-    isBidRecordCancelled(bid) || isBuncheolDeletedStatus(bid.buncheolStatus)
-  );
+  return isBidRecordCancelled(bid);
 }
 
 /** 내 참여 목록을 서버에서 다시 읽어 카드로 만든다. 모듈 스코프 — 폴링 effect 의 deps 에 걸리지 않게. */
@@ -2565,10 +2527,6 @@ export function BidHistoryContent({
       .filter((product) => {
         const isClosed = isHostedProductClosed(product, now);
 
-        if (isBuncheolDeletedStatus(product.status)) {
-          return false;
-        }
-
         if (hostedFilter === "active") {
           return !isClosed;
         }
@@ -2625,10 +2583,7 @@ export function BidHistoryContent({
   ]);
   const hasAnyHostedRecords = useMemo(
     () =>
-      authState.isLoggedIn &&
-      (apiHostedProducts ?? []).some(
-        (product) => !isBuncheolDeletedStatus(product.status),
-      ),
+      authState.isLoggedIn && (apiHostedProducts ?? []).length > 0,
     [apiHostedProducts, authState.isLoggedIn],
   );
 
@@ -3459,6 +3414,13 @@ export function BidHistoryContent({
       return;
     }
 
+    if (!bid.bundleId) {
+      showActionToast(
+        "이 참여는 묶음 정보가 없어 표시할 수 없어요. 고객센터로 문의해 주세요.",
+      );
+      return;
+    }
+
     const memberNames = targets.flatMap((target) =>
       getBidRecordOptionLabels(target),
     );
@@ -3516,7 +3478,7 @@ export function BidHistoryContent({
       isParticipationAwaitingPaymentStatus,
     );
 
-    if (targets.length === 0) {
+    if (targets.length === 0 || !bid.bundleId) {
       return;
     }
 
@@ -3530,15 +3492,7 @@ export function BidHistoryContent({
         return;
       }
 
-      if (bid.bundleId) {
-        await requestBundlePaymentSent(freshAccessToken, bid.bundleId);
-      } else {
-        // 묶음을 모르는 응답 — 구 동작 그대로 슬롯마다 부른다. 한 건이라도 실패하면 전부 실패로
-        // 다루어 화면과 서버가 갈리지 않게 한다(부분 성공을 낙관적으로 반영하지 않는다).
-        for (const target of targets) {
-          await requestParticipationPaymentSent(freshAccessToken, target.id);
-        }
-      }
+      await requestBundlePaymentSent(freshAccessToken, bid.bundleId);
 
       const sentAt = new Date().toISOString();
       const markedIds = new Set(targets.map((target) => target.id));
