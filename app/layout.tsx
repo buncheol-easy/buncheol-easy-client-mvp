@@ -6,7 +6,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
-import { SITE_URL, X_PROFILE_URL } from "@/lib/site";
+import { CONTACT_EMAIL, SITE_URL, X_PROFILE_URL } from "@/lib/site";
 import { blackChromeViewport } from "@/lib/system-chrome";
 import { Suspense } from "react";
 import "./globals.css";
@@ -72,11 +72,11 @@ const organizationJsonLd = {
         addressLocality: "대전광역시 서구",
         addressCountry: "KR",
       },
-      email: "teameasy024@gmail.com",
+      email: CONTACT_EMAIL,
       contactPoint: {
         "@type": "ContactPoint",
         contactType: "customer service",
-        email: "teameasy024@gmail.com",
+        email: CONTACT_EMAIL,
         areaServed: "KR",
         availableLanguage: ["Korean"],
       },

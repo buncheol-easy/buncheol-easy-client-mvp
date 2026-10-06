@@ -8,6 +8,7 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import { Toast, useToast } from "@/components/Toast";
 import {
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
@@ -26,11 +27,10 @@ import {
   type BuncheolManagementWinner,
 } from "@/lib/auth-api";
 import {
-  getBuncheolStatusBadgeLabel,
   getDeliveryStatusLabel as getCentralDeliveryStatusLabel,
   getFlowType,
+  getHostedBuncheolStatusBadge,
   isBuncheolCancelledStatus,
-  isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
   isParticipationAppliedStatus,
@@ -130,8 +130,14 @@ function getWinnerBidAmount(option: BuncheolManagementOption) {
   return option.winner?.paymentAmount ?? option.winner?.bidAmount ?? null;
 }
 
-function getBuncheolStatusLabel(detail: BuncheolManagementDetail) {
-  return getBuncheolStatusBadgeLabel(detail.status);
+// 개최 목록 카드와 같은 함수 — 카드 「종료」를 눌러 들어왔는데 머리가 「진행 확정」이면 두 화면이 갈린다.
+// 마감은 넘기지 않는다: 카드가 올해 마감을 못 읽어 유예 구간에 「모집 중」이라 그에 맞춘다. 마감 판정은 #203에서 카드와 함께 고친다.
+function getManagementStatusBadge(detail: BuncheolManagementDetail) {
+  return getHostedBuncheolStatusBadge({
+    ended: detail.ended,
+    isDeadlinePassed: false,
+    status: detail.status,
+  });
 }
 
 function isPastDateTime(value: string | undefined) {
@@ -420,7 +426,10 @@ export function HostedBuncheolManage({
     getInitialAuthState,
   );
   const [detail, setDetail] = useState<BuncheolManagementDetail | null>(null);
-  const [message, setMessage] = useState("개최한 분철 정보를 불러오고 있어요.");
+  const [loadMessage, setLoadMessage] = useState(
+    "개최한 분철 정보를 불러오고 있어요.",
+  );
+  const [toast, showToast] = useToast();
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(
     null,
   );
@@ -457,7 +466,7 @@ export function HostedBuncheolManage({
         }
 
         setDetail(null);
-        setMessage("로그인 후 관리할 수 있어요.");
+        setLoadMessage("로그인 후 관리할 수 있어요.");
         router.replace(
           createLoginHref({ cancelTo: "/", returnTo: returnHref }),
         );
@@ -476,7 +485,7 @@ export function HostedBuncheolManage({
         }
 
         setDetail(nextDetail);
-        setMessage("");
+        setLoadMessage("");
       })
       .catch((error: unknown) => {
         if (!isActive) {
@@ -485,7 +494,7 @@ export function HostedBuncheolManage({
 
         setDetail(null);
         // 아래 화면이 "메시지 없음 = 불러오는 중"으로 분기하므로 빈 문자열을 넣으면 안 된다.
-        setMessage(
+        setLoadMessage(
           (error instanceof Error ? error.message.trim() : "") ||
             "개최한 분철 정보를 불러오지 못했어요.",
         );
@@ -648,12 +657,12 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!deliveryId) {
-      setMessage("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.");
       return;
     }
 
     if (!trackingNumber) {
-      setMessage("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.");
       return;
     }
 
@@ -681,9 +690,9 @@ export function HostedBuncheolManage({
           trackingNumber,
         },
       }));
-      setMessage("운송장 번호를 등록했어요.");
+      showToast("운송장 번호를 등록했어요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "운송장 번호를 등록하지 못했어요.",
@@ -701,7 +710,7 @@ export function HostedBuncheolManage({
     }
 
     if (!participationId) {
-      setMessage("입금 확인에 필요한 참여 ID가 없어요.");
+      showToast("입금 확인에 필요한 참여 ID가 없어요.");
       return;
     }
 
@@ -720,9 +729,9 @@ export function HostedBuncheolManage({
       const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
-      setMessage("입금 확인이 완료됐어요.");
+      showToast("입금 확인이 완료됐어요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
@@ -775,14 +784,14 @@ export function HostedBuncheolManage({
       // 이미 반영된 저장이 "저장 실패" 로 보이고 개최자가 다시 누른다.
       setOpenChatUrlDraft(null);
       setOpenChatUrlError("");
-      setMessage(
+      showToast(
         normalizedUrl ? "오픈채팅 링크를 저장했어요." : "오픈채팅 링크를 지웠어요.",
       );
 
       try {
         await reloadManagementDetail(accessToken);
       } catch {
-        setMessage("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
       }
     } catch (error: unknown) {
       setOpenChatUrlError(
@@ -830,18 +839,18 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
       const result = await confirmBuncheolRecruitment(accessToken, id);
 
       await reloadManagementDetail(accessToken);
-      setMessage(
+      showToast(
         `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}${countUnit}에 입금 안내가 발송됐어요.`,
       );
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "성사 확정을 처리하지 못했어요.",
@@ -880,15 +889,15 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
       await finalizeBuncheolCollected(accessToken, id);
       await reloadManagementDetail(accessToken);
-      setMessage("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
+      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "진행 확정을 처리하지 못했어요.",
@@ -949,7 +958,7 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -969,9 +978,9 @@ export function HostedBuncheolManage({
       }
 
       await reloadManagementDetail(accessToken);
-      setMessage("입금 확인이 완료됐어요.");
+      showToast("입금 확인이 완료됐어요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
@@ -1011,7 +1020,7 @@ export function HostedBuncheolManage({
     }
 
     if (!bundle.bundleId) {
-      setMessage("이 참여는 묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.");
+      showToast("이 참여는 묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.");
       return;
     }
 
@@ -1021,15 +1030,15 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
       await releaseBundle(accessToken, bundle.bundleId);
       await reloadManagementDetail(accessToken);
-      setMessage("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
+      showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error ? error.message : "참여를 빼지 못했어요.",
       );
     } finally {
@@ -1044,7 +1053,7 @@ export function HostedBuncheolManage({
     const deliveryId = participant.delivery?.deliveryId;
 
     if (!deliveryId) {
-      setMessage("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.");
       return;
     }
 
@@ -1053,7 +1062,7 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!trackingNumber) {
-      setMessage("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.");
       return;
     }
 
@@ -1067,7 +1076,7 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -1084,9 +1093,9 @@ export function HostedBuncheolManage({
 
         return next;
       });
-      setMessage("운송장 번호를 등록했어요.");
+      showToast("운송장 번호를 등록했어요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "운송장 번호를 등록하지 못했어요.",
@@ -1111,7 +1120,7 @@ export function HostedBuncheolManage({
    * (하단 탭도 이 화면에는 없다.) 헤더와 나갈 길을 함께 준다.
    */
   if (!detail) {
-    const isLoadingDetail = !message;
+    const isLoadingDetail = !loadMessage;
 
     return (
       <main className="system-chrome-white system-chrome-bottom-white h-full bg-white">
@@ -1136,7 +1145,7 @@ export function HostedBuncheolManage({
 
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
             <p className="break-keep text-[15px] font-semibold leading-6 text-black/55">
-              {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : message}
+              {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : loadMessage}
             </p>
             {isLoadingDetail ? null : (
               <Link
@@ -1151,6 +1160,8 @@ export function HostedBuncheolManage({
       </main>
     );
   }
+
+  const managementStatusBadge = getManagementStatusBadge(detail);
 
   return (
     <main className="system-chrome-white system-chrome-bottom-white h-full bg-white">
@@ -1175,12 +1186,6 @@ export function HostedBuncheolManage({
         </header>
 
         <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-8">
-          {message ? (
-            <p className="mb-3 rounded-[0.8rem] bg-black/[0.04] px-3 py-2 text-[12px] font-semibold text-black/45">
-              {message}
-            </p>
-          ) : null}
-
           <section className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
             <div className="bg-black px-4 py-4 text-white">
               <div className="flex items-start justify-between gap-4">
@@ -1197,12 +1202,12 @@ export function HostedBuncheolManage({
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold ${
-                    isBuncheolConfirmedStatus(detail.status)
+                    managementStatusBadge.kind === "confirmed"
                       ? "bg-white text-black"
                       : "bg-white/12 text-white/75"
                   }`}
                 >
-                  {getBuncheolStatusLabel(detail)}
+                  {managementStatusBadge.label}
                 </span>
               </div>
 
@@ -2271,6 +2276,11 @@ export function HostedBuncheolManage({
       <ConfirmSheet
         onCancel={() => setConfirmSheetRequest(null)}
         request={confirmSheetRequest}
+      />
+
+      <Toast
+        className="fixed inset-x-0 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-50 px-6"
+        message={toast}
       />
     </main>
   );

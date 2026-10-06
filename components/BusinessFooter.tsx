@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { floatingHelpButtonClearanceClassName } from "@/components/FloatingHelpButton";
+import { CONTACT_EMAIL } from "@/lib/site";
 
 const policyLinks = [
   { href: "/intro", label: "서비스 소개" },
   { href: "/terms", label: "이용약관" },
   { href: "/privacy", label: "개인정보처리방침", strong: true },
+  { href: "/refund-policy", label: "취소·환불 정책" },
+  { href: "/shipping-policy", label: "배송 정책" },
   { href: "/broker-notice", label: "통신판매중개자 고지" },
   { href: "https://pf.kakao.com/_LqxnGX", label: "고객센터", external: true },
 ];
@@ -26,7 +29,7 @@ const businessInfoRows = [
   {
     full: true,
     label: "고객문의",
-    value: "teameasy024@gmail.com · 010-8678-2427",
+    value: `${CONTACT_EMAIL} · 010-8678-2427`,
   },
 ];
 

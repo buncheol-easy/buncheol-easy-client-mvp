@@ -61,6 +61,8 @@ import {
 import {
   getBuncheolStatusBadgeLabel,
   getFlowType,
+  getHostedBuncheolStatusBadge,
+  type HostedBuncheolStatusKind,
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
   isBuncheolDeletedStatus,
@@ -69,6 +71,7 @@ import {
   isBuncheolRecruitingStatus,
   isDeliveryCompletedStatus,
   isDeliveryShippingStatus,
+  isHostedBuncheolClosed,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
   isParticipationCancelledStatus,
@@ -110,6 +113,11 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -489,7 +497,7 @@ const hostingStatusGuide = [
   {
     icon: PackageCheckIcon,
     label: "배송 완료",
-    description: "참여자가 편의점에서 받고 수령을 확인하면 분철이 끝나요.",
+    description: "모든 참여자의 택배가 편의점에 도착하면 분철이 종료돼요.",
   },
 ] as const satisfies readonly StatusGuideItem[];
 
@@ -1295,11 +1303,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     : "진행 중인 참여예요.";
 }
 
-function isHostedProductClosed(product: ProductDetailItem, now: Date) {
-  if (product.status && !isBuncheolRecruitingStatus(product.status)) {
-    return true;
-  }
-
+function isHostedProductDeadlinePassed(product: ProductDetailItem, now: Date) {
   const deadlineDate = parseHistoryDeadline(product.deadline);
 
   return (
@@ -1307,6 +1311,36 @@ function isHostedProductClosed(product: ProductDetailItem, now: Date) {
     deadlineDate.getTime() <= now.getTime()
   );
 }
+
+// 「종료」 탭(값 closed) 판정. 서버 ended 가 없는 구 응답이면 기존 규칙(모집 중이 아니거나 마감 지남)으로
+// 폴백한다 — 서버 롤백 안전망이라 지우지 않는다(docs/99 §4-1).
+function isHostedProductClosed(product: ProductDetailItem, now: Date) {
+  const closedByServer = isHostedBuncheolClosed({
+    ended: product.hostEnded,
+    status: product.status,
+  });
+
+  if (closedByServer !== null) {
+    return closedByServer;
+  }
+
+  if (product.status && !isBuncheolRecruitingStatus(product.status)) {
+    return true;
+  }
+
+  return isHostedProductDeadlinePassed(product, now);
+}
+
+const hostedStatusBadgeClassNames: Record<HostedBuncheolStatusKind, string> = {
+  recruiting:
+    "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]",
+  // 입금 진행은 끝난 분철이 아니다 — 회색(끝남)으로 묶지 않는다(docs/98 §5-C, 공개 카드와 같은 취급).
+  paymentCollecting: "bg-[#E4F6A5] text-black/70",
+  confirmed: "bg-[#E4F6A5] text-black/70",
+  recruitingClosed: "bg-[#f3f3f3] text-black/50",
+  ended: "bg-[#f3f3f3] text-black/50",
+  cancelled: "bg-[#f3f3f3] text-black/50",
+};
 
 // 개최 시각(ms). 값이 없거나 못 읽으면 null — 정렬에서 맨 뒤로 보낸다.
 function getHostedProductOpenedAtTime(product: ProductDetailItem) {
@@ -1657,6 +1691,7 @@ function getHostedProductFromBuncheol(
     id: buncheol.id,
     buncheolId: buncheol.id,
     hostCancellability: buncheol.cancellability ?? null,
+    hostEnded: buncheol.ended,
     title: buncheol.title,
     member: `멤버 ${buncheol.memberSlotCount}명`,
     optionCount: buncheol.memberSlotCount,
@@ -1764,13 +1799,12 @@ export function BidHistoryContent({
   const [isStatusHelpSheetClosing, setIsStatusHelpSheetClosing] =
     useState(false);
   const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
-  const paymentCopyToastTimerRef = useRef<number | null>(null);
-  const [paymentCopyToast, setPaymentCopyToast] = useState("");
+  const [paymentCopyToast, showPaymentCopyToast] = useToast(
+    BRIEF_TOAST_DURATION_MS,
+  );
   const [paybackSheetBidId, setPaybackSheetBidId] = useState<string | null>(
     null,
   );
-  const paybackToastTimerRef = useRef<number | null>(null);
-  const [paybackToast, setPaybackToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
@@ -1837,8 +1871,7 @@ export function BidHistoryContent({
   const [pendingParticipationId, setPendingParticipationId] = useState<
     string | null
   >(null);
-  const actionToastTimerRef = useRef<number | null>(null);
-  const [actionToast, setActionToast] = useState("");
+  const [actionToast, showActionToast] = useToast();
   // 되돌리기 어려운 참여 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
     useState<ConfirmSheetRequest | null>(null);
@@ -2030,18 +2063,6 @@ export function BidHistoryContent({
 
       if (paymentSheetCloseTimerRef.current !== null) {
         window.clearTimeout(paymentSheetCloseTimerRef.current);
-      }
-
-      if (paymentCopyToastTimerRef.current !== null) {
-        window.clearTimeout(paymentCopyToastTimerRef.current);
-      }
-
-      if (paybackToastTimerRef.current !== null) {
-        window.clearTimeout(paybackToastTimerRef.current);
-      }
-
-      if (actionToastTimerRef.current !== null) {
-        window.clearTimeout(actionToastTimerRef.current);
       }
 
       if (addressSheetCloseTimerRef.current !== null) {
@@ -2780,19 +2801,11 @@ export function BidHistoryContent({
         ) ?? records,
     );
 
-    if (paybackToastTimerRef.current !== null) {
-      window.clearTimeout(paybackToastTimerRef.current);
-    }
-
-    setPaybackToast(
+    showActionToast(
       wasRequested
         ? "후기 링크를 수정했어요!"
         : "배송비 환급 신청 완료! 후기 확인 후 배송비를 보내드려요.",
     );
-    paybackToastTimerRef.current = window.setTimeout(() => {
-      setPaybackToast("");
-      paybackToastTimerRef.current = null;
-    }, 3200);
   }
 
   function openStatusHelpSheet() {
@@ -2961,18 +2974,6 @@ export function BidHistoryContent({
     } finally {
       setDeletingHostedProductId(null);
     }
-  }
-
-  function showActionToast(message: string) {
-    if (actionToastTimerRef.current !== null) {
-      window.clearTimeout(actionToastTimerRef.current);
-    }
-
-    setActionToast(message);
-    actionToastTimerRef.current = window.setTimeout(() => {
-      setActionToast("");
-      actionToastTimerRef.current = null;
-    }, 3200);
   }
 
   // 자리 2개 이상 묶음의 카드. 이체 1회 · 배송비 1회 · 택배 1개를 한 장으로 보여준다.
@@ -3671,21 +3672,12 @@ export function BidHistoryContent({
       return;
     }
 
-    if (paymentCopyToastTimerRef.current !== null) {
-      window.clearTimeout(paymentCopyToastTimerRef.current);
-    }
-
     try {
       await navigator.clipboard.writeText(value);
-      setPaymentCopyToast(`${label}가 복사됐어요.`);
+      showPaymentCopyToast(`${label}가 복사됐어요.`);
     } catch {
-      setPaymentCopyToast(`${label}를 복사하지 못했어요.`);
+      showPaymentCopyToast(`${label}를 복사하지 못했어요.`);
     }
-
-    paymentCopyToastTimerRef.current = window.setTimeout(() => {
-      setPaymentCopyToast("");
-      paymentCopyToastTimerRef.current = null;
-    }, 1800);
   }
 
   // 스크롤 복원 단일 이펙트 — 탭 전환 복원(우선)과 세션스토리지 복원(페이지 재진입)을
@@ -3793,7 +3785,7 @@ export function BidHistoryContent({
             tabs={[
               { label: "전체", value: "all" },
               { label: "진행 중", value: "active" },
-              { label: "모집 종료", value: "closed" },
+              { label: "종료", value: "closed" },
             ]}
             value={hostedFilter}
           />
@@ -4308,13 +4300,13 @@ export function BidHistoryContent({
                       }}
                       description={
                         hostedFilter === "active"
-                          ? "모집 중인 분철이 생기면 여기에 보여요."
-                          : "모집이 끝나면 여기로 옮겨져요."
+                          ? "모집·입금·배송이 진행 중인 분철이 여기에 보여요."
+                          : "배송까지 끝나거나 취소된 분철이 여기로 옮겨져요."
                       }
                       title={
                         hostedFilter === "active"
                           ? "진행 중인 분철이 없어요"
-                          : "모집이 끝난 분철이 없어요"
+                          : "종료된 분철이 없어요"
                       }
                     />
                   ) : (
@@ -4341,8 +4333,14 @@ export function BidHistoryContent({
               {!isHostedProductsLoading && hostedRecords.length > 0 ? (
               <div className="content-reveal space-y-3">
               {hostedRecords.map((product) => {
-                const isClosed = isHostedProductClosed(product, now);
-                const isCancelled = isBuncheolCancelledStatus(product.status);
+                const statusBadge = getHostedBuncheolStatusBadge({
+                  ended: product.hostEnded,
+                  isDeadlinePassed: isHostedProductDeadlinePassed(
+                    product,
+                    now,
+                  ),
+                  status: product.status,
+                });
                 const optionCount =
                   product.optionCount ??
                   product.targetMembers?.length ??
@@ -4391,20 +4389,10 @@ export function BidHistoryContent({
                           </div>
                           <span
                             className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-                              isBuncheolConfirmedStatus(product.status)
-                                ? "bg-[#E4F6A5] text-black/70"
-                                : isClosed
-                                  ? "bg-[#f3f3f3] text-black/50"
-                                  : "bg-[#D7FF5F] text-black shadow-[0_6px_14px_rgba(215,255,95,0.25)]"
+                              hostedStatusBadgeClassNames[statusBadge.kind]
                             }`}
                           >
-                            {isCancelled
-                              ? "취소"
-                              : isBuncheolConfirmedStatus(product.status)
-                                ? "진행 확정"
-                                : isClosed
-                                  ? "모집 종료"
-                                  : "모집 중"}
+                            {statusBadge.label}
                           </span>
                         </div>
                         {/* 부제에서 "멤버 N명"을 뺐다 — 바로 아래 칩이 같은 말을 반복하고 있었다. */}
@@ -4780,17 +4768,10 @@ export function BidHistoryContent({
                   개최자 오픈채팅 참여하기 →
                 </a>
               ) : null}
-              {paymentCopyToast ? (
-                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                  <p
-                    aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                    role="status"
-                  >
-                    {paymentCopyToast}
-                  </p>
-                </div>
-              ) : null}
+              <Toast
+                className="absolute inset-x-0 bottom-3 px-4"
+                message={paymentCopyToast}
+              />
             </div>
 
             <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
@@ -4887,17 +4868,10 @@ export function BidHistoryContent({
         request={confirmSheetRequest}
       />
 
-      {actionToast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
-          <p
-            aria-live="polite"
-            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-            role="status"
-          >
-            {actionToast}
-          </p>
-        </div>
-      ) : null}
+      <Toast
+        className="fixed inset-x-0 bottom-24 z-50 px-6"
+        message={actionToast}
+      />
 
       {selectedPaybackBid ? (
         <ShippingFeePaybackSheet
@@ -4915,18 +4889,6 @@ export function BidHistoryContent({
             payback: selectedPaybackBid.payback ?? null,
           }}
         />
-      ) : null}
-
-      {paybackToast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
-          <p
-            aria-live="polite"
-            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-            role="status"
-          >
-            {paybackToast}
-          </p>
-        </div>
       ) : null}
 
       {isAddressSheetOpen ? (

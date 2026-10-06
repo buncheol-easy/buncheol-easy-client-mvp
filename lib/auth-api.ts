@@ -54,9 +54,6 @@ export type UserProfileStatus = {
 
 // 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
 export const hostingEligibilityReasons = [
-  // 회원 개최 오픈 전 — 사용자가 무엇을 해도 해소되지 않는 유일한 사유다 (서버 USR-035).
-  // 배열 순서는 isHostingEligibilityReason 의 includes 에만 쓰여 동작에 영향이 없다.
-  "NOT_OPEN_YET",
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
   // 연령대 미확인 — 카카오 재로그인 동의로 회복 가능 (서버 USR-032)
@@ -97,17 +94,6 @@ export type UserProfile = {
   // 서버 게이트 위임(client#85) 이후 FE 미사용 — 선차단 재도입 금지, 서버 계약 문서화용으로만 유지.
   canHost?: boolean;
 };
-
-export function isUserProfileComplete(
-  profile: Pick<UserProfile, "nickname" | "phoneNumber"> | null | undefined,
-) {
-  const phoneNumber = profile?.phoneNumber.replace(/\D/g, "") ?? "";
-
-  return (
-    /^[가-힣A-Za-z0-9]{1,20}$/.test(profile?.nickname.trim() ?? "") &&
-    /^01\d{8,9}$/.test(phoneNumber)
-  );
-}
 
 export type UpdateUserProfileRequest = {
   nickname: string;
@@ -458,6 +444,8 @@ export type BuncheolManagementDetail = {
   cancelledParticipants: BuncheolManagementParticipant[];
   confirmedCount?: number;
   deadline: string;
+  // 개최 목록(MyHostedBuncheol.ended)과 같은 서버 판정. 구 응답이면 null.
+  ended: boolean | null;
   // 분철 flow_type — 없으면 LEGACY 취급 (getFlowType).
   flowType?: string | null;
   groupName: string;
@@ -550,6 +538,9 @@ export type MyHostedBuncheol = BuncheolSummary & {
   // 필드가 없는 구 응답이면 null — 화면은 삭제 버튼을 남기는 쪽으로 폴백한다.
   cancellability?: string | null;
   createdAt: string;
+  // 서버 판정 — 진행확정이고 확정 참여 전원의 택배가 편의점에 도착했으면 true. 진행확정이 아니면 늘 false.
+  // 필드가 없는 구 응답이면 null — 개최 목록 탭은 기존 규칙으로 폴백한다.
+  ended: boolean | null;
   memberSlotCount: number;
 };
 
@@ -1746,6 +1737,8 @@ export async function requestUserProfileStatus(accessToken: string) {
   return { isProfileComplete } satisfies UserProfileStatus;
 }
 
+// 가입 미완료 회원은 403(USR-018)이라 200 이면 서버가 가입 완료로 본 회원이다. 응답 값으로 미완료를 다시 판정해
+// /signup/profile 로 보내면 그 화면이 서버 판정대로 곧바로 되돌려 보내 끝없이 오간다(예: 번호 NULL).
 export async function requestUserProfile(accessToken: string) {
   const response = await fetch(`${getVersionedApiBaseUrl()}/users/me`, {
     credentials: "include",
@@ -3883,6 +3876,7 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
     deadline:
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||
       getStringValue(responseData, ["deadline", "buncheolDeadline"]),
+    ended: getOptionalBooleanValue(data, ["ended"]) ?? null,
     flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     groupName:
       getStringValue(data, ["groupName", "group"]) ||
@@ -4889,6 +4883,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
         cancellability:
           getOptionalStringValue(record, ["cancellability"]) ?? null,
         createdAt: summary.createdAt ?? "",
+        ended: getOptionalBooleanValue(record, ["ended"]) ?? null,
         memberSlotCount:
           summary.memberSlotCount ??
           getNumberValue(record, ["memberSlotCount"]) ??
