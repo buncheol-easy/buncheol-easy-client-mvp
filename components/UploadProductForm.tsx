@@ -2419,7 +2419,10 @@ export function UploadProductForm({
 
                       <div className="mt-7">
                         <p className="text-[20px] font-semibold tracking-[-0.06em]">
-                          잠긴 정보
+                          기본 정보
+                        </p>
+                        <p className="mt-1 text-[12px] font-semibold text-black/40">
+                          분철을 연 뒤에는 바꿀 수 없어요
                         </p>
                         <div className="mt-3 grid grid-cols-2 gap-3">
                           <div className="min-w-0 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
