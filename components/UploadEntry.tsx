@@ -5,7 +5,9 @@ import { BottomNavigator } from "@/components/BottomNavigator";
 import { HostingIneligibleNotice } from "@/components/HostingIneligibleNotice";
 import { UploadProductForm } from "@/components/UploadProductForm";
 import {
+  ageRangeConsentResultParam,
   requestHostingEligibility,
+  type AgeRangeConsentResult,
   type HostingEligibilityReason,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
@@ -16,6 +18,7 @@ import {
 } from "@/lib/auth-store";
 
 type UploadEntryProps = {
+  ageRangeConsentResult?: AgeRangeConsentResult;
   editProductId?: string;
   returnSource?: "home" | "profile" | "bids" | "favorites" | "upload";
 };
@@ -33,7 +36,11 @@ type EligibilityCheck = { token: string | null } & (
  *
  * <p>수정 모드(`?edit=`)는 자격 게이트 대상이 아니다 — 서버 수정 API 도 개최 자격을 보지 않는다.
  */
-export function UploadEntry({ editProductId, returnSource }: UploadEntryProps) {
+export function UploadEntry({
+  ageRangeConsentResult,
+  editProductId,
+  returnSource,
+}: UploadEntryProps) {
   const isEditMode = Boolean(editProductId);
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -53,6 +60,19 @@ export function UploadEntry({ editProductId, returnSource }: UploadEntryProps) {
   // 이펙트 안 동기 setState 없이(react-hooks/set-state-in-effect) 렌더 시점에 세션 일치만 확인한다.
   const currentCheck =
     check && check.token === authState.accessToken ? check : null;
+
+  // 새로고침·공유 때 지난 결과 안내가 다시 뜨지 않도록 주소에서만 지운다. 이번 화면의 안내는 props 로 그대로 남는다.
+  // ⚠️ state 는 넘겨받은 그대로 둔다 — 마운트 effect 는 Next 의 replaceState 패치보다 먼저 돌아 null 을 넘기면
+  // 라우터 내부 상태가 지워지고, 이 기록으로 뒤로가기 했을 때 주소만 바뀌고 화면은 그대로 남는다.
+  useEffect(() => {
+    if (!ageRangeConsentResult) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete(ageRangeConsentResultParam);
+    window.history.replaceState(window.history.state, "", url);
+  }, [ageRangeConsentResult]);
 
   useEffect(() => {
     if (!shouldCheck) {
@@ -106,7 +126,12 @@ export function UploadEntry({ editProductId, returnSource }: UploadEntryProps) {
 
   // 조회 이후 로그아웃했다면(shouldCheck=false) 직전 판정은 더 이상 이 세션의 것이 아니라 폼을 그대로 연다.
   if (shouldCheck && currentCheck && !currentCheck.eligible) {
-    return <HostingIneligibleNotice reason={currentCheck.reason} />;
+    return (
+      <HostingIneligibleNotice
+        ageRangeConsentResult={ageRangeConsentResult}
+        reason={currentCheck.reason}
+      />
+    );
   }
 
   return (
