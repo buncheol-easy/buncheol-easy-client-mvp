@@ -2139,13 +2139,21 @@ export function BidHistoryContent({
     const isAccessTokenUsable = getFreshAccessToken().then(
       (freshAccessToken) => isActive && freshAccessToken === accessToken,
     );
+    // 버튼(취소·보냈어요)이 재발급하면 이 effect 가 그 요청과 동시에 다시 돈다. 버튼이 낙관 반영하며
+    // 세대를 올리므로, 그보다 먼저 출발한 목록 응답은 반영 전 상태라 버린다(폴링과 같은 방식).
+    let participationsGeneration = bidRecordsGenerationRef.current;
 
     isAccessTokenUsable
-      .then((isUsable) =>
-        isUsable ? requestMyParticipations(accessToken) : null,
-      )
+      .then((isUsable) => {
+        participationsGeneration = bidRecordsGenerationRef.current;
+        return isUsable ? requestMyParticipations(accessToken) : null;
+      })
       .then((participations) => {
-        if (!isActive || !participations) {
+        if (
+          !isActive ||
+          !participations ||
+          bidRecordsGenerationRef.current !== participationsGeneration
+        ) {
           return;
         }
 
@@ -2215,7 +2223,10 @@ export function BidHistoryContent({
         });
       })
       .catch((error: unknown) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          bidRecordsGenerationRef.current !== participationsGeneration
+        ) {
           return;
         }
 
@@ -3484,6 +3495,8 @@ export function BidHistoryContent({
 
       const sentAt = new Date().toISOString();
       const markedIds = new Set(targets.map((target) => target.id));
+      // 이보다 먼저 출발한 목록 응답(첫 로딩 재실행·폴링)이 늦게 와서 '입금 대기'로 되돌리지 않게 한다.
+      bidRecordsGenerationRef.current += 1;
       setApiBidRecords((records) =>
         records
           ? records.map((record) =>
