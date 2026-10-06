@@ -67,7 +67,7 @@ type IntroRecentBuncheol = {
   title: string;
 };
 
-const IntroMotionContext = createContext<IntroMotionContextValue>({
+export const IntroMotionContext = createContext<IntroMotionContextValue>({
   homeScrollOffset: 0,
   prefersReducedMotion: false,
 });
@@ -127,7 +127,7 @@ function toIntroRecentBuncheol(item: BuncheolSummary): IntroRecentBuncheol {
   };
 }
 
-function Reveal({
+export function Reveal({
   children,
   className = "",
   delay = 0,
@@ -251,7 +251,7 @@ function useDeferredMockupImages<T extends HTMLElement>(
 }
 
 // 목업 화면은 실제 앱과 같은 430px 기준으로 그리고, 폰 프레임 폭에 맞춰 스케일만 줄인다.
-function MiniPhone({
+export function MiniPhone({
   children,
   className = "",
   widthClassName = "w-[20rem] max-w-[84vw]",
@@ -981,7 +981,7 @@ const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progre
 });
 
 // 개최 분철 관리 — components/HostedBuncheolManage.tsx 의 운영 요약·입금 수집 중·참여자 관리 구성.
-const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress: number }) {
+export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const shouldLoadManageImages = useDeferredMockupImages(frameRef);
   const manageMembers = [
@@ -1293,7 +1293,7 @@ const introHostPoints = [
   },
 ] as const;
 
-function ArrowRight() {
+export function ArrowRight() {
   return (
     <svg
       aria-hidden="true"
@@ -1485,18 +1485,8 @@ function FeatureStack({
   );
 }
 
-export function IntroContent() {
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const homeScrollOffsetRef = useRef(0);
-  const [homeScrollOffset, setHomeScrollOffset] = useState(0);
+export function usePrefersReducedMotion() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  const [isMarkerOn, setIsMarkerOn] = useState(false);
-  const [liveBuncheolTitle, setLiveBuncheolTitle] = useState<string | null>(
-    null,
-  );
-  const [recentBuncheols, setRecentBuncheols] = useState(
-    fallbackRecentBuncheols,
-  );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -1530,6 +1520,22 @@ export function IntroContent() {
       removeMotionPreferenceListener();
     };
   }, []);
+
+  return prefersReducedMotion;
+}
+
+export function IntroContent() {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const homeScrollOffsetRef = useRef(0);
+  const [homeScrollOffset, setHomeScrollOffset] = useState(0);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const [isMarkerOn, setIsMarkerOn] = useState(false);
+  const [liveBuncheolTitle, setLiveBuncheolTitle] = useState<string | null>(
+    null,
+  );
+  const [recentBuncheols, setRecentBuncheols] = useState(
+    fallbackRecentBuncheols,
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => setIsMarkerOn(true), 420);
