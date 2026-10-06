@@ -279,7 +279,6 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     }
   }
 
-
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-white">
       <header className="shrink-0 border-b border-black/10 bg-white px-4 pb-4 pt-3">
