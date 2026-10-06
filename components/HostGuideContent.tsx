@@ -21,7 +21,7 @@ import {
 
 const guidePreparations = [
   {
-    body: "개최는 성인 회원만 할 수 있어요. 카카오 로그인 때 '연령대' 제공에 동의해 주세요. 카카오는 연령대를 구간으로 알려줘서 20대 이상 구간부터 확인돼요.",
+    body: "개최는 성인 회원만 할 수 있어요. 카카오 로그인 때 '연령대' 제공에 동의해 주세요. 카카오는 연령대를 구간으로 알려줘서 20대 이상 구간부터 확인돼요. 동의하지 않았다면 카카오로 다시 로그인하면서 동의할 수 있어요.",
     icon: UsersRoundIcon,
     title: "카카오 연령대 동의",
   },
@@ -37,7 +37,7 @@ const guidePreparations = [
   },
 ] as const;
 
-const guideSteps = [
+const guideSteps: readonly { body: string; details?: readonly string[]; label: string }[] = [
   {
     body: "개최 화면에서 아래 항목을 채우면 분철이 열려요.",
     details: [
@@ -51,30 +51,25 @@ const guideSteps = [
   },
   {
     body: "분철 상세의 공유 버튼을 누르면 링크가 복사돼요. 트위터 모집글에 붙여 주세요. 신청 순서대로 자리가 잡혀 같은 자리에 두 명이 겹치지 않고, 이 단계에서는 아무도 입금하지 않아요.",
-    details: [],
     label: "링크 공유",
   },
   {
     body: "신청이 모이면 관리 화면에서 '성사 확정하기'를 눌러요. 신청자 전원에게 입금 계좌와 24시간 입금 기한이 알림톡으로 가요. 최소 진행 인원에 못 미쳐도 직접 판단해서 확정할 수 있어요.",
-    details: [],
     label: "성사 확정",
   },
   {
-    body: "참여자가 송금 후 '보냈어요'를 누르면 표시돼요. 통장에서 입금자명을 대조하고 '입금 확인'을 눌러 주세요. 기한이 지나도 입금이 없는 참여는 '제외'로 정리할 수 있어요.",
-    details: [],
+    body: "참여자가 송금 후 '보냈어요'를 누르면 표시돼요. 통장에서 입금자명을 대조하고 '입금 확인'을 눌러 주세요. 기한이 지나도 입금 안 한 참여는 자동으로 빠지지 않아요. 직접 '제외'해야 다음 단계로 넘어가요.",
     label: "입금 확인",
   },
   {
-    body: "참여자 전원의 입금을 확인하면 보통 자동으로 진행 확정돼요. 입금 안 한 참여를 제외해서 관리 화면에 '입금한 N자리로 진행 확정' 버튼이 보이면 직접 눌러 주세요. 확정 후에는 참여를 더 받을 수 없어요.",
-    details: [],
+    body: "참여자 전원의 입금을 확인하면 보통 자동으로 진행 확정돼요. 관리 화면에 '입금한 N자리로 진행 확정' 버튼이 보이면 직접 눌러 주세요. 확정 후에는 참여를 더 받을 수 없어요.",
     label: "진행 확정",
   },
   {
     body: "진행 확정이 되면 운송장을 등록할 수 있어요. 택배를 보낸 뒤 운송장 번호를 넣으면 참여자에게 알림이 가고 배송 상태가 자동으로 바뀌어요. 참여자가 편의점에서 받고 수령을 확인하면 끝이에요.",
-    details: [],
     label: "운송장 등록",
   },
-] as const;
+];
 
 const guideCautions = [
   {
@@ -124,7 +119,8 @@ export function HostGuideContent() {
             </nav>
 
             <div className="relative pt-12">
-              <Reveal>
+              {/* DM 링크로 바로 들어오는 페이지라 첫 화면 글자는 하이드레이션을 기다리지 않고 보이게 둔다(Reveal 미사용). */}
+              <div>
                 <span className="inline-flex items-center rounded-full border border-[#0A0B0D]/8 bg-white/85 px-3.5 py-1.5 text-[12.5px] font-semibold tracking-[-0.02em] text-[#5A6069] shadow-[0_1px_2px_rgba(10,11,13,0.04)] backdrop-blur">
                   처음 여는 분을 위한 개최 가이드
                 </span>
@@ -164,7 +160,7 @@ export function HostGuideContent() {
                     준비할 것 보기
                   </a>
                 </div>
-              </Reveal>
+              </div>
 
               <Reveal className="relative mt-12" delay={140} direction="scale">
                 <div className="pointer-events-none absolute inset-x-6 bottom-6 top-10 rounded-[3rem] bg-[radial-gradient(ellipse_at_center,rgba(10,11,13,0.14),transparent_70%)] blur-2xl" />
@@ -191,7 +187,7 @@ export function HostGuideContent() {
               <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
                 셋 중 하나라도 없으면 개최 화면이 열리지 않아요.
                 <br />
-                마이페이지에서 미리 채워 두면 바로 열 수 있어요.
+                전화번호와 정산 계좌는 마이페이지에서 미리 채워 둘 수 있어요.
               </p>
             </Reveal>
 
@@ -266,7 +262,7 @@ export function HostGuideContent() {
                         <p className="mt-2 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-white/50">
                           {body}
                         </p>
-                        {details.length > 0 ? (
+                        {details && details.length > 0 ? (
                           <ul className="mt-3 space-y-2">
                             {details.map((detail) => (
                               <li
