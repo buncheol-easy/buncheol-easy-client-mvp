@@ -23,6 +23,7 @@ const SITEMAP_MAX_ITEMS = 20 * SITEMAP_PAGE_SIZE;
 const staticRoutes = [
   "",
   "/intro",
+  "/guide",
   "/board",
   "/privacy",
   "/terms",
