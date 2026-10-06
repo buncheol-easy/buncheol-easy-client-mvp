@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CloseIcon } from "@/components/icons";
 import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
+import {
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
@@ -48,9 +53,8 @@ export function TestAccountSwitcher() {
     null,
   );
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState("");
+  const [toastMessage, showToast] = useToast(BRIEF_TOAST_DURATION_MS);
   const reloadTimerRef = useRef<number | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
   const activeAccount =
     accounts.find((account) => account.id === activeAccountId) ?? null;
 
@@ -82,10 +86,6 @@ export function TestAccountSwitcher() {
       if (reloadTimerRef.current !== null) {
         window.clearTimeout(reloadTimerRef.current);
       }
-
-      if (toastTimerRef.current !== null) {
-        window.clearTimeout(toastTimerRef.current);
-      }
     };
   }, []);
 
@@ -109,18 +109,6 @@ export function TestAccountSwitcher() {
         setActiveAccountId(null);
       });
   }, [accounts.length, authState.accessToken]);
-
-  function showToast(message: string) {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-    }
-
-    setToastMessage(message);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToastMessage("");
-      toastTimerRef.current = null;
-    }, 1800);
-  }
 
   async function switchAccount(account: TestAccount) {
     if (switchingAccountId) {
@@ -182,13 +170,10 @@ export function TestAccountSwitcher() {
         </span>
       </button>
 
-      {toastMessage ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-28 z-[80] flex justify-center px-5">
-          <div className="rounded-full bg-black/92 px-4 py-3 text-[13px] font-semibold text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]">
-            {toastMessage}
-          </div>
-        </div>
-      ) : null}
+      <Toast
+        className="fixed inset-x-0 bottom-28 z-[80] px-5"
+        message={toastMessage}
+      />
 
       {isOpen ? (
         <div
