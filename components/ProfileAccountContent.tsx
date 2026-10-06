@@ -7,7 +7,6 @@ import { BackIcon, CheckIcon, ProfileIcon } from "@/components/icons";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
-  isUserProfileComplete,
   deleteUserProfile,
   requestMyParticipations,
   requestNicknameDuplicate,
@@ -16,7 +15,6 @@ import {
   type UserProfile,
 } from "@/lib/auth-api";
 import {
-  authProfileSetupReturnHrefStorageKey,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
@@ -196,15 +194,6 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
           return;
         }
 
-        if (!isUserProfileComplete(nextProfile)) {
-          window.sessionStorage.setItem(
-            authProfileSetupReturnHrefStorageKey,
-            "/profile/account",
-          );
-          router.replace("/signup/profile");
-          return;
-        }
-
         setProfile(nextProfile);
         setForm(getProfileForm(nextProfile));
       })
@@ -228,7 +217,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn, router]);
+  }, [authState.accessToken, authState.isLoggedIn]);
 
   useEffect(() => {
     return () => {

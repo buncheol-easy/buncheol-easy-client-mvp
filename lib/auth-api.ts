@@ -98,19 +98,6 @@ export type UserProfile = {
   canHost?: boolean;
 };
 
-export function isUserProfileComplete(
-  profile: Pick<UserProfile, "nickname" | "phoneNumber"> | null | undefined,
-) {
-  const phoneNumber = profile?.phoneNumber.replace(/\D/g, "") ?? "";
-
-  // 번호는 서버 profileCompleted 와 같은 기준(번호 보유)만 본다. 형식(isValidPhoneNumber)까지 보면 서버가 완료로
-  // 보는 회원(예: 10자리 번호)이 /profile ↔ /signup/profile 을 끝없이 오간다. 형식은 입력 단계에서 막는다.
-  return (
-    /^[가-힣A-Za-z0-9]{1,20}$/.test(profile?.nickname.trim() ?? "") &&
-    phoneNumber.length > 0
-  );
-}
-
 export type UpdateUserProfileRequest = {
   nickname: string;
   phoneNumber: string;
@@ -1753,6 +1740,8 @@ export async function requestUserProfileStatus(accessToken: string) {
   return { isProfileComplete } satisfies UserProfileStatus;
 }
 
+// 가입 미완료 회원은 403(USR-018)이라 200 이면 서버가 가입 완료로 본 회원이다. 응답 값으로 미완료를 다시 판정해
+// /signup/profile 로 보내면 그 화면이 서버 판정대로 곧바로 되돌려 보내 끝없이 오간다(예: 번호 NULL).
 export async function requestUserProfile(accessToken: string) {
   const response = await fetch(`${getVersionedApiBaseUrl()}/users/me`, {
     credentials: "include",
