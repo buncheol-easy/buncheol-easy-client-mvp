@@ -13,6 +13,7 @@ import {
   readAuthState,
 } from "@/lib/auth-store";
 import { getHistoryIndex } from "@/lib/history-index";
+import { CONTACT_EMAIL } from "@/lib/site";
 import { clearUserSessionState } from "@/lib/user-session";
 
 type HostingIneligibleNoticeProps = {
@@ -36,8 +37,6 @@ type NoticeCopy = {
     // note = 버튼을 누르면 벌어지는 일의 예고(세션이 풀리는 등).
     | { label: string; kind: "relogin" | "profile-setup"; note?: string };
 };
-
-const contactEmail = "teameasy024@gmail.com";
 
 const hostingRequirementItems = [
   {
@@ -371,9 +370,9 @@ export function HostingIneligibleNotice({
                 </p>
                 <a
                   className="mt-2 inline-block text-[15px] font-semibold tracking-[-0.03em] underline underline-offset-4"
-                  href={`mailto:${contactEmail}`}
+                  href={`mailto:${CONTACT_EMAIL}`}
                 >
-                  {contactEmail}
+                  {CONTACT_EMAIL}
                 </a>
                 <p className="mt-1.5 break-keep text-[13px] font-medium leading-5 tracking-[-0.03em] text-black/45">
                   안내가 실제와 다르거나 도움이 필요하면 메일로 알려주세요.

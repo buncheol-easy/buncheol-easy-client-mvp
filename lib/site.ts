@@ -8,3 +8,7 @@ export const SITE_URL =
 // 같은 값을 쓰도록 한곳에서 관리한다.
 export const X_PROFILE_URL = "https://x.com/buncheoleasy";
 export const X_HANDLE = "@buncheoleasy";
+
+// 공식 문의 이메일. ⚠️ 바꾸면 개인정보처리방침 보호책임자 문의처가 바뀌는 개정이라, 방침 시행일 항목에
+// 개정 이력을 남긴다(공지 기간은 방침의 '방침의 변경' 조항).
+export const CONTACT_EMAIL = "contact@buncheoleasy.com";
