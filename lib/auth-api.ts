@@ -98,17 +98,6 @@ export type UserProfile = {
   canHost?: boolean;
 };
 
-export function isUserProfileComplete(
-  profile: Pick<UserProfile, "nickname" | "phoneNumber"> | null | undefined,
-) {
-  const phoneNumber = profile?.phoneNumber.replace(/\D/g, "") ?? "";
-
-  return (
-    /^[가-힣A-Za-z0-9]{1,20}$/.test(profile?.nickname.trim() ?? "") &&
-    /^01\d{8,9}$/.test(phoneNumber)
-  );
-}
-
 export type UpdateUserProfileRequest = {
   nickname: string;
   phoneNumber: string;
@@ -1751,6 +1740,8 @@ export async function requestUserProfileStatus(accessToken: string) {
   return { isProfileComplete } satisfies UserProfileStatus;
 }
 
+// 가입 미완료 회원은 403(USR-018)이라 200 이면 서버가 가입 완료로 본 회원이다. 응답 값으로 미완료를 다시 판정해
+// /signup/profile 로 보내면 그 화면이 서버 판정대로 곧바로 되돌려 보내 끝없이 오간다(예: 번호 NULL).
 export async function requestUserProfile(accessToken: string) {
   const response = await fetch(`${getVersionedApiBaseUrl()}/users/me`, {
     credentials: "include",
