@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon } from "@/components/icons";
+import { getHistoryIndex } from "@/lib/history-index";
 
 type GuideItem = {
   body: string;
@@ -13,11 +14,11 @@ type GuideItem = {
 const preparations: GuideItem[] = [
   {
     title: "카카오 로그인 · 연령대 동의",
-    body: "개최는 성인 회원만 할 수 있어요. 카카오 로그인 때 '연령대' 제공에 동의해 주세요.",
+    body: "개최는 성인 회원만 할 수 있어요. 카카오 로그인 때 '연령대' 제공에 동의해 주세요. 카카오는 연령대를 구간으로만 알려줘서 20대 이상 구간부터 확인돼요.",
   },
   {
     title: "닉네임 · 전화번호",
-    body: "참여자와 문제가 생겼을 때 연락이 닿아야 해서 필요해요. 참여자에게 그냥 공개되지는 않아요.",
+    body: "참여자와 문제가 생겼을 때 연락이 닿아야 해서 필요해요. 전화번호는 참여자에게 그냥 공개되지 않아요.",
   },
   {
     title: "정산 계좌",
@@ -36,7 +37,7 @@ const steps: GuideItem[] = [
   },
   {
     title: "성사 확정하기",
-    body: "인원이 모이면 관리 화면에서 '성사 확정하기'를 눌러요. 신청자 전원에게 입금 계좌와 24시간 입금 기한이 알림톡으로 가요.",
+    body: "신청이 모이면 관리 화면에서 '성사 확정하기'를 눌러요. 신청자 전원에게 입금 계좌와 24시간 입금 기한이 알림톡으로 가요.",
   },
   {
     title: "입금 확인하고 보내기",
@@ -51,23 +52,17 @@ const faqs: GuideItem[] = [
   },
   {
     title: "인원이 안 차면 어떻게 되나요?",
-    body: "마감 기한까지 최소 진행 인원이 안 차면 분철이 자동으로 취소되고 신청자에게도 안내가 가요. 입금은 확정한 뒤에 받으니 돌려줄 돈이 생기지 않아요.",
+    body: "확정하기 전에 마감 기한이 됐는데 최소 진행 인원이 안 찼다면 분철이 바로 자동 취소되고 신청자에게도 안내가 가요. 입금은 확정한 뒤에 받으니 돌려줄 돈이 생기지 않아요.",
   },
   {
     title: "확정을 깜빡하면요?",
-    body: "모집 기한이 지나고 2일(48시간) 안에 확정하지 않으면 분철이 자동으로 취소돼요.",
+    body: "인원이 찼더라도 모집 기한이 지나고 2일(48시간) 안에 확정하지 않으면 분철이 자동으로 취소돼요.",
   },
   {
     title: "입금 확인도 자동인가요?",
     body: "아니요. 참여자가 총대님 계좌로 직접 보내는 직거래라, 통장을 보고 직접 확인해 주세요. 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요.",
   },
 ];
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function HostGuideContent() {
   const router = useRouter();
