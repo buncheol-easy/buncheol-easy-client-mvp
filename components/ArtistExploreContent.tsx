@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
+import { Toast, useToast } from "@/components/Toast";
 import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import {
   addFavoriteGroup,
@@ -48,7 +49,6 @@ type ArtistExploreContentProps = {
 };
 
 const FAVORITE_GROUP_LIMIT = 5;
-const TOAST_DURATION_MS = 2400;
 
 function getFavoriteId(group: ArtistGroup) {
   return group.id;
@@ -152,16 +152,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   );
   const pendingGroupIdsRef = useRef(new Set<string>());
   // 한도 초과처럼 화면을 바꿀 필요 없는 안내는 잠깐 떴다 사라지는 토스트로 알린다.
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current !== null) {
-        window.clearTimeout(toastTimerRef.current);
-      }
-    };
-  }, []);
+  const [toast, showToast] = useToast();
 
   const favoriteGroups = groups.filter((group) => group.favorited);
   const favoriteCount = favoriteGroups.length;
@@ -288,17 +279,6 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     }
   }
 
-  function showToast(text: string) {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-    }
-
-    setToast(text);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToast(null);
-      toastTimerRef.current = null;
-    }, TOAST_DURATION_MS);
-  }
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-white">
@@ -473,17 +453,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
         </div>
       </div>
 
-      {toast ? (
-        <div
-          aria-live="polite"
-          className="artist-toast pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center px-6"
-          role="status"
-        >
-          <p className="max-w-full rounded-full bg-black/85 px-4 py-2.5 text-center text-[13px] font-semibold tracking-[-0.03em] text-white shadow-[0_10px_28px_rgba(0,0,0,0.24)] backdrop-blur-sm">
-            {toast}
-          </p>
-        </div>
-      ) : null}
+      <Toast
+        className="absolute inset-x-0 bottom-6 z-20 px-6"
+        message={toast}
+      />
     </div>
   );
 }

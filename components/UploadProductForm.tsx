@@ -14,6 +14,11 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -640,17 +645,15 @@ export function UploadProductForm({
    */
   const [exitConfirmRequest, setExitConfirmRequest] =
     useState<ConfirmSheetRequest | null>(null);
-  const [photoLimitToast, setPhotoLimitToast] = useState("");
+  // 사진 유무로 갈리는 두 화면 모두에 띄운다. addPhotos 는 파일을 읽기 전에 토스트를 띄우므로,
+  // 0장 화면에 이게 없으면 사진을 읽는 동안 안내가 통째로 사라진다.
+  const [photoLimitToast, showPhotoLimitToast] = useToast(
+    BRIEF_TOAST_DURATION_MS,
+  );
   const photoIdSeed = useRef(0);
   const formScrollRef = useRef<HTMLFormElement | null>(null);
-  const photoLimitToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const minimumPricePromptTimeoutRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
-  const memberToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [purchaseSource, setPurchaseSource] = useState("");
@@ -670,10 +673,10 @@ export function UploadProductForm({
   const [description, setDescription] = useState("");
   const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
-  const [memberToastMessage, setMemberToastMessage] = useState("");
-  const [memberToastTargetId, setMemberToastTargetId] = useState<string | null>(
-    null,
-  );
+  const [memberToast, showMemberToast, hideMemberToast] = useToast<{
+    memberId: string;
+    message: string;
+  }>(BRIEF_TOAST_DURATION_MS);
   const [activeScheduleField, setActiveScheduleField] =
     useState<ScheduleField | null>(null);
   const [selectedShipping, setSelectedShipping] = useState<string[]>([]);
@@ -1040,16 +1043,8 @@ export function UploadProductForm({
   }
   useEffect(() => {
     return () => {
-      if (photoLimitToastTimeoutRef.current) {
-        clearTimeout(photoLimitToastTimeoutRef.current);
-      }
-
       if (minimumPricePromptTimeoutRef.current) {
         clearTimeout(minimumPricePromptTimeoutRef.current);
-      }
-
-      if (memberToastTimeoutRef.current) {
-        clearTimeout(memberToastTimeoutRef.current);
       }
     };
   }, []);
@@ -1459,51 +1454,6 @@ export function UploadProductForm({
     router,
   ]);
 
-  function showPhotoLimitToast(message: string) {
-    setPhotoLimitToast(message);
-
-    if (photoLimitToastTimeoutRef.current) {
-      clearTimeout(photoLimitToastTimeoutRef.current);
-    }
-
-    photoLimitToastTimeoutRef.current = setTimeout(() => {
-      setPhotoLimitToast("");
-      photoLimitToastTimeoutRef.current = null;
-    }, 2200);
-  }
-
-  // 토스트는 사진 유무로 갈리는 두 화면 모두에 필요하다. addPhotos 는 파일을 읽기 전에
-  // 토스트를 띄우므로, 0장 화면에 이게 없으면 사진을 읽는 동안 안내가 통째로 사라진다.
-  function renderPhotoLimitToast(positionClassName: string) {
-    if (!photoLimitToast) {
-      return null;
-    }
-
-    return (
-      <p
-        aria-live="polite"
-        className={`soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] ${positionClassName}`}
-        role="status"
-      >
-        {photoLimitToast}
-      </p>
-    );
-  }
-
-  function showMemberToast(memberId: string, message: string) {
-    if (memberToastTimeoutRef.current) {
-      clearTimeout(memberToastTimeoutRef.current);
-    }
-
-    setMemberToastTargetId(memberId);
-    setMemberToastMessage(message);
-    memberToastTimeoutRef.current = setTimeout(() => {
-      setMemberToastMessage("");
-      setMemberToastTargetId(null);
-      memberToastTimeoutRef.current = null;
-    }, 1800);
-  }
-
   function showMinimumPricePrompt(prompt: MinimumPricePrompt) {
     if (minimumPricePromptTimeoutRef.current) {
       clearTimeout(minimumPricePromptTimeoutRef.current);
@@ -1563,8 +1513,7 @@ export function UploadProductForm({
     setExcludedMemberIds([]);
     setMinHeadcount(String(group.members.length));
     setMemberMinimumPrices({});
-    setMemberToastMessage("");
-    setMemberToastTargetId(null);
+    hideMemberToast();
     hideMinimumPricePrompt();
   }
 
@@ -1575,8 +1524,7 @@ export function UploadProductForm({
     setExcludedMemberIds([]);
     setMinHeadcount("");
     setMemberMinimumPrices({});
-    setMemberToastMessage("");
-    setMemberToastTargetId(null);
+    hideMemberToast();
     hideMinimumPricePrompt();
   }
 
@@ -1643,7 +1591,7 @@ export function UploadProductForm({
     ).length;
 
     if (!isCurrentlyExcluded && nextActiveMemberCount === 0) {
-      showMemberToast(memberId, "대상 멤버는 1명 이상 필요해요");
+      showMemberToast({ memberId, message: "대상 멤버는 1명 이상 필요해요" });
       return;
     }
 
@@ -1704,7 +1652,10 @@ export function UploadProductForm({
     const parsedPrice = parsePriceInput(memberMinimumPrices[memberId] ?? "");
 
     if (parsedPrice > 0 && !isMemberMinimumPriceAmount(parsedPrice)) {
-      showMemberToast(memberId, "가격은 100원 단위로 입력해 주세요");
+      showMemberToast({
+        memberId,
+        message: "가격은 100원 단위로 입력해 주세요",
+      });
     }
   }
 
@@ -2330,7 +2281,7 @@ export function UploadProductForm({
                             구성품이 잘 보이는 사진이 좋아요.
                           </p>
                           {renderSubmitFieldError("photos")}
-                          {renderPhotoLimitToast("mt-3")}
+                          <Toast className="mt-3" message={photoLimitToast} />
                         </>
                       ) : (
                         <>
@@ -2349,9 +2300,10 @@ export function UploadProductForm({
                             <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                               <PlusIcon />
                             </span>
-                            {renderPhotoLimitToast(
-                              "pointer-events-none absolute bottom-4 left-4 right-4 z-20",
-                            )}
+                            <Toast
+                              className="absolute inset-x-4 bottom-4 z-20"
+                              message={photoLimitToast}
+                            />
                             <input
                               accept="image/*"
                               className="sr-only"
@@ -2688,7 +2640,7 @@ export function UploadProductForm({
                   보이는 사진이 좋아요.
                 </p>
                 {renderSubmitFieldError("photos")}
-                {renderPhotoLimitToast("mt-3")}
+                <Toast className="mt-3" message={photoLimitToast} />
               </>
             ) : (
               <>
@@ -2707,9 +2659,10 @@ export function UploadProductForm({
                   <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                     <PlusIcon />
                   </span>
-                  {renderPhotoLimitToast(
-                    "pointer-events-none absolute bottom-4 left-4 right-4 z-20",
-                  )}
+                  <Toast
+                    className="absolute inset-x-4 bottom-4 z-20"
+                    message={photoLimitToast}
+                  />
                   <input
                     accept="image/*"
                     className="sr-only"
@@ -2910,9 +2863,6 @@ export function UploadProductForm({
                           const isExcluded = excludedMemberIds.includes(
                             member.id,
                           );
-                          const shouldShowToast =
-                            memberToastMessage &&
-                            memberToastTargetId === member.id;
                           const isLastMember =
                             index === allTargetMembers.length - 1;
                           const shouldShowPrompt =
@@ -2999,19 +2949,18 @@ export function UploadProductForm({
                                 </button>
                               </div>
 
-                              {shouldShowToast ? (
-                                <p
-                                  aria-live="polite"
-                                  className={`soft-panel-enter pointer-events-none absolute left-3 right-3 z-10 rounded-full bg-black px-3 py-2 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] ${
-                                    isLastMember
-                                      ? "bottom-full mb-2"
-                                      : "top-full mt-2"
-                                  }`}
-                                  role="status"
-                                >
-                                  {memberToastMessage}
-                                </p>
-                              ) : null}
+                              <Toast
+                                className={`absolute inset-x-3 z-10 ${
+                                  isLastMember
+                                    ? "bottom-full mb-2"
+                                    : "top-full mt-2"
+                                }`}
+                                message={
+                                  memberToast?.memberId === member.id
+                                    ? memberToast.message
+                                    : null
+                                }
+                              />
 
                               {shouldShowPrompt &&
                               renderedMinimumPricePrompt ? (

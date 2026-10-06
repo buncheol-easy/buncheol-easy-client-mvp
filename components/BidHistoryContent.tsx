@@ -113,6 +113,11 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -1794,13 +1799,12 @@ export function BidHistoryContent({
   const [isStatusHelpSheetClosing, setIsStatusHelpSheetClosing] =
     useState(false);
   const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
-  const paymentCopyToastTimerRef = useRef<number | null>(null);
-  const [paymentCopyToast, setPaymentCopyToast] = useState("");
+  const [paymentCopyToast, showPaymentCopyToast] = useToast(
+    BRIEF_TOAST_DURATION_MS,
+  );
   const [paybackSheetBidId, setPaybackSheetBidId] = useState<string | null>(
     null,
   );
-  const paybackToastTimerRef = useRef<number | null>(null);
-  const [paybackToast, setPaybackToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
@@ -1867,8 +1871,7 @@ export function BidHistoryContent({
   const [pendingParticipationId, setPendingParticipationId] = useState<
     string | null
   >(null);
-  const actionToastTimerRef = useRef<number | null>(null);
-  const [actionToast, setActionToast] = useState("");
+  const [actionToast, showActionToast] = useToast();
   // 되돌리기 어려운 참여 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
     useState<ConfirmSheetRequest | null>(null);
@@ -2060,18 +2063,6 @@ export function BidHistoryContent({
 
       if (paymentSheetCloseTimerRef.current !== null) {
         window.clearTimeout(paymentSheetCloseTimerRef.current);
-      }
-
-      if (paymentCopyToastTimerRef.current !== null) {
-        window.clearTimeout(paymentCopyToastTimerRef.current);
-      }
-
-      if (paybackToastTimerRef.current !== null) {
-        window.clearTimeout(paybackToastTimerRef.current);
-      }
-
-      if (actionToastTimerRef.current !== null) {
-        window.clearTimeout(actionToastTimerRef.current);
       }
 
       if (addressSheetCloseTimerRef.current !== null) {
@@ -2810,19 +2801,11 @@ export function BidHistoryContent({
         ) ?? records,
     );
 
-    if (paybackToastTimerRef.current !== null) {
-      window.clearTimeout(paybackToastTimerRef.current);
-    }
-
-    setPaybackToast(
+    showActionToast(
       wasRequested
         ? "후기 링크를 수정했어요!"
         : "배송비 환급 신청 완료! 후기 확인 후 배송비를 보내드려요.",
     );
-    paybackToastTimerRef.current = window.setTimeout(() => {
-      setPaybackToast("");
-      paybackToastTimerRef.current = null;
-    }, 3200);
   }
 
   function openStatusHelpSheet() {
@@ -2991,18 +2974,6 @@ export function BidHistoryContent({
     } finally {
       setDeletingHostedProductId(null);
     }
-  }
-
-  function showActionToast(message: string) {
-    if (actionToastTimerRef.current !== null) {
-      window.clearTimeout(actionToastTimerRef.current);
-    }
-
-    setActionToast(message);
-    actionToastTimerRef.current = window.setTimeout(() => {
-      setActionToast("");
-      actionToastTimerRef.current = null;
-    }, 3200);
   }
 
   // 자리 2개 이상 묶음의 카드. 이체 1회 · 배송비 1회 · 택배 1개를 한 장으로 보여준다.
@@ -3701,21 +3672,12 @@ export function BidHistoryContent({
       return;
     }
 
-    if (paymentCopyToastTimerRef.current !== null) {
-      window.clearTimeout(paymentCopyToastTimerRef.current);
-    }
-
     try {
       await navigator.clipboard.writeText(value);
-      setPaymentCopyToast(`${label}가 복사됐어요.`);
+      showPaymentCopyToast(`${label}가 복사됐어요.`);
     } catch {
-      setPaymentCopyToast(`${label}를 복사하지 못했어요.`);
+      showPaymentCopyToast(`${label}를 복사하지 못했어요.`);
     }
-
-    paymentCopyToastTimerRef.current = window.setTimeout(() => {
-      setPaymentCopyToast("");
-      paymentCopyToastTimerRef.current = null;
-    }, 1800);
   }
 
   // 스크롤 복원 단일 이펙트 — 탭 전환 복원(우선)과 세션스토리지 복원(페이지 재진입)을
@@ -4806,17 +4768,10 @@ export function BidHistoryContent({
                   개최자 오픈채팅 참여하기 →
                 </a>
               ) : null}
-              {paymentCopyToast ? (
-                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                  <p
-                    aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                    role="status"
-                  >
-                    {paymentCopyToast}
-                  </p>
-                </div>
-              ) : null}
+              <Toast
+                className="absolute inset-x-0 bottom-3 px-4"
+                message={paymentCopyToast}
+              />
             </div>
 
             <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
@@ -4913,17 +4868,10 @@ export function BidHistoryContent({
         request={confirmSheetRequest}
       />
 
-      {actionToast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
-          <p
-            aria-live="polite"
-            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-            role="status"
-          >
-            {actionToast}
-          </p>
-        </div>
-      ) : null}
+      <Toast
+        className="fixed inset-x-0 bottom-24 z-50 px-6"
+        message={actionToast}
+      />
 
       {selectedPaybackBid ? (
         <ShippingFeePaybackSheet
@@ -4941,18 +4889,6 @@ export function BidHistoryContent({
             payback: selectedPaybackBid.payback ?? null,
           }}
         />
-      ) : null}
-
-      {paybackToast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
-          <p
-            aria-live="polite"
-            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-            role="status"
-          >
-            {paybackToast}
-          </p>
-        </div>
       ) : null}
 
       {isAddressSheetOpen ? (

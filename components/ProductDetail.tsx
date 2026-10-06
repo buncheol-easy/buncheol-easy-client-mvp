@@ -90,6 +90,11 @@ import {
   TrashIcon,
 } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
@@ -1109,7 +1114,6 @@ export function ProductDetail({
   const checkoutSelectedOptionsRef = useRef<CheckoutAddressReturnOption[]>([]);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
-  const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
   const wasProductImageDraggedRef = useRef(false);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
@@ -1153,12 +1157,12 @@ export function ProductDetail({
   const checkoutAddressCreateRef = useRef(false);
   // 공유 시트가 뜨는 동안 재진입을 막는다 (checkoutAddressCreateRef 와 동일 패턴).
   const isSharePendingRef = useRef(false);
-  const productToastTimerRef = useRef<number | null>(null);
-  const [productToast, setProductToast] = useState("");
+  const [productToast, showProductToast] = useToast();
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
-  const [checkoutCopyToast, setCheckoutCopyToast] = useState("");
+  const [checkoutCopyToast, showCheckoutCopyToast, hideCheckoutCopyToast] =
+    useToast(BRIEF_TOAST_DURATION_MS);
   const [auctionOptions, setAuctionOptions] = useState<ProductOption[]>(
     product.options,
   );
@@ -1438,26 +1442,6 @@ export function ProductDetail({
     writeDeliveryAddressState(nextAddressState);
     return nextAddressState;
   }
-
-  function showProductToast(message: string) {
-    if (productToastTimerRef.current !== null) {
-      window.clearTimeout(productToastTimerRef.current);
-    }
-
-    setProductToast(message);
-    productToastTimerRef.current = window.setTimeout(() => {
-      setProductToast("");
-      productToastTimerRef.current = null;
-    }, 3200);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (productToastTimerRef.current !== null) {
-        window.clearTimeout(productToastTimerRef.current);
-      }
-    };
-  }, []);
 
   // 계좌 시트 등장 트랜지션 — 다른 시트들의 rAF 2단계 진입 패턴과 동일.
   useEffect(() => {
@@ -2110,13 +2094,19 @@ export function ProductDetail({
     setCheckoutCodeInput("");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
 
     // 이 리셋이 복원된 체크아웃 상태를 지웠을 수 있으므로 재적용을 예약한다.
     if (pendingCheckoutRestoreRef.current?.productId === buncheolId) {
       shouldApplyCheckoutRestoreRef.current = true;
     }
-  }, [buncheolId, product.id, product.isHostedByMe, product.options]);
+  }, [
+    buncheolId,
+    hideCheckoutCopyToast,
+    product.id,
+    product.isHostedByMe,
+    product.options,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2268,7 +2258,7 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -3250,10 +3240,6 @@ export function ProductDetail({
       if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
         window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
       }
-
-      if (checkoutCopyToastTimerRef.current !== null) {
-        window.clearTimeout(checkoutCopyToastTimerRef.current);
-      }
     };
   }, []);
 
@@ -3478,7 +3464,7 @@ export function ProductDetail({
     setCheckoutPaymentSummary(null);
     setCheckoutCodeInput("");
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -3669,7 +3655,7 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
 
     if (sheetCloseFallbackTimerRef.current !== null) {
       window.clearTimeout(sheetCloseFallbackTimerRef.current);
@@ -3759,19 +3745,10 @@ export function ProductDetail({
   async function copyCheckoutText(value: string, label: string) {
     try {
       await navigator.clipboard.writeText(value);
-      setCheckoutCopyToast(`${label}를 복사했어요.`);
+      showCheckoutCopyToast(`${label}를 복사했어요.`);
     } catch {
-      setCheckoutCopyToast(`${label} 복사에 실패했어요.`);
+      showCheckoutCopyToast(`${label} 복사에 실패했어요.`);
     }
-
-    if (checkoutCopyToastTimerRef.current !== null) {
-      window.clearTimeout(checkoutCopyToastTimerRef.current);
-    }
-
-    checkoutCopyToastTimerRef.current = window.setTimeout(() => {
-      setCheckoutCopyToast("");
-      checkoutCopyToastTimerRef.current = null;
-    }, 1800);
   }
 
   async function handleShareProduct() {
@@ -4894,13 +4871,10 @@ export function ProductDetail({
                             </span>
                           ) : null}
                         </p>
-                        {checkoutCopyToast ? (
-                          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                            <p className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]">
-                              {checkoutCopyToast}
-                            </p>
-                          </div>
-                        ) : null}
+                        <Toast
+                          className="absolute inset-x-0 bottom-3 px-4"
+                          message={checkoutCopyToast}
+                        />
                       </div>
 
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
@@ -5396,17 +5370,10 @@ export function ProductDetail({
           </div>
         ) : null}
 
-        {productToast ? (
-          <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[70] flex justify-center px-6">
-            <p
-              aria-live="polite"
-              className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-              role="status"
-            >
-              {productToast}
-            </p>
-          </div>
-        ) : null}
+        <Toast
+          className="fixed inset-x-0 bottom-24 z-[70] px-6"
+          message={productToast}
+        />
 
         {isImageViewerOpen && productImages.length > 0 ? (
           <div className="fixed inset-0 z-[60] flex flex-col bg-black">
