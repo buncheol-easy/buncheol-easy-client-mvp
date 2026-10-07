@@ -13,65 +13,63 @@ import {
 } from "@/components/IntroContent";
 import {
   BanknoteIcon,
+  BellIcon,
   ClipboardListIcon,
+  ProfileIcon,
   UsersRoundIcon,
 } from "@/components/icons";
 
-const eventSteps = [
+const guidePreparations = [
   {
-    body: "카카오 연령대 동의(20대 이상 구간부터 확인돼요), 전화번호, 정산 계좌가 있어야 개최 화면이 열려요. 지원금도 이 정산 계좌로 보내 드려요.",
-    label: "준비하기",
+    body: "개최는 성인 회원만 할 수 있어요. 카카오 로그인 때 '연령대' 제공에 동의해 주세요. 카카오는 연령대를 구간으로 알려줘서 20대 이상 구간부터 확인돼요. 동의하지 않았다면 카카오로 다시 로그인하면서 동의할 수 있어요.",
+    icon: UsersRoundIcon,
+    title: "카카오 연령대 동의",
   },
   {
-    body: "개최 화면의 배송비 칸(GS25 반값택배·CU 알뜰택배)에 0을 적어 주세요. 참여자는 무료 배송으로 신청해요.",
-    label: "배송비 0원으로 열기",
+    body: "참여자와 문제가 생겼을 때 연락이 닿아야 해서 필요해요. 전화번호는 참여자에게 그냥 공개되지 않아요.",
+    icon: ProfileIcon,
+    title: "닉네임 · 전화번호",
   },
   {
-    body: "택배를 보낸 뒤 관리 화면에 운송장 번호를 넣으면 그게 증빙이에요. 배송이 확인되면 실제 택배비를 보내 드려요.",
-    label: "운송장 입력하기",
+    body: "참여자가 총대님 계좌로 직접 입금해요. 마이페이지 > 정산 계좌에서 등록하고, 예금주명은 실제 통장과 같게 적어 주세요.",
+    icon: BanknoteIcon,
+    title: "정산 계좌",
   },
 ] as const;
 
-const eventTerms = [
-  { label: "대상", value: "분철이지에서 처음 여는 분철 1건" },
-  { label: "지원", value: "참여자에게 보낸 실제 택배비, 분철 1건에 2만 원까지" },
-  { label: "지급", value: "배송이 확인되면 등록한 정산 계좌로" },
-  { label: "취소되면", value: "인원 미달로 취소된 경우 다음에 여는 배송비 0원 분철에 적용" },
-] as const;
-
-const hostChapters = [
+const guideSteps: readonly { body: string; details?: readonly string[]; label: string }[] = [
   {
-    items: [
-      "그룹을 고르면 멤버 수만큼 자리가 한 번에 생겨요. 가격은 한 칸만 적고 비어 있는 멤버에 같은 가격을 한 번에 넣을 수 있어요.",
-      "사진과 분철 제목, 마감 기한, 배송비를 적어요. 이벤트에 참여한다면 배송비는 0원이에요.",
-      "오픈채팅 링크를 넣으면 참여한 사람에게만 보여요.",
+    body: "개최 화면에서 아래 항목을 채우면 분철이 열려요.",
+    details: [
+      "사진, 분철 제목, 그룹",
+      "멤버별 가격 — 비어 있는 멤버에 같은 가격을 한 번에 넣을 수 있어요",
+      "최소 진행 인원과 마감 기한",
+      "배송비 — GS25 반값택배·CU 알뜰택배, 0원(무료 배송)도 돼요",
+      "구매처와 설명, 오픈채팅 링크(참여한 사람에게만 보여요)",
     ],
-    label: "1장 열기",
-    tip: "최소 진행 인원은 처음에 멤버 수 전체로 들어가 있어요. 그대로 두면 한 자리만 비어도 취소되니, 덜 모여도 진행할 거면 등록할 때 줄여 두세요.",
-    title: "폼 한 장이면 오픈",
+    label: "분철 등록",
   },
   {
-    items: [
-      "분철 상세의 공유 버튼으로 링크를 복사해 트위터 모집글에 붙여요. 신청 순서대로 자리가 잡히고, 이때는 아무도 입금하지 않아요.",
-      "마감 뒤 48시간 안에 '성사 확정하기'를 눌러요. '이제 입금 받을게요' 버튼이라, 누르면 신청자 모두에게 계좌와 24시간 입금 기한이 알림톡으로 가요.",
-      "참여자가 '보냈어요'를 누르면 표시돼요. 통장의 입금자명과 금액을 대조하고 '입금 확인'을 눌러요.",
-      "24시간이 지나도 입금 안 한 참여는 저절로 빠지지 않아요. '제외'로 빼고 '입금한 N자리로 진행 확정'을 눌러요. '입금한 자리로 보낼게요' 버튼이에요. 전원이 입금했다면 자동으로 넘어가요.",
-    ],
-    label: "2장 모으기",
-    tip: null,
-    title: "확정 버튼 두 번",
+    body: "분철 상세의 공유 버튼을 누르면 링크가 복사돼요. 트위터 모집글에 붙여 주세요. 신청 순서대로 자리가 잡혀 같은 자리에 두 명이 겹치지 않고, 이 단계에서는 아무도 입금하지 않아요.",
+    label: "링크 공유",
   },
   {
-    items: [
-      "참여자가 고른 편의점 배송지가 관리 화면에 보여요. 그 편의점 택배로 보내면 돼요.",
-      "운송장 번호를 넣고 등록하면 참여자에게 알림톡이 가고 배송 상태가 자동으로 바뀌어요.",
-      "이 운송장이 이벤트 증빙이에요. 따로 캡처해서 보내실 건 없어요.",
-    ],
-    label: "3장 보내기",
-    tip: null,
-    title: "번호만 넣으면 끝",
+    body: "신청이 모이면 관리 화면에서 '성사 확정하기'를 눌러요. 신청자 전원에게 입금 계좌와 24시간 입금 기한이 알림톡으로 가요. 최소 진행 인원에 못 미쳐도 직접 판단해서 확정할 수 있어요.",
+    label: "성사 확정",
   },
-] as const;
+  {
+    body: "참여자가 송금 후 '보냈어요'를 누르면 표시돼요. 통장에서 입금자명을 대조하고 '입금 확인'을 눌러 주세요. 기한이 지나도 입금 안 한 참여는 자동으로 빠지지 않아요. 직접 '제외'해야 다음 단계로 넘어가요.",
+    label: "입금 확인",
+  },
+  {
+    body: "참여자 전원의 입금을 확인하면 보통 자동으로 진행 확정돼요. 관리 화면에 '입금한 N자리로 진행 확정' 버튼이 보이면 직접 눌러 주세요. 확정 후에는 참여를 더 받을 수 없어요.",
+    label: "진행 확정",
+  },
+  {
+    body: "진행 확정이 되면 운송장을 등록할 수 있어요. 택배를 보낸 뒤 운송장 번호를 넣으면 참여자에게 알림이 가고 배송 상태가 자동으로 바뀌어요. 참여자가 편의점에서 받고 수령을 확인하면 끝이에요.",
+    label: "운송장 등록",
+  },
+];
 
 const guideCautions = [
   {
@@ -80,9 +78,14 @@ const guideCautions = [
     title: "인원이 안 차면 자동 취소",
   },
   {
-    body: "참여자가 보낸 돈은 분철이지를 거치지 않고 총대님 계좌로 바로 들어와요. 그래서 입금 확인은 통장을 보고 직접 해 주세요.",
+    body: "인원이 찼더라도 모집 기한이 지나고 2일(48시간) 안에 '성사 확정하기'를 누르지 않으면 자동으로 취소돼요.",
+    icon: BellIcon,
+    title: "확정은 마감 후 48시간 안에",
+  },
+  {
+    body: "참여자가 총대님 계좌로 직접 보내는 직거래라 통장을 보고 직접 확인해 주세요.",
     icon: BanknoteIcon,
-    title: "돈은 내 계좌로 바로",
+    title: "입금 확인은 직접",
   },
   {
     body: "분철을 열고 운영하는 데 드는 수수료는 지금은 없어요.",
@@ -119,27 +122,27 @@ export function HostGuideContent() {
               {/* DM 링크로 바로 들어오는 페이지라 첫 화면 글자는 하이드레이션을 기다리지 않고 보이게 둔다(Reveal 미사용). */}
               <div>
                 <span className="inline-flex items-center rounded-full border border-[#0A0B0D]/8 bg-white/85 px-3.5 py-1.5 text-[12.5px] font-semibold tracking-[-0.02em] text-[#5A6069] shadow-[0_1px_2px_rgba(10,11,13,0.04)] backdrop-blur">
-                  첫 분철 배송비 지원 이벤트
+                  처음 여는 분을 위한 개최 가이드
                 </span>
 
                 <h1 className="mt-6 text-[50px] font-semibold leading-[1.12] tracking-[-0.05em]">
-                  첫 분철,
+                  내 분철,
                   <br />
-                  택배비는
+                  직접 열어도
                   <br />
                   {/* isolate 필수 — 형광펜이 -z-10 이라 stacking context 가 없으면 섹션 배경에 덮인다. */}
                   <span className="relative isolate inline-block">
                     <span className="absolute inset-x-[-0.08em] bottom-[0.14em] top-[0.52em] -z-10 rounded-[0.1em] bg-[#d7ff5f]" />
-                    저희가.
+                    쉽게.
                   </span>
                 </h1>
 
                 <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
-                  분철이지에서 처음 여는 분철을 배송비 0원으로 열면,
+                  신청 받기부터 입금 확인, 운송장 알림까지
                   <br />
-                  참여자에게 보내는 실제 택배비를
+                  분철이지 한 화면에서 관리해요.
                   <br />
-                  분철 1건에 2만 원까지 드려요.
+                  이 순서대로 따라 하면 첫 분철을 열 수 있어요.
                 </p>
 
                 <div className="mt-8 flex flex-wrap items-center gap-2.5">
@@ -152,9 +155,9 @@ export function HostGuideContent() {
                   </Link>
                   <a
                     className="rounded-full border border-[#0A0B0D]/10 bg-white px-5 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-[#5A6069] shadow-[0_1px_2px_rgba(10,11,13,0.04)]"
-                    href="#event"
+                    href="#prepare"
                   >
-                    참여 방법 보기
+                    준비할 것 보기
                   </a>
                 </div>
               </div>
@@ -172,63 +175,50 @@ export function HostGuideContent() {
           </section>
 
           <section
-            className="relative -mt-8 rounded-t-[2.5rem] border-t border-[#0A0B0D]/[0.05] bg-[#F6F7F8] px-6 pb-24 pt-24"
-            id="event"
+            className="relative -mt-8 rounded-t-[2.5rem] bg-white px-6 pb-24 pt-24"
+            id="prepare"
           >
             <Reveal>
               <h2 className="break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
-                이벤트 참여는
+                열기 전에
                 <br />
-                세 단계면 돼요.
+                세 가지만 준비해요.
               </h2>
               <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
-                따로 신청할 필요 없어요.
+                셋 중 하나라도 없으면 개최 화면이 열리지 않아요.
                 <br />
-                배송비 0원으로 열고 운송장만 넣어 주세요.
+                전화번호와 정산 계좌는 마이페이지에서 미리 채워 둘 수 있어요.
               </p>
             </Reveal>
 
-            <ol className="mt-10 grid gap-3">
-              {eventSteps.map(({ body, label }, index) => (
-                <li key={label}>
-                  <Reveal delay={index * 70}>
-                    <div className="rounded-[1.3rem] border border-[#0A0B0D]/[0.05] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(10,11,13,0.03),0_14px_30px_-20px_rgba(10,11,13,0.3)]">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#D7FF5F] text-[14px] font-semibold tabular-nums text-[#0A0B0D]">
-                          {index + 1}
-                        </span>
-                        <p className="text-[16.5px] font-semibold tracking-[-0.035em]">
-                          {label}
-                        </p>
-                      </div>
-                      <p className="mt-3 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-[#5A6069]">
-                        {body}
+            <div className="mt-10 grid gap-3">
+              {guidePreparations.map(({ body, icon: Icon, title }, index) => (
+                <Reveal delay={index * 70} key={title}>
+                  <div className="rounded-[1.3rem] border border-[#0A0B0D]/[0.05] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(10,11,13,0.03),0_14px_30px_-20px_rgba(10,11,13,0.3)]">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#D7FF5F] text-[#0A0B0D]">
+                        <Icon className="h-[17px] w-[17px]" />
+                      </span>
+                      <p className="text-[16.5px] font-semibold tracking-[-0.035em]">
+                        {title}
                       </p>
                     </div>
-                  </Reveal>
-                </li>
-              ))}
-            </ol>
-
-            <Reveal className="mt-6" delay={140}>
-              <dl className="rounded-[1.3rem] bg-[#0A0B0D] px-5 py-5 text-white">
-                {eventTerms.map(({ label, value }) => (
-                  <div
-                    className="grid grid-cols-[4.5rem_1fr] gap-3 border-b border-white/[0.08] py-3 first:pt-0 last:border-b-0 last:pb-0"
-                    key={label}
-                  >
-                    <dt className="text-[13px] font-semibold text-[#D7FF5F]">
-                      {label}
-                    </dt>
-                    <dd className="break-keep text-[14px] font-medium leading-[1.55] text-white/80">
-                      {value}
-                    </dd>
+                    <p className="mt-3 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-[#5A6069]">
+                      {body}
+                    </p>
                   </div>
-                ))}
-              </dl>
-              <p className="mt-3 text-[12.5px] font-medium leading-5 text-[#868C95]">
-                이벤트는 공지 후 종료될 수 있어요.
-              </p>
+                </Reveal>
+              ))}
+            </div>
+
+            <Reveal className="mt-7" delay={140}>
+              <Link
+                className="flex items-center justify-center gap-1.5 rounded-full border border-[#0A0B0D]/10 bg-white px-6 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-[#0A0B0D] shadow-[0_1px_2px_rgba(10,11,13,0.04)]"
+                href="/profile"
+              >
+                마이페이지에서 미리 등록하기
+                <ArrowRight />
+              </Link>
             </Reveal>
           </section>
 
@@ -236,103 +226,76 @@ export function HostGuideContent() {
             <div className="pointer-events-none absolute -left-16 top-40 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.16),transparent_68%)] blur-2xl" />
             <Reveal>
               <h2 className="relative z-10 break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
-                열고, 모으고,
+                분철 여는
                 <br />
-                보내면 끝.
+                여섯 단계.
               </h2>
               <p className="relative z-10 mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-white/52">
-                계좌 안내도, 입금 연락도, 운송장 공지도
+                등록부터 운송장까지,
                 <br />
-                알림톡이 대신 전해 줘요.
+                관리 화면의 버튼 이름 그대로 따라가면 돼요.
               </p>
             </Reveal>
 
-            <div className="relative z-10 mt-12 grid gap-10">
-              {hostChapters.map(({ items, label, tip, title }, chapterIndex) => (
-                <Reveal delay={chapterIndex * 60} key={label}>
-                  <div>
-                    <div className="flex items-center gap-3">
+            {/* ol 의 직계 자식은 li 여야 목록으로 인식된다 — Reveal(div) 은 li 안에 둔다. */}
+            <ol className="relative z-10 mt-12">
+              {guideSteps.map(({ body, details, label }, stepIndex) => (
+                <li className="relative" key={label}>
+                  <Reveal delay={stepIndex * 60}>
+                    <div className="relative grid grid-cols-[2.5rem_1fr] gap-4 pb-8">
+                      {stepIndex === guideSteps.length - 1 ? null : (
+                        <span className="absolute bottom-0 left-[1.25rem] top-10 w-px -translate-x-1/2 bg-gradient-to-b from-white/[0.14] to-white/[0.03]" />
+                      )}
                       <span
-                        className={`rounded-full px-3 py-1 text-[13px] font-semibold ${
-                          chapterIndex === 0
-                            ? "bg-[#D7FF5F] text-[#0A0B0D]"
-                            : "border border-white/[0.14] text-white/75"
+                        className={`flex h-10 w-10 items-center justify-center rounded-full text-[14px] font-semibold tabular-nums ${
+                          stepIndex === 0
+                            ? "bg-[#D7FF5F] text-[#0A0B0D] shadow-[0_0_28px_rgba(215,255,95,0.32)]"
+                            : "border border-white/[0.12] bg-white/[0.05] text-white/70"
                         }`}
                       >
-                        {label}
+                        {stepIndex + 1}
                       </span>
-                      <p className="text-[20px] font-semibold tracking-[-0.04em]">
-                        {title}
-                      </p>
-                    </div>
-                    <ul className="mt-4 space-y-3">
-                      {items.map((item) => (
-                        <li
-                          className="flex gap-2.5 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-white/70"
-                          key={item}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="mt-[0.6em] h-1 w-1 shrink-0 rounded-full bg-[#D7FF5F]"
-                          />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                    {tip ? (
-                      <div className="mt-4 rounded-[1rem] border border-[#D7FF5F]/25 bg-[#D7FF5F]/[0.07] px-4 py-3.5">
-                        <p className="text-[12.5px] font-semibold text-[#D7FF5F]">
-                          Tip
+                      <div className="min-w-0 pt-1.5">
+                        <p className="text-[20px] font-semibold tracking-[-0.04em]">
+                          {label}
                         </p>
-                        <p className="mt-1 break-keep text-[14px] font-medium leading-[1.6] text-white/80">
-                          {tip}
+                        <p className="mt-2 break-keep text-[14.5px] font-medium leading-[1.62] tracking-[-0.02em] text-white/50">
+                          {body}
                         </p>
+                        {details && details.length > 0 ? (
+                          <ul className="mt-3 space-y-2">
+                            {details.map((detail) => (
+                              <li
+                                className="flex gap-2 break-keep text-[14px] font-medium leading-[1.55] tracking-[-0.02em] text-white/70"
+                                key={detail}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className="mt-[0.55em] h-1 w-1 shrink-0 rounded-full bg-[#D7FF5F]"
+                                />
+                                {detail}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
-                </Reveal>
+                    </div>
+                  </Reveal>
+                </li>
               ))}
-            </div>
+            </ol>
           </section>
 
-          <section className="relative -mt-8 rounded-t-[2.5rem] bg-white px-6 pb-24 pt-24">
+          <section className="relative -mt-8 rounded-t-[2.5rem] bg-white px-6 pb-28 pt-24">
             <Reveal>
               <h2 className="break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
-                외워 둘 숫자는
+                열기 전에
                 <br />
-                두 개예요.
+                꼭 알아둘 것.
               </h2>
             </Reveal>
 
-            <Reveal className="mt-10" delay={100}>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="relative overflow-hidden rounded-[1.4rem] bg-[#0A0B0D] px-5 py-6 text-white shadow-[0_20px_44px_-18px_rgba(10,11,13,0.55)]">
-                  <span className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.32),transparent_65%)] blur-xl" />
-                  <p className="relative text-[13px] font-semibold tracking-[-0.02em] text-[#D7FF5F]">
-                    마감 뒤
-                  </p>
-                  <p className="relative mt-4 text-[40px] font-semibold leading-none tracking-[-0.05em]">
-                    48<span className="ml-1 text-[18px]">시간</span>
-                  </p>
-                  <p className="relative mt-4 break-keep text-[13.5px] font-medium leading-[1.5] text-white/60">
-                    안에 성사 확정. 넘기면 자동 취소돼요.
-                  </p>
-                </div>
-                <div className="rounded-[1.4rem] border border-[#0A0B0D]/[0.06] bg-[#F6F7F8] px-5 py-6">
-                  <p className="text-[13px] font-semibold tracking-[-0.02em] text-[#868C95]">
-                    확정 뒤
-                  </p>
-                  <p className="mt-4 text-[40px] font-semibold leading-none tracking-[-0.05em]">
-                    24<span className="ml-1 text-[18px]">시간</span>
-                  </p>
-                  <p className="mt-4 break-keep text-[13.5px] font-medium leading-[1.5] text-[#5A6069]">
-                    입금 기한. 지나도 자동으로 안 빠지니 직접 제외해요.
-                  </p>
-                </div>
-              </div>
-            </Reveal>
-
-            <div className="mt-12">
+            <div className="mt-10">
               {guideCautions.map(({ body, icon: Icon, title }, index) => (
                 <Reveal delay={index * 70} key={title}>
                   <div className="flex gap-4 border-b border-[#0A0B0D]/[0.07] py-6 first:border-t">
@@ -357,12 +320,12 @@ export function HostGuideContent() {
             <div className="pointer-events-none absolute -right-20 top-10 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(215,255,95,0.2),transparent_66%)] blur-2xl" />
             <Reveal>
               <h2 className="relative z-10 break-keep text-[40px] font-semibold leading-[1.16] tracking-[-0.05em]">
-                첫 분철,
+                이제 직접
                 <br />
-                지금 열어볼까요?
+                열어볼까요?
               </h2>
-              <p className="relative z-10 mt-6 break-keep text-[16px] font-medium leading-[1.68] tracking-[-0.02em] text-white/52">
-                처음 여는 분철의 배송비 칸에 0을 적으면 이벤트 참여예요.
+              <p className="relative z-10 mt-6 text-[16px] font-medium leading-[1.68] tracking-[-0.02em] text-white/52">
+                준비만 되어 있으면 바로 열 수 있어요.
               </p>
             </Reveal>
 
