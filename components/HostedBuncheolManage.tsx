@@ -478,9 +478,16 @@ export function HostedBuncheolManage({
       };
     }
 
-    requestHostedBuncheolManagement(accessToken, id)
+    // 만료된 토큰은 요청 전에 재발급한다. 토큰이 바뀌면 이 effect 가 새 토큰으로 다시 돌고,
+    // null(재발급 실패 → 로그인 정보 삭제)이면 로그인 화면 이동이 처리하므로 loadMessage 를 건드리지 않는다.
+    getFreshAccessToken()
+      .then((freshAccessToken) =>
+        isActive && freshAccessToken === accessToken
+          ? requestHostedBuncheolManagement(accessToken, id)
+          : null,
+      )
       .then((nextDetail) => {
-        if (!isActive) {
+        if (!isActive || !nextDetail) {
           return;
         }
 
