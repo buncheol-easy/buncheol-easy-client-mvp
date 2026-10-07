@@ -1822,6 +1822,8 @@ export function BidHistoryContent({
   // 보장되지 않아, 취소 직전 출발한 폴링이 늦게 도착하면 낡은 배송비가 다시 깔린다.
   // 세대를 올려 늦게 온 응답을 버린다 — paymentStoreTypeRequestIdRef 와 같은 방식.
   const bidRecordsGenerationRef = useRef(0);
+  // 개최 목록도 같은 방식 — 삭제 버튼의 재발급으로 다시 돈 첫 로딩의 옛 응답이 지운 카드를 되살리지 않게.
+  const hostedProductsGenerationRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -2238,12 +2240,19 @@ export function BidHistoryContent({
         );
       });
 
+    let hostedProductsGeneration = hostedProductsGenerationRef.current;
+
     isAccessTokenUsable
-      .then((isUsable) =>
-        isUsable ? requestMyHostedBuncheols(accessToken) : null,
-      )
+      .then((isUsable) => {
+        hostedProductsGeneration = hostedProductsGenerationRef.current;
+        return isUsable ? requestMyHostedBuncheols(accessToken) : null;
+      })
       .then((buncheols) => {
-        if (!isActive || !buncheols) {
+        if (
+          !isActive ||
+          !buncheols ||
+          hostedProductsGenerationRef.current !== hostedProductsGeneration
+        ) {
           return;
         }
 
@@ -2251,7 +2260,10 @@ export function BidHistoryContent({
         setHostedMessage("");
       })
       .catch((error: unknown) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          hostedProductsGenerationRef.current !== hostedProductsGeneration
+        ) {
           return;
         }
 
@@ -2993,6 +3005,7 @@ export function BidHistoryContent({
       }
 
       await deleteBuncheol(freshAccessToken, buncheolId);
+      hostedProductsGenerationRef.current += 1;
       setApiHostedProducts((current) =>
         current
           ? current.filter(
