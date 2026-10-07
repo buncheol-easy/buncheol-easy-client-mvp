@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BackIcon } from "@/components/icons";
 import {
@@ -250,7 +249,6 @@ export function HostingIneligibleNotice({
   ageRangeConsentResult,
 }: HostingIneligibleNoticeProps) {
   const router = useRouter();
-  const [isRedirecting, setIsRedirecting] = useState(false);
   const copy = getNoticeCopy(reason, variant);
   const consentResultCopy =
     reason === "AGE_UNVERIFIED" && ageRangeConsentResult
@@ -270,23 +268,7 @@ export function HostingIneligibleNotice({
     router.replace("/");
   }
 
-  // 카카오 화면에서 뒤로 오면 bfcache 로 이 화면이 그대로 복원된다 — 버튼이 "이동 중..."에 묶이지 않게 푼다.
-  useEffect(() => {
-    function handlePageShow(event: PageTransitionEvent) {
-      if (event.persisted) {
-        setIsRedirecting(false);
-      }
-    }
-
-    window.addEventListener("pageshow", handlePageShow);
-
-    return () => {
-      window.removeEventListener("pageshow", handlePageShow);
-    };
-  }, []);
-
   function handleAgeRangeConsent() {
-    setIsRedirecting(true);
     window.location.href = getKakaoAgeRangeConsentUrl();
   }
 
@@ -401,8 +383,7 @@ export function HostingIneligibleNotice({
                   </Link>
                 ) : (
                   <button
-                    className="flex h-14 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
-                    disabled={isRedirecting}
+                    className="flex h-14 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
                     onClick={() => {
                       if (primaryAction.kind === "age-range-consent") {
                         handleAgeRangeConsent();
@@ -413,7 +394,7 @@ export function HostingIneligibleNotice({
                     }}
                     type="button"
                   >
-                    {isRedirecting ? "이동 중..." : primaryAction.label}
+                    {primaryAction.label}
                   </button>
                 )}
                 {"kind" in primaryAction && primaryAction.note ? (
