@@ -56,7 +56,7 @@ export type UserProfileStatus = {
 export const hostingEligibilityReasons = [
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
-  // 연령대 미확인 — 카카오 재로그인 동의로 회복 가능 (서버 USR-032)
+  // 연령대 미확인 — 카카오 연령대 추가 동의로 회복 가능 (서버 USR-032)
   "AGE_UNVERIFIED",
   // 미성년 확정 — 개최 불가 (서버 USR-033)
   "NOT_ADULT",
@@ -622,6 +622,23 @@ async function fetchWithTimeout(
 
 export function getKakaoAuthorizationUrl() {
   return `${getApiRootUrl()}/oauth2/authorization/kakao`;
+}
+
+// 로그인은 그대로 둔 채 카카오에 연령대만 추가로 동의받는다. 서버가 결과를 /upload?ageRangeConsent= 로 돌려준다.
+export function getKakaoAgeRangeConsentUrl() {
+  return `${getApiRootUrl()}/oauth2/authorization/kakao/age-range`;
+}
+
+export const ageRangeConsentResultParam = "ageRangeConsent";
+
+const ageRangeConsentResults = ["agreed", "cancelled", "failed"] as const;
+
+export type AgeRangeConsentResult = (typeof ageRangeConsentResults)[number];
+
+export function parseAgeRangeConsentResult(
+  value: string | undefined,
+): AgeRangeConsentResult | undefined {
+  return ageRangeConsentResults.find((result) => result === value);
 }
 
 function getAuthHeaders(accessToken?: string): Record<string, string> {
