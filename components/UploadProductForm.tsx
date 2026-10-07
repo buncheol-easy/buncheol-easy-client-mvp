@@ -697,8 +697,7 @@ export function UploadProductForm({
     {},
   );
   const isSubmittingRef = useRef(false);
-  // 제출 후 router.push/replace 도 이 전환에 묶여 화면이 바뀔 때까지 pending 이 유지된다 — ref 는 응답 직후
-  // 풀리므로 그 사이 재제출은 pending 으로 막는다.
+  // 제출 안의 router.push/replace 도 이 전환에 묶여 화면이 바뀔 때까지 pending 이 유지된다.
   const [isSubmitPending, startSubmitTransition] = useTransition();
 
   /*
@@ -1801,10 +1800,7 @@ export function UploadProductForm({
       return;
     }
 
-    /*
-     * 버튼이 항상 눌리게 되면서 연타로 createBuncheol 이 두 번 나가는 경로가 넓어졌다.
-     * state 가 아니라 ref 로 막는다 — 같은 틱에 두 번 눌리면 두 호출 모두 갱신 전 state 를 본다.
-     */
+    // ref 는 같은 틱 연타(둘 다 갱신 전 state 를 봄)를, pending 은 응답 뒤 화면 전환이 끝날 때까지의 재제출을 막는다.
     if (isSubmittingRef.current || isSubmitPending) {
       return;
     }
@@ -2099,7 +2095,10 @@ export function UploadProductForm({
           let nextProductId = createdBuncheolId;
 
           if (!nextProductId) {
-            const hostedProducts = await requestMyHostedBuncheols(accessToken);
+            // 개최는 이미 성공했다 — 여기서 에러를 띄우면 다시 눌러 중복 개최가 되므로, 못 찾으면 내 개최 목록으로 보낸다.
+            const hostedProducts = await requestMyHostedBuncheols(
+              accessToken,
+            ).catch(() => []);
             nextProductId =
               hostedProducts.find((hostedProduct) => {
                 return (
@@ -3406,13 +3405,9 @@ export function UploadProductForm({
               onClick={handleSubmit}
               type="button"
             >
-              {isEditMode
-                ? isSubmitPending
-                  ? "수정 중…"
-                  : "수정 완료"
-                : isSubmitPending
-                  ? "등록 중…"
-                  : "등록하기"}
+              {isSubmitPending
+                ? isEditMode ? "수정 중…" : "등록 중…"
+                : isEditMode ? "수정 완료" : "등록하기"}
             </button>
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
