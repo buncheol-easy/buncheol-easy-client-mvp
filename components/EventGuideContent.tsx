@@ -10,7 +10,7 @@ import {
   usePrefersReducedMotion,
 } from "@/components/IntroContent";
 
-// 라임색은 받는 돈(금액 카드·지급 줄)과 꼭 기억할 숫자에만 쓴다. 나머지 강조는 검정·회색으로.
+// 라임색 강조는 받는 돈(금액 카드·지급 줄), 꼭 기억할 문구 형광펜, 마지막 버튼에만 쓴다. 나머지 강조는 검정·회색으로.
 const eventTerms = [
   { label: "대상", value: "처음 여는 분철 1건" },
   { label: "조건", value: "배송비 모두 0원" },
@@ -30,6 +30,12 @@ const keyPoints = [
     highlight: "입금 기한 24시간",
     title: " 뒤엔 직접 정리",
   },
+] as const;
+
+const hostRequirements = [
+  "카카오 연령대 20대 이상",
+  "닉네임·전화번호",
+  "정산 계좌(지원금도 여기로)",
 ] as const;
 
 const replacedChores = ["계좌 DM", "엑셀 대조", "운송장 DM"] as const;
@@ -73,7 +79,7 @@ export function EventGuideContent() {
                 첫 분철 배송비 지원 이벤트
               </span>
 
-              <h1 className="mt-5 text-[46px] font-semibold leading-[1.12] tracking-[-0.05em]">
+              <h1 className="mt-5 break-keep text-[46px] font-semibold leading-[1.12] tracking-[-0.05em]">
                 첫 분철,
                 <br />
                 택배비는 저희가.
@@ -95,16 +101,16 @@ export function EventGuideContent() {
                 </p>
               </div>
 
-              <div className="mt-6 flex items-center gap-2.5">
+              <div className="mt-6 flex flex-wrap items-center gap-2.5">
                 <Link
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#0A0B0D] px-6 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-white shadow-[0_1px_2px_rgba(10,11,13,0.24),0_16px_32px_-12px_rgba(10,11,13,0.45)]"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[#0A0B0D] px-6 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-white shadow-[0_1px_2px_rgba(10,11,13,0.24),0_16px_32px_-12px_rgba(10,11,13,0.45)]"
                   href="/upload"
                 >
                   분철 열러 가기
                   <ArrowRight />
                 </Link>
                 <a
-                  className="rounded-full border border-[#0A0B0D]/10 bg-white px-5 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-[#5A6069]"
+                  className="whitespace-nowrap rounded-full border border-[#0A0B0D]/10 bg-white px-5 py-4 text-[15.5px] font-semibold tracking-[-0.02em] text-[#5A6069]"
                   href="#event"
                 >
                   참여 방법
@@ -135,6 +141,21 @@ export function EventGuideContent() {
               <p className="mt-2 text-[15.5px] font-medium tracking-[-0.02em] text-[#5A6069]">
                 따로 신청할 필요 없어요.
               </p>
+              <div className="mt-5">
+                <p className="text-[12.5px] font-semibold text-[#868C95]">
+                  열기 전에 필요해요
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {hostRequirements.map((requirement) => (
+                    <li
+                      className="rounded-full border border-[#0A0B0D]/10 bg-white px-3 py-1.5 text-[13px] font-semibold tracking-[-0.02em]"
+                      key={requirement}
+                    >
+                      {requirement}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </Reveal>
 
             <ol className="mt-8 grid gap-3">
@@ -168,7 +189,7 @@ export function EventGuideContent() {
                       ))}
                     </div>
                     <p className="mt-3 text-[13px] font-medium text-[#868C95]">
-                      둘 다 골랐다면 둘 다 0원이에요.
+                      GS25·CU 둘 다 골랐다면 둘 다 0원이에요.
                     </p>
                   </div>
                 </Reveal>
@@ -222,11 +243,11 @@ export function EventGuideContent() {
             </ol>
 
             <Reveal className="mt-3" delay={200}>
-              <div className="flex items-center justify-between gap-3 rounded-[1.3rem] bg-[#D7FF5F] px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[1.3rem] bg-[#D7FF5F] px-5 py-4">
                 <p className="text-[14px] font-semibold tracking-[-0.03em] text-[#3C4A12]">
                   배송이 확인되면
                 </p>
-                <p className="text-[16px] font-semibold tracking-[-0.035em]">
+                <p className="whitespace-nowrap text-[16px] font-semibold tracking-[-0.035em]">
                   1건당 3,000원 입금
                 </p>
               </div>
