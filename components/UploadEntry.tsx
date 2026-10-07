@@ -61,9 +61,9 @@ export function UploadEntry({
   const currentCheck =
     check && check.token === authState.accessToken ? check : null;
 
-  // 새로고침·공유 때 지난 결과 안내가 다시 뜨지 않도록 주소에서만 지운다. 이번 화면의 안내는 props 로 그대로 남는다.
-  // ⚠️ state 는 넘겨받은 그대로 둔다 — 마운트 effect 는 Next 의 replaceState 패치보다 먼저 돌아 null 을 넘기면
-  // 라우터 내부 상태가 지워지고, 이 기록으로 뒤로가기 했을 때 주소만 바뀌고 화면은 그대로 남는다.
+  // 새로고침·공유 때 지난 결과 안내가 다시 뜨지 않도록 주소에서만 지운다.
+  // ⚠️ 이 effect 는 Next 의 replaceState 패치보다 먼저 돌아 라우터를 거치지 않는다 — state 를 null 로 넘기면 뒤로가기
+  // 복원이 깨지고, 라우터 canonicalUrl 엔 쿼리가 남아 이 화면에서 router.refresh 를 부르면 쿼리가 되살아난다.
   useEffect(() => {
     if (!ageRangeConsentResult) {
       return;

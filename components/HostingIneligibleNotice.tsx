@@ -20,8 +20,7 @@ type HostingIneligibleNoticeProps = {
   // 사유를 모를 때 요건 안내 카피를 그대로 쓰면 "이제 직접 열 수 있어요 → 개최하러 가기" 가 떠서
   // 방금 막힌 사용자에게 거짓 안내 + 제자리 도는 CTA 가 된다.
   variant?: "blocked" | "requirements";
-  // 연령대 추가 동의에서 돌아왔는데 아직 미확인이면 왜 그대로인지 알린다. 동의했다고 돌아와도 다른 카카오 계정으로
-  // 동의했을 수 있어 성공 문구는 쓰지 않는다 — 자격이 확인되면 이 화면 대신 개최 폼이 열린다.
+  // 연령대 추가 동의에서 돌아온 결과 — 아직 미확인일 때만 안내한다.
   ageRangeConsentResult?: AgeRangeConsentResult;
 };
 
