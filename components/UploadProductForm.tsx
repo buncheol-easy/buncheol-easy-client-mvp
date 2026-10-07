@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  useTransition,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -696,6 +697,8 @@ export function UploadProductForm({
     {},
   );
   const isSubmittingRef = useRef(false);
+  // 제출 안의 router.push/replace 도 이 전환에 묶여 화면이 바뀔 때까지 pending 이 유지된다.
+  const [isSubmitPending, startSubmitTransition] = useTransition();
 
   /*
    * 폼에 사용자가 손댔는지 판정한다.
@@ -1788,7 +1791,7 @@ export function UploadProductForm({
     setActiveScheduleField(field);
   }
 
-  async function handleSubmit() {
+  function handleSubmit() {
     // 버튼이 살아 있으므로 제출 경로에서 다시 막는다 — 버튼 활성화가 곧 제출 허용이 아니다.
     if (submitBlock) {
       // 이전 서버 에러가 남아 있으면 인라인 안내와 하단 문구가 서로 다른 말을 한다.
@@ -1797,21 +1800,23 @@ export function UploadProductForm({
       return;
     }
 
-    /*
-     * 버튼이 항상 눌리게 되면서 연타로 createBuncheol 이 두 번 나가는 경로가 넓어졌다.
-     * state 가 아니라 ref 로 막는다 — 같은 틱에 두 번 눌리면 두 호출 모두 갱신 전 state 를 본다.
-     */
-    if (isSubmittingRef.current) {
+    // ref 는 같은 틱 연타(둘 다 갱신 전 state 를 봄)를, pending 은 응답 뒤 화면 전환이 끝날 때까지의 재제출을 막는다.
+    if (isSubmittingRef.current || isSubmitPending) {
       return;
     }
 
     isSubmittingRef.current = true;
 
-    try {
-      await submitForm();
-    } finally {
-      isSubmittingRef.current = false;
-    }
+    startSubmitTransition(async () => {
+      try {
+        await submitForm();
+      } catch {
+        // 전환 안에서 던지면 에러 바운더리로 올라가 페이지 전체가 깨진다(토큰 재발급 네트워크 실패 등).
+        setSubmitError("분철 저장에 실패했어요.");
+      } finally {
+        isSubmittingRef.current = false;
+      }
+    });
   }
 
   async function submitForm() {
@@ -2090,7 +2095,10 @@ export function UploadProductForm({
           let nextProductId = createdBuncheolId;
 
           if (!nextProductId) {
-            const hostedProducts = await requestMyHostedBuncheols(accessToken);
+            // 개최는 이미 성공했다 — 여기서 에러를 띄우면 다시 눌러 중복 개최가 되므로, 못 찾으면 내 개최 목록으로 보낸다.
+            const hostedProducts = await requestMyHostedBuncheols(
+              accessToken,
+            ).catch(() => []);
             nextProductId =
               hostedProducts.find((hostedProduct) => {
                 return (
@@ -2235,7 +2243,7 @@ export function UploadProductForm({
                 className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void handleSubmit();
+                  handleSubmit();
                 }}
                 ref={formScrollRef}
               >
@@ -2544,10 +2552,11 @@ export function UploadProductForm({
                       ) : null}
 
                       <button
-                        className="mt-6 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.05em] text-white"
+                        className="mt-6 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.05em] text-white disabled:opacity-60"
+                        disabled={isSubmitPending}
                         type="submit"
                       >
-                        수정 완료
+                        {isSubmitPending ? "수정 중…" : "수정 완료"}
                       </button>
                     </section>
                   </>
@@ -3391,11 +3400,14 @@ export function UploadProductForm({
             </div>
 
             <button
-              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
+              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60"
+              disabled={isSubmitPending}
               onClick={handleSubmit}
               type="button"
             >
-              {isEditMode ? "수정 완료" : "등록하기"}
+              {isSubmitPending
+                ? isEditMode ? "수정 중…" : "등록 중…"
+                : isEditMode ? "수정 완료" : "등록하기"}
             </button>
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
