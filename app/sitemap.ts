@@ -24,7 +24,6 @@ const staticRoutes = [
   "",
   "/intro",
   "/guide",
-  "/event",
   "/board",
   "/privacy",
   "/terms",
