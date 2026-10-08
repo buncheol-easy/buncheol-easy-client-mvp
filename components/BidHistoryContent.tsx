@@ -1822,6 +1822,8 @@ export function BidHistoryContent({
   // 보장되지 않아, 취소 직전 출발한 폴링이 늦게 도착하면 낡은 배송비가 다시 깔린다.
   // 세대를 올려 늦게 온 응답을 버린다 — paymentStoreTypeRequestIdRef 와 같은 방식.
   const bidRecordsGenerationRef = useRef(0);
+  // 개최 목록도 같은 방식 — 삭제 버튼의 재발급으로 다시 돈 첫 로딩의 옛 응답이 지운 카드를 되살리지 않게.
+  const hostedProductsGenerationRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -2134,10 +2136,26 @@ export function BidHistoryContent({
     }
 
     let isActive = true;
+    // 만료된 토큰은 요청 전에 재발급한다. 토큰이 바뀌면 이 effect 가 새 토큰으로 다시 돌고,
+    // null(재발급 실패 → 로그인 정보 삭제)이면 로그인 화면 이동이 처리하므로 여기선 아무것도 띄우지 않는다.
+    const isAccessTokenUsable = getFreshAccessToken().then(
+      (freshAccessToken) => isActive && freshAccessToken === accessToken,
+    );
+    // 버튼(취소·보냈어요)이 재발급하면 이 effect 가 그 요청과 동시에 다시 돈다. 버튼이 낙관 반영하며
+    // 세대를 올리므로, 그보다 먼저 출발한 목록 응답은 반영 전 상태라 버린다(폴링과 같은 방식).
+    let participationsGeneration = bidRecordsGenerationRef.current;
 
-    requestMyParticipations(accessToken)
+    isAccessTokenUsable
+      .then((isUsable) => {
+        participationsGeneration = bidRecordsGenerationRef.current;
+        return isUsable ? requestMyParticipations(accessToken) : null;
+      })
       .then((participations) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          !participations ||
+          bidRecordsGenerationRef.current !== participationsGeneration
+        ) {
           return;
         }
 
@@ -2207,7 +2225,10 @@ export function BidHistoryContent({
         });
       })
       .catch((error: unknown) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          bidRecordsGenerationRef.current !== participationsGeneration
+        ) {
           return;
         }
 
@@ -2219,9 +2240,19 @@ export function BidHistoryContent({
         );
       });
 
-    requestMyHostedBuncheols(accessToken)
+    let hostedProductsGeneration = hostedProductsGenerationRef.current;
+
+    isAccessTokenUsable
+      .then((isUsable) => {
+        hostedProductsGeneration = hostedProductsGenerationRef.current;
+        return isUsable ? requestMyHostedBuncheols(accessToken) : null;
+      })
       .then((buncheols) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          !buncheols ||
+          hostedProductsGenerationRef.current !== hostedProductsGeneration
+        ) {
           return;
         }
 
@@ -2229,7 +2260,10 @@ export function BidHistoryContent({
         setHostedMessage("");
       })
       .catch((error: unknown) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          hostedProductsGenerationRef.current !== hostedProductsGeneration
+        ) {
           return;
         }
 
@@ -2627,9 +2661,17 @@ export function BidHistoryContent({
     setIsPaymentSheetClosing(false);
 
     if (!selectedBid.hostBankAccount && authState.accessToken) {
-      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
+      getFreshAccessToken()
+        .then((accessToken) =>
+          accessToken
+            ? requestParticipationPaymentDetail(accessToken, selectedBid.id)
+            : null,
+        )
         .then((paymentDetail) => {
-          if (paymentStoreTypeRequestIdRef.current !== requestId) {
+          if (
+            !paymentDetail ||
+            paymentStoreTypeRequestIdRef.current !== requestId
+          ) {
             return;
           }
 
@@ -2956,7 +2998,14 @@ export function BidHistoryContent({
     setDeletingHostedProductId(buncheolId);
 
     try {
-      await deleteBuncheol(accessToken, buncheolId);
+      const freshAccessToken = await getFreshAccessToken();
+
+      if (!freshAccessToken) {
+        return;
+      }
+
+      await deleteBuncheol(freshAccessToken, buncheolId);
+      hostedProductsGenerationRef.current += 1;
       setApiHostedProducts((current) =>
         current
           ? current.filter(
@@ -3440,18 +3489,27 @@ export function BidHistoryContent({
     setPendingParticipationId(bid.id);
 
     try {
+      const freshAccessToken = await getFreshAccessToken();
+
+      if (!freshAccessToken) {
+        showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
       if (bid.bundleId) {
-        await requestBundlePaymentSent(accessToken, bid.bundleId);
+        await requestBundlePaymentSent(freshAccessToken, bid.bundleId);
       } else {
         // 묶음을 모르는 응답 — 구 동작 그대로 슬롯마다 부른다. 한 건이라도 실패하면 전부 실패로
         // 다루어 화면과 서버가 갈리지 않게 한다(부분 성공을 낙관적으로 반영하지 않는다).
         for (const target of targets) {
-          await requestParticipationPaymentSent(accessToken, target.id);
+          await requestParticipationPaymentSent(freshAccessToken, target.id);
         }
       }
 
       const sentAt = new Date().toISOString();
       const markedIds = new Set(targets.map((target) => target.id));
+      // 이보다 먼저 출발한 목록 응답(첫 로딩 재실행·폴링)이 늦게 와서 '입금 대기'로 되돌리지 않게 한다.
+      bidRecordsGenerationRef.current += 1;
       setApiBidRecords((records) =>
         records
           ? records.map((record) =>
@@ -3524,7 +3582,14 @@ export function BidHistoryContent({
     setPendingParticipationId(bid.id);
 
     try {
-      await cancelParticipation(accessToken, bid.id);
+      const freshAccessToken = await getFreshAccessToken();
+
+      if (!freshAccessToken) {
+        showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await cancelParticipation(freshAccessToken, bid.id);
       const cancelPatch = (records: BidRecord[]) =>
         records.map((record) =>
           record.id === bid.id
@@ -3549,7 +3614,7 @@ export function BidHistoryContent({
       const generation = (bidRecordsGenerationRef.current += 1);
 
       try {
-        const records = await fetchBidRecords(accessToken);
+        const records = await fetchBidRecords(freshAccessToken);
 
         if (bidRecordsGenerationRef.current === generation) {
           // ⚠️ 낙관 패치를 다시 얹는다. 서버가 아직 취소를 반영하지 않은 응답을 주면(읽기 지연)
