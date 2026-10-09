@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -14,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   keepPreviousData,
+  useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -35,9 +37,7 @@ import {
   addFavoriteGroup,
   readCachedBanners,
   removeFavoriteGroup,
-  requestAllBuncheols,
   requestBanners,
-  toProductCardItem,
   type ApiBanner,
   type ApiGroup,
 } from "@/lib/auth-api";
@@ -53,6 +53,12 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { FEATURES } from "@/lib/feature-flags";
+import {
+  flattenHomeListings,
+  getHomeListingsNextPageParam,
+  homeListingsInitialPageParam,
+  requestHomeListingsPage,
+} from "@/lib/home-listings";
 import {
   bannersQueryKey,
   homeListingsQueryKey,
@@ -75,6 +81,8 @@ const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
+// 목록 끝이 화면 아래 이 거리 안에 들어오면 다음 페이지를 미리 받는다 (와이드 카드 2장 남짓).
+const HOME_LISTINGS_LOAD_MORE_DISTANCE_PX = 800;
 // 서버 UserFavoriteGroupService.MAX_FAVORITE_GROUP_COUNT 와 같은 값.
 const FAVORITE_GROUP_LIMIT = 5;
 const FAVORITE_LIMIT_MESSAGE = `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`;
@@ -266,7 +274,7 @@ function readStoredBannerSlide(): StoredBannerSlide | null {
   }
 }
 
-async function loadHomeListings(loggedIn: boolean) {
+async function loadHomeListingsPage(loggedIn: boolean, cursor: string | null) {
   let accessToken: string | null = null;
 
   if (loggedIn) {
@@ -277,11 +285,11 @@ async function loadHomeListings(loggedIn: boolean) {
     }
   }
 
-  const items = await withHomeListingsTimeout(
-    requestAllBuncheols(accessToken ?? undefined),
+  const page = await withHomeListingsTimeout(
+    requestHomeListingsPage(accessToken ?? undefined, cursor),
   );
 
-  return items.map(toProductCardItem).map(mergeCachedProductImage);
+  return { ...page, items: page.items.map(mergeCachedProductImage) };
 }
 
 function withHomeListingsTimeout<T>(request: Promise<T>) {
@@ -373,9 +381,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 캐시는 루트 레이아웃의 QueryClient 에 살아있으므로, 뒤로가기 복귀 시 첫 렌더부터
   // 데이터가 있다(스켈레톤 없음). staleTime 내에는 재요청도 없고, 지나면 캐시를 보여준
   // 채 백그라운드 재검증한다. 참여·업로드·삭제는 invalidateQueries 로 즉시 무효화.
-  const listingsQuery = useQuery({
+  const listingsQuery = useInfiniteQuery({
     queryKey: homeListingsQueryKey(authState.isLoggedIn),
-    queryFn: () => loadHomeListings(authState.isLoggedIn),
+    queryFn: ({ pageParam }) =>
+      loadHomeListingsPage(authState.isLoggedIn, pageParam),
+    initialPageParam: homeListingsInitialPageParam,
+    getNextPageParam: getHomeListingsNextPageParam,
     staleTime: HOME_LISTINGS_STALE_MS,
     // 로그인 상태가 바뀌어 키가 갈릴 때 이전 목록을 유지해 스켈레톤 재노출을 막는다.
     placeholderData: keepPreviousData,
@@ -423,7 +434,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       ? bannersQuery.data
       : HOME_BANNERS;
   const listingsData = listingsQuery.data;
-  const listings = useMemo(() => listingsData ?? [], [listingsData]);
+  const listings = useMemo(
+    () => flattenHomeListings(listingsData),
+    [listingsData],
+  );
   const listingMessage =
     listingsQuery.isError && listings.length === 0
       ? listingsQuery.error instanceof Error
@@ -515,8 +529,61 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         : listings,
     [favoriteGroupNames, listings],
   );
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const {
+    fetchNextPage: fetchNextListingsPage,
+    hasNextPage: hasNextListingsPage,
+    isFetching: isFetchingListings,
+    isFetchingNextPage: isFetchingNextListingsPage,
+    isFetchNextPageError: isNextListingsPageError,
+    isPlaceholderData: isListingsPlaceholderData,
+  } = listingsQuery;
+  // placeholder(이전 키 목록)를 보이는 동안 hasNextPage 는 아직 빈 새 키 기준이라 false 다.
+  // 그대로 믿으면 최애 사용자 새로고침마다 "최애 분철이 없어요"가 잠깐 뜬다.
+  const isListingsExhausted =
+    !hasNextListingsPage && !isListingsPlaceholderData;
+  const isAwaitingFavoriteListings =
+    visibleListings.length === 0 &&
+    favoriteGroupNames.size > 0 &&
+    !isListingsExhausted;
+  // 페이지가 들어온 직후에도 판정한다 — 최애만 걸러 보면 한 페이지로 화면이 안 차 스크롤할 거리가 없다.
+  // isFetching 중엔 막는다: 백그라운드 재검증(전 페이지 재요청)과 겹치면 서로 덮어쓴다.
+  const loadMoreListingsIfNearEnd = useCallback(() => {
+    const scrollElement = scrollContainerRef.current;
+    const sentinel = loadMoreSentinelRef.current;
+
+    if (
+      !scrollElement ||
+      !sentinel ||
+      !hasNextListingsPage ||
+      isFetchingListings ||
+      isNextListingsPageError
+    ) {
+      return;
+    }
+
+    const distanceToEnd =
+      sentinel.getBoundingClientRect().top -
+      scrollElement.getBoundingClientRect().bottom;
+
+    if (distanceToEnd <= HOME_LISTINGS_LOAD_MORE_DISTANCE_PX) {
+      // cancelRefetch 기본값(true)이면 같은 커서 요청을 취소·재전송하므로 끈다.
+      void fetchNextListingsPage({ cancelRefetch: false });
+    }
+  }, [
+    fetchNextListingsPage,
+    hasNextListingsPage,
+    isFetchingListings,
+    isNextListingsPageError,
+  ]);
+
+  useEffect(() => {
+    loadMoreListingsIfNearEnd();
+  }, [loadMoreListingsIfNearEnd, visibleListings.length]);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
+    loadMoreListingsIfNearEnd();
+
     const scrollElement = event.currentTarget;
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
     const nextScrollTop = Math.max(
@@ -650,7 +717,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         window.clearTimeout(restoreTimer);
       }
     };
-  }, [isListingLoading, listings.length, skipEnterAnimation]);
+  }, [isListingLoading, skipEnterAnimation]);
 
   // 재마운트 시 보던 슬라이드를 복원한다(상세를 다녀와도 배너 위치 유지).
   // 배너 구성이 바뀌면(폴백→API 교체, 배너 갱신) 첫 슬라이드부터 다시 시작한다.
@@ -1001,7 +1068,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 count={3}
                 variant="wide"
               />
-            ) : visibleListings.length === 0 && favoriteGroupNames.size > 0 ? (
+            ) : visibleListings.length === 0 &&
+              favoriteGroupNames.size > 0 &&
+              isListingsExhausted ? (
               /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
                  내 최애 것만 없는 건지 구분해 알린다. */
                 <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
@@ -1027,6 +1096,32 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 <div className={shouldRevealListings ? "content-reveal" : ""}>
                   <ProductGrid items={visibleListings} variant="wide"/>
                 </div>
+            )}
+            {isListingLoading ? null : (
+              <div ref={loadMoreSentinelRef}>
+                {/* 최애를 찾는 동안의 스켈레톤도 센티널 안에 둔다 — 위에 두면 센티널이 밀려 연쇄 로드가 멈춘다. */}
+                {isNextListingsPageError ? (
+                  <div className="space-y-2 pb-6">
+                    <p className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3 text-[13px] font-semibold text-black/45">
+                      분철을 더 불러오지 못했어요.
+                    </p>
+                    <button
+                      className="h-11 w-full rounded-[0.9rem] border border-black/10 bg-white text-[13px] font-semibold text-black/50 disabled:text-black/25"
+                      disabled={isFetchingNextListingsPage}
+                      onClick={() => void fetchNextListingsPage()}
+                      type="button"
+                    >
+                      {isFetchingNextListingsPage ? "불러오는 중…" : "다시 시도"}
+                    </button>
+                  </div>
+                ) : isFetchingNextListingsPage || isAwaitingFavoriteListings ? (
+                  <ProductGridSkeleton
+                    ariaLabel="분철을 더 불러오는 중"
+                    count={2}
+                    variant="wide"
+                  />
+                ) : null}
+              </div>
             )}
           </div>
         </section>
