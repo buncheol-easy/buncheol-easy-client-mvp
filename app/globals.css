@@ -924,14 +924,14 @@ body.is-pwa-standalone {
   }
 }
 
+/* 쉬는 상태에 will-change·translateZ(0)·backface-visibility 를 다시 넣지 않는다. 카드마다 GPU 레이어가
+   상시 생겨, 카드를 전부 그리는 홈(+상세 밑 언더레이 홈)에서 아이폰 Safari 탭이 메모리 초과로 종료됐다
+   (docs/114). 레이어는 hover·active 전환 순간에만 브라우저가 알아서 만든다. */
 .motion-card {
-  backface-visibility: hidden;
-  transform: translateZ(0);
   transition:
     box-shadow var(--duration-base) var(--motion-snap),
     opacity var(--duration-base) var(--motion-snap),
     transform var(--duration-base) var(--motion-snap);
-  will-change: transform;
 }
 
 .motion-card:is(:hover, :focus-visible) {
