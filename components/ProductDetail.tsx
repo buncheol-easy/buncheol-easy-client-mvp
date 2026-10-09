@@ -3323,7 +3323,7 @@ export function ProductDetail({
       }
 
       // 내 찜 변경을 목록 카드(홈·아티스트)에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
-      updateListingCachesLiked(queryClient, buncheolId, nextLiked);
+      await updateListingCachesLiked(queryClient, buncheolId, nextLiked);
     } catch {
       setIsLiked(!nextLiked);
     } finally {

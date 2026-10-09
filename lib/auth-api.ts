@@ -4153,10 +4153,16 @@ export function toProductDetailItem(
   };
 }
 
-export async function requestBuncheols(
+export type BuncheolSummaryPage = {
+  hasNext: boolean;
+  items: BuncheolSummary[];
+  nextCursor: string | null;
+};
+
+export async function requestBuncheolPage(
   accessToken?: string,
   params: BuncheolListParams = {},
-) {
+): Promise<BuncheolSummaryPage> {
   const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
     params,
   )}`;
@@ -4179,7 +4185,9 @@ export async function requestBuncheols(
 
   const body = await readJsonBody(response);
 
-  const summaries = getBuncheolList(body)
+  // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
+  // (썸네일이 없는 분철 = 이미지 자체가 없는 분철이라 상세를 조회해도 채울 수 없음)
+  const items = getBuncheolList(body)
     .filter(isRecord)
     .map(getBuncheolSummaryFromRecord)
     .filter(
@@ -4187,9 +4195,14 @@ export async function requestBuncheols(
         item !== null && !isBuncheolDeletedStatus(item.status),
     );
 
-  // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
-  // (썸네일이 없는 분철 = 이미지 자체가 없는 분철이라 상세를 조회해도 채울 수 없음)
-  return summaries;
+  return { ...getBuncheolListPageInfo(body), items };
+}
+
+export async function requestBuncheols(
+  accessToken?: string,
+  params: BuncheolListParams = {},
+) {
+  return (await requestBuncheolPage(accessToken, params)).items;
 }
 
 export async function requestAllBuncheols(
@@ -4201,49 +4214,19 @@ export async function requestAllBuncheols(
   let pageCount = 0;
 
   while (pageCount < 20) {
-    const pageParams: BuncheolListParams = {
+    const page = await requestBuncheolPage(accessToken, {
       ...params,
       cursor,
       size: params.size ?? 50,
-    };
-    const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
-      pageParams,
-    )}`;
-    let response = await fetch(url, {
-      credentials: "omit",
-      headers: getAuthHeaders(accessToken),
-      method: "GET",
     });
 
-    if (response.status === 401 && accessToken) {
-      response = await fetch(url, {
-        credentials: "omit",
-        method: "GET",
-      });
-    }
+    allSummaries.push(...page.items);
 
-    if (!response.ok) {
-      throw new Error(await parseErrorMessage(response));
-    }
-
-    const body = await readJsonBody(response);
-    const pageSummaries = getBuncheolList(body)
-      .filter(isRecord)
-      .map(getBuncheolSummaryFromRecord)
-      .filter(
-        (item): item is BuncheolSummary =>
-          item !== null && !isBuncheolDeletedStatus(item.status),
-      );
-
-    allSummaries.push(...pageSummaries);
-
-    const pageInfo = getBuncheolListPageInfo(body);
-
-    if (!pageInfo.hasNext || !pageInfo.nextCursor) {
+    if (!page.hasNext || !page.nextCursor) {
       break;
     }
 
-    cursor = pageInfo.nextCursor;
+    cursor = page.nextCursor;
     pageCount += 1;
   }
 

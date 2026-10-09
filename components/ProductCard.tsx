@@ -430,7 +430,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
 
       // 목록 화면(홈·아티스트)은 React Query 캐시를 그대로 다시 그리므로, 캐시의 liked 도
       // 같이 고쳐야 상세를 갔다 돌아오거나 멤버 탭을 오갈 때 하트 상태가 유지된다.
-      updateListingCachesLiked(queryClient, productId, nextLiked);
+      await updateListingCachesLiked(queryClient, productId, nextLiked);
     } catch {
       setIsLiked(!nextLiked);
     } finally {
