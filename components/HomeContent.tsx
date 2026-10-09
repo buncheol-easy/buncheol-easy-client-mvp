@@ -542,6 +542,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 그대로 믿으면 최애 사용자 새로고침마다 "최애 분철이 없어요"가 잠깐 뜬다.
   const isListingsExhausted =
     !hasNextListingsPage && !isListingsPlaceholderData;
+  const isAwaitingFavoriteListings =
+    visibleListings.length === 0 &&
+    favoriteGroupNames.size > 0 &&
+    !isListingsExhausted;
   // 페이지가 들어온 직후에도 판정한다 — 최애만 걸러 보면 한 페이지로 화면이 안 차 스크롤할 거리가 없다.
   // isFetching 중엔 막는다: 백그라운드 재검증(전 페이지 재요청)과 겹치면 서로 덮어쓴다.
   const loadMoreListingsIfNearEnd = useCallback(() => {
@@ -563,7 +567,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       scrollElement.getBoundingClientRect().bottom;
 
     if (distanceToEnd <= HOME_LISTINGS_LOAD_MORE_DISTANCE_PX) {
-      // 기본값은 진행 중인 요청을 취소하고 같은 커서로 다시 보낸다 — 렌더 전 연속 호출은 합류시킨다.
+      // cancelRefetch 기본값(true)이면 같은 커서 요청을 취소·재전송하므로 끈다.
       void fetchNextListingsPage({ cancelRefetch: false });
     }
   }, [
@@ -1095,6 +1099,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             )}
             {isListingLoading ? null : (
               <div ref={loadMoreSentinelRef}>
+                {/* 최애를 찾는 동안의 스켈레톤도 센티널 안에 둔다 — 위에 두면 센티널이 밀려 연쇄 로드가 멈춘다. */}
                 {isNextListingsPageError ? (
                   <div className="space-y-2 pb-6">
                     <p className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3 text-[13px] font-semibold text-black/45">
@@ -1109,7 +1114,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                       {isFetchingNextListingsPage ? "불러오는 중…" : "다시 시도"}
                     </button>
                   </div>
-                ) : isFetchingNextListingsPage ? (
+                ) : isFetchingNextListingsPage || isAwaitingFavoriteListings ? (
                   <ProductGridSkeleton
                     ariaLabel="분철을 더 불러오는 중"
                     count={2}

@@ -36,11 +36,18 @@ export async function updateListingCachesLiked(
 
   // 진행 중인 목록 요청은 시작 시점 페이지로 결과를 써서, 두면 방금 반영한 찜을 덮는다.
   // 데이터 없는 첫 조회는 빼야 한다 — 취소되면 다시 시작하지 않아 스켈레톤에 갇힌다.
-  await queryClient.cancelQueries({
+  const loadedListingFilters = {
     ...filters,
-    predicate: (query) =>
+    predicate: (query: Query) =>
       filters.predicate(query) && query.state.data !== undefined,
-  });
+  };
+  // 다음 페이지 요청은 화면이 다시 걸어 주지만, 재검증(무효화·stale)은 취소된 채 두면 옛 목록이 남는다.
+  const interruptedRefetches = queryClient
+    .getQueryCache()
+    .findAll({ ...loadedListingFilters, fetchStatus: "fetching" })
+    .filter((query) => !query.state.fetchMeta?.fetchMore);
+
+  await queryClient.cancelQueries(loadedListingFilters);
   // 아티스트 목록은 배열, 홈 목록은 페이지 묶음이다.
   queryClient.setQueriesData<ProductCardItem[] | HomeListingsData>(
     filters,
@@ -64,4 +71,10 @@ export async function updateListingCachesLiked(
       return current;
     },
   );
+
+  if (interruptedRefetches.length > 0) {
+    void queryClient.refetchQueries({
+      predicate: (query) => interruptedRefetches.includes(query),
+    });
+  }
 }
