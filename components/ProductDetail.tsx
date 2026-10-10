@@ -105,6 +105,7 @@ import {
   FavoritesContent,
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
+import { PRODUCT_HOME_ENTRY_ID_KEY } from "@/components/ProductCard";
 import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -248,6 +249,7 @@ const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
+const PRODUCT_HOME_ENTRY_STATE_KEY = "__buncheolProductFromHome";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
@@ -414,6 +416,7 @@ type ProductHistoryState = {
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_ARTIST_ENTRY_STATE_KEY]?: unknown;
+  [PRODUCT_HOME_ENTRY_STATE_KEY]?: unknown;
 };
 
 function OptionAvatar({
@@ -461,6 +464,10 @@ function hasFavoritesEntryState() {
 
 function hasArtistEntryState() {
   return getHistoryState()?.[PRODUCT_ARTIST_ENTRY_STATE_KEY] === true;
+}
+
+function hasHomeEntryState() {
+  return getHistoryState()?.[PRODUCT_HOME_ENTRY_STATE_KEY] === true;
 }
 
 function priceToNumber(price: string) {
@@ -3078,6 +3085,11 @@ export function ProductDetail({
     }
 
     if (initialReturnSource === "home") {
+      if (hasHomeEntryState()) {
+        router.back();
+        return;
+      }
+
       router.replace("/");
       return;
     }
@@ -3206,6 +3218,25 @@ export function ProductDetail({
       );
     }
   }, [initialReturnSource]);
+
+  // 홈은 getHistoryIndex() 대신 카드가 남긴 일회용 id 로 판정한다 — Next 기록엔 idx 가 없어
+  // 인덱스 방식은 늘 null 이다(#201). 표시가 없으면 ‹ 는 지금처럼 replace("/") 로 떨어진다(#238).
+  useEffect(() => {
+    const expectedHomeEntryId = window.sessionStorage.getItem(
+      PRODUCT_HOME_ENTRY_ID_KEY,
+    );
+    window.sessionStorage.removeItem(PRODUCT_HOME_ENTRY_ID_KEY);
+
+    if (initialReturnSource === "home" && expectedHomeEntryId === buncheolId) {
+      window.history.replaceState(
+        {
+          ...(getHistoryState() ?? {}),
+          [PRODUCT_HOME_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
+  }, [buncheolId, initialReturnSource]);
 
   useEffect(() => {
     if (!isExiting) {

@@ -32,6 +32,8 @@ import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
+// 홈 카드로 연 상세의 분철 id. 상세가 마운트 때 한 번 읽고 지운다(ProductDetail).
+export const PRODUCT_HOME_ENTRY_ID_KEY = "product-home-entry-id";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 const SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX = "search-result-scroll-top";
@@ -463,6 +465,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     if (pathname === "/") {
       event.preventDefault();
       rememberProductListScrollPosition(event, HOME_SCROLL_TOP_KEY);
+      window.sessionStorage.setItem(PRODUCT_HOME_ENTRY_ID_KEY, productId);
       router.push(`/products/${productId}?from=home`);
       return;
     }
