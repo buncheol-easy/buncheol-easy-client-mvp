@@ -250,6 +250,9 @@ const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
 const PRODUCT_HOME_ENTRY_STATE_KEY = "__buncheolProductFromHome";
+// 카드를 눌렀는데 상세가 못 그려지면(로딩 중 뒤로가기·조회 실패) 값이 남는다. 오래된 값으로 표시를
+// 붙이면 ‹ 가 홈이 아닌 칸(외부 사이트일 수 있음)으로 back() 하므로 클릭 직후 값만 인정한다.
+const PRODUCT_HOME_ENTRY_MAX_AGE_MS = 10_000;
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
@@ -468,6 +471,25 @@ function hasArtistEntryState() {
 
 function hasHomeEntryState() {
   return getHistoryState()?.[PRODUCT_HOME_ENTRY_STATE_KEY] === true;
+}
+
+function readFreshHomeEntryId(rawValue: string | null) {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const { at, id } = JSON.parse(rawValue) as { at?: unknown; id?: unknown };
+    const ageMs = Date.now() - Number(at);
+
+    return typeof id === "string" &&
+      ageMs >= 0 &&
+      ageMs <= PRODUCT_HOME_ENTRY_MAX_AGE_MS
+      ? id
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function priceToNumber(price: string) {
@@ -3219,15 +3241,20 @@ export function ProductDetail({
     }
   }, [initialReturnSource]);
 
-  // 홈은 getHistoryIndex() 대신 카드가 남긴 일회용 id 로 판정한다 — Next 기록엔 idx 가 없어
-  // 인덱스 방식은 늘 null 이다(#201). 표시가 없으면 ‹ 는 지금처럼 replace("/") 로 떨어진다(#238).
+  // Next 기록엔 idx 가 없어 getHistoryIndex() 로는 판정할 수 없다. 카드가 남긴 일회용 id 로 판정하고,
+  // 표시가 없으면 replace("/") 로 떨어진다. 그려지기 전에 이미 홈으로 돌아갔으면 홈 칸에 붙이지 않는다.
   useEffect(() => {
-    const expectedHomeEntryId = window.sessionStorage.getItem(
-      PRODUCT_HOME_ENTRY_ID_KEY,
+    const homeEntryId = readFreshHomeEntryId(
+      window.sessionStorage.getItem(PRODUCT_HOME_ENTRY_ID_KEY),
     );
     window.sessionStorage.removeItem(PRODUCT_HOME_ENTRY_ID_KEY);
 
-    if (initialReturnSource === "home" && expectedHomeEntryId === buncheolId) {
+    if (
+      initialReturnSource === "home" &&
+      homeEntryId === buncheolId &&
+      window.location.pathname ===
+        `/products/${encodeURIComponent(buncheolId)}`
+    ) {
       window.history.replaceState(
         {
           ...(getHistoryState() ?? {}),
