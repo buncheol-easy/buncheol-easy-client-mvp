@@ -1135,7 +1135,9 @@ export function HostedBuncheolManage({
         deliveryId,
         trackingNumber,
       );
-      await reloadManagementDetail(accessToken);
+
+      // 성공 처리를 재조회보다 먼저 한다 — GET 이 실패해 입력칸이 남으면 개최자가 다시 눌러
+      // 알림톡이 두 번 나간다.
       setParticipantTrackingInputs((current) => {
         const next = { ...current };
 
@@ -1155,6 +1157,12 @@ export function HostedBuncheolManage({
           ? "운송장 번호를 수정했어요."
           : "운송장 번호를 등록했어요.",
       );
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error
