@@ -147,6 +147,8 @@ type UploadExitGuard = {
   isFirstEntry: boolean;
   // 이 폼을 떠나는 중. 칸을 다시 넣지 않고 새로고침 경고도 띄우지 않는다.
   isLeaving: boolean;
+  // 기기 뒤로 시트 '나가기'의 history.go() 가 무반응일 때 대신 이동할 타이머.
+  leaveFallbackTimeout: number | null;
   onRemoved: (() => void) | null;
   removal: Promise<void> | null;
 };
@@ -173,6 +175,13 @@ function armUploadExitGuard(guard: UploadExitGuard) {
   }
 
   guard.armedHref = window.location.href;
+}
+
+function cancelUploadExitLeaveFallback(guard: UploadExitGuard) {
+  if (guard.leaveFallbackTimeout !== null) {
+    window.clearTimeout(guard.leaveFallbackTimeout);
+    guard.leaveFallbackTimeout = null;
+  }
 }
 
 function removeUploadExitGuard(guard: UploadExitGuard) {
@@ -786,8 +795,8 @@ export function UploadProductForm({
    * 등록 모드는 빈 폼에서 시작하므로 "값이 하나라도 들어있으면 손댄 것"이다.
    * 수정 모드는 처음부터 채워져 있어 같은 기준을 못 쓴다 — 불러오기가 끝난 시점의
    * 값을 기준선으로 잡아 두고 그것과 달라졌을 때만 손댄 것으로 본다.
-   * (기준선은 아래 effect 에서 갱신한다. 렌더 중 ref 를 읽으므로 불러오기 직후 한 프레임은
-   *  dirty 로 보일 수 있는데, 이 값은 뒤로가기를 눌렀을 때만 읽혀서 화면에 드러나지 않는다.)
+   * (기준선은 아래 effect 에서 갱신하고 렌더 중 ref 로 읽는다. 이 값은 이탈 시트뿐 아니라 기기 뒤로가기 막이 칸·
+   *  새로고침 경고 effect 도 쓴다 — 기준선이 어긋나 dirty 로 잡히면 손대지 않은 수정 화면에서도 칸과 경고가 걸린다.)
    */
   const formSignature = JSON.stringify({
     closingDate,
@@ -826,6 +835,7 @@ export function UploadProductForm({
     armedHref: null,
     isFirstEntry: false,
     isLeaving: false,
+    leaveFallbackTimeout: null,
     onRemoved: null,
     removal: null,
   });
@@ -880,11 +890,19 @@ export function UploadProductForm({
     }
 
     guard.isLeaving = true;
+    // 첫 화면 판정은 앞으로 가기 칸까지 세는 history.length 로 하므로 틀릴 수 있다. 더 뒤로 갈 칸이 없으면
+    // go() 가 아무 일도 하지 않으니, 그동안 popstate·언마운트·페이지 이탈이 없으면 헤더 ‹ 목적지로 보낸다.
+    cancelUploadExitLeaveFallback(guard);
+    guard.leaveFallbackTimeout = window.setTimeout(() => {
+      guard.leaveFallbackTimeout = null;
+      void leaveToExitDestination();
+    }, uploadExitGuardRemovalTimeoutMs);
     // 시트를 띄운 채 앞으로 가기로 막이 칸에 다시 올라와 있었다면 두 칸을 내려가야 한다.
     window.history.go(guard.armedHref !== null ? -2 : -1);
   }
 
-  // 기기 뒤로가기로 연 시트면 막이 칸은 이미 쓰였다. '계속 작성'(배경 탭·Esc 포함)은 사용자 동작이라 여기서 다시 넣는다.
+  // 기기 뒤로가기로 연 시트면 막이 칸은 이미 쓰였다. '계속 작성'·배경 탭은 사용자 동작이라 여기서 다시 넣는다.
+  // Esc 키는 명세상 사용자 동작이 아니어서, 데스크톱에서 Esc 로 닫은 직후 넣은 칸은 브라우저가 건너뛸 수 있다.
   function handleExitConfirmCancel() {
     setExitConfirmRequest(null);
 
@@ -895,6 +913,8 @@ export function UploadProductForm({
 
   const handleExitGuardPopState = useEffectEvent(() => {
     const guard = exitGuardRef.current;
+
+    cancelUploadExitLeaveFallback(guard);
 
     if (guard.onRemoved) {
       guard.armedHref = null;
@@ -936,10 +956,13 @@ export function UploadProductForm({
   useEffect(() => {
     const guard = exitGuardRef.current;
 
-    guard.isFirstEntry = window.history.length === 1;
+    const isOnGuardEntry = isUploadExitGuardEntry(window.history.state);
+
+    // 막이 칸 위에서 열렸으면(새로고침) 그 칸까지 2칸이다. 앞으로 가기 칸은 못 걸러내 틀릴 수 있다 — leaveByDeviceBack 안전장치.
+    guard.isFirstEntry = window.history.length === (isOnGuardEntry ? 2 : 1);
 
     // 새로고침·앞으로 가기로 막이 칸 위에서 다시 열렸다.
-    if (isUploadExitGuardEntry(window.history.state)) {
+    if (isOnGuardEntry) {
       guard.armedHref = window.location.href;
     }
 
@@ -951,6 +974,7 @@ export function UploadProductForm({
 
     return () => {
       window.removeEventListener("popstate", handlePopState);
+      cancelUploadExitLeaveFallback(guard);
     };
   }, []);
 
@@ -995,6 +1019,8 @@ export function UploadProductForm({
 
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       if (guard.isLeaving) {
+        // 다른 문서로 돌아가는 중이다(로딩이 600ms 를 넘을 수 있음) — 대신 이동하는 안전장치를 끈다.
+        cancelUploadExitLeaveFallback(guard);
         return;
       }
 
@@ -2080,6 +2106,7 @@ export function UploadProductForm({
     const accessToken = isLocalDraftEdit ? null : await getFreshAccessToken();
 
     if (!isLocalDraftEdit && !accessToken) {
+      await removeUploadExitGuard(exitGuardRef.current);
       router.push(
         createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
       );
