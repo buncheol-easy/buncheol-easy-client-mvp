@@ -970,32 +970,52 @@ export function UploadProductForm({
       handleExitGuardPopState();
     }
 
+    // 다른 문서로 나간 페이지는 뒤로·앞으로 캐시(bfcache)에 언마운트 없이 얼었다가 앞으로 가기로 그대로 되살아난다.
+    // 얼기 전에 안전장치 타이머를 끄고(안 끄면 되살아난 직후 홈으로 끌고 감), 되살아나면 떠나던 상태를 풀어 다시 보호한다.
+    function handlePageHide() {
+      cancelUploadExitLeaveFallback(guard);
+    }
+
+    function handlePageShow(event: PageTransitionEvent) {
+      // 막이 칸을 걷어내는 중(앱 안 이동 도중)이었다면 그 이동을 마저 끝내게 둔다.
+      if (!event.persisted || guard.onRemoved) {
+        return;
+      }
+
+      cancelUploadExitLeaveFallback(guard);
+      guard.isLeaving = false;
+      guard.removal = null;
+      guard.armedHref = isUploadExitGuardEntry(window.history.state)
+        ? window.location.href
+        : null;
+    }
+
     window.addEventListener("popstate", handlePopState);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
       window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
       cancelUploadExitLeaveFallback(guard);
     };
   }, []);
 
   useEffect(() => {
-    const guard = exitGuardRef.current;
-
-    if (
-      !isFormDirty ||
-      isExitConfirmOpen ||
-      guard.armedHref !== null ||
-      guard.isLeaving
-    ) {
+    if (!isFormDirty || isExitConfirmOpen) {
       return;
     }
+
+    const guard = exitGuardRef.current;
 
     // 입력 직후라 아직 사용자 동작 안이면 바로 넣는다(사진만 고르고 곧장 뒤로가는 경우).
     if (navigator.userActivation?.isActive) {
       armUploadExitGuard(guard);
-      return;
     }
 
+    // 이미 칸이 있거나 떠나는 중인지는 누를 때 armUploadExitGuard 가 본다. 여기서 미리 거르면 bfcache 로
+    // 되살아나 떠나던 상태가 풀려도 이 effect 가 다시 돌지 않아 칸을 영영 못 넣는다.
     function handleUserInput() {
       armUploadExitGuard(guard);
     }
