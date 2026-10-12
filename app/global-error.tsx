@@ -33,6 +33,12 @@ export default function GlobalError({
     <html lang="ko" className="h-full antialiased">
       <body className="min-h-full">
         <title>문제가 생겼어요 | 분철이지</title>
+        {/* 이 화면이 뜨면 레이아웃이 내보내던 head 메타가 문서에서 빠진다 — 레이아웃 viewport export 와 같은 값을 직접 둔다. */}
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta name="theme-color" content="#ffffff" />
         <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-white text-[#111111]">
           <div className="app-page-scroll mx-auto flex h-full w-full max-w-[430px] flex-col overflow-y-auto bg-white">
             <div className="m-auto flex flex-col items-center px-6 py-10 text-center">
