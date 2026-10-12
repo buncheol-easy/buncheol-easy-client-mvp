@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -13,6 +14,7 @@ import { BottomNavigator } from "@/components/BottomNavigator";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon, CheckIcon, UsersRoundIcon } from "@/components/icons";
 import {
+  ARTIST_LIST_ENTRY_GROUP_KEY,
   getArtistRestoreIndexKey,
   getArtistScrollTopKey,
   getArtistSelectedMemberKey,
@@ -55,6 +57,39 @@ const MEMBER_GRID_COLLAPSED_ROWS = 2;
 const COLLAPSED_MEMBER_LIMIT = MEMBER_GRID_COLUMNS * MEMBER_GRID_COLLAPSED_ROWS - 1;
 // 1~2명 감추자고 "더보기"를 띄우면 누를 이유 없는 버튼만 생긴다. 그런 그룹은 3행째를 그냥 편다.
 const MIN_HIDDEN_MEMBERS_TO_COLLAPSE = 3;
+
+const ARTIST_LIST_ENTRY_STATE_KEY = "__buncheolGroupFromArtistList";
+// 카드를 눌렀는데 이 화면이 못 그려지면(로딩 중 뒤로가기·조회 실패) 값이 남는다. 오래된 값으로 표시를
+// 붙이면 ‹ 가 목록이 아닌 칸(외부 사이트일 수 있음)으로 back() 하므로 클릭 직후 값만 인정한다.
+const ARTIST_LIST_ENTRY_MAX_AGE_MS = 10_000;
+
+function hasArtistListEntryState() {
+  const historyState = window.history.state as Record<string, unknown> | null;
+
+  return historyState?.[ARTIST_LIST_ENTRY_STATE_KEY] === true;
+}
+
+function readFreshArtistListEntryGroupId(rawValue: string | null) {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const { at, groupId } = JSON.parse(rawValue) as {
+      at?: unknown;
+      groupId?: unknown;
+    };
+    const ageMs = Date.now() - Number(at);
+
+    return typeof groupId === "string" &&
+      ageMs >= 0 &&
+      ageMs <= ARTIST_LIST_ENTRY_MAX_AGE_MS
+      ? groupId
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 그룹 로고용 {@link ArtistImage} 를 쓰지 않는다 — 그쪽은 배경 대비색을 구하려고 이미지마다
@@ -286,7 +321,35 @@ export function ArtistBrowseContent({
     };
   }, [didRestoreSelectedMember, group.id, isLoading, items.length]);
 
+  // Next 기록엔 idx 가 없어 getHistoryIndex() 로는 목록에서 왔는지 알 수 없다. 목록 카드가 남긴 일회용
+  // id 로 판정해 이 기록 칸에 표시를 남긴다. 그려지기 전에 이미 목록으로 돌아갔으면 목록 칸에 붙이지 않는다.
+  useEffect(() => {
+    const listEntryGroupId = readFreshArtistListEntryGroupId(
+      window.sessionStorage.getItem(ARTIST_LIST_ENTRY_GROUP_KEY),
+    );
+    window.sessionStorage.removeItem(ARTIST_LIST_ENTRY_GROUP_KEY);
+
+    if (
+      listEntryGroupId === group.id &&
+      window.location.pathname === `/artists/${encodeURIComponent(group.id)}`
+    ) {
+      window.history.replaceState(
+        {
+          ...((window.history.state as Record<string, unknown> | null) ?? {}),
+          [ARTIST_LIST_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
+  }, [group.id]);
+
   function handleBack() {
+    // 아티스트 목록 카드로 열었으면 진짜 뒤로가기 — 목록 칸으로 돌아가 검색어·스크롤도 그대로 살아난다.
+    if (hasArtistListEntryState()) {
+      router.back();
+      return;
+    }
+
     // 레포 컨벤션(PolicyPageContent·BoardExperience)과 동일 — 앱 내부에서 들어왔으면 되돌아가고,
     // SEO 유입 같은 직접 진입만 홈으로 보낸다. push 로 홈을 쌓으면 기기 뒤로가기가 다시 이 페이지로
     // 돌아오는 왕복이 생긴다.
