@@ -2,9 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { NotFoundChromeColorSync } from "@/components/NotFoundChromeColorSync";
+import { applyChromeColors } from "@/components/SystemChromeColorSync";
 import { trackEvent } from "@/lib/analytics";
+
+const white = "#ffffff";
+const homeButtonClassName =
+  "inline-flex h-12 items-center justify-center rounded-full border border-black/15 bg-white px-7 text-[15px] font-semibold tracking-[-0.04em] text-[#111111]";
 
 // 같은 오류 객체로 오류 화면이 다시 마운트돼도 분석 이벤트는 한 번만 보낸다.
 let lastReportedError: unknown = null;
@@ -18,6 +23,24 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  const pathname = usePathname();
+
+  // 같은 주소에서 [다시 시도]로 복구되면 SystemChromeColorSync 가 다시 돌지 않아 흰 크롬이 남는다 —
+  // 들어올 때 색을 기억해 두고 이 화면이 사라질 때(복구·이동) 되돌린다.
+  useEffect(() => {
+    const rootStyle = document.documentElement.style;
+    const previousTop = rootStyle.getPropertyValue("--system-top-color");
+    const previousBottom = rootStyle.getPropertyValue("--system-bottom-color");
+
+    applyChromeColors(white, white);
+
+    return () => {
+      if (previousTop && previousBottom) {
+        applyChromeColors(previousTop, previousBottom);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     console.error(error);
 
@@ -34,7 +57,6 @@ export default function ErrorPage({
 
   return (
     <main className="system-chrome-white system-chrome-bottom-white h-[100dvh] overflow-hidden bg-white text-[#111111]">
-      <NotFoundChromeColorSync />
       <div className="app-page-scroll mx-auto flex h-full w-full max-w-[430px] flex-col overflow-y-auto bg-white">
         <div className="m-auto flex flex-col items-center px-6 py-10 text-center">
           <div className="relative h-32 w-80 max-w-full">
@@ -65,12 +87,20 @@ export default function ErrorPage({
             >
               다시 시도
             </button>
-            <Link
-              className="inline-flex h-12 items-center justify-center rounded-full border border-black/15 bg-white px-7 text-[15px] font-semibold tracking-[-0.04em] text-[#111111]"
-              href="/"
-            >
-              홈으로 가기
-            </Link>
+            {/* 오류 화면은 경로가 바뀔 때만 풀린다 — 이미 홈이면 <Link>가 아무것도 안 해서 문서를 새로 받는다. */}
+            {pathname === "/" ? (
+              <button
+                className={homeButtonClassName}
+                onClick={() => window.location.replace("/")}
+                type="button"
+              >
+                홈으로 가기
+              </button>
+            ) : (
+              <Link className={homeButtonClassName} href="/">
+                홈으로 가기
+              </Link>
+            )}
           </div>
         </div>
       </div>
