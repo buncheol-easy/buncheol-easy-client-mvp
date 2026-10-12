@@ -3,6 +3,7 @@
 import {
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -13,6 +14,7 @@ import { ArtistImage } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { Toast, useToast } from "@/components/Toast";
 import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
+import { ARTIST_LIST_ENTRY_GROUP_KEY } from "@/lib/artist-browse";
 import {
   addFavoriteGroup,
   removeFavoriteGroup,
@@ -49,6 +51,43 @@ type ArtistExploreContentProps = {
 };
 
 const FAVORITE_GROUP_LIMIT = 5;
+
+// 그룹 페이지에 다녀오면 이 화면은 새로 마운트돼 검색어·스크롤이 사라진다. 카드를 누를 때 지금 기록 칸에
+// 적어 두고 그 칸으로 돌아왔을 때만 되살린다. 홈 '최애 추가'로 연 목록은 새 칸이라 적힌 게 없다.
+const ARTIST_LIST_VIEW_STATE_KEY = "__buncheolArtistListView";
+
+type ArtistListView = {
+  query: string;
+  scrollTop: number;
+};
+
+function readArtistListView(): ArtistListView | null {
+  const historyState = window.history.state as Record<string, unknown> | null;
+  const savedView = historyState?.[ARTIST_LIST_VIEW_STATE_KEY] as
+    | Partial<ArtistListView>
+    | undefined;
+
+  return typeof savedView?.query === "string" &&
+    typeof savedView.scrollTop === "number"
+    ? { query: savedView.query, scrollTop: savedView.scrollTop }
+    : null;
+}
+
+// Next 표시 키(__NA 등)를 펼쳐 보존하고 URL 인자는 주지 않는다 — 표시가 빠진 칸은 돌아올 때 전체
+// 새로고침되고, URL 을 주면 Next 가 주소 변경으로 받아 라우터 상태를 다시 맞춘다.
+function writeArtistListView(view: ArtistListView | null) {
+  const nextState: Record<string, unknown> = {
+    ...((window.history.state as Record<string, unknown> | null) ?? {}),
+  };
+
+  if (view) {
+    nextState[ARTIST_LIST_VIEW_STATE_KEY] = view;
+  } else {
+    delete nextState[ARTIST_LIST_VIEW_STATE_KEY];
+  }
+
+  window.history.replaceState(nextState, "");
+}
 
 function getFavoriteId(group: ArtistGroup) {
   return group.id;
@@ -136,7 +175,11 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   const allGroupsQuery = useAllGroupsQuery();
   const favoriteGroupsQuery = useFavoriteGroupsQuery(authState.isLoggedIn);
   const { setFavorited } = useFavoriteGroupsCache(authState.isLoggedIn);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
+  // 되살린 검색어는 아래 useDeferredValue 로 미루지 않는다 — 미루면 전체 목록이 한 번 그려진 뒤 바뀐다.
+  const [restoredQuery, setRestoredQuery] = useState<string | null>(null);
+  const pendingRestoreViewRef = useRef<ArtistListView | null>(null);
   const [message, setMessage] = useState("");
   const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
   // 하트를 처음 누른 시점의 최애 집합을 고정해 그 뒤로는 카드가 움직이지 않게 한다.
@@ -162,7 +205,9 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   // 검색어 한 글자에 카드가 그룹 수(수백 개)만큼 갈린다. 입력과 같은 렌더에 묶으면 타이핑이 밀린다.
   // 랭킹 자체는 0.1ms 라 병목이 아니다 — 비용은 전부 카드 렌더 쪽이니 여기 최적화하지 말 것.
   const deferredQuery = useDeferredValue(query);
-  const trimmedQuery = deferredQuery.trim();
+  const trimmedQuery = (
+    query === restoredQuery ? query : deferredQuery
+  ).trim();
   const [lastPinnedQuery, setLastPinnedQuery] = useState(trimmedQuery);
 
   // 검색어가 바뀌면 목록이 통째로 다시 구성돼 지킬 자리가 없다. 고정을 풀어 현재 최애 기준으로
@@ -199,6 +244,51 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
       clearAuthState();
     }
   }, [favoriteGroupsError]);
+
+  // 하이드레이션 뒤, 페인트 전에 되살린다. useState 초기값으로 읽으면 서버가 그린 빈 검색창과 어긋난다.
+  useLayoutEffect(() => {
+    const savedView = readArtistListView();
+
+    if (!savedView) {
+      return;
+    }
+
+    // 한 번만 되살린다. 남겨 두면 이 칸을 새로고침할 때도 떠날 때의 검색어가 되살아난다.
+    writeArtistListView(null);
+    pendingRestoreViewRef.current = savedView;
+    setQuery(savedView.query);
+    setRestoredQuery(savedView.query);
+  }, []);
+
+  // 스크롤은 되살린 검색어의 목록이 그려진 뒤에 맞춘다. 먼저 맞추면 길이가 다른 목록 위에 위치가 얹힌다.
+  useLayoutEffect(() => {
+    const pendingView = pendingRestoreViewRef.current;
+    const scrollContainer = scrollContainerRef.current;
+
+    if (
+      !pendingView ||
+      !scrollContainer ||
+      isLoading ||
+      trimmedQuery !== pendingView.query.trim()
+    ) {
+      return;
+    }
+
+    scrollContainer.scrollTop = pendingView.scrollTop;
+    pendingRestoreViewRef.current = null;
+  }, [isLoading, trimmedQuery]);
+
+  function openGroupPage(group: ArtistGroup) {
+    writeArtistListView({
+      query,
+      scrollTop: scrollContainerRef.current?.scrollTop ?? 0,
+    });
+    window.sessionStorage.setItem(
+      ARTIST_LIST_ENTRY_GROUP_KEY,
+      JSON.stringify({ at: Date.now(), groupId: group.id }),
+    );
+    router.push(`/artists/${encodeURIComponent(group.id)}`);
+  }
 
   // 토글 실패 안내(message)가 있으면 그것을 우선 보여준다 — 사용자가 방금 한 행동의 결과다.
   const loadErrorMessage = allGroupsQuery.isError
@@ -303,7 +393,11 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           <input
             aria-label="아티스트 검색"
             className="min-w-0 flex-1 bg-transparent text-[16px] font-medium outline-none placeholder:text-black/35"
-            onChange={(event) => setQuery(event.currentTarget.value)}
+            onChange={(event) => {
+              setQuery(event.currentTarget.value);
+              setRestoredQuery(null);
+              pendingRestoreViewRef.current = null;
+            }}
             placeholder="그룹 검색"
             type="search"
             value={query}
@@ -364,7 +458,10 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
         </div>
       </header>
 
-      <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
+      <div
+        className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4"
+        ref={scrollContainerRef}
+      >
         <div className="flex min-h-full flex-col">
         {visibleMessage ? (
           <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
@@ -395,9 +492,17 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
 
                 return (
                   <article
-                    className="artist-card rounded-[1.2rem] border border-black/10 bg-white p-4"
+                    className="artist-card relative rounded-[1.2rem] border border-black/10 bg-white p-4"
                     key={group.id}
                   >
+                    {/* 카드 전체를 덮는 이동 버튼. 하트는 이 안에 넣지 말고 형제로 두고 z 로 올린다 — 버튼 안
+                        버튼은 HTML 위반이라 하이드레이션이 깨지고, 누름이 바깥으로 전달돼 하트가 이동까지 일으킨다. */}
+                    <button
+                      aria-label={`${group.name} 분철 보기`}
+                      className="absolute inset-0 z-[1] rounded-[1.2rem]"
+                      onClick={() => openGroupPage(group)}
+                      type="button"
+                    />
                     <div className="flex justify-center">
                       <ArtistAvatar group={group} loading="lazy" />
                     </div>
@@ -413,7 +518,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
                       </h2>
                       <button
                         aria-label={group.favorited ? "최애 해제" : "최애 추가"}
-                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold transition-transform active:scale-95 ${
+                        className={`relative z-[2] inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[17px] font-semibold transition-transform active:scale-95 ${
                           group.favorited
                             ? "bg-like/10 text-like ring-1 ring-like/25"
                             : "border border-black/10 bg-white text-black/45"
