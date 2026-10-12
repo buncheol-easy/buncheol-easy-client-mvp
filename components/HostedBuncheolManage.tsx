@@ -33,6 +33,7 @@ import {
   isBuncheolCancelledStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
+  isDeliveryShippingStatus,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
   isParticipationCancelledStatus,
@@ -447,6 +448,9 @@ export function HostedBuncheolManage({
   const [participantTrackingInputs, setParticipantTrackingInputs] = useState<
     Record<string, string>
   >({});
+  const [editingTrackingOwnerId, setEditingTrackingOwnerId] = useState<
+    string | null
+  >(null);
   // 오픈채팅 링크 수정 시트 — null 이면 닫힘. 전체 수정(모집중 전용)과 달리 상태와 무관하게 열린다.
   const [openChatUrlDraft, setOpenChatUrlDraft] = useState<string | null>(null);
   const [openChatUrlError, setOpenChatUrlError] = useState("");
@@ -1053,9 +1057,46 @@ export function HostedBuncheolManage({
     }
   }
 
+  // 운송장 수정은 처음 등록과 같은 API 다. 서버가 번호를 바꿀 때마다 운송장 알림톡을 다시 보내
+  // 확인 시트를 태운다(처음 등록은 시트 없이 바로 보낸다).
+  function requestEditParticipantTracking(
+    participant: BuncheolManagementParticipant,
+    currentTrackingNumber: string,
+  ) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    const nextTrackingNumber = (
+      participantTrackingInputs[participant.participationId] ?? ""
+    ).trim();
+
+    if (
+      !nextTrackingNumber ||
+      nextTrackingNumber === currentTrackingNumber.trim()
+    ) {
+      return;
+    }
+
+    setConfirmSheetRequest({
+      confirmLabel: "수정",
+      description: "참여자에게 새 번호로 운송장 알림톡이 다시 가요.",
+      details: [
+        { label: "지금 번호", value: currentTrackingNumber },
+        { label: "새 번호", value: nextTrackingNumber },
+      ],
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void handleRegisterParticipantTracking(participant, "edit");
+      },
+      title: "운송장 번호를 수정할까요?",
+    });
+  }
+
   // C2C 참여 단위 운송장 등록 — 다슬롯이라 옵션(winner)이 아닌 참여 기준으로 처리한다.
   async function handleRegisterParticipantTracking(
     participant: BuncheolManagementParticipant,
+    mode: "register" | "edit" = "register",
   ) {
     const deliveryId = participant.delivery?.deliveryId;
 
@@ -1079,8 +1120,10 @@ export function HostedBuncheolManage({
 
     setPendingC2CAction(`tracking:${participant.participationId}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
@@ -1100,13 +1143,35 @@ export function HostedBuncheolManage({
 
         return next;
       });
-      showToast("운송장 번호를 등록했어요.");
+
+      if (mode === "edit") {
+        setEditingTrackingOwnerId((current) =>
+          current === participant.participationId ? null : current,
+        );
+      }
+
+      showToast(
+        mode === "edit"
+          ? "운송장 번호를 수정했어요."
+          : "운송장 번호를 등록했어요.",
+      );
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
-          : "운송장 번호를 등록하지 못했어요.",
+          : mode === "edit"
+            ? "운송장 번호를 수정하지 못했어요."
+            : "운송장 번호를 등록하지 못했어요.",
       );
+
+      // 그사이 배송 완료로 넘어갔으면 서버가 409 로 거절한다 — 다시 불러와 「수정」을 거둔다.
+      if (mode === "edit" && accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
@@ -1793,10 +1858,28 @@ export function HostedBuncheolManage({
                             const hasTracking = Boolean(
                               entry.delivery.trackingNumber,
                             );
+                            const currentTrackingNumber =
+                              entry.delivery.trackingNumber ?? "";
+                            // 서버는 배송 중(SHIPPING)까지만 번호를 바꿔 준다 — 배송 완료·수령 완료는 409.
+                            const canEditTracking =
+                              hasTracking &&
+                              isDeliveryShippingStatus(entry.delivery.status);
+                            const isEditingTracking =
+                              canEditTracking &&
+                              editingTrackingOwnerId === entry.ownerId;
                             const isRegistering =
                               pendingC2CAction === `tracking:${entry.ownerId}`;
                             const trackingInput =
                               participantTrackingInputs[entry.ownerId] ?? "";
+                            // 같은 번호를 다시 보내도 서버가 알림톡을 또 보낸다 — 저장을 막는다.
+                            const isTrackingUnchanged =
+                              trackingInput.trim() ===
+                              currentTrackingNumber.trim();
+                            const ownerSlot =
+                              bundle.slots.find(
+                                (slot) =>
+                                  slot.participationId === entry.ownerId,
+                              ) ?? head;
 
                             return (
                               <div key={entry.delivery.deliveryId}>
@@ -1811,15 +1894,38 @@ export function HostedBuncheolManage({
                                     .filter(Boolean)
                                     .join(" · ")}
                                 </p>
-                                {hasTracking ? (
-                                  <p className="mt-1.5 text-[13px] font-semibold text-black/55">
-                                    운송장 {entry.delivery.trackingNumber}
-                                    {getDeliveryStatusLabel(
-                                      entry.delivery.status,
-                                    )
-                                      ? ` · ${getDeliveryStatusLabel(entry.delivery.status)}`
-                                      : ""}
-                                  </p>
+                                {hasTracking && !isEditingTracking ? (
+                                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                                    <p className="min-w-0 text-[13px] font-semibold text-black/55">
+                                      운송장 {entry.delivery.trackingNumber}
+                                      {getDeliveryStatusLabel(
+                                        entry.delivery.status,
+                                      )
+                                        ? ` · ${getDeliveryStatusLabel(entry.delivery.status)}`
+                                        : ""}
+                                    </p>
+                                    {canEditTracking ? (
+                                      <button
+                                        className="h-8 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                        disabled={pendingC2CAction !== null}
+                                        onClick={() => {
+                                          setParticipantTrackingInputs(
+                                            (inputs) => ({
+                                              ...inputs,
+                                              [entry.ownerId]:
+                                                currentTrackingNumber,
+                                            }),
+                                          );
+                                          setEditingTrackingOwnerId(
+                                            entry.ownerId,
+                                          );
+                                        }}
+                                        type="button"
+                                      >
+                                        수정
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 ) : (
                                   <div className="mt-2 flex gap-2">
                                     <input
@@ -1840,25 +1946,62 @@ export function HostedBuncheolManage({
                                       placeholder="운송장 번호 입력"
                                       value={trackingInput}
                                     />
-                                    <button
-                                      className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                      disabled={
-                                        trackingInput.trim().length === 0 ||
-                                        pendingC2CAction !== null
-                                      }
-                                      onClick={() =>
-                                        void handleRegisterParticipantTracking(
-                                          bundle.slots.find(
-                                            (slot) =>
-                                              slot.participationId ===
-                                              entry.ownerId,
-                                          ) ?? head,
-                                        )
-                                      }
-                                      type="button"
-                                    >
-                                      {isRegistering ? "등록 중" : "등록"}
-                                    </button>
+                                    {isEditingTracking ? (
+                                      <>
+                                        <button
+                                          className="h-10 shrink-0 rounded-full border border-black/10 bg-white px-3.5 text-[13px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                          disabled={isRegistering}
+                                          onClick={() => {
+                                            setEditingTrackingOwnerId(null);
+                                            setParticipantTrackingInputs(
+                                              (inputs) => {
+                                                const next = { ...inputs };
+
+                                                delete next[entry.ownerId];
+
+                                                return next;
+                                              },
+                                            );
+                                          }}
+                                          type="button"
+                                        >
+                                          취소
+                                        </button>
+                                        <button
+                                          className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                          disabled={
+                                            trackingInput.trim().length === 0 ||
+                                            isTrackingUnchanged ||
+                                            pendingC2CAction !== null
+                                          }
+                                          onClick={() =>
+                                            requestEditParticipantTracking(
+                                              ownerSlot,
+                                              currentTrackingNumber,
+                                            )
+                                          }
+                                          type="button"
+                                        >
+                                          {isRegistering ? "저장 중" : "저장"}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                        disabled={
+                                          trackingInput.trim().length === 0 ||
+                                          pendingC2CAction !== null
+                                        }
+                                        onClick={() =>
+                                          void handleRegisterParticipantTracking(
+                                            ownerSlot,
+                                          )
+                                        }
+                                        type="button"
+                                      >
+                                        {isRegistering ? "등록 중" : "등록"}
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                               </div>
