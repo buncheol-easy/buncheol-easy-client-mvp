@@ -51,6 +51,9 @@ type ArtistExploreContentProps = {
 };
 
 const FAVORITE_GROUP_LIMIT = 5;
+// 최애가 0↔1개로 바뀌면 상단 '나의 최애' 줄이 열리고 닫히며 카드 격자가 약 125px 밀린다. 하트를 빠르게 두 번
+// 누르면 두 번째 누름이 밀려 온 다른 카드의 이동 버튼에 닿으므로, 하트 처리 중과 그 직후 잠깐은 카드 이동을 무시한다.
+const CARD_TAP_GUARD_AFTER_FAVORITE_MS = 500;
 
 // 그룹 페이지에 다녀오면 이 화면은 새로 마운트돼 검색어·스크롤이 사라진다. 카드를 누를 때 지금 기록 칸에
 // 적어 두고 그 칸으로 돌아왔을 때만 되살린다. 홈 '최애 추가'로 연 목록은 새 칸이라 적힌 게 없다.
@@ -194,6 +197,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     [allGroupsData, favoriteGroupsData],
   );
   const pendingGroupIdsRef = useRef(new Set<string>());
+  const cardTapGuardUntilRef = useRef(0);
   // 한도 초과처럼 화면을 바꿀 필요 없는 안내는 잠깐 떴다 사라지는 토스트로 알린다.
   const [toast, showToast] = useToast();
 
@@ -278,7 +282,19 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     pendingRestoreViewRef.current = null;
   }, [isLoading, trimmedQuery]);
 
+  function guardCardTapsAfterFavorite() {
+    cardTapGuardUntilRef.current =
+      Date.now() + CARD_TAP_GUARD_AFTER_FAVORITE_MS;
+  }
+
   function openGroupPage(group: ArtistGroup) {
+    if (
+      pendingGroupIdsRef.current.size > 0 ||
+      Date.now() < cardTapGuardUntilRef.current
+    ) {
+      return;
+    }
+
     writeArtistListView({
       query,
       scrollTop: scrollContainerRef.current?.scrollTop ?? 0,
@@ -299,6 +315,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   const visibleMessage = message || loadErrorMessage;
 
   async function handleFavoriteToggle(group: ArtistGroup) {
+    guardCardTapsAfterFavorite();
+
     if (!authState.isLoggedIn) {
       router.push(
         createLoginHref({
@@ -342,6 +360,7 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     // 두 번째 이후 토글에도 처음 본 순서가 유지된다.
     setPinnedFavoriteIds((current) => current ?? getFavoritedIds(groups));
     // 캐시를 바로 고쳐 하트를 즉시 반영한다. 같은 캐시를 보는 홈 레일도 함께 갱신된다.
+    guardCardTapsAfterFavorite();
     setFavorited(group, nextFavorited);
 
     try {
@@ -364,6 +383,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           : "최애 그룹을 변경하지 못했어요.",
       );
     } finally {
+      // 실패 되돌리기·안내 문구가 생기거나 사라질 때도 격자가 밀린다.
+      guardCardTapsAfterFavorite();
       pendingGroupIdsRef.current.delete(group.id);
       setPendingGroupId(null);
     }
