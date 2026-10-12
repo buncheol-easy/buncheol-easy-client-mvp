@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -125,6 +126,85 @@ type SubmitFieldKey =
   | "shipping"
   | "closingDate"
   | "openChatUrl";
+
+/*
+ * 기기 뒤로가기(스와이프·뒤로 키) 가드. 웹은 뒤로가기를 취소할 수 없어서, 입력이 생기면 같은 주소의
+ * "막이 칸"을 방문 기록에 하나 더 넣어 첫 뒤로가기가 그 칸만 쓰게 하고(popstate) 그때 확인 시트를 띄운다.
+ * - 칸은 탭·키 입력 처리 도중에 넣는다. 사용자 동작 없이 넣은 칸은 크롬·사파리가 뒤로가기에서 건너뛴다.
+ * - state 는 지금 칸 것을 펼쳐 Next 키(__NA 등)를 지키고 URL 은 넘기지 않는다. Next 표시가 없는 칸으로
+ *   돌아오면 전체 새로고침되고, URL 을 넘기면 라우터 복원이 돈다(next app-router.js pushState 패치·onPopState).
+ * - 앱 안에서 이동하기 전에 막이 칸부터 걷어낸다. 남기면 다음 화면에서 뒤로가기가 빈 폼으로 돌아온다.
+ *   effect cleanup 에서 history.back() 을 부르면 안 된다 — 언마운트는 이미 다른 화면으로 가는 중이다.
+ */
+const uploadExitGuardStateKey = "__bceUploadExitGuard";
+// 막이 칸을 걷어내려고 history.back() 을 불렀는데 popstate 가 오지 않으면 이만큼 뒤 그냥 이동한다.
+const uploadExitGuardRemovalTimeoutMs = 600;
+
+type UploadExitGuard = {
+  // 막이 칸 위에 있을 때 그 주소. null 이면 막이 칸이 없거나 이미 쓰였다.
+  armedHref: string | null;
+  // 탭의 첫 화면이 이 폼이었다 — 기기 뒤로 시트의 '나가기'가 한 칸 더 뒤로 갈 곳이 없다.
+  isFirstEntry: boolean;
+  // 이 폼을 떠나는 중. 칸을 다시 넣지 않고 새로고침 경고도 띄우지 않는다.
+  isLeaving: boolean;
+  onRemoved: (() => void) | null;
+  removal: Promise<void> | null;
+};
+
+function isUploadExitGuardEntry(state: unknown) {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as Record<string, unknown>)[uploadExitGuardStateKey] === true
+  );
+}
+
+function armUploadExitGuard(guard: UploadExitGuard) {
+  if (guard.armedHref !== null || guard.isLeaving) {
+    return;
+  }
+
+  // 개발 모드 effect 두 번 실행·새로고침·앞으로 가기로 이미 막이 칸 위에 있으면 또 넣지 않는다.
+  if (!isUploadExitGuardEntry(window.history.state)) {
+    window.history.pushState(
+      { ...window.history.state, [uploadExitGuardStateKey]: true },
+      "",
+    );
+  }
+
+  guard.armedHref = window.location.href;
+}
+
+function removeUploadExitGuard(guard: UploadExitGuard) {
+  guard.isLeaving = true;
+
+  if (guard.removal) {
+    return guard.removal;
+  }
+
+  if (
+    guard.armedHref !== window.location.href ||
+    !isUploadExitGuardEntry(window.history.state)
+  ) {
+    guard.armedHref = null;
+    return Promise.resolve();
+  }
+
+  guard.removal = new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(finish, uploadExitGuardRemovalTimeoutMs);
+
+    function finish() {
+      window.clearTimeout(timeout);
+      guard.onRemoved = null;
+      resolve();
+    }
+
+    guard.onRemoved = finish;
+    window.history.back();
+  });
+
+  return guard.removal;
+}
 
 function padNumber(value: number) {
   return String(value).padStart(2, "0");
@@ -742,16 +822,17 @@ export function UploadProductForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingProduct, isEditMode]);
 
-  /*
-   * 이탈 요청 — 폼에 손댄 흔적이 없으면 그대로 보내고, 있으면 확인 시트를 띄운다.
-   * 확인 시트의 기본 액션은 "계속 작성"(취소)이고, 파괴적인 쪽이 확인 버튼이다.
-   */
-  function requestExit(navigate: () => void) {
-    if (!isFormDirty) {
-      navigate();
-      return;
-    }
+  const exitGuardRef = useRef<UploadExitGuard>({
+    armedHref: null,
+    isFirstEntry: false,
+    isLeaving: false,
+    onRemoved: null,
+    removal: null,
+  });
+  const isExitConfirmOpen = exitConfirmRequest !== null;
 
+  // 확인 시트의 기본 액션은 "계속 작성"(취소)이고, 파괴적인 쪽이 확인 버튼이다.
+  function showExitConfirm(leave: () => void) {
     setExitConfirmRequest({
       confirmLabel: "나가기",
       description: isEditMode
@@ -759,11 +840,175 @@ export function UploadProductForm({
         : "지금까지 작성한 사진과 내용이 모두 사라져요.",
       onConfirm: () => {
         setExitConfirmRequest(null);
-        navigate();
+        leave();
       },
       title: isEditMode ? "수정을 그만둘까요?" : "작성을 그만둘까요?",
     });
   }
+
+  // 헤더 ‹ 의 목적지. 기기 뒤로 시트도 탭의 첫 화면이라 더 뒤로 갈 곳이 없으면 여기로 보낸다.
+  async function leaveToExitDestination() {
+    await removeUploadExitGuard(exitGuardRef.current);
+
+    if (editProductId) {
+      const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+
+      router.replace(`/products/${editProductId}${returnSourceQuery}`);
+      return;
+    }
+
+    router.replace("/");
+  }
+
+  // 이탈 요청(헤더 ‹) — 폼에 손댄 흔적이 없으면 그대로 보내고, 있으면 확인 시트를 띄운다.
+  function requestExit() {
+    if (!isFormDirty) {
+      void leaveToExitDestination();
+      return;
+    }
+
+    showExitConfirm(() => void leaveToExitDestination());
+  }
+
+  // 기기 뒤로가기로 연 시트의 '나가기' — 원래 뒤로가기가 가려던 곳으로 간다.
+  function leaveByDeviceBack() {
+    const guard = exitGuardRef.current;
+
+    if (guard.isFirstEntry) {
+      void leaveToExitDestination();
+      return;
+    }
+
+    guard.isLeaving = true;
+    // 시트를 띄운 채 앞으로 가기로 막이 칸에 다시 올라와 있었다면 두 칸을 내려가야 한다.
+    window.history.go(guard.armedHref !== null ? -2 : -1);
+  }
+
+  // 기기 뒤로가기로 연 시트면 막이 칸은 이미 쓰였다. '계속 작성'(배경 탭·Esc 포함)은 사용자 동작이라 여기서 다시 넣는다.
+  function handleExitConfirmCancel() {
+    setExitConfirmRequest(null);
+
+    if (isFormDirty) {
+      armUploadExitGuard(exitGuardRef.current);
+    }
+  }
+
+  const handleExitGuardPopState = useEffectEvent(() => {
+    const guard = exitGuardRef.current;
+
+    if (guard.onRemoved) {
+      guard.armedHref = null;
+      guard.onRemoved();
+      return;
+    }
+
+    if (isUploadExitGuardEntry(window.history.state)) {
+      if (!guard.isLeaving) {
+        guard.armedHref = window.location.href;
+      }
+
+      return;
+    }
+
+    if (guard.armedHref === null) {
+      return;
+    }
+
+    const isGuardEntryUsed = window.location.href === guard.armedHref;
+
+    guard.armedHref = null;
+
+    if (!isGuardEntryUsed || guard.isLeaving) {
+      return;
+    }
+
+    // 입력을 다 지웠다면 사용자가 누른 뒤로가기를 그대로 이어 준다.
+    if (!isFormDirty) {
+      window.history.back();
+      return;
+    }
+
+    // 시트가 뜬 채 한 번 더 뒤로가면 그대로 나간다. popstate 안에서 칸을 다시 넣으면 사용자 동작이 없어
+    // 브라우저가 그 칸을 건너뛰거나 사용자를 화면에 가둘 수 있다.
+    showExitConfirm(leaveByDeviceBack);
+  });
+
+  useEffect(() => {
+    const guard = exitGuardRef.current;
+
+    guard.isFirstEntry = window.history.length === 1;
+
+    // 새로고침·앞으로 가기로 막이 칸 위에서 다시 열렸다.
+    if (isUploadExitGuardEntry(window.history.state)) {
+      guard.armedHref = window.location.href;
+    }
+
+    function handlePopState() {
+      handleExitGuardPopState();
+    }
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    const guard = exitGuardRef.current;
+
+    if (
+      !isFormDirty ||
+      isExitConfirmOpen ||
+      guard.armedHref !== null ||
+      guard.isLeaving
+    ) {
+      return;
+    }
+
+    // 입력 직후라 아직 사용자 동작 안이면 바로 넣는다(사진만 고르고 곧장 뒤로가는 경우).
+    if (navigator.userActivation?.isActive) {
+      armUploadExitGuard(guard);
+      return;
+    }
+
+    function handleUserInput() {
+      armUploadExitGuard(guard);
+    }
+
+    document.addEventListener("pointerdown", handleUserInput, true);
+    document.addEventListener("keydown", handleUserInput, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleUserInput, true);
+      document.removeEventListener("keydown", handleUserInput, true);
+    };
+  }, [isExitConfirmOpen, isFormDirty]);
+
+  // 입력이 있을 때 새로고침·탭 닫기 경고(브라우저 기본 문구). 앱 안 이동 직전에는 풀어 둔다.
+  useEffect(() => {
+    if (!isFormDirty) {
+      return;
+    }
+
+    const guard = exitGuardRef.current;
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (guard.isLeaving) {
+        return;
+      }
+
+      event.preventDefault();
+      // preventDefault 를 모르는 구형 브라우저용.
+      event.returnValue = true;
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isFormDirty]);
   // 가입 미완료(전화번호 미등록) 유저를 /upload 직접 진입에서도 보완 화면으로 보낸다(공용 가드,
   // 홈 경유와 동일 동작). 개최 자격(연령대·상한)은 서버 게이트가 제출 시 판정한다.
   useProfileCompletionGuard();
@@ -2057,6 +2302,7 @@ export function UploadProductForm({
           });
 
           const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+          await removeUploadExitGuard(exitGuardRef.current);
           router.replace(`/products/${productId}${returnSourceQuery}`);
           return;
         }
@@ -2117,10 +2363,12 @@ export function UploadProductForm({
               productId: nextProductId,
             });
 
+            await removeUploadExitGuard(exitGuardRef.current);
             router.push(`/products/${nextProductId}?from=upload`);
             return;
           }
 
+          await removeUploadExitGuard(exitGuardRef.current);
           router.push("/profile/bids");
           return;
         }
@@ -2162,6 +2410,7 @@ export function UploadProductForm({
 
     const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
 
+    await removeUploadExitGuard(exitGuardRef.current);
     router.replace(`/products/${productId}${returnSourceQuery}`);
   }
 
@@ -2210,22 +2459,7 @@ export function UploadProductForm({
                   <button
                     aria-label="이전 화면"
                     className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
-                    onClick={() =>
-                      requestExit(() => {
-                        if (editProductId) {
-                          const returnSourceQuery = returnSource
-                            ? `?from=${returnSource}`
-                            : "";
-
-                          router.replace(
-                            `/products/${editProductId}${returnSourceQuery}`,
-                          );
-                          return;
-                        }
-
-                        router.replace("/");
-                      })
-                    }
+                    onClick={requestExit}
                     type="button"
                   >
                     <BackIcon />
@@ -2568,7 +2802,7 @@ export function UploadProductForm({
 
           <ConfirmSheet
             cancelLabel="계속 작성"
-            onCancel={() => setExitConfirmRequest(null)}
+            onCancel={handleExitConfirmCancel}
             request={exitConfirmRequest}
           />
       </main>
@@ -2585,22 +2819,7 @@ export function UploadProductForm({
                 <button
                   aria-label="이전 화면"
                   className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
-                  onClick={() =>
-                    requestExit(() => {
-                      if (editProductId) {
-                        const returnSourceQuery = returnSource
-                          ? `?from=${returnSource}`
-                          : "";
-
-                        router.replace(
-                          `/products/${editProductId}${returnSourceQuery}`,
-                        );
-                        return;
-                      }
-
-                      router.replace("/");
-                    })
-                  }
+                  onClick={requestExit}
                   type="button"
                 >
                   <BackIcon />
@@ -3422,7 +3641,7 @@ export function UploadProductForm({
 
           <ConfirmSheet
             cancelLabel="계속 작성"
-            onCancel={() => setExitConfirmRequest(null)}
+            onCancel={handleExitConfirmCancel}
             request={exitConfirmRequest}
           />
     </main>
