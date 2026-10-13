@@ -131,12 +131,12 @@ function getWinnerBidAmount(option: BuncheolManagementOption) {
   return option.winner?.paymentAmount ?? option.winner?.bidAmount ?? null;
 }
 
-// 개최 목록 카드와 같은 함수 — 카드 「종료」를 눌러 들어왔는데 머리가 「진행 확정」이면 두 화면이 갈린다.
-// 마감은 넘기지 않는다: 카드가 올해 마감을 못 읽어 유예 구간에 「모집 중」이라 그에 맞춘다. 마감 판정은 #203에서 카드와 함께 고친다.
+// 개최 목록 카드와 같은 함수·같은 기준(서버 원본 마감값)으로 판정한다 — 카드 「종료」를 눌러 들어왔는데
+// 머리가 「진행 확정」이면 두 화면이 갈린다.
 function getManagementStatusBadge(detail: BuncheolManagementDetail) {
   return getHostedBuncheolStatusBadge({
     ended: detail.ended,
-    isDeadlinePassed: false,
+    isDeadlinePassed: isPastDateTime(detail.deadline),
     status: detail.status,
   });
 }
