@@ -304,6 +304,8 @@ type CheckoutPaymentItem = {
 type CheckoutPaymentSummary = {
   deliveryAddress: DeliveryAddress | null;
   hostBankAccount: BankAccountInfo | null;
+  // 코드 없이 0원으로 바로 확정된 LEGACY 참여 — "codeConfirmed" 단계를 같이 쓰고 부제만 다르다.
+  isFreeConfirmed: boolean;
   items: CheckoutPaymentItem[];
   paymentDueAt?: string | null;
   productAmount: number;
@@ -1814,6 +1816,23 @@ export function ProductDetail({
     auctionOptions.every(
       (option) => priceToNumber(getBidBaseline(option)) === 0,
     );
+  // 모든 배송 방법이 실제 0원인 서버 분철. priceToNumber 는 「판매자 안내」(목업)·「-」(공개 미리보기)도
+  // 0 으로 바꾸므로 숫자가 적힌 값만 센다.
+  const isAllShippingFree =
+    product.isApiProduct === true &&
+    shippingMethods.length > 0 &&
+    shippingMethods.every(
+      (method) => /\d/.test(method.price) && priceToNumber(method.price) === 0,
+    );
+  // 돌려받을 배송비가 없으면 환급 안내는 지킬 수 없는 약속이다(서버 환급 판정도 배송비 > 0 을 요구).
+  const showShippingFeePaybackNotice =
+    isShippingFeePaybackProduct && !isAllShippingFree;
+  // 참여 확인 단계의 미리 보기 문구 전용. 결과 화면은 서버 응답(금액 0 + 기한 없음)으로 판정한다.
+  const isFreeCheckoutEstimate =
+    !isC2CProduct &&
+    !isCodeCheckout &&
+    activeBidCount > 0 &&
+    estimatedCheckoutTotal === 0;
   // 서버 수정 가드(validateRecruiting)와 같은 조건으로 맞춘다 — 모집중이고 마감 전일 때만 저장이 통한다.
   // 상태를 안 보면 성사 확정 뒤에도 버튼이 떠서, 개최자가 다 고친 뒤 저장에서야 거부당한다.
   // 로컬 임시 분철(uploaded-)은 서버 가드 대상이 아니라 그대로 둔다.
@@ -2825,6 +2844,7 @@ export function ProductDetail({
       }
 
       let didRequestParticipation = false;
+      let isFreeConfirmedCheckout = false;
 
       try {
         const checkoutRequestItems = submittedBids.map(
@@ -2882,6 +2902,13 @@ export function ProductDetail({
           isC2CProduct && !isC2CCollectingProduct && !result.paymentDueAt;
         // 계좌·기한이 없는 게 정상이라 결제 상세 보충 조회를 태우면 빈 응답을 입금 안내로 오인한다.
         const isCodeConfirmedResult = isCodeCheckout;
+        // LEGACY 0원 + 고른 편의점 배송비 0원은 서버가 즉시 확정하고 계좌·기한 없이 응답한다(유료 LEGACY 는
+        // 기한이 늘 있다). 보충 조회를 태우면 30분 기한이 입금 안내로 뜬다. C2C 신청도 기한이 없어 제외한다.
+        isFreeConfirmedCheckout =
+          !isC2CProduct &&
+          !isCodeCheckout &&
+          result.paymentAmount === 0 &&
+          !result.paymentDueAt;
         let paymentDetail:
           | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
           | null = null;
@@ -2889,6 +2916,7 @@ export function ProductDetail({
         if (
           !isC2CAppliedResult &&
           !isCodeConfirmedResult &&
+          !isFreeConfirmedCheckout &&
           firstParticipationId &&
           (!result.hostBankAccount ||
             result.paymentAmount === null ||
@@ -2920,12 +2948,13 @@ export function ProductDetail({
         // 확인 스텝 표기와 동일하게 폴백 금액에서도 배송비를 더하지 않는다.
         // 코드 참여는 서버가 0원을 확정해 내려준다. 폴백을 열어 두면 배송비가 캐시에 굳어
         // 참여 내역이 "0원 참여"를 유상으로 표시한다.
-        const totalPaymentAmount = isCodeConfirmedResult
-          ? 0
-          : result.paymentAmount ??
-            paymentDetail?.paymentAmount ??
-            totalBidAmount +
-              (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
+        const totalPaymentAmount =
+          isCodeConfirmedResult || isFreeConfirmedCheckout
+            ? 0
+            : result.paymentAmount ??
+              paymentDetail?.paymentAmount ??
+              totalBidAmount +
+                (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
         const sharedShippingFee = Math.max(
           totalPaymentAmount - totalBidAmount,
           0,
@@ -2939,7 +2968,7 @@ export function ProductDetail({
         // C2C 신청은 APPLIED 로 바로잡는다 (dueAt 부재 = 확정 전 신청).
         const sharedParticipationStatus = isC2CAppliedResult
           ? "APPLIED"
-          : isCodeConfirmedResult
+          : isCodeConfirmedResult || isFreeConfirmedCheckout
             ? "CONFIRMED"
             : result.participationStatus ||
               paymentDetail?.paymentStatus ||
@@ -3055,6 +3084,7 @@ export function ProductDetail({
       setCheckoutPaymentSummary({
         deliveryAddress: nextBidDeliveryAddress,
         hostBankAccount: checkoutHostBankAccount,
+        isFreeConfirmed: isFreeConfirmedCheckout,
         items: paymentItems,
         paymentDueAt: getEarliestPaymentDueAt(paymentItems),
         productAmount: paymentItems.reduce(
@@ -3073,7 +3103,7 @@ export function ProductDetail({
       pendingCheckoutRestoreRef.current = null;
       // C2C 신청은 입금 안내 대신 신청 완료 화면으로 — 계좌·기한이 아직 없다.
       setCheckoutStep(
-        isCodeCheckout
+        isCodeCheckout || isFreeConfirmedCheckout
           ? "codeConfirmed"
           : paymentItems.some((item) => item.participationStatus === "APPLIED")
             ? "applied"
@@ -4123,9 +4153,9 @@ export function ProductDetail({
                 ))}
               </div>
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
-                이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이
-                중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께
-                입금해요.
+                {isAllShippingFree
+                  ? "이 분철에서 이용할 수 있는 배송 방법이에요. 참여할 때 이 중에서 택배 받을 편의점 지점을 고르면 되고, 배송비는 따로 내지 않아요."
+                  : "이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이 중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께 입금해요."}
               </p>
             </div>
             ) : null}
@@ -4264,7 +4294,7 @@ export function ProductDetail({
                         <p className="mt-0.5 text-[16px] font-semibold">
                           {getBidBaseline(option)}
                         </p>
-                        {isShippingFeePaybackProduct ? (
+                        {showShippingFeePaybackNotice ? (
                           <p className="mt-0.5 text-[11px] font-semibold text-[#7A8A3A]">
                             배송비만 결제
                           </p>
@@ -4275,7 +4305,7 @@ export function ProductDetail({
                 })}
               </div>
 
-              {isShippingFeePaybackProduct ? (
+              {showShippingFeePaybackNotice ? (
                 <div className="mt-4 rounded-[0.95rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-4">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F]">
@@ -4420,13 +4450,17 @@ export function ProductDetail({
                       : checkoutStep === "applied"
                         ? "개최자가 성사를 확정하면 입금 안내를 드려요."
                         : checkoutStep === "codeConfirmed"
-                          ? "코드가 확인돼 슬롯이 확정됐어요."
+                          ? checkoutPaymentSummary?.isFreeConfirmed
+                            ? "입금할 금액이 없어 바로 참여가 확정됐어요."
+                            : "코드가 확인돼 슬롯이 확정됐어요."
                           : checkoutStep === "confirm"
                             ? isCodeCheckout
                               ? "전달받은 참여 코드를 입력하면 슬롯이 확정돼요."
                               : isC2CProduct && !isC2CCollectingProduct
                                 ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
-                                : "참여하면 입금 계좌와 마감 시각이 안내돼요."
+                                : isFreeCheckoutEstimate
+                                  ? "입금할 금액이 없는 무료 참여예요."
+                                  : "참여하면 입금 계좌와 마감 시각이 안내돼요."
                             : canSelectMultipleMembers
                               ? "신청할 멤버를 선택해 주세요. 여러 자리를 골라 한 번에 신청할 수 있어요."
                               : isC2CProduct
@@ -4712,7 +4746,7 @@ export function ProductDetail({
                           )}
                         </span>
                       </div>
-                      {isShippingFeePaybackProduct ? (
+                      {isShippingFeePaybackProduct && estimatedShippingAmount > 0 ? (
                         <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
                           이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
                           <br />
@@ -4748,7 +4782,9 @@ export function ProductDetail({
                         ? "신청 단계에서는 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 드리고, 확정 전에는 언제든 무료로 취소할 수 있어요."
                         : isC2CCollectingProduct
                           ? "신청하면 24시간 입금 기한이 정해져요. 기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요."
-                          : "참여하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 참여가 자동 취소돼요."}
+                          : isFreeCheckoutEstimate
+                            ? "참여하면 바로 확정돼요. 입금 단계는 없어요."
+                            : "참여하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 참여가 자동 취소돼요."}
                     </p>
                     {isC2CProduct ? (
                       // 중개자 고지(전상법 §20① — docs/41 §3.3-1) + 미성년자 §13③ 취소 가능성 고지
@@ -4950,7 +4986,8 @@ export function ProductDetail({
                             {formatPrice(checkoutPaymentSummary.totalAmount)}
                           </span>
                         </div>
-                        {isShippingFeePaybackProduct ? (
+                        {isShippingFeePaybackProduct &&
+                        checkoutPaymentSummary.shippingAmount > 0 ? (
                           <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
                             이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
                             <br />

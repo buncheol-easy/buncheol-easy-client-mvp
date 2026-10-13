@@ -311,11 +311,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     : "";
   // '신규'·'배송비 0원 이벤트'는 구매 유인 배지라 아직 참여할 수 있는 카드에만 띄운다(마감·취소 카드에선 소음).
   const isNewProduct = !shouldDimCard && isRecentlyUploaded(item.uploadedAt);
-  // 환급 이벤트 배지도 배송비 이야기라, 한 카드에 둘 다 띄우면 어느 쪽이 무료인지 흐려진다.
+  // 두 배지 모두 배송비 이야기라 한 카드에 하나만 띄운다. 배송비까지 0원이면 돌려받을 배송비가 없으므로
+  // 「배송비 0원 이벤트」가 이긴다.
+  const showPaybackBadge =
+    item.isShippingFeePaybackEvent === true && item.isFreeShippingEvent !== true;
   const showFreeShippingBadge =
-    item.isFreeShippingEvent === true &&
-    !item.isShippingFeePaybackEvent &&
-    !shouldDimCard;
+    item.isFreeShippingEvent === true && !shouldDimCard;
 
   useEffect(() => {
     setIsLiked(item.liked === true);
@@ -543,7 +544,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               >
                 {deadlineBadge.label}
               </span>
-              {item.isShippingFeePaybackEvent ? (
+              {showPaybackBadge ? (
                 <span className="inline-flex rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
                   배송비 돌려받는 무료 분철
                 </span>
@@ -650,9 +651,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
         )}
-        {item.isShippingFeePaybackEvent || showFreeShippingBadge || isNewProduct ? (
+        {showPaybackBadge || showFreeShippingBadge || isNewProduct ? (
           <div className="absolute left-3 top-3 flex flex-col items-start gap-1">
-            {item.isShippingFeePaybackEvent ? (
+            {showPaybackBadge ? (
               <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
                 배송비 돌려받는 무료 분철
               </span>
