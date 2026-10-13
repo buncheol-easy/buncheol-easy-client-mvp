@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BackIcon } from "@/components/icons";
+import { useQueryClient } from "@tanstack/react-query";
+import { BackIcon, PlusIcon } from "@/components/icons";
 import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { Toast, useToast } from "@/components/Toast";
 import {
+  addBuncheolMember,
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
   confirmBundlePayment,
   isSyntheticParticipantName,
   releaseBundle,
+  removeBuncheolMember,
   requestBuncheolDetail,
   requestBuncheolManagement,
   requestDeliveryTrackingRegistration,
+  requestGroupMembers,
+  requestGroups,
   requestPaymentConfirmation,
   updateBuncheolOpenChatUrl,
   type BuncheolDetail,
@@ -41,7 +46,9 @@ import {
   isParticipationPaymentSentStatus,
   getCountUnit,
 } from "@/lib/buncheol-states";
+import { rankGroupSearchResults } from "@/lib/group-presenters";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
+import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
   getInitialAuthState,
   readAuthState,
@@ -378,11 +385,106 @@ function getManagementOptionsFromDetail(
       memberName: member.name,
       participants,
       participationCount: Math.max(member.participantCount, participants.length),
+      // 상세 파서는 서버 members[].price 를 bidMinPrice 로 읽는다(그 응답에 다른 금액 키가 없다).
+      price: member.bidMinPrice,
+      saleStatus: member.saleStatus,
       winner: currentParticipant
         ? getWinnerFromParticipant(currentParticipant)
         : null,
     };
   });
+}
+
+// 서버 Buncheol.acceptsNewParticipation 과 같은 술어 — 자리 빼기·넣기는 이 구간에서만 통한다(아니면 BCH-060).
+// 유예(마감 지난 모집 중)에는 서버가 빈 자리를 전부 CLOSED 로 내려 개최자가 닫은 자리와 구분할 수 없다.
+function isAcceptingNewParticipation(detail: BuncheolManagementDetail) {
+  if (getFlowType(detail.flowType) !== "C2C") {
+    return false;
+  }
+
+  if (isBuncheolPaymentCollectingStatus(detail.status)) {
+    return true;
+  }
+
+  return (
+    isBuncheolRecruitingStatus(detail.status) && !isPastDateTime(detail.deadline)
+  );
+}
+
+function isClosedMemberSlot(option: BuncheolManagementOption) {
+  return option.saleStatus?.toUpperCase() === "CLOSED";
+}
+
+type MemberSlotState = {
+  label: string;
+  kind: "empty" | "occupied" | "unknown";
+};
+
+// 뺄 수 있는지는 서버 saleStatus 그대로 가른다. 모르는 값(롤백 중 CODE_ONLY 등)은 버튼 없이 둔다.
+function getMemberSlotState(saleStatus: string | undefined): MemberSlotState {
+  switch (saleStatus?.toUpperCase()) {
+    case "AVAILABLE":
+      return { kind: "empty", label: "빈 자리" };
+    case "APPLIED":
+      return { kind: "occupied", label: "신청됨" };
+    // 「보냈어요」도 서버가 AWAITING_PAYMENT 로 접어 내려준다.
+    case "AWAITING_PAYMENT":
+      return { kind: "occupied", label: "입금 대기" };
+    case "SOLD":
+      return { kind: "occupied", label: "입금 확인" };
+    default:
+      return { kind: "unknown", label: "확인 필요" };
+  }
+}
+
+function formatMemberSlotPrice(price: number | undefined) {
+  return typeof price === "number" && Number.isFinite(price)
+    ? `${price.toLocaleString("ko-KR")}원`
+    : "-";
+}
+
+function isMemberPriceInput(rawInput: string) {
+  const digits = rawInput.replace(/[^\d]/g, "");
+
+  return digits !== "" && Number(digits) % 100 === 0;
+}
+
+type AddMemberCandidate = {
+  memberId: string;
+  name: string;
+  // 닫힌 자리의 이전 가격. 새 멤버면 없다.
+  previousPrice?: number;
+};
+
+type AddMemberSheetState = {
+  closedCandidates: AddMemberCandidate[];
+  groupCandidates: AddMemberCandidate[];
+  isLoading: boolean;
+  loadFailed: boolean;
+};
+
+// 관리·상세 응답에 그룹 id 가 없어 수정 폼(UploadProductForm)처럼 그룹 이름으로 찾는다.
+// 이름이 비슷한 다른 그룹을 집지 않도록 지금 자리의 멤버가 모두 들어 있는 그룹만 쓴다.
+async function requestBuncheolGroupMembers(
+  groupName: string,
+  slotMemberIds: string[],
+) {
+  if (!groupName.trim() || slotMemberIds.length === 0) {
+    throw new Error("group not found");
+  }
+
+  const groups = rankGroupSearchResults(await requestGroups(groupName), groupName);
+
+  for (const group of groups) {
+    const members = await requestGroupMembers(group.id);
+    const groupMemberIds = new Set(members.map((member) => member.id));
+
+    if (slotMemberIds.every((memberId) => groupMemberIds.has(memberId))) {
+      return members;
+    }
+  }
+
+  throw new Error("group not found");
 }
 
 async function requestHostedBuncheolManagement(
@@ -455,6 +557,17 @@ export function HostedBuncheolManage({
   const [openChatUrlDraft, setOpenChatUrlDraft] = useState<string | null>(null);
   const [openChatUrlError, setOpenChatUrlError] = useState("");
   const [isSavingOpenChatUrl, setIsSavingOpenChatUrl] = useState(false);
+  const queryClient = useQueryClient();
+  // 멤버 추가 시트 — null 이면 닫힘.
+  const [addMemberSheet, setAddMemberSheet] =
+    useState<AddMemberSheetState | null>(null);
+  const [addMemberSelectedId, setAddMemberSelectedId] = useState<
+    string | null
+  >(null);
+  const [addMemberPriceDraft, setAddMemberPriceDraft] = useState("");
+  const [addMemberError, setAddMemberError] = useState("");
+  // 시트를 닫았다 다시 열면 앞선 그룹 멤버 조회가 늦게 끝나 새 목록을 덮지 않게 한다.
+  const addMemberLoadIdRef = useRef(0);
 
   useEffect(() => {
     const accessToken = authState.isLoggedIn
@@ -647,6 +760,13 @@ export function HostedBuncheolManage({
   const c2cTrackingCompletedCount = [...c2cDeliveries.values()].filter(
     (delivery) => Boolean(delivery.trackingNumber),
   ).length;
+  // 「멤버 관리」 — 뺀 자리(삭제·CLOSED)는 목록에서 숨기고 「멤버 추가」에서 다시 보여 준다.
+  const memberSlots = (detail?.options ?? []).filter(
+    (option) => !isClosedMemberSlot(option),
+  );
+  const closedMemberSlots = (detail?.options ?? []).filter(isClosedMemberSlot);
+  // 서버의 마지막 자리 판정(BCH-120)·최소 인원 하향과 같은 수 — 닫히지 않은 자리.
+  const openMemberSlotCount = memberSlots.length;
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -1185,6 +1305,224 @@ export function HostedBuncheolManage({
     }
   }
 
+  // 서버는 모집 중에만 최소 인원을 남은 열린 자리 수로 낮춘다. 입금 수집 중엔 그대로고, 다시 넣어도 올리지 않는다.
+  function requestRemoveMemberSlot(option: BuncheolManagementOption) {
+    if (!detail || pendingC2CAction) {
+      return;
+    }
+
+    const nextOpenSlotCount = openMemberSlotCount - 1;
+    const lowersMinHeadcount =
+      isBuncheolRecruitingStatus(detail.status) &&
+      nextOpenSlotCount < minHeadcount;
+
+    setConfirmSheetRequest({
+      confirmLabel: "빼기",
+      description:
+        "이 멤버는 더 신청받지 않아요. 실수였다면 「멤버 추가」로 다시 넣을 수 있어요.",
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runRemoveMemberSlot(option);
+      },
+      title: `${option.memberName} 멤버를 뺄까요?`,
+      warnings: lowersMinHeadcount
+        ? [
+            `최소 진행 인원이 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
+          ]
+        : undefined,
+    });
+  }
+
+  async function runRemoveMemberSlot(option: BuncheolManagementOption) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    setPendingC2CAction(`remove-member:${option.buncheolMemberId}`);
+
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await removeBuncheolMember(accessToken, id, option.buncheolMemberId);
+      // 홈·아티스트 카드의 남은 멤버가 60초 저장본으로 남지 않게 한다.
+      void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      showToast(`${option.memberName} 멤버를 뺐어요.`);
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
+    } catch (error: unknown) {
+      showToast(
+        error instanceof Error ? error.message : "멤버를 빼지 못했어요.",
+      );
+
+      // 그사이 신청이 들어왔거나 다른 탭에서 뺐으면 서버가 거부한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
+    } finally {
+      setPendingC2CAction(null);
+    }
+  }
+
+  async function openAddMemberSheet() {
+    if (!detail || pendingC2CAction) {
+      return;
+    }
+
+    const slotMemberIds = detail.options.flatMap((option) =>
+      option.memberId ? [option.memberId] : [],
+    );
+    // 그룹 목록을 못 불러와도 닫힌 멤버는 상세에 남아 있어 다시 넣을 수 있다.
+    const closedCandidates = closedMemberSlots.flatMap((option) =>
+      option.memberId
+        ? [
+            {
+              memberId: option.memberId,
+              name: option.memberName,
+              previousPrice: option.price,
+            },
+          ]
+        : [],
+    );
+    const loadId = addMemberLoadIdRef.current + 1;
+
+    addMemberLoadIdRef.current = loadId;
+    setAddMemberSelectedId(null);
+    setAddMemberPriceDraft("");
+    setAddMemberError("");
+    setAddMemberSheet({
+      closedCandidates,
+      groupCandidates: [],
+      isLoading: true,
+      loadFailed: false,
+    });
+
+    try {
+      const groupMembers = await requestBuncheolGroupMembers(
+        detail.groupName,
+        slotMemberIds,
+      );
+      const slotMemberIdSet = new Set(slotMemberIds);
+      const groupCandidates = groupMembers
+        .filter((member) => !slotMemberIdSet.has(member.id))
+        .map((member) => ({ memberId: member.id, name: member.name }));
+
+      if (addMemberLoadIdRef.current !== loadId) {
+        return;
+      }
+
+      setAddMemberSheet((current) =>
+        current ? { ...current, groupCandidates, isLoading: false } : current,
+      );
+    } catch {
+      if (addMemberLoadIdRef.current !== loadId) {
+        return;
+      }
+
+      setAddMemberSheet((current) =>
+        current ? { ...current, isLoading: false, loadFailed: true } : current,
+      );
+    }
+  }
+
+  function closeAddMemberSheet() {
+    if (pendingC2CAction === "add-member") {
+      return;
+    }
+
+    setAddMemberSheet(null);
+    setAddMemberError("");
+  }
+
+  function selectAddMemberCandidate(candidate: AddMemberCandidate) {
+    setAddMemberSelectedId(candidate.memberId);
+    setAddMemberPriceDraft(
+      typeof candidate.previousPrice === "number"
+        ? String(candidate.previousPrice)
+        : "",
+    );
+    setAddMemberError("");
+  }
+
+  async function submitAddMember() {
+    if (!addMemberSheet || pendingC2CAction) {
+      return;
+    }
+
+    const candidate = [
+      ...addMemberSheet.closedCandidates,
+      ...addMemberSheet.groupCandidates,
+    ].find((entry) => entry.memberId === addMemberSelectedId);
+
+    if (!candidate) {
+      return;
+    }
+
+    if (!isMemberPriceInput(addMemberPriceDraft)) {
+      setAddMemberError("가격은 100원 단위로 입력해 주세요.");
+      return;
+    }
+
+    const price = Number(addMemberPriceDraft.replace(/[^\d]/g, ""));
+
+    setPendingC2CAction("add-member");
+
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        setAddMemberError("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await addBuncheolMember(accessToken, id, {
+        memberId: candidate.memberId,
+        price,
+      });
+      setAddMemberSheet(null);
+      void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`);
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
+    } catch (error: unknown) {
+      // 후보 목록이 낡았을 수 있어(다른 탭에서 넣음 등) 시트를 닫고 다시 불러온다.
+      setAddMemberSheet(null);
+      showToast(
+        error instanceof Error ? error.message : "멤버를 넣지 못했어요.",
+      );
+
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
+    } finally {
+      setPendingC2CAction(null);
+    }
+  }
+
   // ⚠️ 높이는 100dvh 가 아니라 h-full 이어야 한다. 이 화면은 HostedBuncheolManageExperience 의
   // .product-page-panel(absolute inset-0) 안에서 렌더되는데, 바깥 셸이 그 높이를 100dvh 보다
   // 작게 잡는 표시 모드가 여럿이다 — 데스크톱 폰 프레임(app/globals.css 의 desktop-web-shell:
@@ -1530,6 +1868,82 @@ export function HostedBuncheolManage({
                   확정할 수 있어요.
                 </p>
               )}
+            </section>
+          ) : null}
+
+          {isAcceptingNewParticipation(detail) && detail.options.length > 0 ? (
+            <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
+              <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                멤버 관리
+              </p>
+              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+                다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
+                않아요.
+              </p>
+              <ul className="mt-3 divide-y divide-black/[0.06]">
+                {memberSlots.map((option) => {
+                  const slotState = getMemberSlotState(option.saleStatus);
+                  const isLastOpenSlot = openMemberSlotCount <= 1;
+                  const blockedReason =
+                    slotState.kind === "occupied"
+                      ? "신청자가 있는 자리는 뺄 수 없어요."
+                      : slotState.kind === "empty" && isLastOpenSlot
+                        ? "마지막 멤버는 뺄 수 없어요."
+                        : null;
+                  const isRemoving =
+                    pendingC2CAction ===
+                    `remove-member:${option.buncheolMemberId}`;
+
+                  return (
+                    <li
+                      className="flex items-center gap-2 py-2.5"
+                      key={option.buncheolMemberId}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {option.memberName}
+                        </p>
+                        <p className="mt-0.5 text-[12px] font-medium text-black/40">
+                          {formatMemberSlotPrice(option.price)}
+                        </p>
+                        {blockedReason ? (
+                          <p className="mt-0.5 text-[11px] font-medium leading-4 text-black/35">
+                            {blockedReason}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          option.saleStatus?.toUpperCase() === "SOLD"
+                            ? "bg-black text-white"
+                            : "bg-[#eeeeee] text-black/60"
+                        }`}
+                      >
+                        {slotState.label}
+                      </span>
+                      {slotState.kind === "empty" ? (
+                        <button
+                          className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                          disabled={isLastOpenSlot || pendingC2CAction !== null}
+                          onClick={() => requestRemoveMemberSlot(option)}
+                          type="button"
+                        >
+                          {isRemoving ? "빼는 중" : "빼기"}
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              <button
+                className="mt-3 flex h-11 w-full items-center justify-center gap-1 rounded-full border border-black/10 bg-white text-[14px] font-semibold tracking-[-0.04em] text-black/70 disabled:text-black/25"
+                disabled={pendingC2CAction !== null}
+                onClick={() => void openAddMemberSheet()}
+                type="button"
+              >
+                <PlusIcon className="h-4 w-4" />
+                멤버 추가
+              </button>
             </section>
           ) : null}
 
@@ -2425,6 +2839,123 @@ export function HostedBuncheolManage({
                 type="button"
               >
                 {isSavingOpenChatUrl ? "저장 중" : "저장"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {addMemberSheet !== null ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 px-4 pb-4 backdrop-blur-[2px]">
+          <div className="flex max-h-[calc(100%-2rem)] w-full max-w-[402px] flex-col rounded-[1.2rem] bg-white px-5 pb-5 pt-5">
+            <p className="shrink-0 text-[16px] font-semibold tracking-[-0.04em]">
+              멤버 추가
+            </p>
+            <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+              {addMemberSheet.closedCandidates.length +
+                addMemberSheet.groupCandidates.length >
+              0 ? (
+                <ul className="space-y-1.5">
+                  {[
+                    ...addMemberSheet.closedCandidates,
+                    ...addMemberSheet.groupCandidates,
+                  ].map((candidate) => {
+                    const isSelected =
+                      candidate.memberId === addMemberSelectedId;
+
+                    return (
+                      <li key={candidate.memberId}>
+                        <button
+                          aria-pressed={isSelected}
+                          className={`flex w-full items-center justify-between gap-3 rounded-[0.85rem] border px-3 py-2.5 text-left ${
+                            isSelected
+                              ? "border-black bg-[#F7FAEE]"
+                              : "border-black/10 bg-white"
+                          }`}
+                          disabled={pendingC2CAction === "add-member"}
+                          onClick={() => selectAddMemberCandidate(candidate)}
+                          type="button"
+                        >
+                          <span className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                            {candidate.name}
+                          </span>
+                          {typeof candidate.previousPrice === "number" ? (
+                            <span className="shrink-0 text-[12px] font-medium text-black/40">
+                              {`이전 가격 ${candidate.previousPrice.toLocaleString("ko-KR")}원`}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {addMemberSheet.isLoading ? (
+                <p className="py-3 text-center text-[13px] font-medium text-black/40">
+                  멤버 목록을 불러오는 중이에요.
+                </p>
+              ) : addMemberSheet.loadFailed ? (
+                <p className="mt-2 break-keep text-[12px] font-medium leading-5 text-black/45">
+                  멤버 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
+                </p>
+              ) : addMemberSheet.closedCandidates.length +
+                  addMemberSheet.groupCandidates.length ===
+                0 ? (
+                <p className="py-3 text-center text-[13px] font-medium text-black/40">
+                  더 넣을 수 있는 멤버가 없어요.
+                </p>
+              ) : null}
+            </div>
+            <label
+              className="mt-4 block shrink-0 text-[12px] font-semibold text-black/45"
+              htmlFor="add-member-price"
+            >
+              가격(100원 단위)
+            </label>
+            <input
+              aria-invalid={addMemberError ? true : undefined}
+              className="mt-1.5 h-12 w-full shrink-0 rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7]"
+              disabled={
+                addMemberSelectedId === null ||
+                pendingC2CAction === "add-member"
+              }
+              id="add-member-price"
+              inputMode="numeric"
+              maxLength={9}
+              onChange={(event) => {
+                setAddMemberPriceDraft(
+                  event.currentTarget.value.replace(/[^\d]/g, ""),
+                );
+                setAddMemberError("");
+              }}
+              type="text"
+              value={addMemberPriceDraft}
+            />
+            {addMemberError ? (
+              <p className="mt-2 shrink-0 text-[12px] font-semibold text-danger-base">
+                {addMemberError}
+              </p>
+            ) : null}
+            <div className="mt-4 grid shrink-0 grid-cols-2 gap-2">
+              <button
+                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                disabled={pendingC2CAction === "add-member"}
+                onClick={closeAddMemberSheet}
+                type="button"
+              >
+                취소
+              </button>
+              <button
+                className="h-12 rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black disabled:bg-black/20 disabled:text-white"
+                disabled={
+                  addMemberSelectedId === null ||
+                  addMemberPriceDraft === "" ||
+                  pendingC2CAction !== null
+                }
+                onClick={() => void submitAddMember()}
+                type="button"
+              >
+                {pendingC2CAction === "add-member" ? "추가하는 중" : "추가"}
               </button>
             </div>
           </div>
