@@ -174,6 +174,34 @@ function parseHistoryDeadline(deadline: string) {
   );
 }
 
+// 마감 판정은 서버 원본 시각(deadlineAt)으로 한다. 표시용 deadline 은 올해면 연도를 빼서(formatApiDateTime)
+// 위 파서로 다시 읽으면 NaN 이 된다 — 표시 문자열 파서는 원본이 없거나 못 읽을 때의 폴백으로만 쓴다.
+function parseDeadlineWithFallback(
+  deadlineAt: string | null | undefined,
+  displayDeadline: string,
+  parseDisplayDeadline: (deadline: string) => Date,
+) {
+  const deadlineDate = deadlineAt ? new Date(deadlineAt) : null;
+
+  return deadlineDate && !Number.isNaN(deadlineDate.getTime())
+    ? deadlineDate
+    : parseDisplayDeadline(displayDeadline);
+}
+
+function getBidRecordDeadlineDate(
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
+) {
+  return parseDeadlineWithFallback(bid.deadlineAt, bid.deadline, parseDeadline);
+}
+
+function getHostedProductDeadlineDate(product: HostedProductItem) {
+  return parseDeadlineWithFallback(
+    product.deadlineAt,
+    product.deadline,
+    parseHistoryDeadline,
+  );
+}
+
 function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   const difference = deadlineDate.getTime() - now.getTime();
 
@@ -210,7 +238,7 @@ function getKstDayDifference(deadlineDate: Date, now: Date) {
 }
 
 function getPaymentDeadlineDate(
-  deadline: string,
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
   paymentDueAt?: string | null,
   createdAt?: string | null,
   isC2C = false,
@@ -225,7 +253,7 @@ function getPaymentDeadlineDate(
     ? new Date(paymentDueAt)
     : createdAt
       ? new Date(createdAt)
-      : parseDeadline(deadline);
+      : getBidRecordDeadlineDate(bid);
 
   if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
     paymentDeadline.setUTCMinutes(
@@ -237,14 +265,14 @@ function getPaymentDeadlineDate(
 }
 
 function formatPaymentRemainingTime(
-  deadline: string,
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
   now: Date,
   paymentDueAt?: string | null,
   createdAt?: string | null,
   isC2C = false,
 ) {
   const paymentDeadline = getPaymentDeadlineDate(
-    deadline,
+    bid,
     paymentDueAt,
     createdAt,
     isC2C,
@@ -261,14 +289,14 @@ function formatPaymentRemainingTime(
 // 시계 오차로 남은 시간이 입금 창(LEGACY 30분 / C2C 24시간)을 초과해 보이지 않도록
 // 상한을 걸고, 진행 중인 초를 포함해 올림으로 표시한다.
 function formatPaymentCountdown(
-  deadline: string,
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
   now: Date,
   paymentDueAt?: string | null,
   createdAt?: string | null,
   isC2C = false,
 ) {
   const paymentDeadline = getPaymentDeadlineDate(
-    deadline,
+    bid,
     paymentDueAt,
     createdAt,
     isC2C,
@@ -558,6 +586,8 @@ function readStoredBidHistoryViewState(keepStoredState: boolean) {
 type BidRecord = {
   amount: number;
   deadline: string;
+  // 서버 원본 마감 시각(ISO). 마감 판정은 deadline(표시용)이 아니라 이 값으로 한다.
+  deadlineAt: string | null;
   id: string;
   imageUrl?: string;
   optionLabel: string;
@@ -607,7 +637,7 @@ function isBidRecordClosed(bid: BidRecord, now: Date) {
     return true;
   }
 
-  const deadlineDate = parseDeadline(bid.deadline);
+  const deadlineDate = getBidRecordDeadlineDate(bid);
 
   return (
     !Number.isNaN(deadlineDate.getTime()) &&
@@ -815,7 +845,7 @@ function getBidRecordBuncheolChip(
     return { label: "마감", tone: "closed" };
   }
 
-  const deadlineDate = parseDeadline(bid.deadline);
+  const deadlineDate = getBidRecordDeadlineDate(bid);
 
   if (Number.isNaN(deadlineDate.getTime())) {
     return { label: "모집 중", tone: "dday" };
@@ -969,7 +999,7 @@ function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
   }
 
   const paymentDeadline = getPaymentDeadlineDate(
-    bid.deadline,
+    bid,
     bid.paymentDueAt,
     bid.createdAt,
     isC2C,
@@ -1281,7 +1311,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     }
 
     const remaining = formatPaymentRemainingTime(
-      bid.deadline,
+      bid,
       now,
       bid.paymentDueAt,
       bid.createdAt,
@@ -1303,8 +1333,10 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     : "진행 중인 참여예요.";
 }
 
-function isHostedProductDeadlinePassed(product: ProductDetailItem, now: Date) {
-  const deadlineDate = parseHistoryDeadline(product.deadline);
+type HostedProductItem = ProductDetailItem & { deadlineAt?: string | null };
+
+function isHostedProductDeadlinePassed(product: HostedProductItem, now: Date) {
+  const deadlineDate = getHostedProductDeadlineDate(product);
 
   return (
     !Number.isNaN(deadlineDate.getTime()) &&
@@ -1314,7 +1346,7 @@ function isHostedProductDeadlinePassed(product: ProductDetailItem, now: Date) {
 
 // 「종료」 탭(값 closed) 판정. 서버 ended 가 없는 구 응답이면 기존 규칙(모집 중이 아니거나 마감 지남)으로
 // 폴백한다 — 서버 롤백 안전망이라 지우지 않는다(docs/99 §4-1).
-function isHostedProductClosed(product: ProductDetailItem, now: Date) {
+function isHostedProductClosed(product: HostedProductItem, now: Date) {
   const closedByServer = isHostedBuncheolClosed({
     ended: product.hostEnded,
     status: product.status,
@@ -1458,6 +1490,7 @@ function getBidRecordFromParticipation(
     id: participation.participationId,
     amount: serverItemAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
+    deadlineAt: participation.buncheolDeadline || null,
     imageUrl:
       participation.thumbnailUrl ??
       getCachedProductImageUrl(participation.buncheolId),
@@ -1683,7 +1716,7 @@ function getHostedProductCancelBlockedNotice(product: ProductDetailItem) {
 
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
-): ProductDetailItem {
+): HostedProductItem {
   const imageUrl =
     buncheol.thumbnailUrl ?? getCachedProductImageUrl(buncheol.id);
 
@@ -1708,6 +1741,7 @@ function getHostedProductFromBuncheol(
     tone: getToneFromId(buncheol.id),
     courier: "배송 방법 확인 필요",
     deadline: formatApiDateTime(buncheol.deadline),
+    deadlineAt: buncheol.deadline || null,
     description: "",
     flowType: buncheol.flowType ?? null,
     imageUrl,
@@ -1864,7 +1898,7 @@ export function BidHistoryContent({
     useState<HostedHistoryFilter>("all");
   const [apiBidRecords, setApiBidRecords] = useState<BidRecord[] | null>(null);
   const [apiHostedProducts, setApiHostedProducts] = useState<
-    ProductDetailItem[] | null
+    HostedProductItem[] | null
   >(null);
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
@@ -2034,7 +2068,7 @@ export function BidHistoryContent({
     : null;
   const selectedPaymentRemainingTime = selectedPaymentBid
     ? formatPaymentCountdown(
-        selectedPaymentBid.deadline,
+        selectedPaymentBid,
         now,
         selectedPaymentBid.paymentDueAt,
         selectedPaymentBid.createdAt,
@@ -2043,7 +2077,7 @@ export function BidHistoryContent({
     : "";
   const selectedPaymentDeadlineMs = selectedPaymentBid
     ? getPaymentDeadlineDate(
-        selectedPaymentBid.deadline,
+        selectedPaymentBid,
         selectedPaymentBid.paymentDueAt,
         selectedPaymentBid.createdAt,
         isSelectedPaymentC2C,
@@ -2567,8 +2601,8 @@ export function BidHistoryContent({
             return leftOpenedAt === null ? 1 : -1;
           }
 
-          const leftDeadline = parseHistoryDeadline(left.deadline).getTime();
-          const rightDeadline = parseHistoryDeadline(right.deadline).getTime();
+          const leftDeadline = getHostedProductDeadlineDate(left).getTime();
+          const rightDeadline = getHostedProductDeadlineDate(right).getTime();
           const isLeftDeadlineValid = !Number.isNaN(leftDeadline);
           const isRightDeadlineValid = !Number.isNaN(rightDeadline);
 
