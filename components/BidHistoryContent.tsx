@@ -1369,7 +1369,8 @@ const hostedStatusBadgeClassNames: Record<HostedBuncheolStatusKind, string> = {
   // 입금 진행은 끝난 분철이 아니다 — 회색(끝남)으로 묶지 않는다(docs/98 §5-C, 공개 카드와 같은 취급).
   paymentCollecting: "bg-[#E4F6A5] text-black/70",
   confirmed: "bg-[#E4F6A5] text-black/70",
-  recruitingClosed: "bg-[#f3f3f3] text-black/50",
+  // 마감 뒤 성사 확정 대기(C2C 48시간 유예)도 개최자가 할 일이 남은 분철이라 끝남 색을 쓰지 않는다.
+  recruitingClosed: "bg-[#E4F6A5] text-black/70",
   ended: "bg-[#f3f3f3] text-black/50",
   cancelled: "bg-[#f3f3f3] text-black/50",
 };
