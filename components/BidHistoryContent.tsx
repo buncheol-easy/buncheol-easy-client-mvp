@@ -174,8 +174,8 @@ function parseHistoryDeadline(deadline: string) {
   );
 }
 
-// 마감 판정은 서버 원본 시각(deadlineAt)으로 한다. 표시용 deadline 은 올해면 연도를 빼서(formatApiDateTime)
-// 위 파서로 다시 읽으면 NaN 이 된다 — 표시 문자열 파서는 원본이 없거나 못 읽을 때의 폴백으로만 쓴다.
+// 마감 판정은 서버 원본 시각 deadlineAt(서버 Instant → Z 포함 ISO 라 기기 시간대와 무관)으로 한다. 표시용 deadline 은
+// 올해면 연도를 빼서(formatApiDateTime) 위 파서로 다시 읽으면 NaN 이다 — 표시 문자열 파서는 원본이 없거나 못 읽을 때만 쓴다.
 function parseDeadlineWithFallback(
   deadlineAt: string | null | undefined,
   displayDeadline: string,
@@ -586,7 +586,6 @@ function readStoredBidHistoryViewState(keepStoredState: boolean) {
 type BidRecord = {
   amount: number;
   deadline: string;
-  // 서버 원본 마감 시각(ISO). 마감 판정은 deadline(표시용)이 아니라 이 값으로 한다.
   deadlineAt: string | null;
   id: string;
   imageUrl?: string;
