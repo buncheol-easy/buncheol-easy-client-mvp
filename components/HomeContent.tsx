@@ -84,6 +84,8 @@ const SCROLL_EDGE_GUARD = 16;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
 // 목록 끝이 화면 아래 이 거리 안에 들어오면 다음 페이지를 미리 받는다 (와이드 카드 2장 남짓).
 const HOME_LISTINGS_LOAD_MORE_DISTANCE_PX = 800;
+const HOME_LISTINGS_FAILED_MESSAGE =
+  "분철 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.";
 // 서버 UserFavoriteGroupService.MAX_FAVORITE_GROUP_COUNT 와 같은 값.
 const FAVORITE_GROUP_LIMIT = 5;
 const FAVORITE_LIMIT_MESSAGE = `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`;
@@ -1104,7 +1106,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             {isListingsFailed ? (
               <HomeListingsRetryNotice
                 isRetrying={isFetchingListings}
-                message="분철 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요."
+                message={HOME_LISTINGS_FAILED_MESSAGE}
                 onRetry={() => void listingsQuery.refetch()}
               />
             ) : hasNoListingsToShow ? (
@@ -1155,10 +1157,15 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               <div ref={loadMoreSentinelRef}>
                 {/* 최애를 찾는 동안의 스켈레톤도 센티널 안에 둔다 — 위에 두면 센티널이 밀려 연쇄 로드가 멈춘다. */}
                 {isUsingFallbackListings ? (
-                  /* 대체 목록은 로그인 키로 이어 받을 커서가 없다 — 로그인 목록부터 다시 받는다. */
+                  /* 대체 목록은 로그인 키로 이어 받을 커서가 없다 — 로그인 목록부터 다시 받는다.
+                     최애로 걸러 한 장도 안 남으면 "더"가 사실과 달라 목록 실패 문구를 쓴다. */
                   <HomeListingsRetryNotice
                     isRetrying={isFetchingListings}
-                    message="분철을 더 불러오지 못했어요."
+                    message={
+                      visibleListings.length === 0
+                        ? HOME_LISTINGS_FAILED_MESSAGE
+                        : "분철을 더 불러오지 못했어요."
+                    }
                     onRetry={() => void listingsQuery.refetch()}
                   />
                 ) : isNextListingsPageError ? (
