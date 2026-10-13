@@ -767,6 +767,11 @@ export function HostedBuncheolManage({
   const closedMemberSlots = (detail?.options ?? []).filter(isClosedMemberSlot);
   // 서버의 마지막 자리 판정(BCH-120)·최소 인원 하향과 같은 수 — 닫히지 않은 자리.
   const openMemberSlotCount = memberSlots.length;
+  // 관리 응답이 자리 목록을 직접 실으면 상세 보충을 건너뛰는데, 그 파서는 saleStatus 를 읽지 않는다.
+  // 닫힌 자리·신청자 판정 근거가 없으면 「멤버 관리」 카드를 띄우지 않는다.
+  const hasMemberSlotSaleStatus =
+    (detail?.options ?? []).length > 0 &&
+    (detail?.options ?? []).every((option) => Boolean(option.saleStatus));
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -1871,7 +1876,7 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
-          {isAcceptingNewParticipation(detail) && detail.options.length > 0 ? (
+          {isAcceptingNewParticipation(detail) && hasMemberSlotSaleStatus ? (
             <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 멤버 관리
