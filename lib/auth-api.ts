@@ -435,6 +435,10 @@ export type BuncheolManagementOption = {
   memberName: string;
   participants?: BuncheolManagementParticipant[];
   participationCount: number;
+  // 공개 상세 members[] 의 price(개최자가 정한 멤버 금액)·saleStatus. currentHighestBid 는 참여 금액(배송비 포함)이
+  // 우선이라 자리 가격으로 쓸 수 없다. 관리 응답에는 자리 목록이 없어 상세에서 옮겨 실을 때만 값이 있다.
+  price?: number;
+  saleStatus?: string;
   winner?: BuncheolManagementWinner | null;
 };
 
@@ -6808,6 +6812,55 @@ export async function releaseBundle(accessToken: string, bundleId: string) {
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
+}
+
+// C2C 개최자의 빈 자리 빼기. 기록 없는 자리는 지우고 취소 기록만 남은 자리는 닫는다(이미 닫혔으면 204).
+// 신청 받는 동안에만 통하고, 화면 판정과 갈리면 서버가 거부한다(BCH-118 신청자 · 120 마지막 자리 · 060 · 061).
+export async function removeBuncheolMember(
+  accessToken: string,
+  buncheolId: string,
+  buncheolMemberId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/members/${buncheolMemberId}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// 그룹 멤버를 자리로 (다시) 넣는다. 같은 멤버의 닫힌 자리가 있으면 서버가 그 자리를 새 가격으로 다시 연다.
+// memberId 는 group_members.id 다(자리 id 가 아니다).
+export async function addBuncheolMember(
+  accessToken: string,
+  buncheolId: string,
+  { memberId, price }: { memberId: string; price: number },
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/members`,
+    {
+      body: JSON.stringify({ memberId: Number(memberId), price }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const body = getNestedData(await readJsonBody(response));
+
+  return isRecord(body)
+    ? getOptionalStringValue(body, ["buncheolMemberId"]) ?? null
+    : null;
 }
 
 // 묶음 입금확인 — all-or-nothing. expectedSlotIds 는 화면에 보인 슬롯 집합이며 서버가 가진 것과
