@@ -2506,45 +2506,70 @@ export function ProductDetail({
     };
   }, [product.isHostedByMe, refreshDetailOptions]);
 
-  // 재조회를 이미 트리거한 만료 기한. 서버 자동 취소가 늦어도 tick마다 재조회가 반복되지 않게 한다.
-  const refreshedExpiredDueAtsRef = useRef<Set<string>>(new Set());
+  // 지난 입금 기한별 재조회 횟수·마지막 시각. LEGACY 는 서버가 1분 주기로 만료 자리를 풀어 기한 뒤에도
+  // 최대 약 1분 '입금 대기'로 오므로 기한 시각 1회 뒤 15초 간격으로 다시 묻는다(기한당 최대 13회 — 서버가 끝내
+  // 안 풀어도 멈춘다). C2C 는 서버가 기한 뒤 자동으로 풀지 않으므로 기한 시각 1회만 묻는다.
+  const expiredDueAtRefreshesRef = useRef<
+    Map<string, { count: number; lastRefreshedAt: number }>
+  >(new Map());
   const didSeedExpiredDueAtsRef = useRef(false);
 
   useEffect(() => {
-    const expiredDueAts = auctionOptions
-      .map((option) => option.purchasePaymentDueAt)
-      .filter((dueAt): dueAt is string => {
-        if (!dueAt) {
-          return false;
-        }
+    const expiredDueAts = Array.from(
+      new Set(
+        auctionOptions
+          .map((option) => option.purchasePaymentDueAt)
+          .filter((dueAt): dueAt is string => {
+            if (!dueAt) {
+              return false;
+            }
 
-        const dueTime = parseCheckoutDateTime(dueAt).getTime();
+            const dueTime = parseCheckoutDateTime(dueAt).getTime();
 
-        return !Number.isNaN(dueTime) && dueTime <= deadlineTick;
-      });
+            return !Number.isNaN(dueTime) && dueTime <= deadlineTick;
+          }),
+      ),
+    );
+    const refreshes = expiredDueAtRefreshesRef.current;
 
-    // 첫 평가 시점에 이미 지나 있던 기한은 마운트 재조회가 커버하므로 기록만 한다.
+    // 첫 평가 시점에 이미 지나 있던 기한은 마운트 재조회를 1회로 치고, 15초 뒤부터 같은 규칙으로 이어 간다.
     if (!didSeedExpiredDueAtsRef.current) {
       didSeedExpiredDueAtsRef.current = true;
       expiredDueAts.forEach((dueAt) =>
-        refreshedExpiredDueAtsRef.current.add(dueAt),
+        refreshes.set(dueAt, { count: 1, lastRefreshedAt: deadlineTick }),
       );
       return;
     }
 
-    const hasNewlyExpiredDueAt = expiredDueAts.some(
-      (dueAt) => !refreshedExpiredDueAtsRef.current.has(dueAt),
-    );
+    const maxRefreshesPerDueAt = isC2CProduct ? 1 : 13;
+    const retryIntervalMs = 15_000;
+    const shouldRefresh = expiredDueAts.some((dueAt) => {
+      const record = refreshes.get(dueAt);
 
-    if (!hasNewlyExpiredDueAt) {
+      return (
+        !record ||
+        (record.count < maxRefreshesPerDueAt &&
+          deadlineTick - record.lastRefreshedAt >= retryIntervalMs)
+      );
+    });
+
+    if (!shouldRefresh) {
       return;
     }
 
-    expiredDueAts.forEach((dueAt) =>
-      refreshedExpiredDueAtsRef.current.add(dueAt),
-    );
+    // 재조회 한 번은 지금 지나 있는 모든 기한을 함께 확인하므로 각 기한의 1회로 친다.
+    expiredDueAts.forEach((dueAt) => {
+      const count = refreshes.get(dueAt)?.count ?? 0;
+
+      if (count < maxRefreshesPerDueAt) {
+        refreshes.set(dueAt, {
+          count: count + 1,
+          lastRefreshedAt: deadlineTick,
+        });
+      }
+    });
     void refreshDetailOptions();
-  }, [auctionOptions, deadlineTick, refreshDetailOptions]);
+  }, [auctionOptions, deadlineTick, isC2CProduct, refreshDetailOptions]);
 
   function togglePurchaseOption(optionId: string) {
     const option = auctionOptions.find((item) => item.id === optionId);
