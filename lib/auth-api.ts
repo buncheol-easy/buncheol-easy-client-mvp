@@ -56,7 +56,7 @@ export type UserProfileStatus = {
 export const hostingEligibilityReasons = [
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
-  // 연령대 미확인 — 카카오 재로그인 동의로 회복 가능 (서버 USR-032)
+  // 연령대 미확인 — 카카오 연령대 추가 동의로 회복 가능 (서버 USR-032)
   "AGE_UNVERIFIED",
   // 미성년 확정 — 개최 불가 (서버 USR-033)
   "NOT_ADULT",
@@ -435,6 +435,10 @@ export type BuncheolManagementOption = {
   memberName: string;
   participants?: BuncheolManagementParticipant[];
   participationCount: number;
+  // 공개 상세 members[] 의 price(개최자가 정한 멤버 금액)·saleStatus. currentHighestBid 는 참여 금액(배송비 포함)이
+  // 우선이라 자리 가격으로 쓸 수 없다. 관리 응답에는 자리 목록이 없어 상세에서 옮겨 실을 때만 값이 있다.
+  price?: number;
+  saleStatus?: string;
   winner?: BuncheolManagementWinner | null;
 };
 
@@ -622,6 +626,23 @@ async function fetchWithTimeout(
 
 export function getKakaoAuthorizationUrl() {
   return `${getApiRootUrl()}/oauth2/authorization/kakao`;
+}
+
+// 로그인은 그대로 둔 채 카카오에 연령대만 추가로 동의받는다. 서버가 결과를 /upload?ageRangeConsent= 로 돌려준다.
+export function getKakaoAgeRangeConsentUrl() {
+  return `${getApiRootUrl()}/oauth2/authorization/kakao/age-range`;
+}
+
+export const ageRangeConsentResultParam = "ageRangeConsent";
+
+const ageRangeConsentResults = ["agreed", "cancelled", "failed"] as const;
+
+export type AgeRangeConsentResult = (typeof ageRangeConsentResults)[number];
+
+export function parseAgeRangeConsentResult(
+  value: string | undefined,
+): AgeRangeConsentResult | undefined {
+  return ageRangeConsentResults.find((result) => result === value);
 }
 
 function getAuthHeaders(accessToken?: string): Record<string, string> {
@@ -4153,10 +4174,16 @@ export function toProductDetailItem(
   };
 }
 
-export async function requestBuncheols(
+export type BuncheolSummaryPage = {
+  hasNext: boolean;
+  items: BuncheolSummary[];
+  nextCursor: string | null;
+};
+
+export async function requestBuncheolPage(
   accessToken?: string,
   params: BuncheolListParams = {},
-) {
+): Promise<BuncheolSummaryPage> {
   const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
     params,
   )}`;
@@ -4179,7 +4206,9 @@ export async function requestBuncheols(
 
   const body = await readJsonBody(response);
 
-  const summaries = getBuncheolList(body)
+  // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
+  // (썸네일이 없는 분철 = 이미지 자체가 없는 분철이라 상세를 조회해도 채울 수 없음)
+  const items = getBuncheolList(body)
     .filter(isRecord)
     .map(getBuncheolSummaryFromRecord)
     .filter(
@@ -4187,9 +4216,14 @@ export async function requestBuncheols(
         item !== null && !isBuncheolDeletedStatus(item.status),
     );
 
-  // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
-  // (썸네일이 없는 분철 = 이미지 자체가 없는 분철이라 상세를 조회해도 채울 수 없음)
-  return summaries;
+  return { ...getBuncheolListPageInfo(body), items };
+}
+
+export async function requestBuncheols(
+  accessToken?: string,
+  params: BuncheolListParams = {},
+) {
+  return (await requestBuncheolPage(accessToken, params)).items;
 }
 
 export async function requestAllBuncheols(
@@ -4201,49 +4235,19 @@ export async function requestAllBuncheols(
   let pageCount = 0;
 
   while (pageCount < 20) {
-    const pageParams: BuncheolListParams = {
+    const page = await requestBuncheolPage(accessToken, {
       ...params,
       cursor,
       size: params.size ?? 50,
-    };
-    const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
-      pageParams,
-    )}`;
-    let response = await fetch(url, {
-      credentials: "omit",
-      headers: getAuthHeaders(accessToken),
-      method: "GET",
     });
 
-    if (response.status === 401 && accessToken) {
-      response = await fetch(url, {
-        credentials: "omit",
-        method: "GET",
-      });
-    }
+    allSummaries.push(...page.items);
 
-    if (!response.ok) {
-      throw new Error(await parseErrorMessage(response));
-    }
-
-    const body = await readJsonBody(response);
-    const pageSummaries = getBuncheolList(body)
-      .filter(isRecord)
-      .map(getBuncheolSummaryFromRecord)
-      .filter(
-        (item): item is BuncheolSummary =>
-          item !== null && !isBuncheolDeletedStatus(item.status),
-      );
-
-    allSummaries.push(...pageSummaries);
-
-    const pageInfo = getBuncheolListPageInfo(body);
-
-    if (!pageInfo.hasNext || !pageInfo.nextCursor) {
+    if (!page.hasNext || !page.nextCursor) {
       break;
     }
 
-    cursor = pageInfo.nextCursor;
+    cursor = page.nextCursor;
     pageCount += 1;
   }
 
@@ -6808,6 +6812,55 @@ export async function releaseBundle(accessToken: string, bundleId: string) {
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
+}
+
+// C2C 개최자의 빈 자리 빼기. 기록 없는 자리는 지우고 취소 기록만 남은 자리는 닫는다(이미 닫혔으면 204).
+// 신청 받는 동안에만 통하고, 화면 판정과 갈리면 서버가 거부한다(BCH-118 신청자 · 120 마지막 자리 · 060 · 061).
+export async function removeBuncheolMember(
+  accessToken: string,
+  buncheolId: string,
+  buncheolMemberId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/members/${buncheolMemberId}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// 그룹 멤버를 자리로 (다시) 넣는다. 같은 멤버의 닫힌 자리가 있으면 서버가 그 자리를 새 가격으로 다시 연다.
+// memberId 는 group_members.id 다(자리 id 가 아니다).
+export async function addBuncheolMember(
+  accessToken: string,
+  buncheolId: string,
+  { memberId, price }: { memberId: string; price: number },
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/members`,
+    {
+      body: JSON.stringify({ memberId: Number(memberId), price }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const body = getNestedData(await readJsonBody(response));
+
+  return isRecord(body)
+    ? getOptionalStringValue(body, ["buncheolMemberId"]) ?? null
+    : null;
 }
 
 // 묶음 입금확인 — all-or-nothing. expectedSlotIds 는 화면에 보인 슬롯 집합이며 서버가 가진 것과

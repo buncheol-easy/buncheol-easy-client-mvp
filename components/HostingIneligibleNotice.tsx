@@ -2,19 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BackIcon } from "@/components/icons";
-import { requestLogout, type HostingEligibilityReason } from "@/lib/auth-api";
-import { createLoginHref } from "@/lib/auth-navigation";
 import {
-  authProfileSetupReturnHrefStorageKey,
-  readAuthState,
-} from "@/lib/auth-store";
+  getKakaoAgeRangeConsentUrl,
+  type AgeRangeConsentResult,
+  type HostingEligibilityReason,
+} from "@/lib/auth-api";
+import { authProfileSetupReturnHrefStorageKey } from "@/lib/auth-store";
 import { getHistoryIndex } from "@/lib/history-index";
 import { CONTACT_EMAIL } from "@/lib/site";
-import { clearUserSessionState } from "@/lib/user-session";
 
 type HostingIneligibleNoticeProps = {
   // 서버가 모르는 사유를 내리면 null 로 떨어진다 — variant 에 따라 "차단됐다"와 "요건 안내"로 갈린다.
@@ -23,6 +20,8 @@ type HostingIneligibleNoticeProps = {
   // 사유를 모를 때 요건 안내 카피를 그대로 쓰면 "이제 직접 열 수 있어요 → 개최하러 가기" 가 떠서
   // 방금 막힌 사용자에게 거짓 안내 + 제자리 도는 CTA 가 된다.
   variant?: "blocked" | "requirements";
+  // 연령대 추가 동의에서 돌아온 결과 — 아직 미확인일 때만 안내한다.
+  ageRangeConsentResult?: AgeRangeConsentResult;
 };
 
 type NoticeCopy = {
@@ -30,12 +29,15 @@ type NoticeCopy = {
   description: string;
   sectionTitle: string;
   items: { title: string; description: string }[];
-  // 링크로 끝나지 않는 CTA 가 둘 있다 — 재로그인은 카카오 동의창을 다시 띄우려 세션을 정리해야 하고,
+  // 링크로 끝나지 않는 CTA 가 둘 있다 — 연령대 추가 동의는 백엔드 OAuth 경로로 페이지째 이동해야 하고,
   // 가입 정보 입력은 완료 후 개최 화면으로 돌아오도록 복귀 주소를 먼저 남겨야 한다.
   primaryAction:
     | { label: string; href: string }
-    // note = 버튼을 누르면 벌어지는 일의 예고(세션이 풀리는 등).
-    | { label: string; kind: "relogin" | "profile-setup"; note?: string };
+    | {
+        label: string;
+        kind: "age-range-consent" | "profile-setup";
+        note?: string;
+      };
 };
 
 const hostingRequirementItems = [
@@ -90,18 +92,18 @@ function getNoticeCopy(
     return {
       headline: "카카오 연령대 확인이 필요해요",
       description:
-        "개최는 성인 회원만 가능해서 연령대 정보를 확인해야 해요. 카카오 로그인에서 '연령대' 제공에 동의하면 열려요.",
+        "개최는 성인 회원만 가능해서 연령대 정보를 확인해야 해요. 카카오에서 '연령대' 제공에 동의하면 열려요.",
       sectionTitle: "이렇게 하면 돼요",
       items: [
         {
-          title: "카카오 로그인을 다시 해주세요",
+          title: "카카오에서 연령대 제공에 동의해 주세요",
           description:
-            "아래 버튼을 누르면 지금 로그인이 풀리고 카카오 로그인 화면으로 이동해요. 연령대 제공에 동의하면 개최 화면이 열려요.",
+            "아래 버튼을 누르면 연령대만 묻는 카카오 동의 화면으로 이동해요. 동의하면 개최 화면이 열려요.",
         },
         {
           title: "카카오에 생년월일이 없다면",
           description:
-            "동의 과정에서 카카오가 정보 입력을 안내해요. 입력을 마친 뒤 다시 로그인하면 확인돼요.",
+            "동의 과정에서 카카오가 정보 입력을 안내해요. 입력을 마친 뒤 다시 동의하면 확인돼요.",
         },
         {
           title: "그래도 열리지 않으면",
@@ -115,9 +117,9 @@ function getNoticeCopy(
         },
       ],
       primaryAction: {
-        label: "카카오로 다시 로그인하기",
-        kind: "relogin",
-        note: "누르면 지금 로그인이 풀려요.",
+        label: "카카오 연령대 동의하기",
+        kind: "age-range-consent",
+        note: "동의하지 않고 돌아와도 로그인은 그대로예요.",
       },
     };
   }
@@ -215,14 +217,42 @@ function getNoticeCopy(
   };
 }
 
+// agreed 인데 아직 미확인이면 서버가 다른 카카오 계정(다른 회원)의 연령대를 저장한 경우뿐이다.
+function getAgeRangeConsentResultCopy(result: AgeRangeConsentResult) {
+  if (result === "cancelled") {
+    return {
+      title: "연령대 동의를 취소했어요",
+      description:
+        "연령대를 확인해야 분철을 열 수 있어요. 참여는 지금처럼 할 수 있어요.",
+    };
+  }
+
+  if (result === "agreed") {
+    return {
+      title: "다른 카카오 계정으로 동의한 것 같아요",
+      description:
+        "분철이지에 로그인한 카카오 계정으로 다시 동의해 주세요. 계속 확인되지 않으면 아래 메일로 알려주세요.",
+    };
+  }
+
+  return {
+    title: "연령대를 확인하지 못했어요",
+    description:
+      "분철이지에 로그인한 카카오 계정으로 동의했는지 확인하고 다시 시도해 주세요. 계속 확인되지 않으면 아래 메일로 알려주세요.",
+  };
+}
+
 export function HostingIneligibleNotice({
   reason,
   variant = "blocked",
+  ageRangeConsentResult,
 }: HostingIneligibleNoticeProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const [isRelogging, setIsRelogging] = useState(false);
   const copy = getNoticeCopy(reason, variant);
+  const consentResultCopy =
+    reason === "AGE_UNVERIFIED" && ageRangeConsentResult
+      ? getAgeRangeConsentResultCopy(ageRangeConsentResult)
+      : null;
   // 좁힌 타입이 콜백 안에서도 유지되도록 지역 상수로 뽑는다.
   const primaryAction = copy.primaryAction;
 
@@ -237,28 +267,8 @@ export function HostingIneligibleNotice({
     router.replace("/");
   }
 
-  // 연령대 재동의는 카카오 동의창을 다시 거쳐야 갱신된다 — 현재 세션을 정리하고 로그인부터 다시 태운다.
-  async function handleRelogin() {
-    if (isRelogging) {
-      return;
-    }
-
-    setIsRelogging(true);
-
-    const accessToken = readAuthState().accessToken;
-
-    try {
-      if (accessToken) {
-        await requestLogout(accessToken);
-      }
-    } catch {
-      // 서버 로그아웃 실패는 무시한다 — 로컬 세션만 정리해도 재로그인 흐름은 성립한다.
-    } finally {
-      // 토큰만 지우면 정산 계좌·배송지 같은 계정 스코프 캐시가 남아, 다른 카카오 계정으로 갈아탔을 때
-      // 이전 사용자 정보가 화면에 보인다 — 연령대 미동의 계정은 계정 전환이 잦은 경로다.
-      clearUserSessionState(queryClient);
-      router.replace(createLoginHref({ cancelTo: "/", returnTo: "/upload" }));
-    }
+  function handleAgeRangeConsent() {
+    window.location.href = getKakaoAgeRangeConsentUrl();
   }
 
   // 가입 정보 입력 후 개최 화면으로 돌아오게 한다 — 공용 가드(useProfileCompletionGuard)가 쓰는 복귀 주소와 같은 규약.
@@ -300,6 +310,20 @@ export function HostingIneligibleNotice({
             </header>
 
             <div className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-4">
+              {consentResultCopy ? (
+                <section
+                  className="mb-4 rounded-[1.15rem] bg-[#FFF8E1] px-4 py-4 text-[#8D6708]"
+                  role="status"
+                >
+                  <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                    {consentResultCopy.title}
+                  </p>
+                  <p className="mt-1.5 break-keep text-[13px] font-medium leading-5 tracking-[-0.03em]">
+                    {consentResultCopy.description}
+                  </p>
+                </section>
+              ) : null}
+
               <section className="relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#10110D] via-[#222719] to-[#D7FF5F] px-5 py-7 text-white shadow-[0_18px_42px_rgba(120,132,82,0.18)] ring-1 ring-[#D7FF5F]/45">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_20%,rgba(215,255,95,0.5),transparent_26%),radial-gradient(circle_at_14%_82%,rgba(255,255,255,0.18),transparent_30%)]" />
                 <div className="relative">
@@ -358,11 +382,10 @@ export function HostingIneligibleNotice({
                   </Link>
                 ) : (
                   <button
-                    className="flex h-14 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
-                    disabled={isRelogging}
+                    className="flex h-14 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
                     onClick={() => {
-                      if (primaryAction.kind === "relogin") {
-                        void handleRelogin();
+                      if (primaryAction.kind === "age-range-consent") {
+                        handleAgeRangeConsent();
                         return;
                       }
 
@@ -370,7 +393,7 @@ export function HostingIneligibleNotice({
                     }}
                     type="button"
                   >
-                    {isRelogging ? "이동 중..." : primaryAction.label}
+                    {primaryAction.label}
                   </button>
                 )}
                 {"kind" in primaryAction && primaryAction.note ? (

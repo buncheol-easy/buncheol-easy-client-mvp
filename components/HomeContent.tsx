@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -14,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   keepPreviousData,
+  useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -35,9 +37,7 @@ import {
   addFavoriteGroup,
   readCachedBanners,
   removeFavoriteGroup,
-  requestAllBuncheols,
   requestBanners,
-  toProductCardItem,
   type ApiBanner,
   type ApiGroup,
 } from "@/lib/auth-api";
@@ -53,6 +53,13 @@ import {
 } from "@/lib/auth-store";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { FEATURES } from "@/lib/feature-flags";
+import {
+  flattenHomeListings,
+  getHomeListingsNextPageParam,
+  homeListingsInitialPageParam,
+  requestHomeListingsPage,
+  type HomeListingsData,
+} from "@/lib/home-listings";
 import {
   bannersQueryKey,
   homeListingsQueryKey,
@@ -75,6 +82,10 @@ const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const HOME_LISTINGS_REQUEST_TIMEOUT_MS = 12000;
+// 목록 끝이 화면 아래 이 거리 안에 들어오면 다음 페이지를 미리 받는다 (와이드 카드 2장 남짓).
+const HOME_LISTINGS_LOAD_MORE_DISTANCE_PX = 800;
+const HOME_LISTINGS_FAILED_MESSAGE =
+  "분철 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.";
 // 서버 UserFavoriteGroupService.MAX_FAVORITE_GROUP_COUNT 와 같은 값.
 const FAVORITE_GROUP_LIMIT = 5;
 const FAVORITE_LIMIT_MESSAGE = `최애 아티스트는 최대 ${FAVORITE_GROUP_LIMIT}개까지 등록가능해요.`;
@@ -266,7 +277,7 @@ function readStoredBannerSlide(): StoredBannerSlide | null {
   }
 }
 
-async function loadHomeListings(loggedIn: boolean) {
+async function loadHomeListingsPage(loggedIn: boolean, cursor: string | null) {
   let accessToken: string | null = null;
 
   if (loggedIn) {
@@ -277,11 +288,19 @@ async function loadHomeListings(loggedIn: boolean) {
     }
   }
 
-  const items = await withHomeListingsTimeout(
-    requestAllBuncheols(accessToken ?? undefined),
+  const page = await withHomeListingsTimeout(
+    requestHomeListingsPage(accessToken ?? undefined, cursor),
   );
 
-  return items.map(toProductCardItem).map(mergeCachedProductImage);
+  return { ...page, items: page.items.map(mergeCachedProductImage) };
+}
+
+// 지연 안내는 이 오류의 종류로 판정한다. message 는 화면에 쓰지 않는다.
+class HomeListingsTimeoutError extends Error {
+  constructor() {
+    super("홈 분철 목록 요청이 지연되고 있어요.");
+    this.name = "HomeListingsTimeoutError";
+  }
 }
 
 function withHomeListingsTimeout<T>(request: Promise<T>) {
@@ -293,7 +312,7 @@ function withHomeListingsTimeout<T>(request: Promise<T>) {
 
   const timeout = new Promise<T>((_, reject) => {
     timeoutId = window.setTimeout(() => {
-      reject(new Error("홈 분철 목록 요청이 지연되고 있어요."));
+      reject(new HomeListingsTimeoutError());
     }, HOME_LISTINGS_REQUEST_TIMEOUT_MS);
   });
 
@@ -324,6 +343,32 @@ function HomeArtistRailSkeleton() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function HomeListingsRetryNotice({
+  isRetrying,
+  message,
+  onRetry,
+}: {
+  isRetrying: boolean;
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="space-y-2 pb-6">
+      <p className="rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3 text-[13px] font-semibold text-black/45">
+        {message}
+      </p>
+      <button
+        className="h-11 w-full rounded-[0.9rem] border border-black/10 bg-white text-[13px] font-semibold text-black/50 disabled:text-black/25"
+        disabled={isRetrying}
+        onClick={onRetry}
+        type="button"
+      >
+        {isRetrying ? "불러오는 중…" : "다시 시도"}
+      </button>
     </div>
   );
 }
@@ -373,9 +418,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 캐시는 루트 레이아웃의 QueryClient 에 살아있으므로, 뒤로가기 복귀 시 첫 렌더부터
   // 데이터가 있다(스켈레톤 없음). staleTime 내에는 재요청도 없고, 지나면 캐시를 보여준
   // 채 백그라운드 재검증한다. 참여·업로드·삭제는 invalidateQueries 로 즉시 무효화.
-  const listingsQuery = useQuery({
+  const listingsQuery = useInfiniteQuery({
     queryKey: homeListingsQueryKey(authState.isLoggedIn),
-    queryFn: () => loadHomeListings(authState.isLoggedIn),
+    queryFn: ({ pageParam }) =>
+      loadHomeListingsPage(authState.isLoggedIn, pageParam),
+    initialPageParam: homeListingsInitialPageParam,
+    getNextPageParam: getHomeListingsNextPageParam,
     staleTime: HOME_LISTINGS_STALE_MS,
     // 로그인 상태가 바뀌어 키가 갈릴 때 이전 목록을 유지해 스켈레톤 재노출을 막는다.
     placeholderData: keepPreviousData,
@@ -413,6 +461,23 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const [shouldRevealListings] = useState(() => listingsQuery.isPending);
 
   const isListingLoading = listingsQuery.data === undefined;
+  // keepPreviousData 는 '불러오는 중'에만 적용돼, 로그인 목록이 데이터 없이 실패하면 보이던
+  // 비로그인 목록이 사라진다. 캐시는 그대로 두고 화면에서만 그 목록을 계속 그린다.
+  const fallbackListingsData =
+    authState.isLoggedIn && listingsQuery.isError && isListingLoading
+      ? queryClient.getQueryData<HomeListingsData>(homeListingsQueryKey(false))
+      : undefined;
+  const isUsingFallbackListings = fallbackListingsData !== undefined;
+  const listingsData = listingsQuery.data ?? fallbackListingsData;
+  // isListingLoading 은 스크롤 되돌리기 효과가 쓰므로 뜻을 바꾸지 않고, 화면 그리기는 아래 조건을 쓴다.
+  const hasNoListingsToShow = listingsData === undefined;
+  const isListingsFailed = hasNoListingsToShow && listingsQuery.isError;
+  // 끊김처럼 곧바로 실패한 재시도에는 지연 안내를 띄우지 않는다(1초 깜빡임 방지).
+  const isListingsSlow =
+    hasNoListingsToShow &&
+    listingsQuery.isFetching &&
+    listingsQuery.failureCount > 0 &&
+    listingsQuery.failureReason instanceof HomeListingsTimeoutError;
   // 최애 조회는 favoriteArtists 가 꺼져 있거나 비로그인이면 아예 돌지 않아 data 가 계속
   // undefined 다. 그 상태를 기다리면 스켈레톤에서 벗어나지 못하므로 노출 조건과 함께 판정한다.
   const apiGroups = favoriteGroupsQuery.data;
@@ -422,14 +487,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
       : HOME_BANNERS;
-  const listingsData = listingsQuery.data;
-  const listings = useMemo(() => listingsData ?? [], [listingsData]);
-  const listingMessage =
-    listingsQuery.isError && listings.length === 0
-      ? listingsQuery.error instanceof Error
-        ? listingsQuery.error.message
-        : "분철 목록을 불러오지 못했어요."
-      : "";
+  const listings = useMemo(
+    () => flattenHomeListings(listingsData),
+    [listingsData],
+  );
   // 레일에서 해제한 항목은 이 화면에 머무는 동안만 빈 하트로 자리를 지킨다 — 그 자리에서 오탭을
   // 바로 되돌릴 수 있어야 하기 때문이다 (빼버리면 /artists 까지 가야 복구된다). 화면을 벗어나면
   // 사라진다: 다른 화면에서 해제한 것까지 남으면 최애가 아닌 그룹이 홈에 계속 떠 있게 된다.
@@ -473,10 +534,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     (favoriteGroupsError.message.includes("401") ||
       favoriteGroupsError.message.includes("Unauthorized"));
   // 토글 실패·한도 안내(groupMessage)는 사용자가 방금 한 행동의 결과라 조회 실패보다 우선한다.
+  // 조회 실패 원문은 브라우저·서버 영어('Failed to fetch'·'Bad Gateway')라 화면에 쓰지 않는다.
   const visibleGroupMessage =
     groupMessage ||
     (favoriteGroupsError && !isFavoriteGroupsUnauthorized
-      ? favoriteGroupsError.message || "그룹 정보를 불러오지 못했어요."
+      ? "그룹 정보를 불러오지 못했어요."
       : "");
 
   useEffect(() => {
@@ -515,8 +577,61 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         : listings,
     [favoriteGroupNames, listings],
   );
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const {
+    fetchNextPage: fetchNextListingsPage,
+    hasNextPage: hasNextListingsPage,
+    isFetching: isFetchingListings,
+    isFetchingNextPage: isFetchingNextListingsPage,
+    isFetchNextPageError: isNextListingsPageError,
+    isPlaceholderData: isListingsPlaceholderData,
+  } = listingsQuery;
+  // placeholder(이전 키 목록)·대체 목록을 보이는 동안 hasNextPage 는 아직 빈 새 키 기준이라 false 다.
+  // 그대로 믿으면 최애 사용자 새로고침마다 "최애 분철이 없어요"가 잠깐 뜨고, 실패 때는 그대로 남는다.
+  const isListingsExhausted =
+    !isListingLoading && !hasNextListingsPage && !isListingsPlaceholderData;
+  const isAwaitingFavoriteListings =
+    visibleListings.length === 0 &&
+    favoriteGroupNames.size > 0 &&
+    !isListingsExhausted;
+  // 페이지가 들어온 직후에도 판정한다 — 최애만 걸러 보면 한 페이지로 화면이 안 차 스크롤할 거리가 없다.
+  // isFetching 중엔 막는다: 백그라운드 재검증(전 페이지 재요청)과 겹치면 서로 덮어쓴다.
+  const loadMoreListingsIfNearEnd = useCallback(() => {
+    const scrollElement = scrollContainerRef.current;
+    const sentinel = loadMoreSentinelRef.current;
+
+    if (
+      !scrollElement ||
+      !sentinel ||
+      !hasNextListingsPage ||
+      isFetchingListings ||
+      isNextListingsPageError
+    ) {
+      return;
+    }
+
+    const distanceToEnd =
+      sentinel.getBoundingClientRect().top -
+      scrollElement.getBoundingClientRect().bottom;
+
+    if (distanceToEnd <= HOME_LISTINGS_LOAD_MORE_DISTANCE_PX) {
+      // cancelRefetch 기본값(true)이면 같은 커서 요청을 취소·재전송하므로 끈다.
+      void fetchNextListingsPage({ cancelRefetch: false });
+    }
+  }, [
+    fetchNextListingsPage,
+    hasNextListingsPage,
+    isFetchingListings,
+    isNextListingsPageError,
+  ]);
+
+  useEffect(() => {
+    loadMoreListingsIfNearEnd();
+  }, [loadMoreListingsIfNearEnd, visibleListings.length]);
 
   function handleContentScroll(event: UIEvent<HTMLDivElement>) {
+    loadMoreListingsIfNearEnd();
+
     const scrollElement = event.currentTarget;
     const maxScrollTop = scrollElement.scrollHeight - scrollElement.clientHeight;
     const nextScrollTop = Math.max(
@@ -650,7 +765,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         window.clearTimeout(restoreTimer);
       }
     };
-  }, [isListingLoading, listings.length, skipEnterAnimation]);
+  }, [isListingLoading, skipEnterAnimation]);
 
   // 재마운트 시 보던 슬라이드를 복원한다(상세를 다녀와도 배너 위치 유지).
   // 배너 구성이 바뀌면(폴백→API 교체, 배너 갱신) 첫 슬라이드부터 다시 시작한다.
@@ -988,20 +1103,30 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
             }
           >
-            {listingMessage ? (
-              <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
-                <p className="text-[13px] font-semibold text-black/45">
-                  {listingMessage}
-                </p>
-              </div>
-            ) : null}
-            {isListingLoading ? (
-              <ProductGridSkeleton
-                ariaLabel="추천 상품을 불러오는 중"
-                count={3}
-                variant="wide"
+            {isListingsFailed ? (
+              <HomeListingsRetryNotice
+                isRetrying={isFetchingListings}
+                message={HOME_LISTINGS_FAILED_MESSAGE}
+                onRetry={() => void listingsQuery.refetch()}
               />
-            ) : visibleListings.length === 0 && favoriteGroupNames.size > 0 ? (
+            ) : hasNoListingsToShow ? (
+              <>
+                {isListingsSlow ? (
+                  <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
+                    <p className="text-[13px] font-semibold text-black/45">
+                      {"분철 목록을 불러오는 데 시간이 걸리고 있어요. 다시 불러오는 중이에요."}
+                    </p>
+                  </div>
+                ) : null}
+                <ProductGridSkeleton
+                  ariaLabel="추천 상품을 불러오는 중"
+                  count={3}
+                  variant="wide"
+                />
+              </>
+            ) : visibleListings.length === 0 &&
+              favoriteGroupNames.size > 0 &&
+              isListingsExhausted ? (
               /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
                  내 최애 것만 없는 건지 구분해 알린다. */
                 <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
@@ -1027,6 +1152,36 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 <div className={shouldRevealListings ? "content-reveal" : ""}>
                   <ProductGrid items={visibleListings} variant="wide"/>
                 </div>
+            )}
+            {hasNoListingsToShow ? null : (
+              <div ref={loadMoreSentinelRef}>
+                {/* 최애를 찾는 동안의 스켈레톤도 센티널 안에 둔다 — 위에 두면 센티널이 밀려 연쇄 로드가 멈춘다. */}
+                {isUsingFallbackListings ? (
+                  /* 대체 목록은 로그인 키로 이어 받을 커서가 없다 — 로그인 목록부터 다시 받는다.
+                     최애로 걸러 한 장도 안 남으면 "더"가 사실과 달라 목록 실패 문구를 쓴다. */
+                  <HomeListingsRetryNotice
+                    isRetrying={isFetchingListings}
+                    message={
+                      visibleListings.length === 0
+                        ? HOME_LISTINGS_FAILED_MESSAGE
+                        : "분철을 더 불러오지 못했어요."
+                    }
+                    onRetry={() => void listingsQuery.refetch()}
+                  />
+                ) : isNextListingsPageError ? (
+                  <HomeListingsRetryNotice
+                    isRetrying={isFetchingNextListingsPage}
+                    message="분철을 더 불러오지 못했어요."
+                    onRetry={() => void fetchNextListingsPage()}
+                  />
+                ) : isFetchingNextListingsPage || isAwaitingFavoriteListings ? (
+                  <ProductGridSkeleton
+                    ariaLabel="분철을 더 불러오는 중"
+                    count={2}
+                    variant="wide"
+                  />
+                ) : null}
+              </div>
             )}
           </div>
         </section>

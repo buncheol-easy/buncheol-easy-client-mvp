@@ -6,7 +6,10 @@ import {
 } from "@tanstack/react-query";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HomeContent } from "@/components/HomeContent";
-import { requestAllBuncheols, toProductCardItem } from "@/lib/auth-api";
+import {
+  homeListingsInitialPageParam,
+  requestHomeListingsPage,
+} from "@/lib/home-listings";
 import { homeListingsQueryKey } from "@/lib/query-keys";
 import { blackChromeViewport } from "@/lib/system-chrome";
 
@@ -19,7 +22,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
 
-// requestAllBuncheols 는 최대 20페이지 순차 fetch 라 서버 경로에 자체 상한이 없다.
+// 서버 렌더링 fetch 에는 자체 상한이 없다.
 // ISR 재생성·빌드 크리티컬 패스에 올라가므로 프리페치에만 별도 상한을 둔다.
 const HOME_PREFETCH_TIMEOUT_MS = 10_000;
 
@@ -27,8 +30,8 @@ async function fetchHomeListingsForPrefetch() {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    const listings = await Promise.race([
-      requestAllBuncheols(),
+    return await Promise.race([
+      requestHomeListingsPage(undefined, homeListingsInitialPageParam),
       new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
           reject(
@@ -39,8 +42,6 @@ async function fetchHomeListingsForPrefetch() {
         }, HOME_PREFETCH_TIMEOUT_MS);
       }),
     ]);
-
-    return listings.map(toProductCardItem);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -57,9 +58,10 @@ export default async function Home() {
 
   const listingsKey = homeListingsQueryKey(false);
 
-  await queryClient.prefetchQuery({
+  await queryClient.prefetchInfiniteQuery({
     queryKey: listingsKey,
     queryFn: fetchHomeListingsForPrefetch,
+    initialPageParam: homeListingsInitialPageParam,
   });
 
   const prefetchedListings = queryClient.getQueryData(listingsKey);

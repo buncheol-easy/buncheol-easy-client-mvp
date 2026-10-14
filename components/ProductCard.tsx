@@ -32,6 +32,8 @@ import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
+// 홈 카드로 연 상세의 분철 id·기록 시각. 상세가 마운트 때 한 번 읽고 지운다(ProductDetail).
+export const PRODUCT_HOME_ENTRY_ID_KEY = "product-home-entry-id";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 const SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX = "search-result-scroll-top";
@@ -309,11 +311,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     : "";
   // '신규'·'배송비 0원 이벤트'는 구매 유인 배지라 아직 참여할 수 있는 카드에만 띄운다(마감·취소 카드에선 소음).
   const isNewProduct = !shouldDimCard && isRecentlyUploaded(item.uploadedAt);
-  // 환급 이벤트 배지도 배송비 이야기라, 한 카드에 둘 다 띄우면 어느 쪽이 무료인지 흐려진다.
+  // 두 배지 모두 배송비 이야기라 한 카드에 하나만 띄운다. 배송비까지 0원이면 돌려받을 배송비가 없으므로
+  // 「배송비 0원 이벤트」가 이긴다.
+  const showPaybackBadge =
+    item.isShippingFeePaybackEvent === true && item.isFreeShippingEvent !== true;
   const showFreeShippingBadge =
-    item.isFreeShippingEvent === true &&
-    !item.isShippingFeePaybackEvent &&
-    !shouldDimCard;
+    item.isFreeShippingEvent === true && !shouldDimCard;
 
   useEffect(() => {
     setIsLiked(item.liked === true);
@@ -430,7 +433,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
 
       // 목록 화면(홈·아티스트)은 React Query 캐시를 그대로 다시 그리므로, 캐시의 liked 도
       // 같이 고쳐야 상세를 갔다 돌아오거나 멤버 탭을 오갈 때 하트 상태가 유지된다.
-      updateListingCachesLiked(queryClient, productId, nextLiked);
+      await updateListingCachesLiked(queryClient, productId, nextLiked);
     } catch {
       setIsLiked(!nextLiked);
     } finally {
@@ -463,6 +466,10 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     if (pathname === "/") {
       event.preventDefault();
       rememberProductListScrollPosition(event, HOME_SCROLL_TOP_KEY);
+      window.sessionStorage.setItem(
+        PRODUCT_HOME_ENTRY_ID_KEY,
+        JSON.stringify({ id: productId, at: Date.now() }),
+      );
       router.push(`/products/${productId}?from=home`);
       return;
     }
@@ -537,7 +544,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               >
                 {deadlineBadge.label}
               </span>
-              {item.isShippingFeePaybackEvent ? (
+              {showPaybackBadge ? (
                 <span className="inline-flex rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
                   배송비 돌려받는 무료 분철
                 </span>
@@ -644,9 +651,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
         )}
-        {item.isShippingFeePaybackEvent || showFreeShippingBadge || isNewProduct ? (
+        {showPaybackBadge || showFreeShippingBadge || isNewProduct ? (
           <div className="absolute left-3 top-3 flex flex-col items-start gap-1">
-            {item.isShippingFeePaybackEvent ? (
+            {showPaybackBadge ? (
               <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
                 배송비 돌려받는 무료 분철
               </span>
