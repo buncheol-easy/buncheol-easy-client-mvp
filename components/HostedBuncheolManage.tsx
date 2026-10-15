@@ -1089,7 +1089,7 @@ export function HostedBuncheolManage({
     }
 
     if (!bundle.bundleId) {
-      setMessage("이 참여는 묶음 정보가 없어 확인할 수 없어요. 고객센터로 문의해 주세요.");
+      showToast("이 참여는 묶음 정보가 없어 확인할 수 없어요. 고객센터로 문의해 주세요.");
       return;
     }
 
