@@ -1056,9 +1056,9 @@ export function ProfileContent({
               <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
                 의견 보내기
               </h2>
-              <p className="mt-1 truncate text-[13px] font-medium text-black/40">
-                불편했던 점, 아쉬운 점을 남겨주세요
-              </p>
+              <HelpText as="span" className="mt-1">
+                분철이지를 사용하면서 불편했던 점, 아쉬운 점을 남겨주세요
+              </HelpText>
             </div>
             <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[12px] font-semibold text-black/45">
               남기기
