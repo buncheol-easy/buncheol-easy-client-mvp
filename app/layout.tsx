@@ -6,7 +6,12 @@ import { JsonLd } from "@/components/JsonLd";
 import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
-import { CONTACT_EMAIL, SITE_URL, X_PROFILE_URL } from "@/lib/site";
+import {
+  CONTACT_EMAIL,
+  KAKAO_CHANNEL_URL,
+  SITE_URL,
+  X_PROFILE_URL,
+} from "@/lib/site";
 import { blackChromeViewport } from "@/lib/system-chrome";
 import { Suspense } from "react";
 import "./globals.css";
@@ -80,7 +85,7 @@ const organizationJsonLd = {
         areaServed: "KR",
         availableLanguage: ["Korean"],
       },
-      sameAs: ["https://pf.kakao.com/_LqxnGX", X_PROFILE_URL],
+      sameAs: [KAKAO_CHANNEL_URL, X_PROFILE_URL],
     },
     {
       "@type": "WebSite",
@@ -111,7 +116,7 @@ export default function RootLayout({
           <SystemChromeColorSync />
         </Suspense>
         <QueryProvider>{children}</QueryProvider>
-        {/* 장식 패널이지만 X 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
+        {/* 장식 패널이지만 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
             라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
         <DesktopBrandPanel />
         <TestAccountSwitcher />

@@ -1,6 +1,6 @@
 import { PolicyPageContent } from "@/components/PolicyPageContent";
 import { buildPageMetadata } from "@/lib/seo";
-import { CONTACT_EMAIL } from "@/lib/site";
+import { CONTACT_EMAIL, KAKAO_CHANNEL_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -79,7 +79,7 @@ export default function BrokerNoticePage() {
           items: [
             `이메일: ${CONTACT_EMAIL}`,
             "전화: 010-8678-2427",
-            "카카오 채널: https://pf.kakao.com/_LqxnGX",
+            `카카오 채널: ${KAKAO_CHANNEL_URL}`,
           ],
         },
       ]}
