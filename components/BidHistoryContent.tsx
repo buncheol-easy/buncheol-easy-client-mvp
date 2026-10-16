@@ -77,7 +77,7 @@ import {
   isParticipationPaymentSentStatus,
   isUserCancelledReason,
   USER_CANCELLED_REASON,
-  getCountUnit,
+  formatMemberCount,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -508,7 +508,7 @@ const hostingStatusGuide = [
     icon: BanknoteIcon,
     label: "입금 확인",
     description:
-      "통장을 보고 입금자명으로 대조해 확인을 눌러요. 자리를 여러 개 잡은 참여자는 한 번에 확인돼요. 기한이 지난 미입금 참여는 '제외'로 뺄 수 있어요.",
+      "통장을 보고 입금자명으로 대조해 확인을 눌러요. 멤버를 여러 명 고른 참여자는 한 번에 확인돼요. 기한이 지난 미입금 참여는 '제외'로 뺄 수 있어요.",
   },
   {
     icon: UsersRoundIcon,
@@ -3185,7 +3185,7 @@ export function BidHistoryContent({
               <dl className="mt-2 space-y-1 border-t border-[#E4F6A5]/80 pt-2 text-[12px]">
                 <div className="flex items-baseline justify-between gap-2">
                   <dt className="shrink-0 font-medium text-black/35">
-                    상품 {amountSlots.length}자리
+                    상품(멤버 {amountSlots.length}명)
                   </dt>
                   <dd className="font-semibold tracking-[-0.03em]">
                     {formatPrice(bundleProductAmount)}
@@ -4376,8 +4376,7 @@ export function BidHistoryContent({
                   product.optionCount ??
                   product.targetMembers?.length ??
                   product.options.length;
-                const countUnit = getCountUnit(product.flowType);
-                // 아래 participantCount 는 <b>자리 수</b>다 — 규약은 getCountUnit 참조.
+                // 아래 participantCount 는 <b>멤버(자리) 수</b>다 — 표기는 formatMemberCount 참조.
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,
@@ -4435,8 +4434,7 @@ export function BidHistoryContent({
                             멤버 {optionCount}명
                           </span>
                           <span className="rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
-                            참여 {participantCount}
-                            {countUnit}
+                            {`참여 ${formatMemberCount(participantCount)}`}
                           </span>
                           <span className="max-w-full truncate rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                             마감 {product.deadline}
@@ -4839,7 +4837,7 @@ export function BidHistoryContent({
                   결제 예정 금액
                   {paymentSlotCount > 1 ? (
                     <span className="ml-1 text-[12px] font-medium text-black/40">
-                      자리 {paymentSlotCount}개 합계
+                      멤버 {paymentSlotCount}명 합계
                     </span>
                   ) : null}
                 </span>

@@ -3072,7 +3072,7 @@ export function ProductDetail({
       Object.keys(bidAmounts).length >= maxSelectableMemberCount
     ) {
       showToast(
-        `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
+        `멤버는 한 번에 최대 ${maxSelectableMemberCount}명까지 신청할 수 있어요.`,
       );
       return;
     }
@@ -3278,7 +3278,7 @@ export function ProductDetail({
     // 다중 선택이 열리지 않은 구간(코드 참여·추가 모집)에서 복원 등으로 여러 개가 들어온 경우 방어.
     if (submittedBids.length > 1 && !canSelectMultipleMembers) {
       window.alert(
-        "지금은 자리를 한 번에 하나씩만 신청할 수 있어요. 하나만 선택해 주세요.",
+        "지금은 멤버를 한 번에 한 명씩만 신청할 수 있어요. 한 명만 선택해 주세요.",
       );
       return;
     }
@@ -3286,7 +3286,7 @@ export function ProductDetail({
     // 선택 단계에서 이미 막지만, 세션 복원 등 다른 경로를 최종 방어한다.
     if (submittedBids.length > maxSelectableMemberCount) {
       window.alert(
-        `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
+        `멤버는 한 번에 최대 ${maxSelectableMemberCount}명까지 신청할 수 있어요.`,
       );
       return;
     }
@@ -4687,7 +4687,7 @@ export function ProductDetail({
                         "진행 확정"
                       ) : (
                         <RollingNumber
-                          value={`현재 ${currentParticipationCount.toLocaleString("ko-KR")}${
+                          value={`현재 멤버 ${currentParticipationCount.toLocaleString("ko-KR")}${
                             participationDenominator !== null &&
                             currentParticipationCount <= participationDenominator
                               ? `/${participationDenominator.toLocaleString("ko-KR")}`
@@ -5139,7 +5139,7 @@ export function ProductDetail({
                                   ? "입금할 금액이 없는 무료 참여예요."
                                   : "참여하면 입금 계좌와 마감 시각이 안내돼요."
                             : canSelectMultipleMembers
-                              ? "신청할 멤버를 선택해 주세요. 여러 자리를 골라 한 번에 신청할 수 있어요."
+                              ? "신청할 멤버를 선택해 주세요. 여러 멤버를 골라 한 번에 신청할 수 있어요."
                               : isC2CProduct
                             ? "신청할 멤버를 선택해 주세요. 여러 멤버에 각각 신청할 수 있어요."
                             : "참여할 멤버를 선택해 주세요. 분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
@@ -5292,7 +5292,7 @@ export function ProductDetail({
                       <p className="mt-1 text-[16px] font-semibold tracking-[-0.04em]">
                         {selectedCheckoutItems[0]?.option.label ?? "-"}
                         {selectedCheckoutItems.length > 1
-                          ? ` 외 ${selectedCheckoutItems.length - 1}개`
+                          ? ` 외 ${selectedCheckoutItems.length - 1}명`
                           : ""}
                       </p>
                       <div className="mt-3 space-y-2">
@@ -5473,12 +5473,12 @@ export function ProductDetail({
                     {selectedCheckoutItems.length > 1 ? (
                       <HelpText className="px-1">
                         <span className="block font-semibold text-black/80">
-                          자리 {selectedCheckoutItems.length}개를 한 번에 신청해요.
+                          멤버 {selectedCheckoutItems.length}명을 한 번에 신청해요.
                         </span>
                         {isAdditionalC2CApplication
                           ? "배송비는 첫 신청에 이미 포함돼 있어요."
                           : "배송비는 한 번만 붙고 택배도 한 개로 와요."}
-                        고른 자리 중 하나라도 먼저 팔리면 전체가 신청되지 않아요. 그때는 다시 골라 주세요.
+                        고른 멤버 중 한 명이라도 먼저 팔리면 전체가 신청되지 않아요. 그때는 다시 골라 주세요.
                       </HelpText>
                     ) : null}
 
@@ -5807,7 +5807,7 @@ export function ProductDetail({
                           신청한 멤버
                         </p>
                         <span className="text-[12px] font-semibold text-black/35">
-                          {checkoutPaymentSummary.items.length}개
+                          {checkoutPaymentSummary.items.length}명
                         </span>
                       </div>
                       <div className="mt-2 space-y-2">
