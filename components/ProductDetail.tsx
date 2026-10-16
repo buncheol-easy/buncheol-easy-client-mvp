@@ -1279,7 +1279,7 @@ export function ProductDetail({
     () => initialNowMs ?? Date.now(),
   );
   const buncheolId = product.buncheolId ?? product.id;
-  // 오픈 대기 버튼은 남은 시간만 보이므로, 오픈 시각은 화면 낭독용 설명으로 붙인다.
+  // 오픈 대기 버튼에는 오픈 시각이 없어("참여 오픈까지 {남은 시간}"), 오픈 시각은 화면 낭독용 설명으로 붙인다.
   const opensAtDescriptionId = useId();
   const opensAtMs = parseIsoTimeMs(opensAtFromApi);
   const serverNowMs = deadlineTick + serverClockOffsetMs;
@@ -4611,8 +4611,13 @@ export function ProductDetail({
                   반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
                   같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
               {isWaitingForOpen && opensAtMs !== null ? (
-                <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
-                  {formatOpenCountdown(opensAtMs, serverNowMs)}
+                <span className="flex items-center justify-center gap-2">
+                  <span className="text-[15px] text-white/[0.78]">
+                    참여 오픈까지
+                  </span>
+                  <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
+                    {formatOpenCountdown(opensAtMs, serverNowMs)}
+                  </span>
                 </span>
               ) : isPublicPreview
                 ? isC2CProduct
