@@ -768,9 +768,11 @@ export function UploadProductForm({
   const [closingDate, setClosingDate] = useState("");
   // 운영진 계정만 쓰는 예약 오픈 시각. 비우면 등록하자마자 열린다.
   const [opensAtValue, setOpensAtValue] = useState("");
-  // 운영진 계정이면 오픈 시각 칸을 보이고 운영진 개최 API 를 부른다. 조회 전·실패면 회원으로 본다.
-  const [isStaffHost, setIsStaffHost] = useState(false);
-  const isStaffOpensAtShown = isStaffHost && !isEditMode;
+  // 운영진 계정이면 오픈 시각 칸을 보이고 운영진 개최 API 를 부른다. null 은 조회 중, 실패면 회원으로 본다.
+  const [isStaffHost, setIsStaffHost] = useState<boolean | null>(null);
+  const isStaffOpensAtShown = isStaffHost === true && !isEditMode;
+  // 조회 전에 제출하면 운영진도 회원 API 로 나가 오픈 시각 없이 바로 열린 분철이 된다.
+  const isStaffHostLoading = !isEditMode && isStaffHost === null;
   const [description, setDescription] = useState("");
   const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -2135,6 +2137,10 @@ export function UploadProductForm({
   }
 
   function handleSubmit() {
+    if (isStaffHostLoading) {
+      return;
+    }
+
     // 버튼이 살아 있으므로 제출 경로에서 다시 막는다 — 버튼 활성화가 곧 제출 허용이 아니다.
     if (submitBlock) {
       // 이전 서버 에러가 남아 있으면 인라인 안내와 하단 문구가 서로 다른 말을 한다.
@@ -3627,7 +3633,7 @@ export function UploadProductForm({
                           </span>
                           {value ? (
                             <button
-                              className="text-[12px] font-semibold text-black/45"
+                              className="-mr-2 px-2 py-1 text-[12px] font-semibold text-black/45"
                               data-submit-focus="skip"
                               onClick={() => {
                                 setOpensAtValue("");
@@ -3778,7 +3784,7 @@ export function UploadProductForm({
 
             <button
               className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60"
-              disabled={isSubmitPending}
+              disabled={isSubmitPending || isStaffHostLoading}
               onClick={handleSubmit}
               type="button"
             >
