@@ -27,7 +27,7 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
-import { formatOpensAt, parseOpensAtMs } from "@/lib/buncheol-open-time";
+import { formatOpensAtBadge, parseOpensAtMs } from "@/lib/buncheol-open-time";
 import { getHistoryIndex } from "@/lib/history-index";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
@@ -266,7 +266,7 @@ function getCardOpensAtLabel(item: ProductCardItem) {
   const opensAtMs = parseOpensAtMs(item.opensAt);
 
   return opensAtMs !== null && opensAtMs > Date.now()
-    ? `${formatOpensAt(opensAtMs)} 오픈`
+    ? formatOpensAtBadge(opensAtMs)
     : null;
 }
 

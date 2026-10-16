@@ -55,7 +55,11 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
 } from "@/lib/buncheol-states";
-import { formatOpensAt, parseOpensAtMs } from "@/lib/buncheol-open-time";
+import {
+  formatOpensAt,
+  formatOpensAtBadge,
+  parseOpensAtMs,
+} from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -4213,7 +4217,14 @@ export function ProductDetail({
                     : "bg-black/75 text-white backdrop-blur"
                 }`}
               >
-                {product.badge}
+                {/* 카드와 같은 말을 쓴다 — 카드는 오픈 전이면 「모집 중」 대신 오픈 시각을 보인다. */}
+                {isBeforeOpen &&
+                opensAtMs !== null &&
+                isPurchasableStatus &&
+                !isCancelledProduct &&
+                !isDeadlineBlocked
+                  ? formatOpensAtBadge(opensAtMs)
+                  : product.badge}
               </div>
             </div>
           </section>

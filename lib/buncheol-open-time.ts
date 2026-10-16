@@ -35,3 +35,8 @@ export function formatOpensAt(
 
   return `${withWeekday ? `${date}(${parts.weekday})` : date} ${parts.hour}:${parts.minute}`;
 }
+
+/** 카드·상세 사진 위 상태 배지에서 「모집 중」 대신 쓰는 "10/20 20:00 오픈". */
+export function formatOpensAtBadge(opensAtMs: number) {
+  return `${formatOpensAt(opensAtMs)} 오픈`;
+}
