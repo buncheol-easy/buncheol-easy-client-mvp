@@ -67,8 +67,9 @@ type DeliveryState = {
   trackingNumber: string;
 };
 
+// lib/auth-api.ts 의 같은 이름 함수와 규칙을 맞춘다 — 0원은 「0원」, 값을 모를 때(null·NaN·음수)만 "-".
 function formatWonAmount(value: number | null | undefined) {
-  if (!Number.isFinite(value) || !value || value <= 0) {
+  if (value == null || !Number.isFinite(value) || value < 0) {
     return "-";
   }
 
@@ -125,12 +126,13 @@ function formatKoreaDateTime(value: string | undefined) {
   return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
+// 금액을 하나도 모르면 0 이 아니라 null — 0 은 「0원」으로 그려져 실제 0원 자리와 구분되지 않는다.
 function getHighestBidAmount(option: BuncheolManagementOption) {
   return (
     option.currentHighestBid ??
     option.winner?.paymentAmount ??
     option.winner?.bidAmount ??
-    0
+    null
   );
 }
 
@@ -1066,8 +1068,8 @@ export function HostedBuncheolManage({
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
-      // formatWonAmount 는 0 이하를 "-" 로 돌려줘 문장 안에서는 "- 을 받으셨나요" 가 된다.
-      // 0원 슬롯 조합에서 실제로 도달할 수 있어, 금액을 못 쓰면 절을 통째로 뺀다.
+      // 합계가 0원이면 「0원을 받으셨나요」가 돼 받을 돈이 있는 것처럼 읽힌다. 0원 슬롯 조합에서
+      // 실제로 도달할 수 있어, 받을 금액이 없으면 금액 절을 통째로 뺀다.
       description:
         total > 0
           ? `${depositorName}님의 ${memberNames} ${formatWonAmount(total)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
@@ -1100,8 +1102,10 @@ export function HostedBuncheolManage({
 
     setPendingC2CAction(`confirm:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
@@ -1110,14 +1114,29 @@ export function HostedBuncheolManage({
 
       await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
 
-      await reloadManagementDetail(accessToken);
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
       showToast("입금 확인이 완료됐어요.");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
       );
+
+      // 다른 탭에서 이미 확인·제외됐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
@@ -1159,8 +1178,10 @@ export function HostedBuncheolManage({
 
     setPendingC2CAction(`release:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
@@ -1168,12 +1189,27 @@ export function HostedBuncheolManage({
       }
 
       await releaseBundle(accessToken, bundle.bundleId);
-      await reloadManagementDetail(accessToken);
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 제외가 실패로 보이지 않게.
       showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : "참여를 빼지 못했어요.",
       );
+
+      // 그사이 입금이 확인됐거나 다른 탭에서 뺐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
