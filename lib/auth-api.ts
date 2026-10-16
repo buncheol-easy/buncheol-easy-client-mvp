@@ -3953,7 +3953,7 @@ function formatKoreaDateTime(value: string | undefined) {
 
 // 0원 멤버는 실제 가격이라 「0원」으로 쓴다. 값을 모를 때(음수·NaN·null)만 "-".
 function formatWonAmount(amount: number) {
-  return Number.isFinite(amount) && amount >= 0
+  return Number.isFinite(amount) && amount > 0
     ? `${amount.toLocaleString("ko-KR")}원`
     : "-";
 }
