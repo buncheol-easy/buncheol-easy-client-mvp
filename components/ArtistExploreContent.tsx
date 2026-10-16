@@ -48,6 +48,8 @@ type ArtistGroup = ApiGroup & {
 
 type ArtistExploreContentProps = {
   onBack?: () => void;
+  // 그룹 페이지에서 돌아와 검색어·스크롤을 되살렸을 때 페인트 전에 한 번 부른다.
+  onRestoreView?: () => void;
 };
 
 const FAVORITE_GROUP_LIMIT = 5;
@@ -165,7 +167,10 @@ function ArtistAvatar({
   );
 }
 
-export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
+export function ArtistExploreContent({
+  onBack,
+  onRestoreView,
+}: ArtistExploreContentProps) {
   const router = useRouter();
   const authState = useSyncExternalStore(
     subscribeAuthState,
@@ -183,6 +188,8 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
   // 되살린 검색어는 아래 useDeferredValue 로 미루지 않는다 — 미루면 전체 목록이 한 번 그려진 뒤 바뀐다.
   const [restoredQuery, setRestoredQuery] = useState<string | null>(null);
   const pendingRestoreViewRef = useRef<ArtistListView | null>(null);
+  // 돌아온 목록은 떠날 때 모습 그대로 보여 준다 — 카드 떠오르기를 다시 틀지 않는다.
+  const [isGridRevealSkipped, setIsGridRevealSkipped] = useState(false);
   const [message, setMessage] = useState("");
   const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
   // 하트를 처음 누른 시점의 최애 집합을 고정해 그 뒤로는 카드가 움직이지 않게 한다.
@@ -262,7 +269,9 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
     pendingRestoreViewRef.current = savedView;
     setQuery(savedView.query);
     setRestoredQuery(savedView.query);
-  }, []);
+    setIsGridRevealSkipped(true);
+    onRestoreView?.();
+  }, [onRestoreView]);
 
   // 스크롤은 되살린 검색어의 목록이 그려진 뒤에 맞춘다. 먼저 맞추면 길이가 다른 목록 위에 위치가 얹힌다.
   useLayoutEffect(() => {
@@ -505,7 +514,11 @@ export function ArtistExploreContent({ onBack }: ArtistExploreContentProps) {
           /* 0건일 때도 그리드를 유지한다. 빈 상태와 삼항으로 가르면 0건 ↔ N건을 오갈 때마다
              카드 전부가 remount 되고 content-reveal 이 재생된다. */
           <>
-            <div className="content-reveal grid grid-cols-2 gap-3">
+            <div
+              className={`${
+                isGridRevealSkipped ? "" : "content-reveal "
+              }grid grid-cols-2 gap-3`}
+            >
               {visibleGroups.map((group) => {
                 const isPending = pendingGroupId === group.id;
                 const isFavoriteLimitReached =
