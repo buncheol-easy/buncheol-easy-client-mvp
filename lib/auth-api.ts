@@ -4132,9 +4132,9 @@ export function toProductDetailItem(
     ...toProductCardItem(detail),
     buncheolId: detail.id,
     courier: shippingMethods[0]?.name ?? "배송 방법 확인 필요",
-    description:
-      detail.description?.trim() ||
-      "판매자가 상품 설명을 작성하지 않았습니다.",
+    // 빈 설명은 비워 둔다 — 안내 문구는 상세 화면이 그린다. 여기서 채우면 수정 폼 설명 칸에
+    // 그 문구가 입력값으로 들어가 그대로 저장된다.
+    description: detail.description?.trim() ?? "",
     flowType: detail.flowType ?? null,
     // 🔴 여기서 빠뜨리면 파서가 값을 읽어도 화면까지 오지 않는다 — 실제로 첫 PR 에서 불리언을
     // 이 줄에 안 실어, 파서·타입·주석은 다 있는데 화면이 못 읽는 상태로 리뷰에 걸렸다.
