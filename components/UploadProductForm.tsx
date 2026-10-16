@@ -3559,7 +3559,7 @@ export function UploadProductForm({
                 {(isStaffOpensAtShown
                   ? ([
                       ["closing", "마감 기한", closingDate],
-                      ["opening", "오픈 시각", opensAtValue],
+                      ["opening", "오픈 시각 (선택)", opensAtValue],
                     ] as const)
                   : ([["closing", "마감 기한", closingDate]] as const)
                 ).map(([field, label, value]) => {
@@ -3673,14 +3673,6 @@ export function UploadProductForm({
                           선택
                         </span>
                       </button>
-                      {field === "opening" ? (
-                        <>
-                          {renderSubmitFieldError("opensAt")}
-                          <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                            비워 두면 등록하자마자 열려요.
-                          </p>
-                        </>
-                      ) : null}
 
                       <SoftPanel className="mt-2" isOpen={isActive}>
                         <div className="rounded-[0.95rem] border border-black/10 bg-[#f7f7f7] p-3">
@@ -3723,6 +3715,14 @@ export function UploadProductForm({
                           </div>
                         </div>
                       </SoftPanel>
+                      {field === "opening" ? (
+                        <>
+                          {renderSubmitFieldError("opensAt")}
+                          <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                            비워 두면 등록하자마자 열려요.
+                          </p>
+                        </>
+                      ) : null}
                     </div>
                   );
                 })}
