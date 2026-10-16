@@ -600,6 +600,30 @@ function isNotOpenOption(option: ProductOption) {
   return option.saleStatus?.toUpperCase() === "NOT_OPEN";
 }
 
+// 오픈 전에는 다른 사람이 차지한 자리(코드 참여 등)도 「오픈 전」으로 가린다. 서버 값은 그대로 두고 화면에서만
+// 가려서, 오픈 시각이 되면 서버에 다시 묻지 않고 실제 상태(「매진」 등)를 드러낸다.
+function isTakenByOthers(option: ProductOption, myBid?: number) {
+  return (
+    !isOptionParticipatedByMe(option, myBid) &&
+    (isOccupiedPurchaseOption(option) ||
+      hasOptionPurchaseState(option) ||
+      option.participantCount > 0)
+  );
+}
+
+function hideTakenOptionBeforeOpen(option: ProductOption): ProductOption {
+  return {
+    ...option,
+    available: false,
+    participantCount: 0,
+    purchaseParticipationId: undefined,
+    purchasePaymentConfirmedAt: undefined,
+    purchasePaymentDueAt: undefined,
+    purchasePaymentStatus: undefined,
+    saleStatus: "NOT_OPEN",
+  };
+}
+
 // 오픈 시각이 지나면 서버가 「오픈 전」으로 내려 둔 빈 자리를 시계만으로 연다. 정각 몰림에 조회를 더하지 않으려고
 // 정각에는 서버에 다시 묻지 않는다 — 그사이 팔린 자리는 참여 시트를 열 때와 참여 409 뒤 재조회로 맞춰진다.
 function openNotOpenOption(option: ProductOption): ProductOption {
@@ -1259,13 +1283,28 @@ export function ProductDetail({
   // 오픈 판정의 정본은 서버(상세 NOT_OPEN, 참여 409 BCH-128)다. 화면은 서버 시계로 같은 시각에 열기만 한다.
   const hasOpened = opensAtMs !== null && serverNowMs >= opensAtMs;
   const isBeforeOpen = opensAtMs !== null && !hasOpened;
-  const auctionOptions = useMemo(
-    () =>
-      hasOpened && serverAuctionOptions.some(isNotOpenOption)
+  // 개최자는 오픈 전에도 실제 자리 상태를 본다(관리 화면과 같은 정보).
+  const shouldHideTakenSlots =
+    isBeforeOpen &&
+    product.isHostedByMe !== true &&
+    isHostedByMeFromApi !== true;
+  const auctionOptions = useMemo(() => {
+    if (hasOpened) {
+      return serverAuctionOptions.some(isNotOpenOption)
         ? serverAuctionOptions.map(openNotOpenOption)
-        : serverAuctionOptions,
-    [hasOpened, serverAuctionOptions],
-  );
+        : serverAuctionOptions;
+    }
+
+    if (shouldHideTakenSlots) {
+      return serverAuctionOptions.map((option) =>
+        isTakenByOthers(option, myBids[option.id])
+          ? hideTakenOptionBeforeOpen(option)
+          : option,
+      );
+    }
+
+    return serverAuctionOptions;
+  }, [hasOpened, myBids, serverAuctionOptions, shouldHideTakenSlots]);
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
@@ -1977,12 +2016,15 @@ export function ProductDetail({
     return sum + Math.max(explicitCount, occupiedSlotCount);
   }, 0);
   const parsedProductParticipationCount = Number.parseInt(product.reviews, 10);
-  const currentParticipationCount = Math.max(
-    optionParticipationCount,
-    Number.isNaN(parsedProductParticipationCount)
-      ? 0
-      : parsedProductParticipationCount,
-  );
+  // 오픈 전에 가린 자리는 서버 참여 수(reviews)에도 들어 있어, 가리는 동안은 자리에서 센 값만 쓴다.
+  const currentParticipationCount = shouldHideTakenSlots
+    ? optionParticipationCount
+    : Math.max(
+        optionParticipationCount,
+        Number.isNaN(parsedProductParticipationCount)
+          ? 0
+          : parsedProductParticipationCount,
+      );
   const minHeadcount =
     typeof product.minHeadcount === "number" && product.minHeadcount > 0
       ? product.minHeadcount

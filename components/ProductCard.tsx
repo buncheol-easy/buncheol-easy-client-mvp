@@ -313,7 +313,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
   const isPurchasable = isProductCardPurchasable(item);
-  // 오픈 전에는 사진 아래 띠가 상태 칩과 「D-n」을 대신하고, 남은 멤버는 「오픈 후 참여」로 흐리게 보인다.
+  // 오픈 전에는 사진 아래 띠가 상태 칩과 「D-n」을 대신한다.
   const opening = getCardOpening(item);
   // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
   // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
@@ -321,9 +321,13 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
   // 서버가 availableMemberNames 를 내려준 경우에만 남은 멤버로 취급한다(null = 데이터 없음).
   // 데이터가 없는 카드(찜 목록 등)는 전체 멤버를 남은 멤버처럼 보여주는 대신 대상 멤버 태그로 대체한다.
-  const availableMemberNames = Array.isArray(item.availableMemberNames)
-    ? getUniqueMemberNames(item.availableMemberNames)
-    : null;
+  // 오픈 전에는 상세처럼 코드 참여로 찬 자리도 가리므로 전체 멤버를 남은 멤버로 보인다.
+  const availableMemberNames =
+    opening && item.targetMembers?.length
+      ? getUniqueMemberNames(item.targetMembers)
+      : Array.isArray(item.availableMemberNames)
+        ? getUniqueMemberNames(item.availableMemberNames)
+        : null;
   const shouldPeekOptionRail = (availableMemberNames?.length ?? 0) > 3;
   const availableMemberSummary = availableMemberNames?.length
     ? getAvailableMemberSummary(availableMemberNames)
@@ -619,22 +623,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             <div>
               {availableMemberNames.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] ${
-                      opening
-                        ? "bg-black/[0.06] text-black/50"
-                        : "bg-black text-[#D7FF5F]"
-                    }`}
-                  >
-                    {opening ? "오픈 후 참여" : "남은 멤버"}
+                  <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-[#D7FF5F]">
+                    남은 멤버
                   </span>
                   {availableMemberNames.map((memberName) => (
                     <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] ring-1 ${
-                        opening
-                          ? "bg-[#f2f2f2] text-black/45 ring-black/5"
-                          : "bg-[#EEF8C8] text-black/70 ring-[#CFE86B]/55"
-                      }`}
+                      className="rounded-full bg-[#EEF8C8] px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-black/70 ring-1 ring-[#CFE86B]/55"
                       key={memberName}
                     >
                       {memberName}
@@ -758,14 +752,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (
               <>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 ring-1 ring-black/5 ${
-                    opening
-                      ? "bg-[#f2f2f2] text-black/45"
-                      : "bg-[#E4F6A5] text-black/70"
-                  }`}
-                >
-                  {opening ? "오픈 후 참여" : "가능 멤버"}
+                <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
+                  가능 멤버
                 </span>
                 <span className="shrink-0 text-black/15">·</span>
                 <div className="relative min-w-0 flex-1">
