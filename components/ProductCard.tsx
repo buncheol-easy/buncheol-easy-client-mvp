@@ -27,6 +27,7 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
+import { formatOpensAt, parseOpensAtMs } from "@/lib/buncheol-open-time";
 import { getHistoryIndex } from "@/lib/history-index";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
@@ -255,9 +256,18 @@ function getProductCardBadge(item: ProductCardItem) {
   // 라벨은 상세·참여 내역과 같은 "모집 중"을 쓴다. 여기만 "구매 가능"이라
   // 홈 카드 → 상세로 넘어갈 때 같은 상태를 다른 말로 부르고 있었다.
   return {
-    label: "모집 중",
+    label: getCardOpensAtLabel(item) ?? "모집 중",
     value: getReadableDeadlineBadge(item.deadline).value,
   };
+}
+
+// 예약 오픈 전 운영진 분철. 지난 오픈 시각은 카드를 다시 그릴 때(목록을 다시 볼 때) 사라진다.
+function getCardOpensAtLabel(item: ProductCardItem) {
+  const opensAtMs = parseOpensAtMs(item.opensAt);
+
+  return opensAtMs !== null && opensAtMs > Date.now()
+    ? `${formatOpensAt(opensAtMs)} 오픈`
+    : null;
 }
 
 function getAvailableMemberSummary(memberNames: string[]) {
