@@ -52,3 +52,34 @@ export function formatOpensAt(opensAtMs: number, nowMs: number) {
 
   return `${parts.month}/${parts.day}(${parts.weekday}) ${time}`;
 }
+
+/** 하루 안쪽 남은 시간을 "HH:MM:SS" 로. 날 수는 호출부가 붙인다. */
+export function formatCountdownClock(totalSeconds: number) {
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return [
+    hours.toString().padStart(2, "0"),
+    minutes.toString().padStart(2, "0"),
+    seconds.toString().padStart(2, "0"),
+  ].join(":");
+}
+
+/**
+ * 오픈까지 남은 시간. 24시간 안은 "HH:MM:SS", 넘으면 매초 바뀌지 않게 "N일 N시간"(시간이 0이면 "N일").
+ * 상세 띠와 오픈 전 참여 버튼이 함께 쓴다.
+ */
+export function formatOpenCountdown(opensAtMs: number, nowMs: number) {
+  // 올림 — 내림이면 오픈 직전 1초 동안 00:00:00 이 떠 있다.
+  const totalSeconds = Math.max(0, Math.ceil((opensAtMs - nowMs) / 1000));
+  const days = Math.floor(totalSeconds / 86_400);
+
+  if (days > 0) {
+    const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+
+    return hours > 0 ? `${days}일 ${hours}시간` : `${days}일`;
+  }
+
+  return formatCountdownClock(totalSeconds);
+}

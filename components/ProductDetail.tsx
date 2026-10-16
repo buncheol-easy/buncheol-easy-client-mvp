@@ -54,7 +54,12 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
 } from "@/lib/buncheol-states";
-import { formatOpensAt, parseIsoTimeMs } from "@/lib/buncheol-open-time";
+import {
+  formatCountdownClock,
+  formatOpenCountdown,
+  formatOpensAt,
+  parseIsoTimeMs,
+} from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -586,34 +591,6 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
       month: "long",
       timeZone: "Asia/Seoul",
     }).format(deadlineDate)}`;
-  }
-
-  return `${formatCountdownClock(totalSeconds)} 남음`;
-}
-
-// 하루 안쪽 남은 시간을 "HH:MM:SS" 로. 날 수는 호출부가 붙인다.
-function formatCountdownClock(totalSeconds: number) {
-  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
-  const minutes = Math.floor((totalSeconds % 3_600) / 60);
-  const seconds = totalSeconds % 60;
-
-  return [
-    hours.toString().padStart(2, "0"),
-    minutes.toString().padStart(2, "0"),
-    seconds.toString().padStart(2, "0"),
-  ].join(":");
-}
-
-function formatOpenCountdown(opensAtMs: number, nowMs: number) {
-  // 올림 — 내림이면 오픈 직전 1초 동안 00:00:00 이 떠 있다.
-  const totalSeconds = Math.max(0, Math.ceil((opensAtMs - nowMs) / 1000));
-  const days = Math.floor(totalSeconds / 86_400);
-
-  // 하루 넘게 남았으면 초 단위로 돌리지 않는다(참여 마감 카운트다운과 같은 원칙). 윗줄에 오픈 시각이 있다.
-  if (days > 0) {
-    const hours = Math.floor((totalSeconds % 86_400) / 3_600);
-
-    return hours > 0 ? `${days}일 ${hours}시간 남음` : `${days}일 남음`;
   }
 
   return `${formatCountdownClock(totalSeconds)} 남음`;
@@ -4568,8 +4545,13 @@ export function ProductDetail({
           ) : (
             <button
               type="button"
+              aria-label={
+                isWaitingForOpen && opensAtMs !== null
+                  ? `${formatOpensAt(opensAtMs, serverNowMs)}에 참여가 열려요`
+                  : undefined
+              }
               className={
-                // 오픈 대기 중에는 꺼져 있어도 오픈 시각과 남은 시간이 읽혀야 한다.
+                // 오픈 대기 중에는 꺼져 있어도 남은 시간이 읽혀야 한다.
                 isWaitingForOpen
                   ? "h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
                   : "h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
@@ -4583,13 +4565,8 @@ export function ProductDetail({
                   반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
                   같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
               {isWaitingForOpen && opensAtMs !== null ? (
-                <span className="flex flex-col items-center leading-tight">
-                  <span>
-                    {formatOpensAt(opensAtMs, serverNowMs)}에 열려요
-                  </span>
-                  <span className="mt-1 text-[12px] font-medium [font-variant-numeric:tabular-nums]">
-                    {formatOpenCountdown(opensAtMs, serverNowMs)}
-                  </span>
+                <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
+                  {formatOpenCountdown(opensAtMs, serverNowMs)}
                 </span>
               ) : isPublicPreview
                 ? isC2CProduct
