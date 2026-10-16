@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
+import { OpensAtBand } from "@/components/OpensAtBand";
 import {
   getArtistRestoreIndexKey,
   getArtistScrollTopKey,
@@ -27,7 +28,7 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
-import { formatOpensAtBadge, parseIsoTimeMs } from "@/lib/buncheol-open-time";
+import { parseIsoTimeMs } from "@/lib/buncheol-open-time";
 import { getHistoryIndex } from "@/lib/history-index";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
@@ -256,17 +257,21 @@ function getProductCardBadge(item: ProductCardItem) {
   // 라벨은 상세·참여 내역과 같은 "모집 중"을 쓴다. 여기만 "구매 가능"이라
   // 홈 카드 → 상세로 넘어갈 때 같은 상태를 다른 말로 부르고 있었다.
   return {
-    label: getCardOpensAtLabel(item) ?? "모집 중",
+    label: "모집 중",
     value: getReadableDeadlineBadge(item.deadline).value,
   };
 }
 
-// 예약 오픈 전 운영진 분철. 지난 오픈 시각은 카드를 다시 그릴 때(목록을 다시 볼 때) 사라진다.
-function getCardOpensAtLabel(item: ProductCardItem) {
+// 예약 오픈 전 모집 중인 운영진 분철이면 띠에 쓸 오픈 시각과 지금 시각(오늘·내일 표기용)을 돌려준다.
+// 지난 오픈 시각은 카드를 다시 그릴 때(목록을 다시 볼 때) 사라진다.
+function getCardOpening(item: ProductCardItem) {
   const opensAtMs = parseIsoTimeMs(item.opensAt);
+  const nowMs = Date.now();
 
-  return opensAtMs !== null && opensAtMs > Date.now()
-    ? formatOpensAtBadge(opensAtMs)
+  return opensAtMs !== null &&
+    opensAtMs > nowMs &&
+    isProductCardPurchasable(item)
+    ? { nowMs, opensAtMs }
     : null;
 }
 
@@ -308,6 +313,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
   const isPurchasable = isProductCardPurchasable(item);
+  // 오픈 전에는 사진 아래 띠가 상태 칩과 「D-n」을 대신하고, 남은 멤버는 「오픈 후 참여」로 흐리게 보인다.
+  const opening = getCardOpening(item);
   // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
   // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
   const shouldDimCard =
@@ -550,15 +557,17 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : null}
           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
             <div className="flex min-w-0 flex-col items-start gap-1.5">
-              <span
-                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
-                  isPurchasable
-                    ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
-                    : "bg-black/55 text-white/80"
-                }`}
-              >
-                {deadlineBadge.label}
-              </span>
+              {opening ? null : (
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
+                    isPurchasable
+                      ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
+                      : "bg-black/55 text-white/80"
+                  }`}
+                >
+                  {deadlineBadge.label}
+                </span>
+              )}
               {showPaybackBadge ? (
                 <span className="inline-flex rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
                   배송비 돌려받는 무료 분철
@@ -590,7 +599,13 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               <HeartIcon filled={isLiked} />
             </button>
           </div>
-          {deadlineBadge.value ? (
+          {opening ? (
+            <OpensAtBand
+              nowMs={opening.nowMs}
+              opensAtMs={opening.opensAtMs}
+              size="wide"
+            />
+          ) : deadlineBadge.value ? (
             <span className="absolute bottom-3 left-3 rounded-full bg-black/76 px-2.5 py-1 text-[13px] font-semibold tracking-[-0.04em] text-white backdrop-blur-sm">
               {deadlineBadge.value}
             </span>
@@ -604,12 +619,22 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
             <div>
               {availableMemberNames.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-[#D7FF5F]">
-                    남은 멤버
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] ${
+                      opening
+                        ? "bg-black/[0.06] text-black/50"
+                        : "bg-black text-[#D7FF5F]"
+                    }`}
+                  >
+                    {opening ? "오픈 후 참여" : "남은 멤버"}
                   </span>
                   {availableMemberNames.map((memberName) => (
                     <span
-                      className="rounded-full bg-[#EEF8C8] px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-black/70 ring-1 ring-[#CFE86B]/55"
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] ring-1 ${
+                        opening
+                          ? "bg-[#f2f2f2] text-black/45 ring-black/5"
+                          : "bg-[#EEF8C8] text-black/70 ring-[#CFE86B]/55"
+                      }`}
                       key={memberName}
                     >
                       {memberName}
@@ -688,26 +713,35 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         {shouldDimCard ? (
           <div className="absolute inset-0 bg-black/45" />
         ) : null}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
-          <p
-            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
-              isPurchasable
-                ? "bg-[#DDE7B8] text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)]"
-                : "bg-black/40 text-white/75"
-            }`}
-          >
-            {deadlineBadge.label}
-          </p>
-          {deadlineBadge.value ? (
-            <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em] drop-shadow-[0_1px_6px_rgba(0,0,0,0.65)]">
-              {deadlineBadge.value}
+        {opening ? (
+          <OpensAtBand
+            nowMs={opening.nowMs}
+            opensAtMs={opening.opensAtMs}
+            size="grid"
+          />
+        ) : (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
+            <p
+              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
+                isPurchasable
+                  ? "bg-[#DDE7B8] text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)]"
+                  : "bg-black/40 text-white/75"
+              }`}
+            >
+              {deadlineBadge.label}
             </p>
-          ) : null}
-        </div>
+            {deadlineBadge.value ? (
+              <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em] drop-shadow-[0_1px_6px_rgba(0,0,0,0.65)]">
+                {deadlineBadge.value}
+              </p>
+            ) : null}
+          </div>
+        )}
         <button
           type="button"
           aria-label={isLiked ? "찜 해제" : "찜하기"}
-          className={`absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full ${
+          // 오픈 전에는 아래 띠와 겹치지 않게 위 오른쪽으로 올린다.
+          className={`absolute ${opening ? "right-2 top-2" : "bottom-2 right-2"} inline-flex h-9 w-9 items-center justify-center rounded-full ${
             isLiked
               ? "heart-on-image heart-on-image--active text-like"
               : "heart-on-image text-white"
@@ -724,8 +758,14 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           <div className="mb-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
             {availableMemberNames.length > 0 ? (
               <>
-                <span className="shrink-0 rounded-full bg-[#E4F6A5] px-2 py-0.5 text-black/70 ring-1 ring-black/5">
-                  가능 멤버
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 ring-1 ring-black/5 ${
+                    opening
+                      ? "bg-[#f2f2f2] text-black/45"
+                      : "bg-[#E4F6A5] text-black/70"
+                  }`}
+                >
+                  {opening ? "오픈 후 참여" : "가능 멤버"}
                 </span>
                 <span className="shrink-0 text-black/15">·</span>
                 <div className="relative min-w-0 flex-1">

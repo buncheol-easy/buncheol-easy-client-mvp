@@ -54,11 +54,7 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
 } from "@/lib/buncheol-states";
-import {
-  formatOpensAt,
-  formatOpensAtBadge,
-  parseIsoTimeMs,
-} from "@/lib/buncheol-open-time";
+import { formatOpensAt, parseIsoTimeMs } from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -98,6 +94,10 @@ import {
   TrashIcon,
 } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import {
+  OpensAtBand,
+  aboveDetailOpensAtBandClassName,
+} from "@/components/OpensAtBand";
 import {
   BRIEF_TOAST_DURATION_MS,
   Toast,
@@ -1839,6 +1839,12 @@ export function ProductDetail({
   const isPurchasableStatus =
     isBuncheolPurchasableStatus(productStatus) || isC2CCollectingProduct;
   const isDeadlineBlocked = isDeadlinePassed && !isC2CCollectingProduct;
+  // 오픈 전 모집 중이면 사진 아래 띠가 상태 배지를 대신한다(카드와 같은 모양). 정각에 사라진다.
+  const showOpensAtBand =
+    isBeforeOpen &&
+    isPurchasableStatus &&
+    !isCancelledProduct &&
+    !isDeadlineBlocked;
   const shouldDimProductMedia =
     !isPublicPreview &&
     (!isPurchasableStatus || isCancelledProduct || isDeadlineBlocked);
@@ -4209,7 +4215,13 @@ export function ProductDetail({
                     total={productImages.length}
                   />
                   {productImages.length > 1 ? (
-                    <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
+                    <div
+                      className={`absolute right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur ${
+                        showOpensAtBand
+                          ? aboveDetailOpensAtBandClassName
+                          : "bottom-4"
+                      }`}
+                    >
                       {visibleProductImageIndex + 1}/{productImages.length}
                     </div>
                   ) : null}
@@ -4219,7 +4231,13 @@ export function ProductDetail({
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
                   <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
                   <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
-                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
+                  <div
+                    className={`absolute left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur ${
+                      showOpensAtBand
+                        ? aboveDetailOpensAtBandClassName
+                        : "bottom-5"
+                    }`}
+                  >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
                       {product.era}
                     </p>
@@ -4229,24 +4247,25 @@ export function ProductDetail({
                   </div>
                 </>
               )}
-              <div
-                className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
-                  isPurchasableStatus &&
-                  !isCancelledProduct &&
-                  !isDeadlineBlocked
-                    ? "bg-[#DDE7B8] text-black"
-                    : "bg-black/75 text-white backdrop-blur"
-                }`}
-              >
-                {/* 카드와 같은 말을 쓴다 — 카드는 오픈 전이면 「모집 중」 대신 오픈 시각을 보인다. */}
-                {isBeforeOpen &&
-                opensAtMs !== null &&
-                isPurchasableStatus &&
-                !isCancelledProduct &&
-                !isDeadlineBlocked
-                  ? formatOpensAtBadge(opensAtMs)
-                  : product.badge}
-              </div>
+              {showOpensAtBand && opensAtMs !== null ? (
+                <OpensAtBand
+                  nowMs={serverNowMs}
+                  opensAtMs={opensAtMs}
+                  size="detail"
+                />
+              ) : (
+                <div
+                  className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
+                    isPurchasableStatus &&
+                    !isCancelledProduct &&
+                    !isDeadlineBlocked
+                      ? "bg-[#DDE7B8] text-black"
+                      : "bg-black/75 text-white backdrop-blur"
+                  }`}
+                >
+                  {product.badge}
+                </div>
+              )}
             </div>
           </section>
 
@@ -4566,7 +4585,7 @@ export function ProductDetail({
               {isWaitingForOpen && opensAtMs !== null ? (
                 <span className="flex flex-col items-center leading-tight">
                   <span>
-                    {formatOpensAt(opensAtMs, { withWeekday: true })}에 열려요
+                    {formatOpensAt(opensAtMs, serverNowMs)}에 열려요
                   </span>
                   <span className="mt-1 text-[12px] font-medium [font-variant-numeric:tabular-nums]">
                     {formatOpenCountdown(opensAtMs, serverNowMs)}

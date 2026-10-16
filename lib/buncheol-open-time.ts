@@ -22,22 +22,33 @@ export function parseIsoTimeMs(value: string | null | undefined) {
   return Number.isNaN(time) ? null : time;
 }
 
-/** "10/20 20:00", 요일을 붙이면 "10/20(화) 20:00". */
-export function formatOpensAt(
-  opensAtMs: number,
-  { withWeekday = false }: { withWeekday?: boolean } = {},
-) {
+const dayMs = 86_400_000;
+const kstOffsetMs = 9 * 3_600_000;
+
+function getKstDayNumber(timeMs: number) {
+  return Math.floor((timeMs + kstOffsetMs) / dayMs);
+}
+
+/**
+ * 오픈 시각 표기. 한국 날짜로 오늘·내일이면 "오늘 20:00"·"내일 20:00", 그 뒤는 "10/20(화) 20:00".
+ * 카드 띠·상세 띠·참여 버튼("…에 열려요")이 함께 쓴다.
+ */
+export function formatOpensAt(opensAtMs: number, nowMs: number) {
   const parts = Object.fromEntries(
     opensAtPartsFormatter
       .formatToParts(new Date(opensAtMs))
       .map((part) => [part.type, part.value]),
   );
-  const date = `${parts.month}/${parts.day}`;
+  const time = `${parts.hour}:${parts.minute}`;
+  const dayGap = getKstDayNumber(opensAtMs) - getKstDayNumber(nowMs);
 
-  return `${withWeekday ? `${date}(${parts.weekday})` : date} ${parts.hour}:${parts.minute}`;
-}
+  if (dayGap === 0) {
+    return `오늘 ${time}`;
+  }
 
-/** 카드·상세 사진 위 상태 배지에서 「모집 중」 대신 쓰는 "10/20 20:00 오픈". */
-export function formatOpensAtBadge(opensAtMs: number) {
-  return `${formatOpensAt(opensAtMs)} 오픈`;
+  if (dayGap === 1) {
+    return `내일 ${time}`;
+  }
+
+  return `${parts.month}/${parts.day}(${parts.weekday}) ${time}`;
 }
