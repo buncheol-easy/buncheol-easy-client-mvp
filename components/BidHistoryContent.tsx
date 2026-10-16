@@ -424,7 +424,7 @@ const c2cParticipationStatusGuide = [
   },
 ] as const satisfies readonly StatusGuideItem[];
 
-// 0원 참여(서포터즈 코드) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
+// 0원 참여(코드 참여 포함) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
 // 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "24시간 안에 개최자 계좌로
 // 보내고 '보냈어요'를 눌러주세요" 가 뜬다.
 const freeParticipationStatusGuide = [
@@ -432,7 +432,7 @@ const freeParticipationStatusGuide = [
     icon: ClipboardListIcon,
     label: freeProgressStepLabels[0],
     description:
-      "받은 코드로 자리를 잡은 단계예요. 입금할 금액이 없어 따로 보낼 돈은 없어요.",
+      "참여할 멤버 자리를 잡은 단계예요. 입금할 금액이 없어 따로 보낼 돈은 없어요.",
   },
   {
     icon: CheckIcon,
