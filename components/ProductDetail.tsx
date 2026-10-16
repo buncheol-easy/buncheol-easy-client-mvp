@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -624,7 +623,8 @@ function isNotOpenOption(option: ProductOption) {
   return option.saleStatus?.toUpperCase() === "NOT_OPEN";
 }
 
-// 오픈 시각이 지난 화면에서 서버가 아직 「오픈 전」으로 내려 둔 빈 자리를 연다(다시 불러오기 전까지의 표시).
+// 오픈 시각이 지나면 서버가 「오픈 전」으로 내려 둔 빈 자리를 시계만으로 연다. 정각 몰림에 조회를 더하지 않으려고
+// 정각에는 서버에 다시 묻지 않는다 — 그사이 팔린 자리는 참여 409 뒤 재조회로 맞춰진다.
 function openNotOpenOption(option: ProductOption): ProductOption {
   return isNotOpenOption(option)
     ? { ...option, available: true, saleStatus: "AVAILABLE" }
@@ -2600,10 +2600,6 @@ export function ProductDetail({
     };
   }, [product.isHostedByMe, refreshDetailOptions]);
 
-  const refreshDetailOptionsAtOpen = useEffectEvent(() => {
-    void refreshDetailOptions();
-  });
-
   // 오픈 시각 정각에 화면을 연다(1초 틱을 기다리지 않는다). 타이머가 정각보다 일찍 불리면 남은 만큼 다시 건다.
   useEffect(() => {
     if (opensAtMs === null) {
@@ -2657,52 +2653,6 @@ export function ProductDetail({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [hasOpensAt]);
-
-  // 열린 것을 본 순간(정각 타이머든 1초 틱이든) 오픈 시각당 한 번 상세를 다시 불러와 그사이 팔린 자리를 반영한다.
-  // 정각에 몰리는 재조회는 0~1초 무작위로 흩는다. 비로그인 화면에서는 refreshDetailOptions 가 아무것도 하지 않는다.
-  // 오픈 뒤에 연 화면은 마운트 재조회가 이미 최신 상태를 가져오므로 다시 부르지 않는다.
-  const sawBeforeOpenRef = useRef(false);
-  const refreshedOpensAtRef = useRef<number | null>(null);
-  // 예약은 다시 그리거나 시계 차이를 다시 재도 지우지 않고 언마운트 때만 지운다.
-  const openRefreshTimerRef = useRef<{ id: number | null }>({ id: null });
-
-  useEffect(() => {
-    if (isBeforeOpen) {
-      sawBeforeOpenRef.current = true;
-      return;
-    }
-
-    if (
-      !hasOpened ||
-      !sawBeforeOpenRef.current ||
-      refreshedOpensAtRef.current === opensAtMs
-    ) {
-      return;
-    }
-
-    const openRefreshTimer = openRefreshTimerRef.current;
-
-    refreshedOpensAtRef.current = opensAtMs;
-
-    if (openRefreshTimer.id !== null) {
-      window.clearTimeout(openRefreshTimer.id);
-    }
-
-    openRefreshTimer.id = window.setTimeout(() => {
-      openRefreshTimer.id = null;
-      refreshDetailOptionsAtOpen();
-    }, Math.random() * 1000);
-  }, [hasOpened, isBeforeOpen, opensAtMs]);
-
-  useEffect(() => {
-    const openRefreshTimer = openRefreshTimerRef.current;
-
-    return () => {
-      if (openRefreshTimer.id !== null) {
-        window.clearTimeout(openRefreshTimer.id);
-      }
-    };
-  }, []);
 
   // 지난 입금 기한별 재조회 횟수·마지막 시각. LEGACY 는 서버가 1분 주기로 만료 자리를 풀어 기한 뒤에도
   // 최대 약 1분 '입금 대기'로 오므로 기한 시각 1회 뒤 15초 간격으로 다시 묻는다(기한당 최대 13회 — 서버가 끝내
