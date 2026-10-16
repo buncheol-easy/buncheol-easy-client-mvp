@@ -5053,15 +5053,18 @@ export function ProductDetail({
                         있습니다.
                       </p>
                     ) : null}
-                    {checkoutError ? (
-                      <p
-                        className="error-shake rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
-                        key={checkoutError}
-                      >
-                        {checkoutError}
-                      </p>
-                    ) : null}
                   </div>
+
+                  {/* 스크롤 영역 밖, 버튼 바로 위에 둔다 — 안에 두면 내용이 길 때 스크롤해야 보인다. */}
+                  {checkoutError ? (
+                    <p
+                      className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
+                      key={checkoutError}
+                      role="alert"
+                    >
+                      {checkoutError}
+                    </p>
+                  ) : null}
 
                   <div className="mt-4 grid grid-cols-[0.42fr_0.58fr] gap-2">
                     <button
