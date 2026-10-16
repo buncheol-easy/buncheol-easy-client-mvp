@@ -67,8 +67,9 @@ type DeliveryState = {
   trackingNumber: string;
 };
 
+// lib/auth-api.ts 의 같은 이름 함수와 규칙을 맞춘다 — 0원은 「0원」, 값을 모를 때(null·NaN·음수)만 "-".
 function formatWonAmount(value: number | null | undefined) {
-  if (!Number.isFinite(value) || !value || value <= 0) {
+  if (value == null || !Number.isFinite(value) || value < 0) {
     return "-";
   }
 
@@ -1066,8 +1067,8 @@ export function HostedBuncheolManage({
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
-      // formatWonAmount 는 0 이하를 "-" 로 돌려줘 문장 안에서는 "- 을 받으셨나요" 가 된다.
-      // 0원 슬롯 조합에서 실제로 도달할 수 있어, 금액을 못 쓰면 절을 통째로 뺀다.
+      // 합계가 0원이면 「0원을 받으셨나요」가 돼 받을 돈이 있는 것처럼 읽힌다. 0원 슬롯 조합에서
+      // 실제로 도달할 수 있어, 받을 금액이 없으면 금액 절을 통째로 뺀다.
       description:
         total > 0
           ? `${depositorName}님의 ${memberNames} ${formatWonAmount(total)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`

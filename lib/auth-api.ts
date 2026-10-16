@@ -3951,8 +3951,11 @@ function formatKoreaDateTime(value: string | undefined) {
   return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
 }
 
+// 0원 멤버는 실제 가격이라 「0원」으로 쓴다. 값을 모를 때(음수·NaN·null)만 "-".
 function formatWonAmount(amount: number) {
-  return amount > 0 ? `${amount.toLocaleString("ko-KR")}원` : "-";
+  return Number.isFinite(amount) && amount >= 0
+    ? `${amount.toLocaleString("ko-KR")}원`
+    : "-";
 }
 
 // 배송비는 0원(무료 배송)도 유효한 값이라 "-" 로 표기하지 않는다. 수정 화면이 이 문자열을
@@ -4065,8 +4068,10 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
 export function toProductDetailItem(
   detail: BuncheolDetail,
 ): ProductDetailItem {
+  // 서버가 members 를 비워 보내면 이름만으로 대체 줄을 만든다 — 가격을 모르므로 「0원」이 아니라 "-".
+  const hasServerMembers = detail.members.length > 0;
   const fallbackMembers: BuncheolMember[] =
-    detail.members.length > 0
+    hasServerMembers
       ? detail.members
       : detail.memberNames.map((memberName, index) => ({
           bidMinPrice: 0,
@@ -4092,7 +4097,9 @@ export function toProductDetailItem(
   const options = optionMembers.map((member) => {
     const priceAmount =
       member.bidMinPrice || member.currentBidAmount || member.myBidAmount || 0;
-    const formattedPrice = formatWonAmount(priceAmount);
+    const formattedPrice = hasServerMembers
+      ? formatWonAmount(priceAmount)
+      : "-";
 
     return {
       id: member.id,
