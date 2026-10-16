@@ -6793,7 +6793,7 @@ export async function addBuncheolMember(
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   const body = getNestedData(await readJsonBody(response));
