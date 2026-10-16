@@ -58,7 +58,7 @@ import {
 import {
   formatOpensAt,
   formatOpensAtBadge,
-  parseOpensAtMs,
+  parseIsoTimeMs,
 } from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
@@ -612,16 +612,6 @@ function formatOpenCountdown(opensAtMs: number, nowMs: number) {
   const clock = formatCountdownClock(totalSeconds);
 
   return days > 0 ? `${days}일 ${clock} 남음` : `${clock} 남음`;
-}
-
-function parseServerTimeMs(value: string | null | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  const time = new Date(value).getTime();
-
-  return Number.isNaN(time) ? null : time;
 }
 
 function isNotOpenOption(option: ProductOption) {
@@ -1281,7 +1271,7 @@ export function ProductDetail({
     () => initialNowMs ?? Date.now(),
   );
   const buncheolId = product.buncheolId ?? product.id;
-  const opensAtMs = parseOpensAtMs(opensAtFromApi);
+  const opensAtMs = parseIsoTimeMs(opensAtFromApi);
   const serverNowMs = deadlineTick + serverClockOffsetMs;
   // 오픈 판정의 정본은 서버(상세 NOT_OPEN, 참여 409 BCH-128)다. 화면은 서버 시계로 같은 시각에 열기만 한다.
   const hasOpened = opensAtMs !== null && serverNowMs >= opensAtMs;
@@ -2204,7 +2194,7 @@ export function ProductDetail({
   useEffect(() => {
     setOpensAtFromApi(product.opensAt ?? null);
 
-    const serverTimeMs = parseServerTimeMs(product.serverTime);
+    const serverTimeMs = parseIsoTimeMs(product.serverTime);
 
     if (serverTimeMs !== null) {
       setServerClockOffsetMs(serverTimeMs - Date.now());
@@ -2514,9 +2504,7 @@ export function ProductDetail({
       const isHosted = detail.isHostedByMe === true;
       const refreshedProduct = toProductDetailItem(detail);
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
-      const refreshedServerTimeMs = parseServerTimeMs(
-        refreshedProduct.serverTime,
-      );
+      const refreshedServerTimeMs = parseIsoTimeMs(refreshedProduct.serverTime);
 
       if (refreshedServerTimeMs !== null) {
         setServerClockOffsetMs(refreshedServerTimeMs - receivedAt);

@@ -27,7 +27,7 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
-import { formatOpensAtBadge, parseOpensAtMs } from "@/lib/buncheol-open-time";
+import { formatOpensAtBadge, parseIsoTimeMs } from "@/lib/buncheol-open-time";
 import { getHistoryIndex } from "@/lib/history-index";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
@@ -263,7 +263,7 @@ function getProductCardBadge(item: ProductCardItem) {
 
 // 예약 오픈 전 운영진 분철. 지난 오픈 시각은 카드를 다시 그릴 때(목록을 다시 볼 때) 사라진다.
 function getCardOpensAtLabel(item: ProductCardItem) {
-  const opensAtMs = parseOpensAtMs(item.opensAt);
+  const opensAtMs = parseIsoTimeMs(item.opensAt);
 
   return opensAtMs !== null && opensAtMs > Date.now()
     ? formatOpensAtBadge(opensAtMs)

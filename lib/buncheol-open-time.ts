@@ -11,12 +11,13 @@ const opensAtPartsFormatter = new Intl.DateTimeFormat("ko-KR", {
   weekday: "short",
 });
 
-export function parseOpensAtMs(opensAt: string | null | undefined) {
-  if (!opensAt) {
+// 서버 ISO 시각(opensAt·serverTime)을 ms 로. 비었거나 읽을 수 없으면 null.
+export function parseIsoTimeMs(value: string | null | undefined) {
+  if (!value) {
     return null;
   }
 
-  const time = new Date(opensAt).getTime();
+  const time = new Date(value).getTime();
 
   return Number.isNaN(time) ? null : time;
 }
