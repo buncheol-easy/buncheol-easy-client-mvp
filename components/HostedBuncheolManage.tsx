@@ -1547,7 +1547,8 @@ export function HostedBuncheolManage({
       // 403·404·409 는 서버 상태가 화면과 달라진 것(다른 탭에서 이미 넣음, 마감 지남 등)이라
       // 시트를 닫고 다시 불러온다. 그 밖(400·401·5xx·네트워크)은 다시 누르면 될 수 있어
       // 고른 멤버·가격을 그대로 두고 시트 안에 이유를 보여 준다.
-      if (!(error instanceof ApiRequestError)) {
+      // 5xx 본문엔 서버 문구가 없어(일반 예외 처리기 없음) 「Internal Server Error」가 나오므로 네트워크 실패와 같은 안내를 쓴다.
+      if (!(error instanceof ApiRequestError) || error.status >= 500) {
         setAddMemberError("멤버를 넣지 못했어요. 잠시 후 다시 시도해 주세요.");
         return;
       }
