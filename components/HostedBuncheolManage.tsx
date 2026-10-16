@@ -1544,12 +1544,15 @@ export function HostedBuncheolManage({
         showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
       }
     } catch (error: unknown) {
-      // 403·404·409 는 서버 상태가 화면과 달라진 것(다른 탭에서 이미 넣음, 마감 지남 등)이라
-      // 시트를 닫고 다시 불러온다. 그 밖(400·401·5xx·네트워크)은 다시 누르면 될 수 있어
-      // 고른 멤버·가격을 그대로 두고 시트 안에 이유를 보여 준다.
-      // 5xx 본문엔 서버 문구가 없어(일반 예외 처리기 없음) 「Internal Server Error」가 나오므로 네트워크 실패와 같은 안내를 쓴다.
+      // 403·404·409 는 서버 상태가 화면과 달라진 것이라 닫고 다시 불러오고, 그 밖은 고른 멤버·가격을 둔 채 시트 안에 이유를 보인다.
+      // 5xx·네트워크는 저장됐는데 응답만 끊겼을 수 있어 뒤에서 다시 불러오고, 5xx 본문엔 서버 문구가 없어 고정 안내를 쓴다.
       if (!(error instanceof ApiRequestError) || error.status >= 500) {
         setAddMemberError("멤버를 넣지 못했어요. 잠시 후 다시 시도해 주세요.");
+
+        if (accessToken) {
+          void reloadManagementDetail(accessToken).catch(() => {});
+        }
+
         return;
       }
 
