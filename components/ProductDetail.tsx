@@ -4970,7 +4970,7 @@ export function ProductDetail({
                   {isC2CProduct
                     ? isC2CCollectingProduct
                       ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
-                      : "지금은 신청만 하고, 개최자가 확정하면 입금해요."
+                      : "신청만 하면 끝! 입금은 분철이 확정된 뒤에 해요."
                     : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                 </HelpText>
               ) : null}

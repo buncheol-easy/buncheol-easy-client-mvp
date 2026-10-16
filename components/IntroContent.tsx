@@ -752,7 +752,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
 
       <div className="absolute inset-x-0 bottom-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
         <HelpText align="center" className="mb-2" size="caption">
-          지금은 신청만 하고, 개최자가 확정하면 입금해요.
+          신청만 하면 끝! 입금은 분철이 확정된 뒤에 해요.
         </HelpText>
         <div className="flex h-14 items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]">
           신청하기
