@@ -12,6 +12,7 @@ import {
 import { Toast, useToast } from "@/components/Toast";
 import {
   addBuncheolMember,
+  ApiRequestError,
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
   confirmBundlePayment,
@@ -1543,11 +1544,29 @@ export function HostedBuncheolManage({
         showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
       }
     } catch (error: unknown) {
-      // 후보 목록이 낡았을 수 있어(다른 탭에서 넣음 등) 시트를 닫고 다시 불러온다.
+      // 403·404·409 는 서버 상태가 화면과 달라진 것이라 닫고 다시 불러오고, 그 밖은 고른 멤버·가격을 둔 채 시트 안에 이유를 보인다.
+      // 5xx·네트워크는 저장됐는데 응답만 끊겼을 수 있어 뒤에서 다시 불러오고, 5xx 본문엔 서버 문구가 없어 고정 안내를 쓴다.
+      if (!(error instanceof ApiRequestError) || error.status >= 500) {
+        setAddMemberError("멤버를 넣지 못했어요. 잠시 후 다시 시도해 주세요.");
+
+        if (accessToken) {
+          void reloadManagementDetail(accessToken).catch(() => {});
+        }
+
+        return;
+      }
+
+      if (![403, 404, 409].includes(error.status)) {
+        setAddMemberError(
+          error.status === 401
+            ? "로그인이 만료됐어요. 다시 로그인해 주세요."
+            : error.message,
+        );
+        return;
+      }
+
       setAddMemberSheet(null);
-      showToast(
-        error instanceof Error ? error.message : "멤버를 넣지 못했어요.",
-      );
+      showToast(error.message);
 
       if (accessToken) {
         try {
