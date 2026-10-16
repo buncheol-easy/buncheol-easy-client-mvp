@@ -31,7 +31,7 @@ function getKstDayNumber(timeMs: number) {
 
 /**
  * 오픈 시각 표기. 한국 날짜로 오늘·내일이면 "오늘 20:00"·"내일 20:00", 그 뒤는 "10/20(화) 20:00".
- * 카드 띠·상세 띠·참여 버튼("…에 열려요")이 함께 쓴다.
+ * 카드·상세 띠와 오픈 대기 버튼의 화면 낭독용 설명이 함께 쓴다.
  */
 export function formatOpensAt(opensAtMs: number, nowMs: number) {
   const parts = Object.fromEntries(
@@ -68,7 +68,7 @@ export function formatCountdownClock(totalSeconds: number) {
 
 /**
  * 오픈까지 남은 시간. 24시간 안은 "HH:MM:SS", 넘으면 매초 바뀌지 않게 "N일 N시간"(시간이 0이면 "N일").
- * 상세 띠와 오픈 전 참여 버튼이 함께 쓴다.
+ * 오픈 전 참여 버튼에 쓴다.
  */
 export function formatOpenCountdown(opensAtMs: number, nowMs: number) {
   // 올림 — 내림이면 오픈 직전 1초 동안 00:00:00 이 떠 있다.
