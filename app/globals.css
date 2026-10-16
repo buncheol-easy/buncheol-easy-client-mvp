@@ -1117,8 +1117,16 @@ body.is-pwa-standalone {
   --dot-active-color: #cfe86b;
 }
 
-.home-banner-dots[data-autoplay="true"] {
-  --dot-active-color: #e9f3c4;
+@media (prefers-reduced-motion: no-preference) {
+  .home-banner-dots[data-autoplay="true"] {
+    --dot-active-color: #e9f3c4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-banner-stop {
+    display: none;
+  }
 }
 
 .home-banner-dot {

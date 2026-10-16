@@ -27,6 +27,8 @@ import {
   BidIcon,
   ClipboardListIcon,
   CloseIcon,
+  PauseFilledIcon,
+  PlayFilledIcon,
   SearchIcon,
 } from "@/components/icons";
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
@@ -81,6 +83,7 @@ import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const HOME_BANNER_SLIDE_KEY = "home-banner-slide";
+const HOME_BANNER_STOPPED_KEY = "home-banner-stopped";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
@@ -431,6 +434,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 멈췄다 다시 움직일 때마다 올려 타이머를 4초부터 새로 센다 — 남은 시간이 이어지면
   // 사용자가 넘긴 직후 반대쪽으로 넘어가 버린다.
   const [bannerTimerKey, setBannerTimerKey] = useState(0);
+  const [isBannerStopped, setIsBannerStopped] = useState(false);
   const prefersReducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
     readReducedMotion,
@@ -530,10 +534,16 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
       : HOME_BANNERS;
-  // 동작 줄이기: 전역 규칙이 타이머를 1ms 로 줄여 배너가 연달아 넘어가므로 타이머 자체를 그리지 않는다.
-  // 패널 밑에 깔린 홈: 보이지 않는 채로 넘어가 저장된 위치가 바뀐다.
+  // 멈춤 버튼·점 모양은 서버 렌더와 깔린 홈에서도 똑같이 그려 하이드레이션·상세 복귀 때 점이 밀리지 않게 한다.
+  // 동작 줄이기 사용자에겐 CSS 로 버튼만 숨긴다.
+  const canBannerAutoplay = banners.length > 1;
+  // 타이머는 따로 거른다. 동작 줄이기면 전역 규칙이 1ms 로 줄여 연달아 넘어가고,
+  // 패널 밑에 깔린 홈이면 보이지 않는 채로 넘어가 저장된 위치가 바뀐다.
   const isBannerAutoplayOn =
-    banners.length > 1 && !prefersReducedMotion && !isUnderlay;
+    canBannerAutoplay &&
+    !isBannerStopped &&
+    !prefersReducedMotion &&
+    !isUnderlay;
   const listings = useMemo(
     () => flattenHomeListings(listingsData),
     [listingsData],
@@ -766,6 +776,13 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     scrollToBanner((activeBannerIndex + 1) % banners.length);
   }
 
+  function toggleBannerStopped() {
+    const nextStopped = !isBannerStopped;
+
+    setIsBannerStopped(nextStopped);
+    window.sessionStorage.setItem(HOME_BANNER_STOPPED_KEY, String(nextStopped));
+  }
+
   const setBannerPaused = useCallback(
     (reason: BannerPauseReason, paused: boolean) => {
       const reasons = bannerPauseReasonsRef.current;
@@ -923,6 +940,14 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           : getBannerSlideLeft(scrollElement, restoredIndex),
     });
   }, [banners]);
+
+  // 멈춤 버튼으로 멈춘 상태도 세션 동안 유지한다(상세를 다녀와도 멈춘 채로).
+  useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 페인트 전 복원
+    setIsBannerStopped(
+      window.sessionStorage.getItem(HOME_BANNER_STOPPED_KEY) === "true",
+    );
+  }, []);
 
   // 현재 슬라이드를 세션에 남겨 상세를 다녀와도 이어 보게 한다.
   useEffect(() => {
@@ -1162,29 +1187,45 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             ))}
           </div>
 
-          <div
-            className="home-banner-dots flex items-center justify-center gap-2 pt-2 pb-4"
-            data-autoplay={isBannerAutoplayOn}
-            ref={bannerDotsRef}
-          >
-            {banners.map((banner, index) => (
+          <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+            <div
+              className="home-banner-dots flex items-center gap-2"
+              data-autoplay={canBannerAutoplay && !isBannerStopped}
+              ref={bannerDotsRef}
+            >
+              {banners.map((banner, index) => (
+                <button
+                  aria-label={`${index + 1}번째 배너 보기`}
+                  className="home-banner-dot h-2 rounded-full"
+                  key={banner.href}
+                  onClick={() => scrollToBanner(index)}
+                  type="button"
+                >
+                  {isBannerAutoplayOn && activeBannerIndex === index ? (
+                    <span
+                      aria-hidden="true"
+                      className="home-banner-dot__timer"
+                      key={bannerTimerKey}
+                      onAnimationEnd={handleBannerTimerEnd}
+                    />
+                  ) : null}
+                </button>
+              ))}
+            </div>
+            {canBannerAutoplay ? (
               <button
-                aria-label={`${index + 1}번째 배너 보기`}
-                className="home-banner-dot h-2 rounded-full"
-                key={banner.href}
-                onClick={() => scrollToBanner(index)}
+                aria-label={
+                  isBannerStopped
+                    ? "배너 자동 넘김 다시 시작"
+                    : "배너 자동 넘김 멈추기"
+                }
+                className="home-banner-stop relative -my-1.5 grid size-5 place-items-center rounded-full bg-zinc-100 text-zinc-600 before:absolute before:-inset-1 before:content-['']"
+                onClick={toggleBannerStopped}
                 type="button"
               >
-                {isBannerAutoplayOn && activeBannerIndex === index ? (
-                  <span
-                    aria-hidden="true"
-                    className="home-banner-dot__timer"
-                    key={bannerTimerKey}
-                    onAnimationEnd={handleBannerTimerEnd}
-                  />
-                ) : null}
+                {isBannerStopped ? <PlayFilledIcon /> : <PauseFilledIcon />}
               </button>
-            ))}
+            ) : null}
           </div>
 
         </section>
