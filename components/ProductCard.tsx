@@ -309,12 +309,15 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const availableMemberSummary = availableMemberNames?.length
     ? getAvailableMemberSummary(availableMemberNames)
     : "";
-  // '신규'·'배송비 0원 이벤트'는 구매 유인 배지라 아직 참여할 수 있는 카드에만 띄운다(마감·취소 카드에선 소음).
+  // '신규'·'배송비 0원 이벤트'·'배송비 돌려받는 무료 분철'은 구매 유인 배지라 아직 참여할 수 있는 카드에만
+  // 띄운다(마감·취소 카드에선 소음).
   const isNewProduct = !shouldDimCard && isRecentlyUploaded(item.uploadedAt);
   // 두 배지 모두 배송비 이야기라 한 카드에 하나만 띄운다. 배송비까지 0원이면 돌려받을 배송비가 없으므로
   // 「배송비 0원 이벤트」가 이긴다.
   const showPaybackBadge =
-    item.isShippingFeePaybackEvent === true && item.isFreeShippingEvent !== true;
+    item.isShippingFeePaybackEvent === true &&
+    item.isFreeShippingEvent !== true &&
+    !shouldDimCard;
   const showFreeShippingBadge =
     item.isFreeShippingEvent === true && !shouldDimCard;
 
