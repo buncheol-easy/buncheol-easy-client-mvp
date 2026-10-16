@@ -1022,19 +1022,6 @@ body.is-pwa-standalone {
   position: absolute;
 }
 
-.motion-pill {
-  transition:
-    background-color 180ms var(--motion-snap),
-    color 180ms var(--motion-snap),
-    transform 200ms var(--motion-soft),
-    width 260ms var(--motion-snap);
-}
-
-/* 배너 위치 복원 커밋 동안 도트 transition 을 잠깐 끈다 — 복원이 스와이프처럼 보이는 것 방지. */
-.banner-dots--instant .motion-pill {
-  transition: none;
-}
-
 .motion-carousel {
   scroll-behavior: smooth;
   scroll-padding-inline: 1rem;
@@ -1084,6 +1071,7 @@ body.is-pwa-standalone {
 }
 
 .home-banner-carousel {
+  gap: 0.75rem;
   scroll-padding-inline: 0;
 }
 
@@ -1094,6 +1082,87 @@ body.is-pwa-standalone {
 
 .home-banner-carousel img {
   object-position: center;
+}
+
+/* 넘길 때 깊이감. 슬라이드(스냅 대상)에 scale 을 걸면 재스냅으로 scrollLeft 가 밀리므로(motion-blur-enter-snap 참고) 안쪽 카드에 건다. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .home-banner-carousel .motion-carousel__slide {
+      view-timeline: --home-banner-slide inline;
+    }
+
+    .home-banner-card {
+      animation: home-banner-depth linear both;
+      animation-range: cover;
+      animation-timeline: --home-banner-slide;
+    }
+  }
+}
+
+@keyframes home-banner-depth {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.88);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* --dot-active(0~1): 이 도트가 현재 배너인 정도. 스크롤마다 JS 가 넣는다. */
+.home-banner-dots {
+  --dot-active-color: #cfe86b;
+}
+
+.home-banner-dots[data-autoplay="true"] {
+  --dot-active-color: #e9f3c4;
+}
+
+.home-banner-dot {
+  --dot-active: 0;
+  background-color: color-mix(
+    in srgb,
+    var(--dot-active-color) calc(var(--dot-active) * 100%),
+    var(--color-zinc-300, #d4d4d8)
+  );
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / calc(0.08 * var(--dot-active))),
+    0 6px 16px rgb(120 132 82 / calc(0.3 * var(--dot-active)));
+  inline-size: calc(0.5rem + 1rem * var(--dot-active));
+  overflow: hidden;
+  position: relative;
+}
+
+/* 하이드레이션 전 첫 페인트용 */
+.home-banner-dot:first-child {
+  --dot-active: 1;
+}
+
+.home-banner-dot__timer {
+  background-color: #cfe86b;
+  inset: 0;
+  position: absolute;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-banner-dot__timer {
+    animation: home-banner-timer 4s linear forwards;
+  }
+}
+
+.home-banner-dots[data-paused="true"] .home-banner-dot__timer {
+  animation-play-state: paused;
+}
+
+@keyframes home-banner-timer {
+  to {
+    transform: scaleX(1);
+  }
 }
 
 .tab-content-enter {

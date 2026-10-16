@@ -1,4 +1,13 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { createContext, useContext, type ReactNode } from "react";
+
+const UnderlayContext = createContext(false);
+
+// 패널 밑에 깔린 화면인지. 보이지 않는 층에서 자동 넘김 같은 동작이 돌지 않게 할 때 쓴다.
+export function useIsUnderlay() {
+  return useContext(UnderlayContext);
+}
 
 type SwipeUnderlayProps = {
   children: ReactNode;
@@ -23,7 +32,7 @@ export function SwipeUnderlay({
         isExiting ? "swipe-underlay-exit" : ""
       }`}
     >
-      {children}
+      <UnderlayContext.Provider value>{children}</UnderlayContext.Provider>
     </div>
   );
 }

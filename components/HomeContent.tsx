@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type FocusEvent,
+  type PointerEvent,
   type UIEvent,
 } from "react";
 import Image from "next/image";
@@ -32,6 +34,7 @@ import { BusinessFooter } from "@/components/BusinessFooter";
 import { FloatingHelpButton } from "@/components/FloatingHelpButton";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { useIsUnderlay } from "@/components/SwipeUnderlay";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import {
   addFavoriteGroup,
@@ -205,22 +208,52 @@ function getBannerSlideLeft(scrollElement: HTMLDivElement, index: number) {
   return slideRect.left - scrollRect.left + scrollElement.scrollLeft;
 }
 
-function getNearestBannerIndex(scrollElement: HTMLDivElement) {
-  const slideOffsets = Array.from(scrollElement.children).map((child, index) =>
-    child instanceof HTMLElement
-      ? getBannerSlideLeft(scrollElement, index)
-      : 0,
+// 스크롤 위치를 슬라이드 단위로 환산한다(1.5 = 2번째와 3번째 사이 한가운데).
+function getBannerProgress(scrollElement: HTMLDivElement) {
+  const slideOffsets = Array.from(scrollElement.children, (_, index) =>
+    getBannerSlideLeft(scrollElement, index),
   );
+  const { scrollLeft } = scrollElement;
 
-  return slideOffsets.reduce((nearestIndex, offset, index) => {
-    const nearestDistance = Math.abs(
-      slideOffsets[nearestIndex] - scrollElement.scrollLeft,
-    );
-    const distance = Math.abs(offset - scrollElement.scrollLeft);
+  for (let index = 0; index < slideOffsets.length - 1; index += 1) {
+    const start = slideOffsets[index];
+    const end = slideOffsets[index + 1];
 
-    return distance < nearestDistance ? index : nearestIndex;
-  }, 0);
+    if (scrollLeft <= end) {
+      return index + Math.max(0, (scrollLeft - start) / (end - start));
+    }
+  }
+
+  return Math.max(0, slideOffsets.length - 1);
 }
+
+// 도트 폭·색이 손가락 위치를 따라가게 한다. 스크롤 프레임마다 불리므로 React 상태를 거치지 않는다.
+function paintBannerDots(dotsElement: HTMLElement | null, progress: number) {
+  Array.from(dotsElement?.children ?? []).forEach((dot, index) => {
+    if (dot instanceof HTMLElement) {
+      dot.style.setProperty(
+        "--dot-active",
+        Math.max(0, 1 - Math.abs(progress - index)).toFixed(3),
+      );
+    }
+  });
+}
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeReducedMotion(onChange: () => void) {
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+
+  mediaQuery.addEventListener("change", onChange);
+
+  return () => mediaQuery.removeEventListener("change", onChange);
+}
+
+function readReducedMotion() {
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
+type BannerPauseReason = "hover" | "touch" | "focus" | "offscreen" | "hidden";
 
 function takeShouldSkipHomeEnter() {
   if (typeof window === "undefined") {
@@ -382,9 +415,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   const lastScrollTopRef = useRef(0);
   const bannerScrollerRef = useRef<HTMLDivElement | null>(null);
   const bannerDotsRef = useRef<HTMLDivElement | null>(null);
-  // 도트 클릭으로 이동 중인 목표 슬라이드. 이동하는 동안 스크롤 기반 도트 갱신을 억제해
+  // 도트 클릭·자동 넘김으로 이동 중인 목표 슬라이드. 이동하는 동안 스크롤 기반 활성 배너 갱신을 억제해
   // 활성 도트가 이전 슬라이드로 되돌아갔다 오는 왕복(→←→)을 막는다.
   const bannerScrollTargetRef = useRef<number | null>(null);
+  const bannerPauseReasonsRef = useRef(new Set<BannerPauseReason>());
   // 도움말 버튼도 하단 탭과 같은 신호로 비켜난다 — 상시 떠 있으면 카드 하트·진행바를 가린다.
   const isChromeScrolledAway = useScrollDirectionHidden();
   const [isUsageHelpSheetOpen, setIsUsageHelpSheetOpen] = useState(false);
@@ -394,6 +428,15 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     useState(false);
   const usageHelpSheetCloseTimerRef = useRef<number | null>(null);
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  // 멈췄다 다시 움직일 때마다 올려 타이머를 4초부터 새로 센다 — 남은 시간이 이어지면
+  // 사용자가 넘긴 직후 반대쪽으로 넘어가 버린다.
+  const [bannerTimerKey, setBannerTimerKey] = useState(0);
+  const prefersReducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    readReducedMotion,
+    () => true,
+  );
+  const isUnderlay = useIsUnderlay();
   const [shouldSkipEnterAnimation, setShouldSkipEnterAnimation] =
     useState(skipEnterAnimation);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
@@ -487,6 +530,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     bannersQuery.data && bannersQuery.data.length > 0
       ? bannersQuery.data
       : HOME_BANNERS;
+  // 동작 줄이기: 전역 규칙이 타이머를 1ms 로 줄여 배너가 연달아 넘어가므로 타이머 자체를 그리지 않는다.
+  // 패널 밑에 깔린 홈: 보이지 않는 채로 넘어가 저장된 위치가 바뀐다.
+  const isBannerAutoplayOn =
+    banners.length > 1 && !prefersReducedMotion && !isUnderlay;
   const listings = useMemo(
     () => flattenHomeListings(listingsData),
     [listingsData],
@@ -676,9 +723,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       return;
     }
 
-    const nextIndex = getNearestBannerIndex(scrollElement);
+    const progress = getBannerProgress(scrollElement);
+    const nextIndex = Math.round(progress);
 
-    // 도트 클릭 이동 중에는 목표 도착 전까지 스크롤 기반 갱신을 건너뛴다.
+    paintBannerDots(bannerDotsRef.current, progress);
+
+    // 도트 클릭·자동 넘김으로 이동 중에는 목표 도착 전까지 활성 배너 갱신을 건너뛴다.
     if (bannerScrollTargetRef.current !== null) {
       if (nextIndex === bannerScrollTargetRef.current) {
         bannerScrollTargetRef.current = null;
@@ -697,7 +747,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     bannerScrollTargetRef.current = null;
   }
 
-  function handleBannerDotClick(index: number) {
+  function scrollToBanner(index: number) {
     const scrollElement = bannerScrollerRef.current;
 
     if (!scrollElement) {
@@ -711,6 +761,80 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       left: getBannerSlideLeft(scrollElement, index),
     });
   }
+
+  function handleBannerTimerEnd() {
+    scrollToBanner((activeBannerIndex + 1) % banners.length);
+  }
+
+  const setBannerPaused = useCallback(
+    (reason: BannerPauseReason, paused: boolean) => {
+      const reasons = bannerPauseReasonsRef.current;
+      const wasPaused = reasons.size > 0;
+
+      if (paused) {
+        reasons.add(reason);
+      } else {
+        reasons.delete(reason);
+      }
+
+      const isPaused = reasons.size > 0;
+      const dotsElement = bannerDotsRef.current;
+
+      if (dotsElement) {
+        dotsElement.dataset.paused = String(isPaused);
+      }
+
+      if (wasPaused && !isPaused) {
+        setBannerTimerKey((current) => current + 1);
+      }
+    },
+    [],
+  );
+
+  function handleBannerPointerHover(event: PointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse") {
+      setBannerPaused("hover", event.type === "pointerenter");
+    }
+  }
+
+  function handleBannerFocus(event: FocusEvent<HTMLElement>) {
+    setBannerPaused("focus", event.target.matches(":focus-visible"));
+  }
+
+  function handleBannerBlur(event: FocusEvent<HTMLElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      setBannerPaused("focus", false);
+    }
+  }
+
+  // 화면 밖이거나 앱이 백그라운드면 자동 넘김을 멈춘다 — 돌아왔을 때 보던 배너가 바뀌어 있지 않게.
+  useEffect(() => {
+    const scrollElement = bannerScrollerRef.current;
+
+    if (!isBannerAutoplayOn || !scrollElement) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) =>
+        setBannerPaused(
+          "offscreen",
+          entries[entries.length - 1].intersectionRatio < 0.5,
+        ),
+      { threshold: 0.5 },
+    );
+    const handleVisibilityChange = () =>
+      setBannerPaused("hidden", document.visibilityState === "hidden");
+
+    observer.observe(scrollElement);
+    handleVisibilityChange();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isBannerAutoplayOn, setBannerPaused]);
 
   useLayoutEffect(() => {
     const storedScrollTop = getStoredHomeScrollTop();
@@ -786,23 +910,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         ? storedSlide.index
         : 0;
 
-    // 복원으로 활성 도트가 바뀔 때 motion-pill 의 폭·색 transition 이 재생되면
-    // 도트가 스와이프하듯 보인다. 첫 페인트 동안만 transition 을 끄고 되돌린다.
-    const dotsElement = bannerDotsRef.current;
-    let instantFrame: number | null = null;
-
-    if (dotsElement) {
-      dotsElement.classList.add("banner-dots--instant");
-      instantFrame = window.requestAnimationFrame(() => {
-        instantFrame = window.requestAnimationFrame(() => {
-          dotsElement.classList.remove("banner-dots--instant");
-          instantFrame = null;
-        });
-      });
-    }
-
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 페인트 전 위치 복원(같은 값이면 bail-out)
     setActiveBannerIndex(restoredIndex);
+    paintBannerDots(bannerDotsRef.current, restoredIndex);
     // "auto" 는 CSS scroll-behavior(smooth)를 따라가 복원이 스와이프처럼 보인다.
     // 점프 없이 복원하려면 "instant" 로 강제해야 한다.
     scrollElement.scrollTo({
@@ -812,14 +922,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           ? 0
           : getBannerSlideLeft(scrollElement, restoredIndex),
     });
-
-    return () => {
-      if (instantFrame !== null) {
-        window.cancelAnimationFrame(instantFrame);
-      }
-
-      dotsElement?.classList.remove("banner-dots--instant");
-    };
   }, [banners]);
 
   // 현재 슬라이드를 세션에 남겨 상세를 다녀와도 이어 보게 한다.
@@ -1006,7 +1108,16 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
         ref={scrollContainerRef}
       >
         <div className="flex min-h-full flex-col">
-        <section className="px-4 pt-4">
+        <section
+          className="px-4 pt-4"
+          onBlur={handleBannerBlur}
+          onFocus={handleBannerFocus}
+          onPointerEnter={handleBannerPointerHover}
+          onPointerLeave={handleBannerPointerHover}
+          onTouchCancel={() => setBannerPaused("touch", false)}
+          onTouchEnd={() => setBannerPaused("touch", false)}
+          onTouchStart={() => setBannerPaused("touch", true)}
+        >
           <div
             className={`home-banner-carousel motion-carousel ${
               shouldSkipEnterAnimation ? "motion-carousel--skip-enter" : ""
@@ -1019,52 +1130,60 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             {banners.map((banner, index) => (
               <Link
                 aria-label={`${banner.label} 보기`}
-                className="motion-card motion-carousel__slide relative aspect-[1.72/1] w-full flex-none snap-start overflow-hidden rounded-[1.15rem] bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                className="motion-card motion-carousel__slide relative aspect-[1.72/1] w-full flex-none snap-start rounded-[1.15rem] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 draggable={false}
                 href={banner.href}
                 key={banner.href}
               >
-                <Image
-                  alt=""
-                  aria-hidden="true"
-                  className="scale-110 object-cover blur-xl"
-                  draggable={false}
-                  fill
-                  loading={index === 0 ? "eager" : "lazy"}
-                  sizes={HOME_BANNER_IMAGE_SIZES}
-                  src={banner.imageSrc}
-                  unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
-                />
-                <Image
-                  alt={banner.imageAlt}
-                  className="object-contain"
-                  draggable={false}
-                  fill
-                  priority={index === 0}
-                  sizes={HOME_BANNER_IMAGE_SIZES}
-                  src={banner.imageSrc}
-                  unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
-                />
+                <span className="home-banner-card absolute inset-0 overflow-hidden rounded-[inherit] bg-white">
+                  <Image
+                    alt=""
+                    aria-hidden="true"
+                    className="scale-110 object-cover blur-xl"
+                    draggable={false}
+                    fill
+                    loading={index === 0 ? "eager" : "lazy"}
+                    sizes={HOME_BANNER_IMAGE_SIZES}
+                    src={banner.imageSrc}
+                    unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
+                  />
+                  <Image
+                    alt={banner.imageAlt}
+                    className="object-contain"
+                    draggable={false}
+                    fill
+                    priority={index === 0}
+                    sizes={HOME_BANNER_IMAGE_SIZES}
+                    src={banner.imageSrc}
+                    unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
+                  />
+                </span>
               </Link>
             ))}
           </div>
 
           <div
-            className="flex items-center justify-center gap-2 pt-2 pb-4"
+            className="home-banner-dots flex items-center justify-center gap-2 pt-2 pb-4"
+            data-autoplay={isBannerAutoplayOn}
             ref={bannerDotsRef}
           >
             {banners.map((banner, index) => (
               <button
                 aria-label={`${index + 1}번째 배너 보기`}
-                className={`motion-pill h-2 rounded-full ${
-                  activeBannerIndex === index
-                    ? "w-6 bg-[#CFE86B] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_6px_16px_rgba(120,132,82,0.3)]"
-                    : "w-2 bg-zinc-300"
-                }`}
+                className="home-banner-dot h-2 rounded-full"
                 key={banner.href}
-                onClick={() => handleBannerDotClick(index)}
+                onClick={() => scrollToBanner(index)}
                 type="button"
-              />
+              >
+                {isBannerAutoplayOn && activeBannerIndex === index ? (
+                  <span
+                    aria-hidden="true"
+                    className="home-banner-dot__timer"
+                    key={bannerTimerKey}
+                    onAnimationEnd={handleBannerTimerEnd}
+                  />
+                ) : null}
+              </button>
             ))}
           </div>
 
