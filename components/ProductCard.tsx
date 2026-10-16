@@ -66,6 +66,8 @@ export type ProductCardItem = {
   // 배송비 0원 이벤트 대상(운영진 개최 + 배송비 전액 0원) 분철 배지. 서버 판정값이라 사용자 개최(C2C) 분철이
   // 배송비를 0원으로 잡아도 false 로 내려온다. 필드가 없는 구 응답이면 배지를 띄우지 않는다.
   isFreeShippingEvent?: boolean;
+  // 예약 오픈 시각(ISO). 운영진 분철에 오픈 시각을 넣었을 때만 있다.
+  opensAt?: string | null;
 };
 
 type ProductCardProps = {

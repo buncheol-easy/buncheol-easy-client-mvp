@@ -64,6 +64,8 @@ export type ProductDetailItem = ProductCardItem & {
   isHostedByMe?: boolean;
   minHeadcount?: number | null;
   purchaseSource?: string;
+  // 상세 응답의 서버 시각(ISO). 예약 오픈 카운트다운을 서버 시계에 맞추는 기준이다.
+  serverTime?: string | null;
   shippingDeadline?: string;
   shippingMethods?: ShippingMethod[];
   status?: string;
