@@ -1019,7 +1019,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
             {banners.map((banner, index) => (
               <Link
                 aria-label={`${banner.label} 보기`}
-                className="motion-card motion-carousel__slide relative aspect-[1.72/1] w-full flex-none snap-start overflow-hidden rounded-[1.15rem] bg-white shadow-[0_14px_34px_rgba(0,0,0,0.08)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                className="motion-card motion-carousel__slide relative aspect-[1.72/1] w-full flex-none snap-start overflow-hidden rounded-[1.15rem] bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 draggable={false}
                 href={banner.href}
                 key={banner.href}
