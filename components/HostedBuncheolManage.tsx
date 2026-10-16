@@ -280,6 +280,11 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
 
+// 묶음 id 가 없으면 「입금 확인」도 「제외」도 서버에 보낼 수 없다. 되돌릴 수 없다고 묻는 시트를
+// 통과한 뒤 실패하지 않게, 두 버튼을 막고 이 문구를 미리 보여 준다.
+const MISSING_BUNDLE_MESSAGE =
+  "묶음 정보가 없어 이 참여를 처리할 수 없어요. 고객센터로 문의해 주세요.";
+
 // ⚠️ 인자를 optional 로 두지 않는다. undefined 를 받으면 호출부가 「막힌 자리 없음」을 넘겨도
 // default 문구가 뜬다. null 은 서버가 판정을 못 준 경우(구 응답·미연결 행)라 받아야 한다.
 function getReleaseBlockedReason(releasability: string | null) {
@@ -542,7 +547,7 @@ export function HostedBuncheolManage({
   const [deliveryStates, setDeliveryStates] = useState<
     Record<string, DeliveryState>
   >({});
-  // C2C 액션(성사 확정·부분 확정·입금확인·반려·운송장) 진행 중 식별자 — 중복 호출 방지.
+  // C2C 액션(성사 확정·부분 확정·입금확인·제외·운송장) 진행 중 식별자 — 중복 호출 방지.
   const [pendingC2CAction, setPendingC2CAction] = useState<string | null>(null);
   // 되돌리기 어려운 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
@@ -1088,6 +1093,11 @@ export function HostedBuncheolManage({
       return;
     }
 
+    if (!bundle.bundleId) {
+      showToast(MISSING_BUNDLE_MESSAGE);
+      return;
+    }
+
     setPendingC2CAction(`confirm:${bundle.key}`);
 
     try {
@@ -1098,20 +1108,7 @@ export function HostedBuncheolManage({
         return;
       }
 
-      if (bundle.bundleId) {
-        await confirmBundlePayment(
-          accessToken,
-          bundle.bundleId,
-          expectedSlotIds,
-        );
-      } else {
-        // 묶음이 없는 구 행 폴백 — 신규 참여는 전부 묶음을 갖는다.
-        await requestPaymentConfirmation(
-          accessToken,
-          bundle.slots[0].participationId,
-          { ignoreConflict: true },
-        );
-      }
+      await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
 
       await reloadManagementDetail(accessToken);
       showToast("입금 확인이 완료됐어요.");
@@ -1156,7 +1153,7 @@ export function HostedBuncheolManage({
     }
 
     if (!bundle.bundleId) {
-      showToast("이 참여는 묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.");
+      showToast(MISSING_BUNDLE_MESSAGE);
       return;
     }
 
@@ -2090,12 +2087,12 @@ export function HostedBuncheolManage({
                   const blockedSlot = bundle.slots.find(
                     (slot) => slot.releasability !== "RELEASABLE",
                   );
-                  const canRelease = !blockedSlot && Boolean(bundle.bundleId);
+                  const hasBundleId = Boolean(bundle.bundleId);
+                  const canRelease = !blockedSlot && hasBundleId;
                   // 🔴 막힌 자리가 있을 때만 사유를 만든다 — 「막힌 자리 없음」과 「판정값 없음」이
                   // 둘 다 undefined 라, 그냥 넘기면 제외 가능한 묶음에도 default 문구가 붙는다.
-                  const releaseBlockedReason = !bundle.bundleId
-                    ? // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
-                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요."
+                  const blockedReason = !hasBundleId
+                    ? MISSING_BUNDLE_MESSAGE
                     : blockedSlot
                       ? // 슬롯 필드는 optional 이라 undefined 가 올 수 있다. 「판정값 없음」은
                         // null 로 명시해 넘긴다 — 그게 default 문구가 나와야 하는 유일한 경우다.
@@ -2240,15 +2237,15 @@ export function HostedBuncheolManage({
                           버튼이 0개인 유령 줄이 남는다. 실제로 할 수 있는 것이 하나라도 있으면 연다. */}
                       {!isBundleConfirmed &&
                       (canRelease ||
-                        releaseBlockedReason ||
+                        blockedReason ||
                         confirmTargetIds.length > 0) ? (
                         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                           {/* 「제외」는 입금 기한이 지난 뒤에만 열린다 — 이체가 통장에 늦게 찍히는
                               일이 흔해, 기한 안에 뺄 수 있게 하면 정상 입금자를 빼는 사고가 난다
                               (docs/71 §8-1). 버튼을 감추지 않고 사유를 보여준다. */}
-                          {releaseBlockedReason ? (
+                          {blockedReason ? (
                             <p className="mr-auto text-[11px] font-medium leading-4 text-black/35">
-                              {releaseBlockedReason}
+                              {blockedReason}
                             </p>
                           ) : null}
                           <button
@@ -2262,7 +2259,9 @@ export function HostedBuncheolManage({
                           {confirmTargetIds.length > 0 ? (
                             <button
                               className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                              disabled={pendingC2CAction !== null}
+                              disabled={
+                                !hasBundleId || pendingC2CAction !== null
+                              }
                               onClick={() =>
                                 requestConfirmBundlePayment(
                                   bundle,

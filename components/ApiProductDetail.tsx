@@ -24,6 +24,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { isParticipationCancelledStatus } from "@/lib/buncheol-states";
 import { readUploadedProduct } from "@/lib/hosted-products-store";
 import { readPublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
@@ -41,17 +42,6 @@ type ApiProductDetailProps = {
   returnQuery?: string;
   returnSource?: "home" | "bids" | "favorites" | "upload" | "artist";
 };
-
-function isInactivePurchaseStatus(status: string | undefined) {
-  return [
-    "CANCELLED",
-    "CANCELED",
-    "EXPIRED",
-    "FAILED",
-    "REFUNDED",
-    "REJECTED",
-  ].includes(status?.toUpperCase() ?? "");
-}
 
 function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
   const winner = option.winner;
@@ -73,7 +63,7 @@ function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
   }
 
   const participant = option.participants?.find(
-    (item) => !isInactivePurchaseStatus(item.status),
+    (item) => !isParticipationCancelledStatus(item.status),
   );
 
   if (!participant) {
