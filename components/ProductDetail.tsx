@@ -1234,7 +1234,7 @@ export function ProductDetail({
   const [checkoutCopyToast, showCheckoutCopyToast, hideCheckoutCopyToast] =
     useToast(BRIEF_TOAST_DURATION_MS);
   // 서버가 내려준 자리 상태. 화면은 오픈 시각을 반영한 auctionOptions 를 읽는다.
-  const [serverAuctionOptions, setAuctionOptions] = useState<ProductOption[]>(
+  const [serverAuctionOptions, setServerAuctionOptions] = useState<ProductOption[]>(
     product.options,
   );
   const [bidAmounts, setBidAmounts] = useState<Record<string, string>>({});
@@ -2212,7 +2212,7 @@ export function ProductDetail({
   }, [product.opensAt, product.serverTime]);
 
   useEffect(() => {
-    setAuctionOptions(product.options);
+    setServerAuctionOptions(product.options);
     setMyBids(getMyBidsFromOptions(product.options));
     checkoutSelectedOptionsRef.current = [];
     setBidAmounts({});
@@ -2533,7 +2533,7 @@ export function ProductDetail({
       );
       // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
-      setAuctionOptions(refreshedProduct.options);
+      setServerAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
       setBidAmounts((current) =>
         refreshedProduct.options.reduce<Record<string, string>>(
@@ -2566,7 +2566,7 @@ export function ProductDetail({
         );
 
         if (!isStale()) {
-          setAuctionOptions((currentOptions) =>
+          setServerAuctionOptions((currentOptions) =>
             mergeManagementOptionPurchaseStates(
               currentOptions,
               managementDetail.options,
@@ -2754,7 +2754,7 @@ export function ProductDetail({
   ) {
     // 진행 중인 재조회를 무효화해, 참여 이전 스냅샷이 방금 반영한 내 참여를 덮어쓰지 않게 한다.
     detailRefreshRequestIdRef.current += 1;
-    setAuctionOptions((currentOptions) =>
+    setServerAuctionOptions((currentOptions) =>
       currentOptions.map((option) => {
         if (onlyParticipationResults && !participationResults.has(option.id)) {
           return option;
