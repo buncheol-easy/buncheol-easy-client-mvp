@@ -902,13 +902,14 @@ body.is-pwa-standalone {
   }
 }
 
-@keyframes skeleton-shimmer {
+/* --skeleton-x 는 SkeletonGroup 이 칸마다 넣는다. 묶음 안의 모든 칸을 빛 한 줄기가 같은 박자로 지나간다. */
+@keyframes skeleton-sweep {
   from {
-    transform: translateX(-120%);
+    transform: translateX(calc(-1 * var(--skeleton-band) - var(--skeleton-x, 0px)));
   }
 
   to {
-    transform: translateX(120%);
+    transform: translateX(calc(var(--skeleton-span, 430px) - var(--skeleton-x, 0px)));
   }
 }
 
@@ -1009,21 +1010,31 @@ body.is-pwa-standalone {
 }
 
 .skeleton-surface {
+  --skeleton-band: 160px;
   overflow: hidden;
   position: relative;
 }
 
 .skeleton-surface::after {
-  animation: skeleton-shimmer 1300ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: skeleton-sweep 1200ms linear infinite;
   background: linear-gradient(
-    110deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.46) 42%,
-    transparent 76%
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
   );
+  bottom: 0;
   content: "";
-  inset: 0;
+  left: 0;
   position: absolute;
+  top: 0;
+  width: var(--skeleton-band);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-surface::after {
+    content: none;
+  }
 }
 
 .motion-carousel {
@@ -2134,9 +2145,11 @@ body.is-pwa-standalone .bid-sheet-panel {
   *,
   *::before,
   *::after {
+    animation-delay: 0s !important;
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
+    transition-delay: 0s !important;
     transition-duration: 1ms !important;
   }
 }
@@ -2442,6 +2455,19 @@ body.is-pwa-standalone .bid-sheet-panel {
 
   to {
     box-shadow: 0 0 0 9px rgba(207, 232, 107, 0);
+  }
+}
+
+/* ── 상세: 뼈대 다음 차례로 드러남 ────────────────────── */
+.detail-reveal {
+  animation: detail-reveal 380ms var(--motion-pop) both;
+  animation-delay: calc(80ms + var(--reveal-index, 0) * 60ms);
+}
+
+@keyframes detail-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
 

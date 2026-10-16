@@ -36,6 +36,7 @@ import { BusinessFooter } from "@/components/BusinessFooter";
 import { FloatingHelpButton } from "@/components/FloatingHelpButton";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useIsUnderlay } from "@/components/SwipeUnderlay";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import {
@@ -361,25 +362,25 @@ function withHomeListingsTimeout<T>(request: Promise<T>) {
 
 function HomeArtistRailSkeleton() {
   return (
-    <div
+    <SkeletonGroup
       aria-label="최애 그룹을 불러오는 중"
       className="flex items-start gap-3"
       role="status"
     >
       <div className="w-[65px] flex-shrink-0">
-        <div className="h-[65px] w-[65px] animate-pulse rounded-full bg-black/8" />
-        <div className="mx-auto mt-2 h-3.5 w-[52px] animate-pulse rounded-full bg-black/8" />
+        <div className="h-[65px] w-[65px] skeleton-surface rounded-full bg-black/8" />
+        <div className="mx-auto mt-2 h-3.5 w-[52px] skeleton-surface rounded-full bg-black/8" />
       </div>
       <div className="my-2 w-px self-stretch bg-black/8" />
       <div className="flex min-w-0 flex-1 gap-4 overflow-hidden pb-4">
         {Array.from({ length: 4 }).map((_, index) => (
           <div className="min-w-[65px]" key={`home-artist-skeleton-${index}`}>
-            <div className="h-[65px] w-[65px] animate-pulse rounded-[1.1rem] bg-black/8" />
-            <div className="mt-2 h-4 w-[52px] animate-pulse rounded-full bg-black/8" />
+            <div className="h-[65px] w-[65px] skeleton-surface rounded-[1.1rem] bg-black/8" />
+            <div className="mt-2 h-4 w-[52px] skeleton-surface rounded-full bg-black/8" />
           </div>
         ))}
       </div>
-    </div>
+    </SkeletonGroup>
   );
 }
 

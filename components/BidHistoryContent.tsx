@@ -112,6 +112,7 @@ import {
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { CopyButton } from "@/components/CopyButton";
+import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useAppToast } from "@/components/Toast";
 
 function formatPrice(price: number) {
@@ -1743,29 +1744,33 @@ function takeShouldSkipBidHistoryEnter() {
 
 function BidHistoryListSkeleton({ count = 2 }: { count?: number }) {
   return (
-    <div aria-label="참여 내역을 불러오는 중" className="space-y-3" role="status">
+    <SkeletonGroup
+      aria-label="참여 내역을 불러오는 중"
+      className="space-y-3"
+      role="status"
+    >
       {Array.from({ length: count }).map((_, index) => (
         <div
           className="rounded-[1rem] border border-black/10 px-4 py-4"
           key={`bid-history-skeleton-${index}`}
         >
           <div className="flex items-start gap-3">
-            <div className="h-14 w-14 shrink-0 animate-pulse rounded-[0.85rem] bg-black/8" />
+            <div className="h-14 w-14 shrink-0 skeleton-surface rounded-[0.85rem] bg-black/8" />
             <div className="min-w-0 flex-1">
               <div className="min-w-0">
-                <div className="h-4 w-3/4 animate-pulse rounded-full bg-black/8" />
-                <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-black/8" />
+                <div className="h-4 w-3/4 skeleton-surface rounded-full bg-black/8" />
+                <div className="mt-2 h-3 w-1/2 skeleton-surface rounded-full bg-black/8" />
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2">
-                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
-                <div className="h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+                <div className="h-[52px] skeleton-surface rounded-[0.75rem] bg-black/8" />
+                <div className="h-[52px] skeleton-surface rounded-[0.75rem] bg-black/8" />
               </div>
-              <div className="mt-2 h-[52px] animate-pulse rounded-[0.75rem] bg-black/8" />
+              <div className="mt-2 h-[52px] skeleton-surface rounded-[0.75rem] bg-black/8" />
             </div>
           </div>
         </div>
       ))}
-    </div>
+    </SkeletonGroup>
   );
 }
 

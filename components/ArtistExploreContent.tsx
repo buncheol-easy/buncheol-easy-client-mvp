@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { useAppToast } from "@/components/Toast";
+import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import { ARTIST_LIST_ENTRY_GROUP_KEY } from "@/lib/artist-browse";
 import {
@@ -502,14 +503,18 @@ export function ArtistExploreContent({
         ) : null}
 
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-3">
+          <SkeletonGroup
+            aria-label="아티스트를 불러오는 중"
+            className="grid grid-cols-2 gap-3"
+            role="status"
+          >
             {Array.from({ length: 8 }).map((_, index) => (
               <div
-                className="h-[194px] rounded-[1.2rem] bg-[#f5f5f5]"
+                className="skeleton-surface h-[194px] rounded-[1.2rem] bg-black/8"
                 key={index}
               />
             ))}
-          </div>
+          </SkeletonGroup>
         ) : (
           /* 0건일 때도 그리드를 유지한다. 빈 상태와 삼항으로 가르면 0건 ↔ N건을 오갈 때마다
              카드 전부가 remount 되고 content-reveal 이 재생된다. */

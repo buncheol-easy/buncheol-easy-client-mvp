@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type PointerEvent,
 } from "react";
 import dynamic from "next/dynamic";
@@ -105,6 +106,8 @@ import {
   aboveDetailOpensAtBandClassName,
 } from "@/components/OpensAtBand";
 import { CopyButton } from "@/components/CopyButton";
+import { ProductDetailBidBarSkeleton } from "@/components/ProductDetailSkeleton";
+import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useAppToast } from "@/components/Toast";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
@@ -136,7 +139,15 @@ type ProductDetailProps = {
   startEntered?: boolean;
   renderShell?: boolean;
   onExitingChange?: (isExiting: boolean) => void;
+  // 로그인 사용자의 개최자 여부를 아직 받는 중이면 하단 버튼 자리에 뼈대를 그린다.
+  isViewerStateLoading?: boolean;
+  // 뼈대 다음에 들어온 상세는 내용을 위에서부터 차례로 드러낸다.
+  revealOnEnter?: boolean;
 };
+
+function getRevealStyle(index: number) {
+  return { "--reveal-index": index } as CSSProperties;
+}
 
 type ProductImageNavProps = {
   index: number;
@@ -1152,6 +1163,8 @@ export function ProductDetail({
   startEntered = false,
   renderShell = true,
   onExitingChange,
+  isViewerStateLoading = false,
+  revealOnEnter = false,
 }: ProductDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -4174,7 +4187,10 @@ export function ProductDetail({
         </header>
 
         <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32">
-          <section className="px-4">
+          <section
+            className={`px-4 ${revealOnEnter ? "detail-reveal" : ""}`}
+            style={revealOnEnter ? getRevealStyle(0) : undefined}
+          >
             <div
               className={`product-hero-media product-detail-media relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
             >
@@ -4284,16 +4300,25 @@ export function ProductDetail({
           </section>
 
           <section className="px-5 pt-6">
-            <p className="text-[13px] font-semibold leading-5 text-black/40">
+            <p
+              className={`text-[13px] font-semibold leading-5 text-black/40 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(1) : undefined}
+            >
               {targetTags.join(" ")}
             </p>
 
             {/* 제목 전문 노출은 이 화면(분철 상세)에서만 한다(docs/56 H-03).
                 목록·카드·개최 관리는 기존 truncate/line-clamp 를 유지한다. */}
-            <h1 className="mt-4 break-keep break-words text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
+            <h1
+              className={`mt-4 break-keep break-words text-[27px] font-semibold leading-[1.18] tracking-[-0.06em] ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(2) : undefined}
+            >
               {product.title}
             </h1>
-            <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
+            <div
+              className={`mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)] ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(3) : undefined}
+            >
               <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
                 <div className="min-w-0 px-4 py-3.5">
                   <p className="text-[12px] font-medium text-black/45">구매처</p>
@@ -4349,7 +4374,10 @@ export function ProductDetail({
             </div>
 
             {shippingMethods.length > 0 ? (
-            <div className="mt-7 border-t border-black/10 pt-6">
+            <div
+              className={`mt-7 border-t border-black/10 pt-6 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(4) : undefined}
+            >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 배송 방법
               </h2>
@@ -4376,7 +4404,10 @@ export function ProductDetail({
             </div>
             ) : null}
 
-            <div className="mt-8 border-t border-black/10 pt-6">
+            <div
+              className={`mt-8 border-t border-black/10 pt-6 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(4) : undefined}
+            >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 상품 설명
               </h2>
@@ -4411,7 +4442,10 @@ export function ProductDetail({
               </div>
             ) : null}
 
-            <div className="mt-8 border-t border-black/10 pt-6">
+            <div
+              className={`mt-8 border-t border-black/10 pt-6 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(4) : undefined}
+            >
               <div className="flex items-end justify-between gap-3">
                 <h2 className="text-[18px] font-semibold">
                   멤버
@@ -4546,88 +4580,99 @@ export function ProductDetail({
           </section>
         </div>
 
-        <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
-          {canJoinWithCodeBeforeOpen ? (
-            <div className="mb-1 flex justify-center">
-              <button
-                className="px-3 py-1 text-[13px] font-semibold tracking-[-0.04em] text-black underline underline-offset-4"
-                onClick={handleBidButtonClick}
-                type="button"
-              >
-                코드로 참여하기
-              </button>
-            </div>
-          ) : !isHostedProduct &&
-            !isCancelledProduct &&
-            !isDeadlineBlocked &&
-            isPurchasableStatus ? (
-            <p className="mb-2 text-center text-[11px] font-medium text-black/40">
-              {isC2CProduct
-                ? isC2CCollectingProduct
-                  ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
-                  : "지금은 신청만 하고, 개최자가 확정하면 입금해요."
-                : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
-            </p>
-          ) : null}
-          {canManageHostedProduct ? (
-            <button
-              className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-              onClick={() =>
-                router.push(`/products/${encodeURIComponent(buncheolId)}/manage`)
-              }
-              type="button"
-            >
-              내 분철 관리하기
-            </button>
+        <div
+          className={`product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)] ${revealOnEnter ? "detail-reveal" : ""}`}
+          style={revealOnEnter ? getRevealStyle(5) : undefined}
+        >
+          {isViewerStateLoading ? (
+            <SkeletonGroup aria-label="참여 버튼을 준비하고 있어요" role="status">
+              <ProductDetailBidBarSkeleton />
+            </SkeletonGroup>
           ) : (
-            <button
-              type="button"
-              aria-describedby={
-                isWaitingForOpen ? opensAtDescriptionId : undefined
-              }
-              className={
-                // 오픈 대기 중에는 꺼져 있어도 남은 시간이 읽혀야 한다.
-                isWaitingForOpen
-                  ? "h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                  : "h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
-              }
-              disabled={isMainBidButtonDisabled}
-              onClick={
-                isMainBidButtonDisabled ? undefined : handleBidButtonClick
-              }
-            >
-              {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
-                  반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
-                  같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
+            <>
+              {canJoinWithCodeBeforeOpen ? (
+                <div className="mb-1 flex justify-center">
+                  <button
+                    className="px-3 py-1 text-[13px] font-semibold tracking-[-0.04em] text-black underline underline-offset-4"
+                    onClick={handleBidButtonClick}
+                    type="button"
+                  >
+                    코드로 참여하기
+                  </button>
+                </div>
+              ) : !isHostedProduct &&
+                !isCancelledProduct &&
+                !isDeadlineBlocked &&
+                isPurchasableStatus ? (
+                <p className="mb-2 text-center text-[11px] font-medium text-black/40">
+                  {isC2CProduct
+                    ? isC2CCollectingProduct
+                      ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
+                      : "지금은 신청만 하고, 개최자가 확정하면 입금해요."
+                    : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
+                </p>
+              ) : null}
+              {canManageHostedProduct ? (
+                <button
+                  className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                  onClick={() =>
+                    router.push(`/products/${encodeURIComponent(buncheolId)}/manage`)
+                  }
+                  type="button"
+                >
+                  내 분철 관리하기
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-describedby={
+                    isWaitingForOpen ? opensAtDescriptionId : undefined
+                  }
+                  className={
+                    // 오픈 대기 중에는 꺼져 있어도 남은 시간이 읽혀야 한다.
+                    isWaitingForOpen
+                      ? "h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                      : "h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+                  }
+                  disabled={isMainBidButtonDisabled}
+                  onClick={
+                    isMainBidButtonDisabled ? undefined : handleBidButtonClick
+                  }
+                >
+                  {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
+                      반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
+                      같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
+                  {isWaitingForOpen && opensAtMs !== null ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="text-[15px] text-white/[0.78]">
+                        참여 오픈까지
+                      </span>
+                      <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
+                        {formatOpenCountdown(opensAtMs, serverNowMs)}
+                      </span>
+                    </span>
+                  ) : isPublicPreview
+                    ? isC2CProduct
+                      ? "로그인하고 신청하기"
+                      : "로그인하고 참여하기"
+                    : isBidUnavailable
+                      ? isC2CProduct
+                        ? "신청하기"
+                        : "참여하기"
+                      : canBidProduct
+                        ? isC2CProduct && !isC2CCollectingProduct
+                          ? "신청하기"
+                          : "참여하기"
+                        : getBidUnavailableMessage()}
+                </button>
+              )}
               {isWaitingForOpen && opensAtMs !== null ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="text-[15px] text-white/[0.78]">
-                    참여 오픈까지
-                  </span>
-                  <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
-                    {formatOpenCountdown(opensAtMs, serverNowMs)}
-                  </span>
+                <span hidden id={opensAtDescriptionId}>
+                  {formatOpensAt(opensAtMs, serverNowMs)}에 참여가 열려요
                 </span>
-              ) : isPublicPreview
-                ? isC2CProduct
-                  ? "로그인하고 신청하기"
-                  : "로그인하고 참여하기"
-                : isBidUnavailable
-                  ? isC2CProduct
-                    ? "신청하기"
-                    : "참여하기"
-                  : canBidProduct
-                    ? isC2CProduct && !isC2CCollectingProduct
-                      ? "신청하기"
-                      : "참여하기"
-                    : getBidUnavailableMessage()}
-            </button>
+              ) : null}
+            </>
           )}
-          {isWaitingForOpen && opensAtMs !== null ? (
-            <span hidden id={opensAtDescriptionId}>
-              {formatOpensAt(opensAtMs, serverNowMs)}에 참여가 열려요
-            </span>
-          ) : null}
         </div>
 
         {isSheetOpen ? (
