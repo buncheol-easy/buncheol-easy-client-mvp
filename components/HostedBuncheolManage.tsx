@@ -1101,8 +1101,10 @@ export function HostedBuncheolManage({
 
     setPendingC2CAction(`confirm:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
@@ -1111,14 +1113,29 @@ export function HostedBuncheolManage({
 
       await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
 
-      await reloadManagementDetail(accessToken);
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
       showToast("입금 확인이 완료됐어요.");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
       );
+
+      // 다른 탭에서 이미 확인·제외됐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
@@ -1160,8 +1177,10 @@ export function HostedBuncheolManage({
 
     setPendingC2CAction(`release:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
@@ -1169,12 +1188,27 @@ export function HostedBuncheolManage({
       }
 
       await releaseBundle(accessToken, bundle.bundleId);
-      await reloadManagementDetail(accessToken);
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 제외가 실패로 보이지 않게.
       showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : "참여를 빼지 못했어요.",
       );
+
+      // 그사이 입금이 확인됐거나 다른 탭에서 뺐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
