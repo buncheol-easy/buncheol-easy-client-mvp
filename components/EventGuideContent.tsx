@@ -20,8 +20,8 @@ const eventTerms = [
 
 const keyPoints = [
   {
-    body: "처음엔 멤버 수 전체라 한 자리만 비어도 취소돼요.",
-    highlight: "최소 진행 인원은",
+    body: "처음엔 멤버 수 전체라 한 멤버만 비어도 취소돼요.",
+    highlight: "최소 진행 멤버 수는",
     title: " 줄여 두기",
   },
   { body: "넘기면 자동 취소돼요.", highlight: "마감 뒤 48시간", title: " 안에 성사 확정" },

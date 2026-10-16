@@ -15,7 +15,7 @@ import {
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
 import {
-  getCountUnit,
+  formatMemberCount,
   isBuncheolRecruitingStatus,
 } from "@/lib/buncheol-states";
 import { X_HANDLE, X_PROFILE_URL } from "@/lib/site";
@@ -77,7 +77,7 @@ export const IntroMotionContext = createContext<IntroMotionContextValue>({
 const fallbackRecentBuncheols: IntroRecentBuncheol[] = [
   {
     deadline: "D-1",
-    state: "참여 9명",
+    state: "참여 멤버 9명",
     title: "RIIZE 팬콘 특전 포카",
   },
   {
@@ -111,7 +111,7 @@ function formatIntroRecentDeadline(deadline: string) {
 
 function getIntroRecentState(item: BuncheolSummary) {
   if (typeof item.activeParticipationCount === "number") {
-    return `참여 ${item.activeParticipationCount}${getCountUnit(item.flowType)}`;
+    return `참여 ${formatMemberCount(item.activeParticipationCount)}`;
   }
 
   if (item.memberNames.length > 0) {
@@ -646,7 +646,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
             <div className="px-4 py-4">
               <p className="text-[12px] font-medium text-black/45">참여 현황</p>
               <p className="mt-1 text-[22px] font-semibold tracking-[-0.06em]">
-                현재 4/6명
+                현재 멤버 4/6명
               </p>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/[0.06]">
                 <div
@@ -1071,7 +1071,7 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
               </div>
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
-                  최소 진행 인원
+                  최소 진행 멤버 수
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">4명</p>
               </div>
@@ -1079,13 +1079,13 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
                 <p className="text-[11px] font-medium text-black/35">
                   입금 대기
                 </p>
-                <p className="mt-1 text-[15px] font-semibold">0명</p>
+                <p className="mt-1 text-[15px] font-semibold">멤버 0명</p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
                   보냈어요
                 </p>
-                <p className="mt-1 text-[15px] font-semibold">0명</p>
+                <p className="mt-1 text-[15px] font-semibold">멤버 0명</p>
               </div>
             </div>
           </div>
@@ -1103,10 +1103,10 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
           {/* 부분 확정 버튼은 미입금이 0일 때만 뜬다(HostedBuncheolManage). 목업이 그 조건을
               어기면 "미입금이 남아도 누를 수 있는 버튼"으로 잘못 배우게 되므로 집계를 맞춘다. */}
           <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-            입금 확인 6명 · 입금 대기 0명 · 보냈어요 0명
+            입금 확인 멤버 6명 · 입금 대기 0명 · 보냈어요 0명
           </p>
           <div className="intro-confirm-pulse mt-3 flex h-12 items-center justify-center rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F]">
-            입금한 6명으로 진행 확정
+            입금된 멤버 6명으로 진행 확정
           </div>
         </section>
 
@@ -1297,7 +1297,7 @@ const introSafetyPoints = [
 
 const introHostPoints = [
   {
-    body: "멤버 자리와 가격, 마감일과 최소 인원만 정하면 등록이 끝나요.",
+    body: "멤버 자리와 가격, 마감일과 최소 진행 멤버 수만 정하면 등록이 끝나요.",
     icon: ClipboardListIcon,
     title: "정할 건 네 가지",
   },
