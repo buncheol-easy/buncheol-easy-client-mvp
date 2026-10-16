@@ -113,6 +113,34 @@ export function KakaoIcon({ className = "h-5 w-5" }: IconProps) {
   );
 }
 
+// 배너 점 옆 10px 버튼용. 스트로크 아이콘은 이 크기에서 선이 1px 아래로 가늘어져 단색 채움으로 그린다.
+export function PauseFilledIcon({ className = "h-2.5 w-2.5" }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 10 10"
+    >
+      <rect height="8" rx="0.8" width="2.4" x="1.5" y="1" />
+      <rect height="8" rx="0.8" width="2.4" x="6.1" y="1" />
+    </svg>
+  );
+}
+
+export function PlayFilledIcon({ className = "h-2.5 w-2.5" }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 10 10"
+    >
+      <path d="M2.5 1.4v7.2a.6.6 0 0 0 .9.5l5.6-3.6a.6.6 0 0 0 0-1L3.4.9a.6.6 0 0 0-.9.5z" />
+    </svg>
+  );
+}
+
 export function HeartIcon({
   className = "h-5 w-5",
   filled = false,
