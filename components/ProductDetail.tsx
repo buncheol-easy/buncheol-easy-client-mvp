@@ -275,8 +275,8 @@ const CvsStoreSearchSheet = dynamic(
   { ssr: false },
 );
 
-// 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
-const paymentWindowMs = 30 * 60 * 1000;
+// 서버 입금 기한 정책(참여 후 10분 칼컷, ParticipationService.STAFF_PAYMENT_TIME_LIMIT)과 동일해야 한다.
+const paymentWindowMs = 10 * 60 * 1000;
 // C2C 입금 창 — 성사 확정·추가 모집(즉시입금) 후 24시간 (docs/46 §7.1-3).
 const c2cPaymentWindowMs = 24 * 60 * 60 * 1000;
 const sheetDragCloseThreshold = 72;
@@ -656,7 +656,7 @@ function formatPaymentDueCountdown(
     return "-";
   }
 
-  // 입금 기한은 입금 창(LEGACY 30분 / C2C 24시간)을 넘을 수 없다. 서버 절대시각과
+  // 입금 기한은 입금 창(LEGACY 10분 / C2C 24시간)을 넘을 수 없다. 서버 절대시각과
   // 클라이언트 시계의 오차로 남은시간이 창을 초과해 보이지 않도록 상한을 건다.
   const remainingMilliseconds = Math.min(
     dueDate.getTime() - now,
@@ -3051,7 +3051,7 @@ export function ProductDetail({
         // 계좌·기한이 없는 게 정상이라 결제 상세 보충 조회를 태우면 빈 응답을 입금 안내로 오인한다.
         const isCodeConfirmedResult = isCodeCheckout;
         // LEGACY 0원 + 고른 편의점 배송비 0원은 서버가 즉시 확정하고 계좌·기한 없이 응답한다(유료 LEGACY 는
-        // 기한이 늘 있다). 보충 조회를 태우면 30분 기한이 입금 안내로 뜬다. C2C 신청도 기한이 없어 제외한다.
+        // 기한이 늘 있다). 보충 조회를 태우면 10분 기한이 입금 안내로 뜬다. C2C 신청도 기한이 없어 제외한다.
         isFreeConfirmedCheckout =
           !isC2CProduct &&
           !isCodeCheckout &&
