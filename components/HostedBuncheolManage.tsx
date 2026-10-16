@@ -46,7 +46,7 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
   isParticipationPaymentSentStatus,
-  getCountUnit,
+  formatMemberCount,
 } from "@/lib/buncheol-states";
 import { rankGroupSearchResults } from "@/lib/group-presenters";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
@@ -676,13 +676,11 @@ export function HostedBuncheolManage({
     refundTargetParticipants.length -
     sentButUnconfirmedCount;
   const minHeadcount = detail?.minHeadcount ?? 0;
-  // ⚠️ 여기만 「명」으로 남긴다. 분자(confirmedCount)는 C2C 에서 자리 수지만, 분모
-  // (minHeadcount)는 개최자가 「최소 진행 인원」으로 입력한 정책값이다. 분자만 「자리」로 바꾸면
-  // 「4자리 / 5명」이 되고, 분모까지 바꾸는 것은 그 입력 항목의 의미를 바꾸는 <b>정책 결정</b>이라
-  // 화면에서 임의로 정하지 않는다. 서버는 이 둘을 자리 수로 비교한다.
+  // 분모(minHeadcount)는 개최 폼의 「최소 진행 멤버 수」다. 서버는 분자·분모를 둘 다 멤버(자리)
+  // 수로 비교하므로 분자를 사람 수로 바꾸지 않는다.
   const confirmedProgressLabel = minHeadcount
-    ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
-    : `${confirmedCount}\uba85`;
+    ? `${formatMemberCount(confirmedCount)} / 최소 ${minHeadcount}명`
+    : formatMemberCount(confirmedCount);
   const confirmedProgressPercent = minHeadcount
     ? Math.min(100, Math.round((confirmedCount / minHeadcount) * 100))
     : participantCount > 0
@@ -710,8 +708,7 @@ export function HostedBuncheolManage({
     ).length ?? 0;
   // ── C2C 파생값 (docs/46 §4.6 — 관리 응답은 활성 참여 전건을 내려준다) ──
   const isC2C = getFlowType(detail?.flowType) === "C2C";
-  // 아래 카운트들은 전부 자리 수다(멤버 슬롯 점유 건수). 규약은 getCountUnit 참조.
-  const countUnit = getCountUnit(detail?.flowType);
+  // 아래 카운트들은 전부 멤버(자리) 수다(멤버 슬롯 점유 건수). 표기는 formatMemberCount 참조.
   const activeC2CParticipants = (detail?.participants ?? []).filter(
     (participant) => !isParticipationCancelledStatus(participant.status),
   );
@@ -965,9 +962,9 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "성사 확정",
       description: isUnderMinHeadcount
-        // 자리 수를 「명」으로 재라벨링하지 않는다 — 문장을 쪼개 단위 혼용 자체를 없앤다.
-        ? `최소 진행 인원 ${minHeadcount}명을 아직 채우지 못했어요. 지금까지 신청은 ${applicantCount}${countUnit}예요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
-        : `신청자 ${applicantCount}${countUnit} 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
+        // 멤버 수와 신청자(사람)를 한 문장에 섞지 않는다 — 문장을 쪼개 단위 혼용 자체를 없앤다.
+        ? `최소 진행 멤버 수 ${minHeadcount}명을 아직 채우지 못했어요. 지금까지 신청된 멤버는 ${applicantCount}명이에요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
+        : `지금까지 신청된 멤버는 ${applicantCount}명이에요. 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runConfirmRecruitment(applicantCount);
@@ -995,7 +992,7 @@ export function HostedBuncheolManage({
 
       await reloadManagementDetail(accessToken);
       showToast(
-        `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}${countUnit}에 입금 안내가 발송됐어요.`,
+        `성사를 확정했어요. 멤버 ${result.awaitingCount ?? applicantCount}명의 신청자에게 입금 안내가 발송됐어요.`,
         "success",
       );
     } catch (error: unknown) {
@@ -1024,7 +1021,7 @@ export function HostedBuncheolManage({
         setConfirmSheetRequest(null);
         void runFinalizeCollected();
       },
-      title: `입금한 ${c2cConfirmedCount}${countUnit}로 진행할까요?`,
+      title: `입금된 멤버 ${c2cConfirmedCount}명으로 진행할까요?`,
     });
   }
 
@@ -1088,7 +1085,7 @@ export function HostedBuncheolManage({
       },
       title:
         bundle.slots.length > 1
-          ? `자리 ${bundle.slots.length}개를 한 번에 확인할까요?`
+          ? `멤버 ${bundle.slots.length}명을 한 번에 확인할까요?`
           : "입금을 확인할까요?",
     });
   }
@@ -1170,7 +1167,7 @@ export function HostedBuncheolManage({
       },
       title:
         bundle.slots.length > 1
-          ? `자리 ${bundle.slots.length}개를 함께 뺄까요?`
+          ? `멤버 ${bundle.slots.length}명을 함께 뺄까요?`
           : "이 참여를 뺄까요?",
     });
   }
@@ -1377,7 +1374,7 @@ export function HostedBuncheolManage({
       title: `${option.memberName} 멤버를 뺄까요?`,
       warnings: lowersMinHeadcount
         ? [
-            `최소 진행 인원이 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
+            `최소 진행 멤버 수가 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
           ]
         : undefined,
     });
@@ -1732,7 +1729,7 @@ export function HostedBuncheolManage({
               </div>
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
-                  {"\ucd5c\uc18c \uc9c4\ud589 \uc778\uc6d0"}
+                  {"최소 진행 멤버 수"}
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
                   {minHeadcount ? `${minHeadcount}\uba85` : "-"}
@@ -1741,7 +1738,7 @@ export function HostedBuncheolManage({
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">{"\ucc38\uc5ec"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${participantCount}${countUnit}`}
+                  {formatMemberCount(participantCount)}
                 </p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1749,7 +1746,9 @@ export function HostedBuncheolManage({
                   {"\uc785\uae08 \ub300\uae30"}
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${isC2C ? c2cAwaitingCount : awaitingPaymentCount}${countUnit}`}
+                  {formatMemberCount(
+                    isC2C ? c2cAwaitingCount : awaitingPaymentCount,
+                  )}
                 </p>
               </div>
               {isC2C ? (
@@ -1759,7 +1758,7 @@ export function HostedBuncheolManage({
                       {"\uc2e0\uccad"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cAppliedCount}${countUnit}`}
+                      {formatMemberCount(c2cAppliedCount)}
                     </p>
                   </div>
                   <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1767,7 +1766,7 @@ export function HostedBuncheolManage({
                       {"\ubcf4\ub0c8\uc5b4\uc694"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cPaymentSentCount}${countUnit}`}
+                      {formatMemberCount(c2cPaymentSentCount)}
                     </p>
                   </div>
                 </>
@@ -1854,7 +1853,7 @@ export function HostedBuncheolManage({
                 성사 확정
               </p>
               <HelpText className="mt-1">
-                {`지금까지 신청 ${c2cAppliedCount}${countUnit}예요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
+                {`지금까지 신청된 멤버는 ${c2cAppliedCount}명이에요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
               </HelpText>
               {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
                   유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
@@ -1897,8 +1896,8 @@ export function HostedBuncheolManage({
               </div>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
                 {/* ⚠️ 한 줄로 붙인다. 값 뒤에서 줄을 바꾸면 다음 텍스트 노드의 <b>선두 개행+들여쓰기가
-                    통째로 버려져</b> 공백이 사라진다("1자리· 보냈어요"). 아래 「입금한{" "}」이 같은 이유다. */}
-                {`입금 확인 ${c2cConfirmedCount}${countUnit} · 입금 대기 ${c2cAwaitingCount}${countUnit} · 보냈어요 ${c2cPaymentSentCount}${countUnit}`}
+                    통째로 버려져</b> 공백이 사라진다("1명· 보냈어요"). 아래 진행 확정 보조 문장도 같은 이유다. */}
+                {`입금 확인 멤버 ${c2cConfirmedCount}명 · 입금 대기 ${c2cAwaitingCount}명 · 보냈어요 ${c2cPaymentSentCount}명`}
               </p>
               {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를
                   통과한다. 전원 입금이면 입금확인 경로에서 자동으로 CONFIRMED 가 되므로, 이 버튼이 실제로
@@ -1920,23 +1919,21 @@ export function HostedBuncheolManage({
                   >
                     {pendingC2CAction === "finalize-collected"
                       ? "확정하는 중"
-                      : `입금한 ${c2cConfirmedCount}${countUnit}로 진행 확정`}
+                      : `입금된 멤버 ${c2cConfirmedCount}명으로 진행 확정`}
                   </button>
                   <HelpText className="mt-2">
-                    입금을 기다리는 참여가 더 없어요. 확정하면 입금한{" "}
-                    {c2cConfirmedCount}
-                    {countUnit}로 분철을 진행해요.
+                    {`입금을 기다리는 참여가 더 없어요. 확정하면 입금된 멤버 ${c2cConfirmedCount}명으로 분철을 진행해요.`}
                   </HelpText>
                 </>
               ) : c2cUnpaidActiveCount > 0 ? (
                 <HelpText className="mt-2">
                   입금을 확인하거나, 기한이 지난 미입금 참여를 직접 정리하면
-                  입금한 사람만으로 진행을 확정할 수 있어요.
+                  입금된 멤버만으로 진행을 확정할 수 있어요.
                 </HelpText>
               ) : (
                 <HelpText className="mt-2">
-                  입금 확인된 참여가 아직 없어요. 최소 1명을 확인해야 진행을
-                  확정할 수 있어요.
+                  입금 확인된 참여가 아직 없어요. 적어도 멤버 1명의 입금을
+                  확인해야 진행을 확정할 수 있어요.
                 </HelpText>
               )}
             </section>
@@ -2257,7 +2254,7 @@ export function HostedBuncheolManage({
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
                             {formatWonAmount(bundleTotal)}
                             {bundle.slots.length > 1
-                              ? ` · 자리 ${bundle.slots.length}개`
+                              ? ` · 멤버 ${bundle.slots.length}명`
                               : ""}
                             {bundleTimeInfo}
                           </p>

@@ -248,6 +248,17 @@ export function getDeliveryStatusLabel(status: string | null | undefined) {
 }
 
 /**
+ * 참여 카운트 표기 「멤버 N명」. C2C 는 한 사람이 멤버를 여러 명 고를 수 있어 멤버 수 ≠ 사람 수고,
+ * LEGACY 는 1인 1멤버라 둘이 같다. 흐름과 상관없이 같은 표기를 쓴다.
+ *
+ * ⚠️ 숫자는 멤버(자리) 수 그대로 넘긴다. 사람 수로 바꾸면 서버의 최소 진행 판정(멤버 수 기준)과
+ * 화면이 갈린다. 조사가 붙는 문장은 이 함수 대신 템플릿에 「멤버 ${n}명이에요」처럼 직접 쓴다.
+ */
+export function formatMemberCount(count: number) {
+  return `멤버 ${count}명`;
+}
+
+/**
  * 참여 카운트의 단위. C2C 는 한 사람이 자리를 여러 개 잡을 수 있어 자리 ≠ 사람이고,
  * LEGACY 는 1인 1자리라 자리 = 사람이다.
  *
