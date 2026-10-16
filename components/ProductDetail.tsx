@@ -4675,7 +4675,7 @@ export function ProductDetail({
                                 <ForwardIcon className="h-4 w-4 shrink-0" />
                               </button>
                             ) : (
-                              <p className="mt-0.5 truncate text-[12px] font-semibold text-black/55">
+                              <p className="mt-0.5 truncate text-[12px] font-semibold text-black/60">
                                 {blockChipLabel}
                               </p>
                             )
@@ -4987,7 +4987,7 @@ export function ProductDetail({
                                   ) : null}
                                 </div>
                                 {displayedOverlayLabel ? (
-                                  <p className="mt-0.5 truncate text-[12px] font-medium tracking-[-0.04em] text-black/55">
+                                  <p className="mt-0.5 truncate text-[12px] font-medium tracking-[-0.04em] text-black/60">
                                     {displayedOverlayLabel}
                                   </p>
                                 ) : null}
