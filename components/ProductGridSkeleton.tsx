@@ -3,7 +3,7 @@ type ProductGridSkeletonProps = {
   count?: number;
   className?: string;
   variant?: "grid" | "wide";
-  // 멤버 줄 자리 표시 — 남은 멤버 칩을 그리는 목록은 "chips",
+  // 멤버 줄 자리 표시 — 멤버 칩을 그리는 목록은 "chips",
   // availableMemberNames 없이 대상 멤버 태그 한 줄을 그리는 목록(찜 등)은 "text".
   memberRowVariant?: "chips" | "text";
 };

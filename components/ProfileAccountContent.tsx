@@ -27,6 +27,7 @@ import {
   shouldShowPhoneNumberHint,
 } from "@/lib/phone-number";
 import { clearUserSessionState } from "@/lib/user-session";
+import { HelpText } from "@/components/HelpText";
 
 type ProfileAccountContentProps = {
   onBack?: () => void;
@@ -522,10 +523,10 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                 ) : null}
                 {/* 배송 연락처는 입금확인 시점에 박제된다(서버 DeliverySnapshotCreator) —
                     안내 없이 바꾸면 "왜 옛 번호로 오지?"가 CS 로 돌아온다. */}
-                <p className="break-keep text-[12px] font-medium leading-5 text-black/35">
+                <HelpText>
                   이미 배송이 시작된 참여에는 그 시점의 번호가 쓰여요. 여기서
                   바꿔도 소급되지 않아요.
-                </p>
+                </HelpText>
               </div>
               <button
                 aria-label={isSaveFeedbackVisible ? "저장 완료" : undefined}

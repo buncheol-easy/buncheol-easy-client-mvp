@@ -62,6 +62,7 @@ import {
   getDeliveryAddressDisplayBranchName,
   getDefaultDeliveryAddressesByType,
 } from "@/lib/mock-delivery-addresses";
+import { HelpText } from "@/components/HelpText";
 
 const settlementAccountPanelExitMs = 180;
 const profileStateCacheKey = "buncheol-profile-state-cache";
@@ -763,11 +764,11 @@ export function ProfileContent({
                   참여자로서 환불받을 때, 개최자로서 참여자 입금을 받을 때.
                   예금주명은 입금자명 대조 기준이기도 한데(docs/53 Q-17) 지금까지 약관에만
                   적혀 있었다. 입금 확인이 지연되는 실제 원인이라 여기서 한 번 짚는다. */}
-              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
-                환불과 개최 입금을 받는 계좌예요. 예금주명은 입금자명 확인에도
-                쓰여요. 이미 진행 중인 참여·분철에는 그 시점의 계좌가 쓰이고,
-                여기서 바꿔도 소급되지 않아요.
-              </p>
+              <HelpText className="mt-1">
+                환불받을 때와 개최한 분철의 입금을 받을 때 써요. 예금주명은 실제
+                통장과 똑같이 적어 주세요. 바꿔도 이미 진행 중인 참여와 분철에는
+                적용되지 않아요.
+              </HelpText>
             </div>
             {authState.isLoggedIn &&
             !isEditingSettlementAccount &&

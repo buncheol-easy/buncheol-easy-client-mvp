@@ -34,6 +34,7 @@ import {
 import { ArtistRail, type ArtistRailItem } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { FloatingHelpButton } from "@/components/FloatingHelpButton";
+import { HelpText } from "@/components/HelpText";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
 import { useIsUnderlay } from "@/components/SwipeUnderlay";
@@ -163,7 +164,7 @@ const homeUsageGuide = [
     icon: SearchIcon,
     label: "분철 둘러보기",
     description:
-      "홈에서 진행 중인 분철을 둘러봐요. 남은 멤버를 보면 어떤 멤버에 참여할 수 있는지 바로 알 수 있어요.",
+      "홈에서 진행 중인 분철을 둘러봐요. 멤버 이름이 연두색이면 지금 참여할 수 있어요.",
   },
   {
     icon: ClipboardListIcon,
@@ -1273,9 +1274,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               <>
                 {isListingsSlow ? (
                   <div className="mb-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
-                    <p className="text-[13px] font-semibold text-black/45">
+                    <HelpText>
                       {"분철 목록을 불러오는 데 시간이 걸리고 있어요. 다시 불러오는 중이에요."}
-                    </p>
+                    </HelpText>
                   </div>
                 ) : null}
                 <ProductGridSkeleton
@@ -1413,27 +1414,25 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                       {item.label}
                     </p>
                   </div>
-                  <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/50">
-                    {item.description}
-                  </p>
+                  <HelpText className="mt-1.5">{item.description}</HelpText>
                 </div>
               ))}
-              <p className="px-1 pt-1 text-[12px] font-medium leading-5 text-black/40">
+              <HelpText className="px-1 pt-1">
                 분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 10분 안에
                 입금하면 돼요. 분철이지는 통신판매중개자이며, 회원 개최 분철의
                 대금은 개최자 계좌로 직접 입금돼요.
-              </p>
-              <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+              </HelpText>
+              <HelpText className="px-1 pt-2">
                 마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 원하는 분철이
-                없다면 하단 &lsquo;개최&rsquo; 탭에서 직접 열 수 있어요 —{" "}
+                없다면 하단 &lsquo;개최&rsquo; 탭에서 직접 열 수 있어요.
                 <Link
-                  className="font-semibold text-black/60 underline underline-offset-2"
+                  className="mt-0.5 inline-block font-semibold text-black/75 underline underline-offset-2"
                   href="/upload/notice"
                   onClick={closeUsageHelpSheet}
                 >
                   개최 자격 조건 보기
                 </Link>
-              </p>
+              </HelpText>
             </div>
 
             <button

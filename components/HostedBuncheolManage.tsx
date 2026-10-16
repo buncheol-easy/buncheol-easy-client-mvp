@@ -9,6 +9,7 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import { HelpText } from "@/components/HelpText";
 import { Toast, useToast } from "@/components/Toast";
 import {
   addBuncheolMember,
@@ -1390,7 +1391,7 @@ export function HostedBuncheolManage({
       }
 
       await removeBuncheolMember(accessToken, id, option.buncheolMemberId);
-      // 홈·아티스트 카드의 남은 멤버가 60초 저장본으로 남지 않게 한다.
+      // 홈·아티스트 카드의 멤버 칩이 60초 저장본으로 남지 않게 한다.
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
       showToast(`${option.memberName} 멤버를 뺐어요.`);
 
@@ -1808,9 +1809,9 @@ export function HostedBuncheolManage({
             <p className="text-[15px] font-semibold tracking-[-0.04em]">
               오픈채팅
             </p>
-            <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+            <HelpText className="mt-1">
               참여자가 문의할 소통 창구예요. 분철 상세와 입금 안내 화면에 보여요.
-            </p>
+            </HelpText>
             {detail.openChatUrl ? (
               <div className="mt-3 flex items-center gap-2 rounded-[0.85rem] bg-[#f4f4f4] px-3 py-2.5">
                 <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-black/70">
@@ -1841,16 +1842,18 @@ export function HostedBuncheolManage({
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 성사 확정
               </p>
-              <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
+              <HelpText className="mt-1">
                 {`지금까지 신청 ${c2cAppliedCount}${countUnit}예요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
-              </p>
+              </HelpText>
               {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
                   유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
-              <p className="mt-1.5 text-[13px] font-medium leading-5 text-black/50">
-                모집 기한이 지나고{" "}
-                <span className="font-semibold">2일(48시간)</span> 안에 확정하지
-                않으면 분철이 자동으로 취소돼요.
-              </p>
+              <HelpText className="mt-1.5">
+                <span className="block">
+                  모집 기한이 지나고{" "}
+                  <span className="font-semibold text-black/80">2일(48시간)</span>{" "}
+                  안에 확정하지 않으면 분철이 자동으로 취소돼요.
+                </span>
+              </HelpText>
               <button
                 className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
                 disabled={c2cAppliedCount === 0 || pendingC2CAction !== null}
@@ -1908,22 +1911,22 @@ export function HostedBuncheolManage({
                       ? "확정하는 중"
                       : `입금한 ${c2cConfirmedCount}${countUnit}로 진행 확정`}
                   </button>
-                  <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                  <HelpText className="mt-2">
                     입금을 기다리는 참여가 더 없어요. 확정하면 입금한{" "}
                     {c2cConfirmedCount}
                     {countUnit}로 분철을 진행해요.
-                  </p>
+                  </HelpText>
                 </>
               ) : c2cUnpaidActiveCount > 0 ? (
-                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                <HelpText className="mt-2">
                   입금을 확인하거나, 기한이 지난 미입금 참여를 직접 정리하면
                   입금한 사람만으로 진행을 확정할 수 있어요.
-                </p>
+                </HelpText>
               ) : (
-                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                <HelpText className="mt-2">
                   입금 확인된 참여가 아직 없어요. 최소 1명을 확인해야 진행을
                   확정할 수 있어요.
-                </p>
+                </HelpText>
               )}
             </section>
           ) : null}
@@ -1933,10 +1936,10 @@ export function HostedBuncheolManage({
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 멤버 관리
               </p>
-              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+              <HelpText className="mt-1">
                 다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
                 않아요.
-              </p>
+              </HelpText>
               <ul className="mt-3 divide-y divide-black/[0.06]">
                 {memberSlots.map((option) => {
                   const slotState = getMemberSlotState(option.saleStatus);
@@ -1964,9 +1967,9 @@ export function HostedBuncheolManage({
                           {formatMemberSlotPrice(option.price)}
                         </p>
                         {blockedReason ? (
-                          <p className="mt-0.5 text-[11px] font-medium leading-4 text-black/35">
+                          <HelpText className="mt-0.5" size="caption">
                             {blockedReason}
-                          </p>
+                          </HelpText>
                         ) : null}
                       </div>
                       <span
@@ -2018,11 +2021,11 @@ export function HostedBuncheolManage({
                   ? `환불이 필요한 참여 ${refundTargetParticipants.length}건`
                   : "환불 확인이 필요한 참여"}
               </p>
-              <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
+              <HelpText className="mt-1">
                 {refundTargetParticipants.length > 0
                   ? "입금 확인된 취소 건이에요. 통장을 확인하고 아래 계좌로 환불해 주세요."
                   : "환불 계좌를 보여드릴 확정 건은 없어요. 아래 안내를 확인해 주세요."}
-              </p>
+              </HelpText>
               <div className="mt-3 space-y-2">
                 {refundTargetParticipants.map((participant) => (
                   <div
@@ -2067,17 +2070,17 @@ export function HostedBuncheolManage({
                 ))}
               </div>
               {sentButUnconfirmedCount > 0 ? (
-                <p className="mt-3 text-[12px] font-medium leading-5 text-black/55">
+                <HelpText className="mt-3">
                   입금 확인 전에 빠진 참여 {sentButUnconfirmedCount}건이 있어요.
-                  보냈다고 표시했지만 확인되지 않은 건이라 계좌를 보여드리지
-                  않아요 — 통장에 늦게 찍힌 이체가 있는지 확인해 주세요.
-                </p>
+                  보냈다고 표시했지만 확인되지 않아 계좌는 보여드리지 않아요.
+                  통장에 늦게 찍힌 이체가 있는지 확인해 주세요.
+                </HelpText>
               ) : null}
               {noTraceCancelledCount > 0 ? (
-                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                <HelpText className="mt-2">
                   입금 전에 취소된 참여 {noTraceCancelledCount}건은 환불할 금액이
                   없어 여기 표시하지 않아요.
-                </p>
+                </HelpText>
               ) : null}
             </section>
           ) : null}
@@ -2087,13 +2090,13 @@ export function HostedBuncheolManage({
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 {isC2C ? "참여자 관리" : "멤버별 참여 관리"}
               </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/40">
-                {/* 리스트 모수는 취소를 뺀 활성 참여 전건(신청됨·입금 대기 포함)이라
-                    "여기에 표시돼요"로 쓰면 안 된다 — 바뀌는 것은 존재가 아니라 상태다. */}
+              {/* 리스트 모수는 취소를 뺀 활성 참여 전건(신청됨·입금 대기 포함)이라
+                  "여기에 표시돼요"로 쓰면 안 된다 — 바뀌는 것은 존재가 아니라 상태다. */}
+              <HelpText className="mt-1">
                 {isC2C
-                  ? "참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조해 확인하고, 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."
+                  ? "참여자가 송금 후 '보냈어요'를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요. 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."
                   : "멤버마다 입금 확인 → 운송장 등록 순서로 처리해요."}
-              </p>
+              </HelpText>
             </div>
 
             <div className="space-y-3">
@@ -2299,9 +2302,9 @@ export function HostedBuncheolManage({
                               일이 흔해, 기한 안에 뺄 수 있게 하면 정상 입금자를 빼는 사고가 난다
                               (docs/71 §8-1). 버튼을 감추지 않고 사유를 보여준다. */}
                           {blockedReason ? (
-                            <p className="mr-auto text-[11px] font-medium leading-4 text-black/35">
+                            <HelpText className="mr-auto" size="caption">
                               {blockedReason}
-                            </p>
+                            </HelpText>
                           ) : null}
                           <button
                             className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
@@ -2855,10 +2858,10 @@ export function HostedBuncheolManage({
             <p className="text-[16px] font-semibold tracking-[-0.04em]">
               오픈채팅 링크
             </p>
-            <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+            <HelpText className="mt-1">
               카카오 오픈채팅 주소를 붙여 넣어 주세요. 비우고 저장하면 링크가
               지워져요.
-            </p>
+            </HelpText>
             <input
               aria-invalid={openChatUrlError ? true : undefined}
               aria-label="오픈채팅 링크"
@@ -2954,9 +2957,9 @@ export function HostedBuncheolManage({
                   멤버 목록을 불러오는 중이에요.
                 </p>
               ) : addMemberSheet.loadFailed ? (
-                <p className="mt-2 break-keep text-[12px] font-medium leading-5 text-black/45">
+                <HelpText className="mt-2">
                   멤버 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
-                </p>
+                </HelpText>
               ) : addMemberSheet.closedCandidates.length +
                   addMemberSheet.groupCandidates.length ===
                 0 ? (
