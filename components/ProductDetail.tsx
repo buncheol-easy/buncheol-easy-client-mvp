@@ -609,9 +609,15 @@ function formatOpenCountdown(opensAtMs: number, nowMs: number) {
   // 올림 — 내림이면 오픈 직전 1초 동안 00:00:00 이 떠 있다.
   const totalSeconds = Math.max(0, Math.ceil((opensAtMs - nowMs) / 1000));
   const days = Math.floor(totalSeconds / 86_400);
-  const clock = formatCountdownClock(totalSeconds);
 
-  return days > 0 ? `${days}일 ${clock} 남음` : `${clock} 남음`;
+  // 하루 넘게 남았으면 초 단위로 돌리지 않는다(참여 마감 카운트다운과 같은 원칙). 윗줄에 오픈 시각이 있다.
+  if (days > 0) {
+    const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+
+    return hours > 0 ? `${days}일 ${hours}시간 남음` : `${days}일 남음`;
+  }
+
+  return `${formatCountdownClock(totalSeconds)} 남음`;
 }
 
 function isNotOpenOption(option: ProductOption) {
@@ -1960,15 +1966,24 @@ export function ProductDetail({
     !isDeadlineBlocked &&
     isPurchasableStatus;
   const canBidProduct = canBidIfSelectable && hasSelectableOption;
-  // 오픈 전이라 고를 자리가 없으면 꺼진 참여 버튼 자리에 오픈 시각과 남은 시간을 띄운다.
-  // 코드 전용 빈 자리는 오픈 전에도 코드로 참여할 수 있어(서버도 허용) 남아 있으면 버튼을 켜 둔다.
+  // 오픈 전에는 참여 버튼을 늘 꺼 두고 그 자리에 오픈 시각과 남은 시간을 띄운다.
   const isWaitingForOpen =
-    isBeforeOpen &&
-    canBidIfSelectable &&
-    !hasSelectableOption &&
-    auctionOptions.some(isNotOpenOption);
+    isBeforeOpen && canBidIfSelectable && auctionOptions.some(isNotOpenOption);
+  // 코드 전용 빈 자리는 오픈 전에도 코드로 참여할 수 있어(서버도 허용) 버튼 위 「코드로 참여하기」로 시트를 연다.
+  const canJoinWithCodeBeforeOpen =
+    isWaitingForOpen &&
+    canBidProduct &&
+    auctionOptions.some(
+      (option) =>
+        option.requiresCode === true &&
+        isOptionSelectable(
+          option,
+          myBids[option.id],
+          product.isApiProduct === true,
+        ),
+    );
   const isMainBidButtonDisabled =
-    !isPublicPreview && (isBidUnavailable || !canBidProduct);
+    !isPublicPreview && (isBidUnavailable || !canBidProduct || isWaitingForOpen);
   const optionParticipationCount = auctionOptions.reduce((sum, option) => {
     const explicitCount = Math.max(0, option.participantCount);
     const occupiedSlotCount =
@@ -4549,18 +4564,26 @@ export function ProductDetail({
         </div>
 
         <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
-          {!isHostedProduct &&
-          !isCancelledProduct &&
-          !isDeadlineBlocked &&
-          isPurchasableStatus ? (
+          {canJoinWithCodeBeforeOpen ? (
+            <div className="mb-1 flex justify-center">
+              <button
+                className="px-3 py-1 text-[13px] font-semibold tracking-[-0.04em] text-black underline underline-offset-4"
+                onClick={handleBidButtonClick}
+                type="button"
+              >
+                코드로 참여하기
+              </button>
+            </div>
+          ) : !isHostedProduct &&
+            !isCancelledProduct &&
+            !isDeadlineBlocked &&
+            isPurchasableStatus ? (
             <p className="mb-2 text-center text-[11px] font-medium text-black/40">
               {isC2CProduct
                 ? isC2CCollectingProduct
                   ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
                   : "지금은 신청만 하고, 개최자가 확정하면 입금해요."
-                : isBeforeOpen && canBidProduct && opensAtMs !== null
-                  ? `${formatOpensAt(opensAtMs, { withWeekday: true })}에 열려요. 지금은 코드로만 참여할 수 있어요.`
-                  : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
+                : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
             </p>
           ) : null}
           {canManageHostedProduct ? (
@@ -4576,7 +4599,12 @@ export function ProductDetail({
           ) : (
             <button
               type="button"
-              className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+              className={
+                // 오픈 대기 중에는 꺼져 있어도 오픈 시각과 남은 시간이 읽혀야 한다.
+                isWaitingForOpen
+                  ? "h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                  : "h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+              }
               disabled={isMainBidButtonDisabled}
               onClick={
                 isMainBidButtonDisabled ? undefined : handleBidButtonClick
