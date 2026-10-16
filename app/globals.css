@@ -521,11 +521,28 @@ body.is-pwa-standalone {
   width: clamp(150px, 13.6vw, 196px);
 }
 
+/* 데스크톱 소개 문구 전용 글꼴. 파일에는 이 두 줄에 쓰인 글자만 들어 있어서, 문구를 바꾸면 글꼴도 다시 잘라야 한다
+   (빠진 글자는 Pretendard 로 보인다). 원본과 라이선스는 public/fonts/buncheol-display-LICENSE.txt. */
+@font-face {
+  font-display: swap;
+  font-family: "Buncheol Display";
+  font-weight: 700;
+  src: url("/fonts/buncheol-display-bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "Buncheol Display";
+  font-weight: 500;
+  src: url("/fonts/buncheol-display-medium.woff2") format("woff2");
+}
+
 .desktop-web-brand__title {
+  font-family: "Buncheol Display", "Pretendard", "Apple SD Gothic Neo", sans-serif;
   font-size: clamp(36px, 3.6vw, 52px);
-  font-weight: 800;
-  letter-spacing: -0.055em;
-  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
   margin-top: 34px;
 }
 
@@ -545,8 +562,9 @@ body.is-pwa-standalone {
 
 .desktop-web-brand__body {
   color: rgba(255, 255, 255, 0.78);
+  font-family: "Buncheol Display", "Pretendard", "Apple SD Gothic Neo", sans-serif;
   font-size: clamp(16px, 1.35vw, 19px);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.03em;
   line-height: 1.5;
   margin-top: 18px;
