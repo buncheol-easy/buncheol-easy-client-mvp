@@ -18,6 +18,7 @@ import { SlidingTabs } from "@/components/SlidingTabs";
 import { requestBookmarkedBuncheols, toProductCardItem } from "@/lib/auth-api";
 import { EmptyState } from "@/components/EmptyState";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   getInitialAuthState,
   readAuthState,
@@ -26,7 +27,6 @@ import {
 import { isCardDeadlineOpen } from "@/components/ProductCard";
 import {
   isBuncheolCancelledStatus,
-  isBuncheolDeletedStatus,
   isBuncheolPaymentCollectingStatus,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
@@ -47,11 +47,6 @@ type FavoritesContentProps = {
 export const FAVORITES_SKIP_ENTER_KEY = "skip-favorites-enter-animation";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 const FAVORITES_VIEW_STATE_KEY = "favorites-view-state";
-
-// 취소(개최자 취소 HOST_CANCELLED 포함)·삭제된 분철은 찜 목록에서 숨긴다.
-function isCancelledOrDeletedProductStatus(status: string | undefined) {
-  return isBuncheolCancelledStatus(status) || isBuncheolDeletedStatus(status);
-}
 
 function takeShouldSkipFavoritesEnter() {
   if (typeof window === "undefined") {
@@ -171,13 +166,20 @@ export function FavoritesContent({
 
     let isActive = true;
 
-    requestBookmarkedBuncheols(accessToken, {
-      hideClosed,
-      onlyFavoriteGroups: filter === "favoriteArtist",
-      sort: sort === "deadline" ? "DEADLINE" : "LATEST",
-    })
+    // 만료된 토큰은 요청 전에 재발급한다. 토큰이 바뀌면 이 effect 가 새 토큰으로 다시 돌고,
+    // null(재발급 실패 → 로그인 정보 삭제)이면 로그인 화면 이동이 처리하므로 여기선 아무것도 띄우지 않는다.
+    getFreshAccessToken()
+      .then((freshAccessToken) =>
+        isActive && freshAccessToken === accessToken
+          ? requestBookmarkedBuncheols(accessToken, {
+              hideClosed,
+              onlyFavoriteGroups: filter === "favoriteArtist",
+              sort: sort === "deadline" ? "DEADLINE" : "LATEST",
+            })
+          : null,
+      )
       .then((items) => {
-        if (!isActive) {
+        if (!isActive || !items) {
           return;
         }
 
@@ -218,7 +220,7 @@ export function FavoritesContent({
     const sourceProducts = apiFavoriteProducts ?? [];
 
     return sourceProducts.filter((product) => {
-      if (isCancelledOrDeletedProductStatus(product.status)) {
+      if (isBuncheolCancelledStatus(product.status)) {
         return false;
       }
 

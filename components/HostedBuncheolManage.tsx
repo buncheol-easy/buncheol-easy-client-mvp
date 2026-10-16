@@ -1,22 +1,28 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BackIcon } from "@/components/icons";
+import { useQueryClient } from "@tanstack/react-query";
+import { BackIcon, PlusIcon } from "@/components/icons";
 import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import { Toast, useToast } from "@/components/Toast";
 import {
+  addBuncheolMember,
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
   confirmBundlePayment,
   isSyntheticParticipantName,
   releaseBundle,
+  removeBuncheolMember,
   requestBuncheolDetail,
   requestBuncheolManagement,
   requestDeliveryTrackingRegistration,
+  requestGroupMembers,
+  requestGroups,
   requestPaymentConfirmation,
   updateBuncheolOpenChatUrl,
   type BuncheolDetail,
@@ -32,6 +38,7 @@ import {
   isBuncheolCancelledStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
+  isDeliveryShippingStatus,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
   isParticipationCancelledStatus,
@@ -39,7 +46,9 @@ import {
   isParticipationPaymentSentStatus,
   getCountUnit,
 } from "@/lib/buncheol-states";
+import { rankGroupSearchResults } from "@/lib/group-presenters";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
+import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
   getInitialAuthState,
   readAuthState,
@@ -58,8 +67,9 @@ type DeliveryState = {
   trackingNumber: string;
 };
 
+// lib/auth-api.ts 의 같은 이름 함수와 규칙을 맞춘다 — 0원은 「0원」, 값을 모를 때(null·NaN·음수)만 "-".
 function formatWonAmount(value: number | null | undefined) {
-  if (!Number.isFinite(value) || !value || value <= 0) {
+  if (value == null || !Number.isFinite(value) || value < 0) {
     return "-";
   }
 
@@ -116,12 +126,13 @@ function formatKoreaDateTime(value: string | undefined) {
   return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
+// 금액을 하나도 모르면 0 이 아니라 null — 0 은 「0원」으로 그려져 실제 0원 자리와 구분되지 않는다.
 function getHighestBidAmount(option: BuncheolManagementOption) {
   return (
     option.currentHighestBid ??
     option.winner?.paymentAmount ??
     option.winner?.bidAmount ??
-    0
+    null
   );
 }
 
@@ -129,12 +140,12 @@ function getWinnerBidAmount(option: BuncheolManagementOption) {
   return option.winner?.paymentAmount ?? option.winner?.bidAmount ?? null;
 }
 
-// 개최 목록 카드와 같은 함수 — 카드 「종료」를 눌러 들어왔는데 머리가 「진행 확정」이면 두 화면이 갈린다.
-// 마감은 넘기지 않는다: 카드가 올해 마감을 못 읽어 유예 구간에 「모집 중」이라 그에 맞춘다. 마감 판정은 #203에서 카드와 함께 고친다.
+// 개최 목록 카드와 같은 함수·같은 기준(서버 원본 마감값)으로 판정한다 — 카드 「종료」를 눌러 들어왔는데
+// 머리가 「진행 확정」이면 두 화면이 갈린다.
 function getManagementStatusBadge(detail: BuncheolManagementDetail) {
   return getHostedBuncheolStatusBadge({
     ended: detail.ended,
-    isDeadlinePassed: false,
+    isDeadlinePassed: isPastDateTime(detail.deadline),
     status: detail.status,
   });
 }
@@ -271,6 +282,11 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
 
+// 묶음 id 가 없으면 「입금 확인」도 「제외」도 서버에 보낼 수 없다. 되돌릴 수 없다고 묻는 시트를
+// 통과한 뒤 실패하지 않게, 두 버튼을 막고 이 문구를 미리 보여 준다.
+const MISSING_BUNDLE_MESSAGE =
+  "묶음 정보가 없어 이 참여를 처리할 수 없어요. 고객센터로 문의해 주세요.";
+
 // ⚠️ 인자를 optional 로 두지 않는다. undefined 를 받으면 호출부가 「막힌 자리 없음」을 넘겨도
 // default 문구가 뜬다. null 은 서버가 판정을 못 준 경우(구 응답·미연결 행)라 받아야 한다.
 function getReleaseBlockedReason(releasability: string | null) {
@@ -376,11 +392,106 @@ function getManagementOptionsFromDetail(
       memberName: member.name,
       participants,
       participationCount: Math.max(member.participantCount, participants.length),
+      // 상세 파서는 서버 members[].price 를 bidMinPrice 로 읽는다(그 응답에 다른 금액 키가 없다).
+      price: member.bidMinPrice,
+      saleStatus: member.saleStatus,
       winner: currentParticipant
         ? getWinnerFromParticipant(currentParticipant)
         : null,
     };
   });
+}
+
+// 서버 Buncheol.acceptsNewParticipation 과 같은 술어 — 자리 빼기·넣기는 이 구간에서만 통한다(아니면 BCH-060).
+// 유예(마감 지난 모집 중)에는 서버가 빈 자리를 전부 CLOSED 로 내려 개최자가 닫은 자리와 구분할 수 없다.
+function isAcceptingNewParticipation(detail: BuncheolManagementDetail) {
+  if (getFlowType(detail.flowType) !== "C2C") {
+    return false;
+  }
+
+  if (isBuncheolPaymentCollectingStatus(detail.status)) {
+    return true;
+  }
+
+  return (
+    isBuncheolRecruitingStatus(detail.status) && !isPastDateTime(detail.deadline)
+  );
+}
+
+function isClosedMemberSlot(option: BuncheolManagementOption) {
+  return option.saleStatus?.toUpperCase() === "CLOSED";
+}
+
+type MemberSlotState = {
+  label: string;
+  kind: "empty" | "occupied" | "unknown";
+};
+
+// 뺄 수 있는지는 서버 saleStatus 그대로 가른다. 모르는 값(롤백 중 CODE_ONLY 등)은 버튼 없이 둔다.
+function getMemberSlotState(saleStatus: string | undefined): MemberSlotState {
+  switch (saleStatus?.toUpperCase()) {
+    case "AVAILABLE":
+      return { kind: "empty", label: "빈 자리" };
+    case "APPLIED":
+      return { kind: "occupied", label: "신청됨" };
+    // 「보냈어요」도 서버가 AWAITING_PAYMENT 로 접어 내려준다.
+    case "AWAITING_PAYMENT":
+      return { kind: "occupied", label: "입금 대기" };
+    case "SOLD":
+      return { kind: "occupied", label: "입금 확인" };
+    default:
+      return { kind: "unknown", label: "확인 필요" };
+  }
+}
+
+function formatMemberSlotPrice(price: number | undefined) {
+  return typeof price === "number" && Number.isFinite(price)
+    ? `${price.toLocaleString("ko-KR")}원`
+    : "-";
+}
+
+function isMemberPriceInput(rawInput: string) {
+  const digits = rawInput.replace(/[^\d]/g, "");
+
+  return digits !== "" && Number(digits) % 100 === 0;
+}
+
+type AddMemberCandidate = {
+  memberId: string;
+  name: string;
+  // 닫힌 자리의 이전 가격. 새 멤버면 없다.
+  previousPrice?: number;
+};
+
+type AddMemberSheetState = {
+  closedCandidates: AddMemberCandidate[];
+  groupCandidates: AddMemberCandidate[];
+  isLoading: boolean;
+  loadFailed: boolean;
+};
+
+// 관리·상세 응답에 그룹 id 가 없어 수정 폼(UploadProductForm)처럼 그룹 이름으로 찾는다.
+// 이름이 비슷한 다른 그룹을 집지 않도록 지금 자리의 멤버가 모두 들어 있는 그룹만 쓴다.
+async function requestBuncheolGroupMembers(
+  groupName: string,
+  slotMemberIds: string[],
+) {
+  if (!groupName.trim() || slotMemberIds.length === 0) {
+    throw new Error("group not found");
+  }
+
+  const groups = rankGroupSearchResults(await requestGroups(groupName), groupName);
+
+  for (const group of groups) {
+    const members = await requestGroupMembers(group.id);
+    const groupMemberIds = new Set(members.map((member) => member.id));
+
+    if (slotMemberIds.every((memberId) => groupMemberIds.has(memberId))) {
+      return members;
+    }
+  }
+
+  throw new Error("group not found");
 }
 
 async function requestHostedBuncheolManagement(
@@ -425,7 +536,10 @@ export function HostedBuncheolManage({
     getInitialAuthState,
   );
   const [detail, setDetail] = useState<BuncheolManagementDetail | null>(null);
-  const [message, setMessage] = useState("개최한 분철 정보를 불러오고 있어요.");
+  const [loadMessage, setLoadMessage] = useState(
+    "개최한 분철 정보를 불러오고 있어요.",
+  );
+  const [toast, showToast] = useToast();
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(
     null,
   );
@@ -435,7 +549,7 @@ export function HostedBuncheolManage({
   const [deliveryStates, setDeliveryStates] = useState<
     Record<string, DeliveryState>
   >({});
-  // C2C 액션(성사 확정·부분 확정·입금확인·반려·운송장) 진행 중 식별자 — 중복 호출 방지.
+  // C2C 액션(성사 확정·부분 확정·입금확인·제외·운송장) 진행 중 식별자 — 중복 호출 방지.
   const [pendingC2CAction, setPendingC2CAction] = useState<string | null>(null);
   // 되돌리기 어려운 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
@@ -443,10 +557,24 @@ export function HostedBuncheolManage({
   const [participantTrackingInputs, setParticipantTrackingInputs] = useState<
     Record<string, string>
   >({});
+  const [editingTrackingOwnerId, setEditingTrackingOwnerId] = useState<
+    string | null
+  >(null);
   // 오픈채팅 링크 수정 시트 — null 이면 닫힘. 전체 수정(모집중 전용)과 달리 상태와 무관하게 열린다.
   const [openChatUrlDraft, setOpenChatUrlDraft] = useState<string | null>(null);
   const [openChatUrlError, setOpenChatUrlError] = useState("");
   const [isSavingOpenChatUrl, setIsSavingOpenChatUrl] = useState(false);
+  const queryClient = useQueryClient();
+  // 멤버 추가 시트 — null 이면 닫힘.
+  const [addMemberSheet, setAddMemberSheet] =
+    useState<AddMemberSheetState | null>(null);
+  const [addMemberSelectedId, setAddMemberSelectedId] = useState<
+    string | null
+  >(null);
+  const [addMemberPriceDraft, setAddMemberPriceDraft] = useState("");
+  const [addMemberError, setAddMemberError] = useState("");
+  // 시트를 닫았다 다시 열면 앞선 그룹 멤버 조회가 늦게 끝나 새 목록을 덮지 않게 한다.
+  const addMemberLoadIdRef = useRef(0);
 
   useEffect(() => {
     const accessToken = authState.isLoggedIn
@@ -462,7 +590,7 @@ export function HostedBuncheolManage({
         }
 
         setDetail(null);
-        setMessage("로그인 후 관리할 수 있어요.");
+        setLoadMessage("로그인 후 관리할 수 있어요.");
         router.replace(
           createLoginHref({ cancelTo: "/", returnTo: returnHref }),
         );
@@ -474,14 +602,21 @@ export function HostedBuncheolManage({
       };
     }
 
-    requestHostedBuncheolManagement(accessToken, id)
+    // 만료된 토큰은 요청 전에 재발급한다. 토큰이 바뀌면 이 effect 가 새 토큰으로 다시 돌고,
+    // null(재발급 실패 → 로그인 정보 삭제)이면 로그인 화면 이동이 처리하므로 loadMessage 를 건드리지 않는다.
+    getFreshAccessToken()
+      .then((freshAccessToken) =>
+        isActive && freshAccessToken === accessToken
+          ? requestHostedBuncheolManagement(accessToken, id)
+          : null,
+      )
       .then((nextDetail) => {
-        if (!isActive) {
+        if (!isActive || !nextDetail) {
           return;
         }
 
         setDetail(nextDetail);
-        setMessage("");
+        setLoadMessage("");
       })
       .catch((error: unknown) => {
         if (!isActive) {
@@ -490,7 +625,7 @@ export function HostedBuncheolManage({
 
         setDetail(null);
         // 아래 화면이 "메시지 없음 = 불러오는 중"으로 분기하므로 빈 문자열을 넣으면 안 된다.
-        setMessage(
+        setLoadMessage(
           (error instanceof Error ? error.message.trim() : "") ||
             "개최한 분철 정보를 불러오지 못했어요.",
         );
@@ -632,6 +767,18 @@ export function HostedBuncheolManage({
   const c2cTrackingCompletedCount = [...c2cDeliveries.values()].filter(
     (delivery) => Boolean(delivery.trackingNumber),
   ).length;
+  // 「멤버 관리」 — 뺀 자리(삭제·CLOSED)는 목록에서 숨기고 「멤버 추가」에서 다시 보여 준다.
+  const memberSlots = (detail?.options ?? []).filter(
+    (option) => !isClosedMemberSlot(option),
+  );
+  const closedMemberSlots = (detail?.options ?? []).filter(isClosedMemberSlot);
+  // 서버의 마지막 자리 판정(BCH-120)·최소 인원 하향과 같은 수 — 닫히지 않은 자리.
+  const openMemberSlotCount = memberSlots.length;
+  // 관리 응답이 자리 목록을 직접 실으면 상세 보충을 건너뛰는데, 그 파서는 saleStatus 를 읽지 않는다.
+  // 닫힌 자리·신청자 판정 근거가 없으면 「멤버 관리」 카드를 띄우지 않는다.
+  const hasMemberSlotSaleStatus =
+    (detail?.options ?? []).length > 0 &&
+    (detail?.options ?? []).every((option) => Boolean(option.saleStatus));
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -653,12 +800,12 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!deliveryId) {
-      setMessage("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.");
       return;
     }
 
     if (!trackingNumber) {
-      setMessage("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.");
       return;
     }
 
@@ -686,9 +833,9 @@ export function HostedBuncheolManage({
           trackingNumber,
         },
       }));
-      setMessage("운송장 번호를 등록했어요.");
+      showToast("운송장 번호를 등록했어요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "운송장 번호를 등록하지 못했어요.",
@@ -706,7 +853,7 @@ export function HostedBuncheolManage({
     }
 
     if (!participationId) {
-      setMessage("입금 확인에 필요한 참여 ID가 없어요.");
+      showToast("입금 확인에 필요한 참여 ID가 없어요.");
       return;
     }
 
@@ -725,9 +872,9 @@ export function HostedBuncheolManage({
       const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
-      setMessage("입금 확인이 완료됐어요.");
+      showToast("입금 확인이 완료됐어요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
@@ -780,14 +927,14 @@ export function HostedBuncheolManage({
       // 이미 반영된 저장이 "저장 실패" 로 보이고 개최자가 다시 누른다.
       setOpenChatUrlDraft(null);
       setOpenChatUrlError("");
-      setMessage(
+      showToast(
         normalizedUrl ? "오픈채팅 링크를 저장했어요." : "오픈채팅 링크를 지웠어요.",
       );
 
       try {
         await reloadManagementDetail(accessToken);
       } catch {
-        setMessage("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
       }
     } catch (error: unknown) {
       setOpenChatUrlError(
@@ -835,18 +982,18 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
       const result = await confirmBuncheolRecruitment(accessToken, id);
 
       await reloadManagementDetail(accessToken);
-      setMessage(
+      showToast(
         `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}${countUnit}에 입금 안내가 발송됐어요.`,
       );
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "성사 확정을 처리하지 못했어요.",
@@ -885,15 +1032,15 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
       await finalizeBuncheolCollected(accessToken, id);
       await reloadManagementDetail(accessToken);
-      setMessage("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
+      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "진행 확정을 처리하지 못했어요.",
@@ -921,8 +1068,8 @@ export function HostedBuncheolManage({
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
-      // formatWonAmount 는 0 이하를 "-" 로 돌려줘 문장 안에서는 "- 을 받으셨나요" 가 된다.
-      // 0원 슬롯 조합에서 실제로 도달할 수 있어, 금액을 못 쓰면 절을 통째로 뺀다.
+      // 합계가 0원이면 「0원을 받으셨나요」가 돼 받을 돈이 있는 것처럼 읽힌다. 0원 슬롯 조합에서
+      // 실제로 도달할 수 있어, 받을 금액이 없으면 금액 절을 통째로 뺀다.
       description:
         total > 0
           ? `${depositorName}님의 ${memberNames} ${formatWonAmount(total)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
@@ -948,39 +1095,48 @@ export function HostedBuncheolManage({
       return;
     }
 
+    if (!bundle.bundleId) {
+      showToast(MISSING_BUNDLE_MESSAGE);
+      return;
+    }
+
     setPendingC2CAction(`confirm:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
-      if (bundle.bundleId) {
-        await confirmBundlePayment(
-          accessToken,
-          bundle.bundleId,
-          expectedSlotIds,
-        );
-      } else {
-        // 묶음이 없는 구 행 폴백 — 신규 참여는 전부 묶음을 갖는다.
-        await requestPaymentConfirmation(
-          accessToken,
-          bundle.slots[0].participationId,
-          { ignoreConflict: true },
-        );
-      }
+      await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
 
-      await reloadManagementDetail(accessToken);
-      setMessage("입금 확인이 완료됐어요.");
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
+      showToast("입금 확인이 완료됐어요.");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
       );
+
+      // 다른 탭에서 이미 확인·제외됐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
@@ -1016,40 +1172,94 @@ export function HostedBuncheolManage({
     }
 
     if (!bundle.bundleId) {
-      setMessage("이 참여는 묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.");
+      showToast(MISSING_BUNDLE_MESSAGE);
       return;
     }
 
     setPendingC2CAction(`release:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
       await releaseBundle(accessToken, bundle.bundleId);
-      await reloadManagementDetail(accessToken);
-      setMessage("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 제외가 실패로 보이지 않게.
+      showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error ? error.message : "참여를 빼지 못했어요.",
       );
+
+      // 그사이 입금이 확인됐거나 다른 탭에서 뺐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
   }
 
+  // 운송장 수정은 처음 등록과 같은 API 다. 서버가 번호를 바꿀 때마다 운송장 알림톡을 다시 보내
+  // 확인 시트를 태운다(처음 등록은 시트 없이 바로 보낸다).
+  function requestEditParticipantTracking(
+    participant: BuncheolManagementParticipant,
+    currentTrackingNumber: string,
+  ) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    const nextTrackingNumber = (
+      participantTrackingInputs[participant.participationId] ?? ""
+    ).trim();
+
+    if (
+      !nextTrackingNumber ||
+      nextTrackingNumber === currentTrackingNumber.trim()
+    ) {
+      return;
+    }
+
+    setConfirmSheetRequest({
+      confirmLabel: "수정",
+      description: "참여자에게 새 번호로 운송장 알림톡이 다시 가요.",
+      details: [
+        { label: "지금 번호", value: currentTrackingNumber },
+        { label: "새 번호", value: nextTrackingNumber },
+      ],
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void handleRegisterParticipantTracking(participant, "edit");
+      },
+      title: "운송장 번호를 수정할까요?",
+    });
+  }
+
   // C2C 참여 단위 운송장 등록 — 다슬롯이라 옵션(winner)이 아닌 참여 기준으로 처리한다.
   async function handleRegisterParticipantTracking(
     participant: BuncheolManagementParticipant,
+    mode: "register" | "edit" = "register",
   ) {
     const deliveryId = participant.delivery?.deliveryId;
 
     if (!deliveryId) {
-      setMessage("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.");
       return;
     }
 
@@ -1058,7 +1268,7 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!trackingNumber) {
-      setMessage("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.");
       return;
     }
 
@@ -1068,11 +1278,13 @@ export function HostedBuncheolManage({
 
     setPendingC2CAction(`tracking:${participant.participationId}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        setMessage("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
         return;
       }
 
@@ -1081,7 +1293,9 @@ export function HostedBuncheolManage({
         deliveryId,
         trackingNumber,
       );
-      await reloadManagementDetail(accessToken);
+
+      // 성공 처리를 재조회보다 먼저 한다 — GET 이 실패해 입력칸이 남으면 개최자가 다시 눌러
+      // 알림톡이 두 번 나간다.
       setParticipantTrackingInputs((current) => {
         const next = { ...current };
 
@@ -1089,13 +1303,259 @@ export function HostedBuncheolManage({
 
         return next;
       });
-      setMessage("운송장 번호를 등록했어요.");
+
+      if (mode === "edit") {
+        setEditingTrackingOwnerId((current) =>
+          current === participant.participationId ? null : current,
+        );
+      }
+
+      showToast(
+        mode === "edit"
+          ? "운송장 번호를 수정했어요."
+          : "운송장 번호를 등록했어요.",
+      );
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
     } catch (error: unknown) {
-      setMessage(
+      showToast(
         error instanceof Error
           ? error.message
-          : "운송장 번호를 등록하지 못했어요.",
+          : mode === "edit"
+            ? "운송장 번호를 수정하지 못했어요."
+            : "운송장 번호를 등록하지 못했어요.",
       );
+
+      // 그사이 배송 완료로 넘어갔으면 서버가 409 로 거절한다 — 다시 불러와 「수정」을 거둔다.
+      if (mode === "edit" && accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
+    } finally {
+      setPendingC2CAction(null);
+    }
+  }
+
+  // 서버는 모집 중에만 최소 인원을 남은 열린 자리 수로 낮춘다. 입금 수집 중엔 그대로고, 다시 넣어도 올리지 않는다.
+  function requestRemoveMemberSlot(option: BuncheolManagementOption) {
+    if (!detail || pendingC2CAction) {
+      return;
+    }
+
+    const nextOpenSlotCount = openMemberSlotCount - 1;
+    const lowersMinHeadcount =
+      isBuncheolRecruitingStatus(detail.status) &&
+      nextOpenSlotCount < minHeadcount;
+
+    setConfirmSheetRequest({
+      confirmLabel: "빼기",
+      description:
+        "이 멤버는 더 신청받지 않아요. 실수였다면 「멤버 추가」로 다시 넣을 수 있어요.",
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runRemoveMemberSlot(option);
+      },
+      title: `${option.memberName} 멤버를 뺄까요?`,
+      warnings: lowersMinHeadcount
+        ? [
+            `최소 진행 인원이 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
+          ]
+        : undefined,
+    });
+  }
+
+  async function runRemoveMemberSlot(option: BuncheolManagementOption) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    setPendingC2CAction(`remove-member:${option.buncheolMemberId}`);
+
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await removeBuncheolMember(accessToken, id, option.buncheolMemberId);
+      // 홈·아티스트 카드의 남은 멤버가 60초 저장본으로 남지 않게 한다.
+      void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      showToast(`${option.memberName} 멤버를 뺐어요.`);
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
+    } catch (error: unknown) {
+      showToast(
+        error instanceof Error ? error.message : "멤버를 빼지 못했어요.",
+      );
+
+      // 그사이 신청이 들어왔거나 다른 탭에서 뺐으면 서버가 거부한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
+    } finally {
+      setPendingC2CAction(null);
+    }
+  }
+
+  async function openAddMemberSheet() {
+    if (!detail || pendingC2CAction) {
+      return;
+    }
+
+    const slotMemberIds = detail.options.flatMap((option) =>
+      option.memberId ? [option.memberId] : [],
+    );
+    // 그룹 목록을 못 불러와도 닫힌 멤버는 상세에 남아 있어 다시 넣을 수 있다.
+    const closedCandidates = closedMemberSlots.flatMap((option) =>
+      option.memberId
+        ? [
+            {
+              memberId: option.memberId,
+              name: option.memberName,
+              previousPrice: option.price,
+            },
+          ]
+        : [],
+    );
+    const loadId = addMemberLoadIdRef.current + 1;
+
+    addMemberLoadIdRef.current = loadId;
+    setAddMemberSelectedId(null);
+    setAddMemberPriceDraft("");
+    setAddMemberError("");
+    setAddMemberSheet({
+      closedCandidates,
+      groupCandidates: [],
+      isLoading: true,
+      loadFailed: false,
+    });
+
+    try {
+      const groupMembers = await requestBuncheolGroupMembers(
+        detail.groupName,
+        slotMemberIds,
+      );
+      const slotMemberIdSet = new Set(slotMemberIds);
+      const groupCandidates = groupMembers
+        .filter((member) => !slotMemberIdSet.has(member.id))
+        .map((member) => ({ memberId: member.id, name: member.name }));
+
+      if (addMemberLoadIdRef.current !== loadId) {
+        return;
+      }
+
+      setAddMemberSheet((current) =>
+        current ? { ...current, groupCandidates, isLoading: false } : current,
+      );
+    } catch {
+      if (addMemberLoadIdRef.current !== loadId) {
+        return;
+      }
+
+      setAddMemberSheet((current) =>
+        current ? { ...current, isLoading: false, loadFailed: true } : current,
+      );
+    }
+  }
+
+  function closeAddMemberSheet() {
+    if (pendingC2CAction === "add-member") {
+      return;
+    }
+
+    setAddMemberSheet(null);
+    setAddMemberError("");
+  }
+
+  function selectAddMemberCandidate(candidate: AddMemberCandidate) {
+    setAddMemberSelectedId(candidate.memberId);
+    setAddMemberPriceDraft(
+      typeof candidate.previousPrice === "number"
+        ? String(candidate.previousPrice)
+        : "",
+    );
+    setAddMemberError("");
+  }
+
+  async function submitAddMember() {
+    if (!addMemberSheet || pendingC2CAction) {
+      return;
+    }
+
+    const candidate = [
+      ...addMemberSheet.closedCandidates,
+      ...addMemberSheet.groupCandidates,
+    ].find((entry) => entry.memberId === addMemberSelectedId);
+
+    if (!candidate) {
+      return;
+    }
+
+    if (!isMemberPriceInput(addMemberPriceDraft)) {
+      setAddMemberError("가격은 100원 단위로 입력해 주세요.");
+      return;
+    }
+
+    const price = Number(addMemberPriceDraft.replace(/[^\d]/g, ""));
+
+    setPendingC2CAction("add-member");
+
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        setAddMemberError("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await addBuncheolMember(accessToken, id, {
+        memberId: candidate.memberId,
+        price,
+      });
+      setAddMemberSheet(null);
+      void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`);
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
+    } catch (error: unknown) {
+      // 후보 목록이 낡았을 수 있어(다른 탭에서 넣음 등) 시트를 닫고 다시 불러온다.
+      setAddMemberSheet(null);
+      showToast(
+        error instanceof Error ? error.message : "멤버를 넣지 못했어요.",
+      );
+
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
@@ -1116,7 +1576,7 @@ export function HostedBuncheolManage({
    * (하단 탭도 이 화면에는 없다.) 헤더와 나갈 길을 함께 준다.
    */
   if (!detail) {
-    const isLoadingDetail = !message;
+    const isLoadingDetail = !loadMessage;
 
     return (
       <main className="system-chrome-white system-chrome-bottom-white h-full bg-white">
@@ -1141,7 +1601,7 @@ export function HostedBuncheolManage({
 
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
             <p className="break-keep text-[15px] font-semibold leading-6 text-black/55">
-              {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : message}
+              {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : loadMessage}
             </p>
             {isLoadingDetail ? null : (
               <Link
@@ -1182,12 +1642,6 @@ export function HostedBuncheolManage({
         </header>
 
         <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-8">
-          {message ? (
-            <p className="mb-3 rounded-[0.8rem] bg-black/[0.04] px-3 py-2 text-[12px] font-semibold text-black/45">
-              {message}
-            </p>
-          ) : null}
-
           <section className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
             <div className="bg-black px-4 py-4 text-white">
               <div className="flex items-start justify-between gap-4">
@@ -1455,6 +1909,82 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
+          {isAcceptingNewParticipation(detail) && hasMemberSlotSaleStatus ? (
+            <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
+              <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                멤버 관리
+              </p>
+              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+                다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
+                않아요.
+              </p>
+              <ul className="mt-3 divide-y divide-black/[0.06]">
+                {memberSlots.map((option) => {
+                  const slotState = getMemberSlotState(option.saleStatus);
+                  const isLastOpenSlot = openMemberSlotCount <= 1;
+                  const blockedReason =
+                    slotState.kind === "occupied"
+                      ? "신청자가 있는 자리는 뺄 수 없어요."
+                      : slotState.kind === "empty" && isLastOpenSlot
+                        ? "마지막 멤버는 뺄 수 없어요."
+                        : null;
+                  const isRemoving =
+                    pendingC2CAction ===
+                    `remove-member:${option.buncheolMemberId}`;
+
+                  return (
+                    <li
+                      className="flex items-center gap-2 py-2.5"
+                      key={option.buncheolMemberId}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-semibold tracking-[-0.04em]">
+                          {option.memberName}
+                        </p>
+                        <p className="mt-0.5 text-[12px] font-medium text-black/40">
+                          {formatMemberSlotPrice(option.price)}
+                        </p>
+                        {blockedReason ? (
+                          <p className="mt-0.5 text-[11px] font-medium leading-4 text-black/35">
+                            {blockedReason}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          option.saleStatus?.toUpperCase() === "SOLD"
+                            ? "bg-black text-white"
+                            : "bg-[#eeeeee] text-black/60"
+                        }`}
+                      >
+                        {slotState.label}
+                      </span>
+                      {slotState.kind === "empty" ? (
+                        <button
+                          className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                          disabled={isLastOpenSlot || pendingC2CAction !== null}
+                          onClick={() => requestRemoveMemberSlot(option)}
+                          type="button"
+                        >
+                          {isRemoving ? "빼는 중" : "빼기"}
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              <button
+                className="mt-3 flex h-11 w-full items-center justify-center gap-1 rounded-full border border-black/10 bg-white text-[14px] font-semibold tracking-[-0.04em] text-black/70 disabled:text-black/25"
+                disabled={pendingC2CAction !== null}
+                onClick={() => void openAddMemberSheet()}
+                type="button"
+              >
+                <PlusIcon className="h-4 w-4" />
+                멤버 추가
+              </button>
+            </section>
+          ) : null}
+
           {/* 입금 확인된 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
               LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다.
               ⚠️ 노출 조건: 보여줄 게 있을 때만 — 환불 대상 또는 「보냈어요」 미확인 건.
@@ -1593,12 +2123,12 @@ export function HostedBuncheolManage({
                   const blockedSlot = bundle.slots.find(
                     (slot) => slot.releasability !== "RELEASABLE",
                   );
-                  const canRelease = !blockedSlot && Boolean(bundle.bundleId);
+                  const hasBundleId = Boolean(bundle.bundleId);
+                  const canRelease = !blockedSlot && hasBundleId;
                   // 🔴 막힌 자리가 있을 때만 사유를 만든다 — 「막힌 자리 없음」과 「판정값 없음」이
                   // 둘 다 undefined 라, 그냥 넘기면 제외 가능한 묶음에도 default 문구가 붙는다.
-                  const releaseBlockedReason = !bundle.bundleId
-                    ? // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
-                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요."
+                  const blockedReason = !hasBundleId
+                    ? MISSING_BUNDLE_MESSAGE
                     : blockedSlot
                       ? // 슬롯 필드는 optional 이라 undefined 가 올 수 있다. 「판정값 없음」은
                         // null 로 명시해 넘긴다 — 그게 default 문구가 나와야 하는 유일한 경우다.
@@ -1743,15 +2273,15 @@ export function HostedBuncheolManage({
                           버튼이 0개인 유령 줄이 남는다. 실제로 할 수 있는 것이 하나라도 있으면 연다. */}
                       {!isBundleConfirmed &&
                       (canRelease ||
-                        releaseBlockedReason ||
+                        blockedReason ||
                         confirmTargetIds.length > 0) ? (
                         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                           {/* 「제외」는 입금 기한이 지난 뒤에만 열린다 — 이체가 통장에 늦게 찍히는
                               일이 흔해, 기한 안에 뺄 수 있게 하면 정상 입금자를 빼는 사고가 난다
                               (docs/71 §8-1). 버튼을 감추지 않고 사유를 보여준다. */}
-                          {releaseBlockedReason ? (
+                          {blockedReason ? (
                             <p className="mr-auto text-[11px] font-medium leading-4 text-black/35">
-                              {releaseBlockedReason}
+                              {blockedReason}
                             </p>
                           ) : null}
                           <button
@@ -1765,7 +2295,9 @@ export function HostedBuncheolManage({
                           {confirmTargetIds.length > 0 ? (
                             <button
                               className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                              disabled={pendingC2CAction !== null}
+                              disabled={
+                                !hasBundleId || pendingC2CAction !== null
+                              }
                               onClick={() =>
                                 requestConfirmBundlePayment(
                                   bundle,
@@ -1788,10 +2320,28 @@ export function HostedBuncheolManage({
                             const hasTracking = Boolean(
                               entry.delivery.trackingNumber,
                             );
+                            const currentTrackingNumber =
+                              entry.delivery.trackingNumber ?? "";
+                            // 서버는 배송 중(SHIPPING)까지만 번호를 바꿔 준다 — 배송 완료·수령 완료는 409.
+                            const canEditTracking =
+                              hasTracking &&
+                              isDeliveryShippingStatus(entry.delivery.status);
+                            const isEditingTracking =
+                              canEditTracking &&
+                              editingTrackingOwnerId === entry.ownerId;
                             const isRegistering =
                               pendingC2CAction === `tracking:${entry.ownerId}`;
                             const trackingInput =
                               participantTrackingInputs[entry.ownerId] ?? "";
+                            // 같은 번호를 다시 보내도 서버가 알림톡을 또 보낸다 — 저장을 막는다.
+                            const isTrackingUnchanged =
+                              trackingInput.trim() ===
+                              currentTrackingNumber.trim();
+                            const ownerSlot =
+                              bundle.slots.find(
+                                (slot) =>
+                                  slot.participationId === entry.ownerId,
+                              ) ?? head;
 
                             return (
                               <div key={entry.delivery.deliveryId}>
@@ -1806,15 +2356,38 @@ export function HostedBuncheolManage({
                                     .filter(Boolean)
                                     .join(" · ")}
                                 </p>
-                                {hasTracking ? (
-                                  <p className="mt-1.5 text-[13px] font-semibold text-black/55">
-                                    운송장 {entry.delivery.trackingNumber}
-                                    {getDeliveryStatusLabel(
-                                      entry.delivery.status,
-                                    )
-                                      ? ` · ${getDeliveryStatusLabel(entry.delivery.status)}`
-                                      : ""}
-                                  </p>
+                                {hasTracking && !isEditingTracking ? (
+                                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                                    <p className="min-w-0 text-[13px] font-semibold text-black/55">
+                                      운송장 {entry.delivery.trackingNumber}
+                                      {getDeliveryStatusLabel(
+                                        entry.delivery.status,
+                                      )
+                                        ? ` · ${getDeliveryStatusLabel(entry.delivery.status)}`
+                                        : ""}
+                                    </p>
+                                    {canEditTracking ? (
+                                      <button
+                                        className="h-8 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                        disabled={pendingC2CAction !== null}
+                                        onClick={() => {
+                                          setParticipantTrackingInputs(
+                                            (inputs) => ({
+                                              ...inputs,
+                                              [entry.ownerId]:
+                                                currentTrackingNumber,
+                                            }),
+                                          );
+                                          setEditingTrackingOwnerId(
+                                            entry.ownerId,
+                                          );
+                                        }}
+                                        type="button"
+                                      >
+                                        수정
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 ) : (
                                   <div className="mt-2 flex gap-2">
                                     <input
@@ -1835,25 +2408,62 @@ export function HostedBuncheolManage({
                                       placeholder="운송장 번호 입력"
                                       value={trackingInput}
                                     />
-                                    <button
-                                      className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                                      disabled={
-                                        trackingInput.trim().length === 0 ||
-                                        pendingC2CAction !== null
-                                      }
-                                      onClick={() =>
-                                        void handleRegisterParticipantTracking(
-                                          bundle.slots.find(
-                                            (slot) =>
-                                              slot.participationId ===
-                                              entry.ownerId,
-                                          ) ?? head,
-                                        )
-                                      }
-                                      type="button"
-                                    >
-                                      {isRegistering ? "등록 중" : "등록"}
-                                    </button>
+                                    {isEditingTracking ? (
+                                      <>
+                                        <button
+                                          className="h-10 shrink-0 rounded-full border border-black/10 bg-white px-3.5 text-[13px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                          disabled={isRegistering}
+                                          onClick={() => {
+                                            setEditingTrackingOwnerId(null);
+                                            setParticipantTrackingInputs(
+                                              (inputs) => {
+                                                const next = { ...inputs };
+
+                                                delete next[entry.ownerId];
+
+                                                return next;
+                                              },
+                                            );
+                                          }}
+                                          type="button"
+                                        >
+                                          취소
+                                        </button>
+                                        <button
+                                          className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                          disabled={
+                                            trackingInput.trim().length === 0 ||
+                                            isTrackingUnchanged ||
+                                            pendingC2CAction !== null
+                                          }
+                                          onClick={() =>
+                                            requestEditParticipantTracking(
+                                              ownerSlot,
+                                              currentTrackingNumber,
+                                            )
+                                          }
+                                          type="button"
+                                        >
+                                          {isRegistering ? "저장 중" : "저장"}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        className="h-10 shrink-0 rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
+                                        disabled={
+                                          trackingInput.trim().length === 0 ||
+                                          pendingC2CAction !== null
+                                        }
+                                        onClick={() =>
+                                          void handleRegisterParticipantTracking(
+                                            ownerSlot,
+                                          )
+                                        }
+                                        type="button"
+                                      >
+                                        {isRegistering ? "등록 중" : "등록"}
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -2275,9 +2885,131 @@ export function HostedBuncheolManage({
         </div>
       ) : null}
 
+      {addMemberSheet !== null ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 px-4 pb-4 backdrop-blur-[2px]">
+          <div className="flex max-h-[calc(100%-2rem)] w-full max-w-[402px] flex-col rounded-[1.2rem] bg-white px-5 pb-5 pt-5">
+            <p className="shrink-0 text-[16px] font-semibold tracking-[-0.04em]">
+              멤버 추가
+            </p>
+            <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+              {addMemberSheet.closedCandidates.length +
+                addMemberSheet.groupCandidates.length >
+              0 ? (
+                <ul className="space-y-1.5">
+                  {[
+                    ...addMemberSheet.closedCandidates,
+                    ...addMemberSheet.groupCandidates,
+                  ].map((candidate) => {
+                    const isSelected =
+                      candidate.memberId === addMemberSelectedId;
+
+                    return (
+                      <li key={candidate.memberId}>
+                        <button
+                          aria-pressed={isSelected}
+                          className={`flex w-full items-center justify-between gap-3 rounded-[0.85rem] border px-3 py-2.5 text-left ${
+                            isSelected
+                              ? "border-black bg-[#F7FAEE]"
+                              : "border-black/10 bg-white"
+                          }`}
+                          disabled={pendingC2CAction === "add-member"}
+                          onClick={() => selectAddMemberCandidate(candidate)}
+                          type="button"
+                        >
+                          <span className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.04em]">
+                            {candidate.name}
+                          </span>
+                          {typeof candidate.previousPrice === "number" ? (
+                            <span className="shrink-0 text-[12px] font-medium text-black/40">
+                              {`이전 가격 ${candidate.previousPrice.toLocaleString("ko-KR")}원`}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {addMemberSheet.isLoading ? (
+                <p className="py-3 text-center text-[13px] font-medium text-black/40">
+                  멤버 목록을 불러오는 중이에요.
+                </p>
+              ) : addMemberSheet.loadFailed ? (
+                <p className="mt-2 break-keep text-[12px] font-medium leading-5 text-black/45">
+                  멤버 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
+                </p>
+              ) : addMemberSheet.closedCandidates.length +
+                  addMemberSheet.groupCandidates.length ===
+                0 ? (
+                <p className="py-3 text-center text-[13px] font-medium text-black/40">
+                  더 넣을 수 있는 멤버가 없어요.
+                </p>
+              ) : null}
+            </div>
+            <label
+              className="mt-4 block shrink-0 text-[12px] font-semibold text-black/45"
+              htmlFor="add-member-price"
+            >
+              가격(100원 단위)
+            </label>
+            <input
+              aria-invalid={addMemberError ? true : undefined}
+              className="mt-1.5 h-12 w-full shrink-0 rounded-[0.9rem] border border-black/10 px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7]"
+              disabled={
+                addMemberSelectedId === null ||
+                pendingC2CAction === "add-member"
+              }
+              id="add-member-price"
+              inputMode="numeric"
+              maxLength={9}
+              onChange={(event) => {
+                setAddMemberPriceDraft(
+                  event.currentTarget.value.replace(/[^\d]/g, ""),
+                );
+                setAddMemberError("");
+              }}
+              type="text"
+              value={addMemberPriceDraft}
+            />
+            {addMemberError ? (
+              <p className="mt-2 shrink-0 text-[12px] font-semibold text-danger-base">
+                {addMemberError}
+              </p>
+            ) : null}
+            <div className="mt-4 grid shrink-0 grid-cols-2 gap-2">
+              <button
+                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                disabled={pendingC2CAction === "add-member"}
+                onClick={closeAddMemberSheet}
+                type="button"
+              >
+                취소
+              </button>
+              <button
+                className="h-12 rounded-full bg-[#CFE86B] text-[15px] font-semibold text-black disabled:bg-black/20 disabled:text-white"
+                disabled={
+                  addMemberSelectedId === null ||
+                  addMemberPriceDraft === "" ||
+                  pendingC2CAction !== null
+                }
+                onClick={() => void submitAddMember()}
+                type="button"
+              >
+                {pendingC2CAction === "add-member" ? "추가하는 중" : "추가"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ConfirmSheet
         onCancel={() => setConfirmSheetRequest(null)}
         request={confirmSheetRequest}
+      />
+
+      <Toast
+        className="fixed inset-x-0 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-50 px-6"
+        message={toast}
       />
     </main>
   );

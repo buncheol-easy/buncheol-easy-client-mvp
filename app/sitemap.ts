@@ -29,6 +29,7 @@ const GROUPS_FETCH_TIMEOUT_MS = 10_000;
 const staticRoutes = [
   "",
   "/intro",
+  "/guide",
   "/board",
   "/privacy",
   "/terms",

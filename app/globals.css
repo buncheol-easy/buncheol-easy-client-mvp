@@ -924,14 +924,13 @@ body.is-pwa-standalone {
   }
 }
 
+/* 쉬는 상태에 will-change·translateZ(0)·backface-visibility 를 넣지 않는다 — 카드마다 GPU 레이어가 상시 생겨
+   카드를 전부 그리는 홈(+상세 밑 언더레이)에서 아이폰 Safari 탭이 메모리 초과로 꺼진다 (#234). */
 .motion-card {
-  backface-visibility: hidden;
-  transform: translateZ(0);
   transition:
     box-shadow var(--duration-base) var(--motion-snap),
     opacity var(--duration-base) var(--motion-snap),
     transform var(--duration-base) var(--motion-snap);
-  will-change: transform;
 }
 
 .motion-card:is(:hover, :focus-visible) {
@@ -2074,25 +2073,3 @@ body.is-pwa-standalone .bid-sheet-panel {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
-
-/* 아티스트 목록의 일시 안내 토스트 — 잠깐 떴다 스스로 사라진다. */
-.artist-toast {
-  animation: artist-toast-in 180ms var(--motion-snap) both;
-}
-
-@keyframes artist-toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .artist-toast {
-    animation: none;
-  }
-}

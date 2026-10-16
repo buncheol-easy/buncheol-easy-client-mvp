@@ -3,10 +3,12 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  useTransition,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -14,6 +16,11 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -119,6 +126,94 @@ type SubmitFieldKey =
   | "shipping"
   | "closingDate"
   | "openChatUrl";
+
+/*
+ * 기기 뒤로가기(스와이프·뒤로 키) 가드. 웹은 뒤로가기를 취소할 수 없어서, 입력이 생기면 같은 주소의
+ * "막이 칸"을 방문 기록에 하나 더 넣어 첫 뒤로가기가 그 칸만 쓰게 하고(popstate) 그때 확인 시트를 띄운다.
+ * - 칸은 탭·키 입력 처리 도중에 넣는다. 사용자 동작 없이 넣은 칸은 크롬·사파리가 뒤로가기에서 건너뛴다.
+ * - state 는 지금 칸 것을 펼쳐 Next 키(__NA 등)를 지키고 URL 은 넘기지 않는다. Next 표시가 없는 칸으로
+ *   돌아오면 전체 새로고침되고, URL 을 넘기면 라우터 복원이 돈다(next app-router.js pushState 패치·onPopState).
+ * - 앱 안에서 이동하기 전에 막이 칸부터 걷어낸다. 남기면 다음 화면에서 뒤로가기가 빈 폼으로 돌아온다.
+ *   effect cleanup 에서 history.back() 을 부르면 안 된다 — 언마운트는 이미 다른 화면으로 가는 중이다.
+ */
+const uploadExitGuardStateKey = "__bceUploadExitGuard";
+// 막이 칸을 걷어내려고 history.back() 을 불렀는데 popstate 가 오지 않으면 이만큼 뒤 그냥 이동한다.
+const uploadExitGuardRemovalTimeoutMs = 600;
+
+type UploadExitGuard = {
+  // 막이 칸 위에 있을 때 그 주소. null 이면 막이 칸이 없거나 이미 쓰였다.
+  armedHref: string | null;
+  // 탭의 첫 화면이 이 폼이었다 — 기기 뒤로 시트의 '나가기'가 한 칸 더 뒤로 갈 곳이 없다.
+  isFirstEntry: boolean;
+  // 이 폼을 떠나는 중. 칸을 다시 넣지 않고 새로고침 경고도 띄우지 않는다.
+  isLeaving: boolean;
+  // 기기 뒤로 시트 '나가기'의 history.go() 가 무반응일 때 대신 이동할 타이머.
+  leaveFallbackTimeout: number | null;
+  onRemoved: (() => void) | null;
+  removal: Promise<void> | null;
+};
+
+function isUploadExitGuardEntry(state: unknown) {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as Record<string, unknown>)[uploadExitGuardStateKey] === true
+  );
+}
+
+function armUploadExitGuard(guard: UploadExitGuard) {
+  if (guard.armedHref !== null || guard.isLeaving) {
+    return;
+  }
+
+  // 개발 모드 effect 두 번 실행·새로고침·앞으로 가기로 이미 막이 칸 위에 있으면 또 넣지 않는다.
+  if (!isUploadExitGuardEntry(window.history.state)) {
+    window.history.pushState(
+      { ...window.history.state, [uploadExitGuardStateKey]: true },
+      "",
+    );
+  }
+
+  guard.armedHref = window.location.href;
+}
+
+function cancelUploadExitLeaveFallback(guard: UploadExitGuard) {
+  if (guard.leaveFallbackTimeout !== null) {
+    window.clearTimeout(guard.leaveFallbackTimeout);
+    guard.leaveFallbackTimeout = null;
+  }
+}
+
+function removeUploadExitGuard(guard: UploadExitGuard) {
+  guard.isLeaving = true;
+
+  if (guard.removal) {
+    return guard.removal;
+  }
+
+  if (
+    guard.armedHref !== window.location.href ||
+    !isUploadExitGuardEntry(window.history.state)
+  ) {
+    guard.armedHref = null;
+    return Promise.resolve();
+  }
+
+  guard.removal = new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(finish, uploadExitGuardRemovalTimeoutMs);
+
+    function finish() {
+      window.clearTimeout(timeout);
+      guard.onRemoved = null;
+      resolve();
+    }
+
+    guard.onRemoved = finish;
+    window.history.back();
+  });
+
+  return guard.removal;
+}
 
 function padNumber(value: number) {
   return String(value).padStart(2, "0");
@@ -640,17 +735,15 @@ export function UploadProductForm({
    */
   const [exitConfirmRequest, setExitConfirmRequest] =
     useState<ConfirmSheetRequest | null>(null);
-  const [photoLimitToast, setPhotoLimitToast] = useState("");
+  // 사진 유무로 갈리는 두 화면 모두에 띄운다. addPhotos 는 파일을 읽기 전에 토스트를 띄우므로,
+  // 0장 화면에 이게 없으면 사진을 읽는 동안 안내가 통째로 사라진다.
+  const [photoLimitToast, showPhotoLimitToast] = useToast(
+    BRIEF_TOAST_DURATION_MS,
+  );
   const photoIdSeed = useRef(0);
   const formScrollRef = useRef<HTMLFormElement | null>(null);
-  const photoLimitToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const minimumPricePromptTimeoutRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
-  const memberToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [purchaseSource, setPurchaseSource] = useState("");
@@ -670,10 +763,10 @@ export function UploadProductForm({
   const [description, setDescription] = useState("");
   const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
-  const [memberToastMessage, setMemberToastMessage] = useState("");
-  const [memberToastTargetId, setMemberToastTargetId] = useState<string | null>(
-    null,
-  );
+  const [memberToast, showMemberToast, hideMemberToast] = useToast<{
+    memberId: string;
+    message: string;
+  }>(BRIEF_TOAST_DURATION_MS);
   const [activeScheduleField, setActiveScheduleField] =
     useState<ScheduleField | null>(null);
   const [selectedShipping, setSelectedShipping] = useState<string[]>([]);
@@ -693,6 +786,8 @@ export function UploadProductForm({
     {},
   );
   const isSubmittingRef = useRef(false);
+  // 제출 안의 router.push/replace 도 이 전환에 묶여 화면이 바뀔 때까지 pending 이 유지된다.
+  const [isSubmitPending, startSubmitTransition] = useTransition();
 
   /*
    * 폼에 사용자가 손댔는지 판정한다.
@@ -700,8 +795,8 @@ export function UploadProductForm({
    * 등록 모드는 빈 폼에서 시작하므로 "값이 하나라도 들어있으면 손댄 것"이다.
    * 수정 모드는 처음부터 채워져 있어 같은 기준을 못 쓴다 — 불러오기가 끝난 시점의
    * 값을 기준선으로 잡아 두고 그것과 달라졌을 때만 손댄 것으로 본다.
-   * (기준선은 아래 effect 에서 갱신한다. 렌더 중 ref 를 읽으므로 불러오기 직후 한 프레임은
-   *  dirty 로 보일 수 있는데, 이 값은 뒤로가기를 눌렀을 때만 읽혀서 화면에 드러나지 않는다.)
+   * (기준선은 아래 effect 에서 갱신하고 렌더 중 ref 로 읽는다. 이 값은 이탈 시트뿐 아니라 기기 뒤로가기 막이 칸·
+   *  새로고침 경고 effect 도 쓴다 — 기준선이 어긋나 dirty 로 잡히면 손대지 않은 수정 화면에서도 칸과 경고가 걸린다.)
    */
   const formSignature = JSON.stringify({
     closingDate,
@@ -736,16 +831,18 @@ export function UploadProductForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingProduct, isEditMode]);
 
-  /*
-   * 이탈 요청 — 폼에 손댄 흔적이 없으면 그대로 보내고, 있으면 확인 시트를 띄운다.
-   * 확인 시트의 기본 액션은 "계속 작성"(취소)이고, 파괴적인 쪽이 확인 버튼이다.
-   */
-  function requestExit(navigate: () => void) {
-    if (!isFormDirty) {
-      navigate();
-      return;
-    }
+  const exitGuardRef = useRef<UploadExitGuard>({
+    armedHref: null,
+    isFirstEntry: false,
+    isLeaving: false,
+    leaveFallbackTimeout: null,
+    onRemoved: null,
+    removal: null,
+  });
+  const isExitConfirmOpen = exitConfirmRequest !== null;
 
+  // 확인 시트의 기본 액션은 "계속 작성"(취소)이고, 파괴적인 쪽이 확인 버튼이다.
+  function showExitConfirm(leave: () => void) {
     setExitConfirmRequest({
       confirmLabel: "나가기",
       description: isEditMode
@@ -753,11 +850,211 @@ export function UploadProductForm({
         : "지금까지 작성한 사진과 내용이 모두 사라져요.",
       onConfirm: () => {
         setExitConfirmRequest(null);
-        navigate();
+        leave();
       },
       title: isEditMode ? "수정을 그만둘까요?" : "작성을 그만둘까요?",
     });
   }
+
+  // 헤더 ‹ 의 목적지. 기기 뒤로 시트도 탭의 첫 화면이라 더 뒤로 갈 곳이 없으면 여기로 보낸다.
+  async function leaveToExitDestination() {
+    await removeUploadExitGuard(exitGuardRef.current);
+
+    if (editProductId) {
+      const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+
+      router.replace(`/products/${editProductId}${returnSourceQuery}`);
+      return;
+    }
+
+    router.replace("/");
+  }
+
+  // 이탈 요청(헤더 ‹) — 폼에 손댄 흔적이 없으면 그대로 보내고, 있으면 확인 시트를 띄운다.
+  function requestExit() {
+    if (!isFormDirty) {
+      void leaveToExitDestination();
+      return;
+    }
+
+    showExitConfirm(() => void leaveToExitDestination());
+  }
+
+  // 기기 뒤로가기로 연 시트의 '나가기' — 원래 뒤로가기가 가려던 곳으로 간다.
+  function leaveByDeviceBack() {
+    const guard = exitGuardRef.current;
+
+    if (guard.isFirstEntry) {
+      void leaveToExitDestination();
+      return;
+    }
+
+    guard.isLeaving = true;
+    // 첫 화면 판정은 앞으로 가기 칸까지 세는 history.length 로 하므로 틀릴 수 있다. 더 뒤로 갈 칸이 없으면
+    // go() 가 아무 일도 하지 않으니, 그동안 popstate·언마운트·페이지 이탈이 없으면 헤더 ‹ 목적지로 보낸다.
+    cancelUploadExitLeaveFallback(guard);
+    guard.leaveFallbackTimeout = window.setTimeout(() => {
+      guard.leaveFallbackTimeout = null;
+      void leaveToExitDestination();
+    }, uploadExitGuardRemovalTimeoutMs);
+    // 시트를 띄운 채 앞으로 가기로 막이 칸에 다시 올라와 있었다면 두 칸을 내려가야 한다.
+    window.history.go(guard.armedHref !== null ? -2 : -1);
+  }
+
+  // 기기 뒤로가기로 연 시트면 막이 칸은 이미 쓰였다. '계속 작성'·배경 탭은 사용자 동작이라 여기서 다시 넣는다.
+  // Esc 키는 명세상 사용자 동작이 아니어서, 데스크톱에서 Esc 로 닫은 직후 넣은 칸은 브라우저가 건너뛸 수 있다.
+  function handleExitConfirmCancel() {
+    setExitConfirmRequest(null);
+
+    if (isFormDirty) {
+      armUploadExitGuard(exitGuardRef.current);
+    }
+  }
+
+  const handleExitGuardPopState = useEffectEvent(() => {
+    const guard = exitGuardRef.current;
+
+    cancelUploadExitLeaveFallback(guard);
+
+    if (guard.onRemoved) {
+      guard.armedHref = null;
+      guard.onRemoved();
+      return;
+    }
+
+    if (isUploadExitGuardEntry(window.history.state)) {
+      if (!guard.isLeaving) {
+        guard.armedHref = window.location.href;
+      }
+
+      return;
+    }
+
+    if (guard.armedHref === null) {
+      return;
+    }
+
+    const isGuardEntryUsed = window.location.href === guard.armedHref;
+
+    guard.armedHref = null;
+
+    if (!isGuardEntryUsed || guard.isLeaving) {
+      return;
+    }
+
+    // 입력을 다 지웠다면 사용자가 누른 뒤로가기를 그대로 이어 준다.
+    if (!isFormDirty) {
+      window.history.back();
+      return;
+    }
+
+    // 시트가 뜬 채 한 번 더 뒤로가면 그대로 나간다. popstate 안에서 칸을 다시 넣으면 사용자 동작이 없어
+    // 브라우저가 그 칸을 건너뛰거나 사용자를 화면에 가둘 수 있다.
+    showExitConfirm(leaveByDeviceBack);
+  });
+
+  useEffect(() => {
+    const guard = exitGuardRef.current;
+
+    const isOnGuardEntry = isUploadExitGuardEntry(window.history.state);
+
+    // 막이 칸 위에서 열렸으면(새로고침) 그 칸까지 2칸이다. 앞으로 가기 칸은 못 걸러내 틀릴 수 있다 — leaveByDeviceBack 안전장치.
+    guard.isFirstEntry = window.history.length === (isOnGuardEntry ? 2 : 1);
+
+    // 새로고침·앞으로 가기로 막이 칸 위에서 다시 열렸다.
+    if (isOnGuardEntry) {
+      guard.armedHref = window.location.href;
+    }
+
+    function handlePopState() {
+      handleExitGuardPopState();
+    }
+
+    // 다른 문서로 나간 페이지는 뒤로·앞으로 캐시(bfcache)에 언마운트 없이 얼었다가 앞으로 가기로 그대로 되살아난다.
+    // 얼기 전에 안전장치 타이머를 끄고(안 끄면 되살아난 직후 홈으로 끌고 감), 되살아나면 떠나던 상태를 풀어 다시 보호한다.
+    function handlePageHide() {
+      cancelUploadExitLeaveFallback(guard);
+    }
+
+    function handlePageShow(event: PageTransitionEvent) {
+      // 막이 칸을 걷어내는 중(앱 안 이동 도중)이었다면 그 이동을 마저 끝내게 둔다.
+      if (!event.persisted || guard.onRemoved) {
+        return;
+      }
+
+      cancelUploadExitLeaveFallback(guard);
+      guard.isLeaving = false;
+      guard.removal = null;
+      guard.armedHref = isUploadExitGuardEntry(window.history.state)
+        ? window.location.href
+        : null;
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
+      cancelUploadExitLeaveFallback(guard);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isFormDirty || isExitConfirmOpen) {
+      return;
+    }
+
+    const guard = exitGuardRef.current;
+
+    // 입력 직후라 아직 사용자 동작 안이면 바로 넣는다(사진만 고르고 곧장 뒤로가는 경우).
+    if (navigator.userActivation?.isActive) {
+      armUploadExitGuard(guard);
+    }
+
+    // 이미 칸이 있거나 떠나는 중인지는 누를 때 armUploadExitGuard 가 본다. 여기서 미리 거르면 bfcache 로
+    // 되살아나 떠나던 상태가 풀려도 이 effect 가 다시 돌지 않아 칸을 영영 못 넣는다.
+    function handleUserInput() {
+      armUploadExitGuard(guard);
+    }
+
+    document.addEventListener("pointerdown", handleUserInput, true);
+    document.addEventListener("keydown", handleUserInput, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handleUserInput, true);
+      document.removeEventListener("keydown", handleUserInput, true);
+    };
+  }, [isExitConfirmOpen, isFormDirty]);
+
+  // 입력이 있을 때 새로고침·탭 닫기 경고(브라우저 기본 문구). 앱 안 이동 직전에는 풀어 둔다.
+  useEffect(() => {
+    if (!isFormDirty) {
+      return;
+    }
+
+    const guard = exitGuardRef.current;
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (guard.isLeaving) {
+        // 다른 문서로 돌아가는 중이다(로딩이 600ms 를 넘을 수 있음) — 대신 이동하는 안전장치를 끈다.
+        cancelUploadExitLeaveFallback(guard);
+        return;
+      }
+
+      event.preventDefault();
+      // preventDefault 를 모르는 구형 브라우저용.
+      event.returnValue = true;
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isFormDirty]);
   // 가입 미완료(전화번호 미등록) 유저를 /upload 직접 진입에서도 보완 화면으로 보낸다(공용 가드,
   // 홈 경유와 동일 동작). 개최 자격(연령대·상한)은 서버 게이트가 제출 시 판정한다.
   useProfileCompletionGuard();
@@ -1040,16 +1337,8 @@ export function UploadProductForm({
   }
   useEffect(() => {
     return () => {
-      if (photoLimitToastTimeoutRef.current) {
-        clearTimeout(photoLimitToastTimeoutRef.current);
-      }
-
       if (minimumPricePromptTimeoutRef.current) {
         clearTimeout(minimumPricePromptTimeoutRef.current);
-      }
-
-      if (memberToastTimeoutRef.current) {
-        clearTimeout(memberToastTimeoutRef.current);
       }
     };
   }, []);
@@ -1459,51 +1748,6 @@ export function UploadProductForm({
     router,
   ]);
 
-  function showPhotoLimitToast(message: string) {
-    setPhotoLimitToast(message);
-
-    if (photoLimitToastTimeoutRef.current) {
-      clearTimeout(photoLimitToastTimeoutRef.current);
-    }
-
-    photoLimitToastTimeoutRef.current = setTimeout(() => {
-      setPhotoLimitToast("");
-      photoLimitToastTimeoutRef.current = null;
-    }, 2200);
-  }
-
-  // 토스트는 사진 유무로 갈리는 두 화면 모두에 필요하다. addPhotos 는 파일을 읽기 전에
-  // 토스트를 띄우므로, 0장 화면에 이게 없으면 사진을 읽는 동안 안내가 통째로 사라진다.
-  function renderPhotoLimitToast(positionClassName: string) {
-    if (!photoLimitToast) {
-      return null;
-    }
-
-    return (
-      <p
-        aria-live="polite"
-        className={`soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] ${positionClassName}`}
-        role="status"
-      >
-        {photoLimitToast}
-      </p>
-    );
-  }
-
-  function showMemberToast(memberId: string, message: string) {
-    if (memberToastTimeoutRef.current) {
-      clearTimeout(memberToastTimeoutRef.current);
-    }
-
-    setMemberToastTargetId(memberId);
-    setMemberToastMessage(message);
-    memberToastTimeoutRef.current = setTimeout(() => {
-      setMemberToastMessage("");
-      setMemberToastTargetId(null);
-      memberToastTimeoutRef.current = null;
-    }, 1800);
-  }
-
   function showMinimumPricePrompt(prompt: MinimumPricePrompt) {
     if (minimumPricePromptTimeoutRef.current) {
       clearTimeout(minimumPricePromptTimeoutRef.current);
@@ -1563,8 +1807,7 @@ export function UploadProductForm({
     setExcludedMemberIds([]);
     setMinHeadcount(String(group.members.length));
     setMemberMinimumPrices({});
-    setMemberToastMessage("");
-    setMemberToastTargetId(null);
+    hideMemberToast();
     hideMinimumPricePrompt();
   }
 
@@ -1575,8 +1818,7 @@ export function UploadProductForm({
     setExcludedMemberIds([]);
     setMinHeadcount("");
     setMemberMinimumPrices({});
-    setMemberToastMessage("");
-    setMemberToastTargetId(null);
+    hideMemberToast();
     hideMinimumPricePrompt();
   }
 
@@ -1643,7 +1885,7 @@ export function UploadProductForm({
     ).length;
 
     if (!isCurrentlyExcluded && nextActiveMemberCount === 0) {
-      showMemberToast(memberId, "대상 멤버는 1명 이상 필요해요");
+      showMemberToast({ memberId, message: "대상 멤버는 1명 이상 필요해요" });
       return;
     }
 
@@ -1704,7 +1946,10 @@ export function UploadProductForm({
     const parsedPrice = parsePriceInput(memberMinimumPrices[memberId] ?? "");
 
     if (parsedPrice > 0 && !isMemberMinimumPriceAmount(parsedPrice)) {
-      showMemberToast(memberId, "가격은 100원 단위로 입력해 주세요");
+      showMemberToast({
+        memberId,
+        message: "가격은 100원 단위로 입력해 주세요",
+      });
     }
   }
 
@@ -1837,7 +2082,7 @@ export function UploadProductForm({
     setActiveScheduleField(field);
   }
 
-  async function handleSubmit() {
+  function handleSubmit() {
     // 버튼이 살아 있으므로 제출 경로에서 다시 막는다 — 버튼 활성화가 곧 제출 허용이 아니다.
     if (submitBlock) {
       // 이전 서버 에러가 남아 있으면 인라인 안내와 하단 문구가 서로 다른 말을 한다.
@@ -1846,21 +2091,23 @@ export function UploadProductForm({
       return;
     }
 
-    /*
-     * 버튼이 항상 눌리게 되면서 연타로 createBuncheol 이 두 번 나가는 경로가 넓어졌다.
-     * state 가 아니라 ref 로 막는다 — 같은 틱에 두 번 눌리면 두 호출 모두 갱신 전 state 를 본다.
-     */
-    if (isSubmittingRef.current) {
+    // ref 는 같은 틱 연타(둘 다 갱신 전 state 를 봄)를, pending 은 응답 뒤 화면 전환이 끝날 때까지의 재제출을 막는다.
+    if (isSubmittingRef.current || isSubmitPending) {
       return;
     }
 
     isSubmittingRef.current = true;
 
-    try {
-      await submitForm();
-    } finally {
-      isSubmittingRef.current = false;
-    }
+    startSubmitTransition(async () => {
+      try {
+        await submitForm();
+      } catch {
+        // 전환 안에서 던지면 에러 바운더리로 올라가 페이지 전체가 깨진다(토큰 재발급 네트워크 실패 등).
+        setSubmitError("분철 저장에 실패했어요.");
+      } finally {
+        isSubmittingRef.current = false;
+      }
+    });
   }
 
   async function submitForm() {
@@ -1879,6 +2126,7 @@ export function UploadProductForm({
     const accessToken = isLocalDraftEdit ? null : await getFreshAccessToken();
 
     if (!isLocalDraftEdit && !accessToken) {
+      await removeUploadExitGuard(exitGuardRef.current);
       router.push(
         createLoginHref({ cancelTo: "/", returnTo: loginReturnHref }),
       );
@@ -2101,6 +2349,7 @@ export function UploadProductForm({
           });
 
           const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
+          await removeUploadExitGuard(exitGuardRef.current);
           router.replace(`/products/${productId}${returnSourceQuery}`);
           return;
         }
@@ -2139,7 +2388,10 @@ export function UploadProductForm({
           let nextProductId = createdBuncheolId;
 
           if (!nextProductId) {
-            const hostedProducts = await requestMyHostedBuncheols(accessToken);
+            // 개최는 이미 성공했다 — 여기서 에러를 띄우면 다시 눌러 중복 개최가 되므로, 못 찾으면 내 개최 목록으로 보낸다.
+            const hostedProducts = await requestMyHostedBuncheols(
+              accessToken,
+            ).catch(() => []);
             nextProductId =
               hostedProducts.find((hostedProduct) => {
                 return (
@@ -2158,10 +2410,12 @@ export function UploadProductForm({
               productId: nextProductId,
             });
 
+            await removeUploadExitGuard(exitGuardRef.current);
             router.push(`/products/${nextProductId}?from=upload`);
             return;
           }
 
+          await removeUploadExitGuard(exitGuardRef.current);
           router.push("/profile/bids");
           return;
         }
@@ -2203,6 +2457,7 @@ export function UploadProductForm({
 
     const returnSourceQuery = returnSource ? `?from=${returnSource}` : "";
 
+    await removeUploadExitGuard(exitGuardRef.current);
     router.replace(`/products/${productId}${returnSourceQuery}`);
   }
 
@@ -2251,22 +2506,7 @@ export function UploadProductForm({
                   <button
                     aria-label="이전 화면"
                     className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
-                    onClick={() =>
-                      requestExit(() => {
-                        if (editProductId) {
-                          const returnSourceQuery = returnSource
-                            ? `?from=${returnSource}`
-                            : "";
-
-                          router.replace(
-                            `/products/${editProductId}${returnSourceQuery}`,
-                          );
-                          return;
-                        }
-
-                        router.replace("/");
-                      })
-                    }
+                    onClick={requestExit}
                     type="button"
                   >
                     <BackIcon />
@@ -2284,7 +2524,7 @@ export function UploadProductForm({
                 className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void handleSubmit();
+                  handleSubmit();
                 }}
                 ref={formScrollRef}
               >
@@ -2330,7 +2570,7 @@ export function UploadProductForm({
                             구성품이 잘 보이는 사진이 좋아요.
                           </p>
                           {renderSubmitFieldError("photos")}
-                          {renderPhotoLimitToast("mt-3")}
+                          <Toast className="mt-3" message={photoLimitToast} />
                         </>
                       ) : (
                         <>
@@ -2349,9 +2589,10 @@ export function UploadProductForm({
                             <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                               <PlusIcon />
                             </span>
-                            {renderPhotoLimitToast(
-                              "pointer-events-none absolute bottom-4 left-4 right-4 z-20",
-                            )}
+                            <Toast
+                              className="absolute inset-x-4 bottom-4 z-20"
+                              message={photoLimitToast}
+                            />
                             <input
                               accept="image/*"
                               className="sr-only"
@@ -2467,7 +2708,10 @@ export function UploadProductForm({
 
                       <div className="mt-7">
                         <p className="text-[20px] font-semibold tracking-[-0.06em]">
-                          잠긴 정보
+                          기본 정보
+                        </p>
+                        <p className="mt-1 text-[12px] font-semibold text-black/40">
+                          분철을 연 뒤에는 바꿀 수 없어요
                         </p>
                         <div className="mt-3 grid grid-cols-2 gap-3">
                           <div className="min-w-0 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-4">
@@ -2589,10 +2833,11 @@ export function UploadProductForm({
                       ) : null}
 
                       <button
-                        className="mt-6 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.05em] text-white"
+                        className="mt-6 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.05em] text-white disabled:opacity-60"
+                        disabled={isSubmitPending}
                         type="submit"
                       >
-                        수정 완료
+                        {isSubmitPending ? "수정 중…" : "수정 완료"}
                       </button>
                     </section>
                   </>
@@ -2604,7 +2849,7 @@ export function UploadProductForm({
 
           <ConfirmSheet
             cancelLabel="계속 작성"
-            onCancel={() => setExitConfirmRequest(null)}
+            onCancel={handleExitConfirmCancel}
             request={exitConfirmRequest}
           />
       </main>
@@ -2621,22 +2866,7 @@ export function UploadProductForm({
                 <button
                   aria-label="이전 화면"
                   className="upload-header__back -ml-2 inline-flex h-10 w-10 shrink-0 items-center justify-center text-black"
-                  onClick={() =>
-                    requestExit(() => {
-                      if (editProductId) {
-                        const returnSourceQuery = returnSource
-                          ? `?from=${returnSource}`
-                          : "";
-
-                        router.replace(
-                          `/products/${editProductId}${returnSourceQuery}`,
-                        );
-                        return;
-                      }
-
-                      router.replace("/");
-                    })
-                  }
+                  onClick={requestExit}
                   type="button"
                 >
                   <BackIcon />
@@ -2688,7 +2918,7 @@ export function UploadProductForm({
                   보이는 사진이 좋아요.
                 </p>
                 {renderSubmitFieldError("photos")}
-                {renderPhotoLimitToast("mt-3")}
+                <Toast className="mt-3" message={photoLimitToast} />
               </>
             ) : (
               <>
@@ -2707,9 +2937,10 @@ export function UploadProductForm({
                   <span className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#D7FF5F] text-black shadow-[0_12px_30px_rgba(120,132,82,0.28)]">
                     <PlusIcon />
                   </span>
-                  {renderPhotoLimitToast(
-                    "pointer-events-none absolute bottom-4 left-4 right-4 z-20",
-                  )}
+                  <Toast
+                    className="absolute inset-x-4 bottom-4 z-20"
+                    message={photoLimitToast}
+                  />
                   <input
                     accept="image/*"
                     className="sr-only"
@@ -2910,9 +3141,6 @@ export function UploadProductForm({
                           const isExcluded = excludedMemberIds.includes(
                             member.id,
                           );
-                          const shouldShowToast =
-                            memberToastMessage &&
-                            memberToastTargetId === member.id;
                           const isLastMember =
                             index === allTargetMembers.length - 1;
                           const shouldShowPrompt =
@@ -2999,19 +3227,18 @@ export function UploadProductForm({
                                 </button>
                               </div>
 
-                              {shouldShowToast ? (
-                                <p
-                                  aria-live="polite"
-                                  className={`soft-panel-enter pointer-events-none absolute left-3 right-3 z-10 rounded-full bg-black px-3 py-2 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)] ${
-                                    isLastMember
-                                      ? "bottom-full mb-2"
-                                      : "top-full mt-2"
-                                  }`}
-                                  role="status"
-                                >
-                                  {memberToastMessage}
-                                </p>
-                              ) : null}
+                              <Toast
+                                className={`absolute inset-x-3 z-10 ${
+                                  isLastMember
+                                    ? "bottom-full mb-2"
+                                    : "top-full mt-2"
+                                }`}
+                                message={
+                                  memberToast?.memberId === member.id
+                                    ? memberToast.message
+                                    : null
+                                }
+                              />
 
                               {shouldShowPrompt &&
                               renderedMinimumPricePrompt ? (
@@ -3439,11 +3666,14 @@ export function UploadProductForm({
             </div>
 
             <button
-              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
+              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60"
+              disabled={isSubmitPending}
               onClick={handleSubmit}
               type="button"
             >
-              {isEditMode ? "수정 완료" : "등록하기"}
+              {isSubmitPending
+                ? isEditMode ? "수정 중…" : "등록 중…"
+                : isEditMode ? "수정 완료" : "등록하기"}
             </button>
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
@@ -3458,7 +3688,7 @@ export function UploadProductForm({
 
           <ConfirmSheet
             cancelLabel="계속 작성"
-            onCancel={() => setExitConfirmRequest(null)}
+            onCancel={handleExitConfirmCancel}
             request={exitConfirmRequest}
           />
     </main>

@@ -22,6 +22,12 @@ import {
   subscribeAuthState,
   writeAuthTokens,
 } from "@/lib/auth-store";
+import {
+  isValidPhoneNumber,
+  PHONE_NUMBER_HINT,
+  sanitizePhoneNumber,
+  shouldShowPhoneNumberHint,
+} from "@/lib/phone-number";
 
 type SignupProfileDraft = {
   isAgeConfirmed?: boolean;
@@ -46,10 +52,6 @@ function getSafeReturnHref(value: string | null | undefined) {
   }
 
   return safeValue;
-}
-
-function sanitizePhoneNumber(value: string) {
-  return value.replace(/\D/g, "").slice(0, 11);
 }
 
 function readSignupProfileDraft(): SignupProfileDraft | null {
@@ -138,7 +140,7 @@ export function SignupProfileContent() {
   const canSave =
     /^[가-힣A-Za-z]{1,30}$/.test(name.trim()) &&
     /^[가-힣A-Za-z0-9]{1,20}$/.test(nickname.trim()) &&
-    /^01\d{8,9}$/.test(phoneNumber.trim()) &&
+    isValidPhoneNumber(phoneNumber.trim()) &&
     isAgeConfirmed &&
     isTermsAgreed &&
     isPrivacyAgreed;
@@ -349,6 +351,11 @@ export function SignupProfileContent() {
                 placeholder="01012345678"
                 value={phoneNumber}
               />
+              {shouldShowPhoneNumberHint(phoneNumber.trim()) ? (
+                <span className="mt-1.5 block text-[12px] font-medium text-[#c03131]">
+                  {PHONE_NUMBER_HINT}
+                </span>
+              ) : null}
             </label>
           </div>
 

@@ -27,3 +27,6 @@ export function getArtistRestoreIndexKey(groupId: string) {
 
 // ProductCard(저장)와 ProductDetail(판독)이 같은 값을 봐야 한다.
 export const PRODUCT_ARTIST_ENTRY_INDEX_KEY = "product-artist-entry-index";
+
+// 아티스트 목록 카드가 연 그룹 id·기록 시각. ArtistExploreContent(저장)와 ArtistBrowseContent(판독)가 같이 쓴다.
+export const ARTIST_LIST_ENTRY_GROUP_KEY = "artist-list-entry-group";

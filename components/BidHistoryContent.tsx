@@ -50,7 +50,6 @@ import {
   requestMyParticipations,
   requestParticipationPaymentDetail,
   requestBundlePaymentSent,
-  requestParticipationPaymentSent,
   toProductDetailItem,
   type BankAccountInfo,
   type MyHostedBuncheol,
@@ -65,7 +64,6 @@ import {
   type HostedBuncheolStatusKind,
   isBuncheolCancelledStatus,
   isBuncheolConfirmedStatus,
-  isBuncheolDeletedStatus,
   isBuncheolHostCancelledStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
@@ -113,6 +111,11 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -126,6 +129,9 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
 const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
 export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
+// 묶음 id 가 없으면 「보냈어요」를 서버에 보낼 수 없다. 버튼을 막고 이 문구를 미리 보여 준다.
+const MARK_SENT_MISSING_BUNDLE_MESSAGE =
+  "묶음 정보가 없어 「입금 보냈어요」를 누를 수 없어요. 고객센터로 문의해 주세요.";
 
 function parseDeadline(deadline: string) {
   const match = deadline
@@ -169,6 +175,34 @@ function parseHistoryDeadline(deadline: string) {
   );
 }
 
+// 마감 판정은 서버 원본 시각 deadlineAt(서버 Instant → Z 포함 ISO 라 기기 시간대와 무관)으로 한다. 표시용 deadline 은
+// 올해면 연도를 빼서(formatApiDateTime) 위 파서로 다시 읽으면 NaN 이다 — 표시 문자열 파서는 원본이 없거나 못 읽을 때만 쓴다.
+function parseDeadlineWithFallback(
+  deadlineAt: string | null | undefined,
+  displayDeadline: string,
+  parseDisplayDeadline: (deadline: string) => Date,
+) {
+  const deadlineDate = deadlineAt ? new Date(deadlineAt) : null;
+
+  return deadlineDate && !Number.isNaN(deadlineDate.getTime())
+    ? deadlineDate
+    : parseDisplayDeadline(displayDeadline);
+}
+
+function getBidRecordDeadlineDate(
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
+) {
+  return parseDeadlineWithFallback(bid.deadlineAt, bid.deadline, parseDeadline);
+}
+
+function getHostedProductDeadlineDate(product: HostedProductItem) {
+  return parseDeadlineWithFallback(
+    product.deadlineAt,
+    product.deadline,
+    parseHistoryDeadline,
+  );
+}
+
 function formatRemainingTimeFromDate(deadlineDate: Date, now: Date) {
   const difference = deadlineDate.getTime() - now.getTime();
 
@@ -205,7 +239,7 @@ function getKstDayDifference(deadlineDate: Date, now: Date) {
 }
 
 function getPaymentDeadlineDate(
-  deadline: string,
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
   paymentDueAt?: string | null,
   createdAt?: string | null,
   isC2C = false,
@@ -220,7 +254,7 @@ function getPaymentDeadlineDate(
     ? new Date(paymentDueAt)
     : createdAt
       ? new Date(createdAt)
-      : parseDeadline(deadline);
+      : getBidRecordDeadlineDate(bid);
 
   if (!paymentDueAt && !Number.isNaN(paymentDeadline.getTime())) {
     paymentDeadline.setUTCMinutes(
@@ -232,14 +266,14 @@ function getPaymentDeadlineDate(
 }
 
 function formatPaymentRemainingTime(
-  deadline: string,
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
   now: Date,
   paymentDueAt?: string | null,
   createdAt?: string | null,
   isC2C = false,
 ) {
   const paymentDeadline = getPaymentDeadlineDate(
-    deadline,
+    bid,
     paymentDueAt,
     createdAt,
     isC2C,
@@ -256,14 +290,14 @@ function formatPaymentRemainingTime(
 // 시계 오차로 남은 시간이 입금 창(LEGACY 30분 / C2C 24시간)을 초과해 보이지 않도록
 // 상한을 걸고, 진행 중인 초를 포함해 올림으로 표시한다.
 function formatPaymentCountdown(
-  deadline: string,
+  bid: Pick<BidRecord, "deadline" | "deadlineAt">,
   now: Date,
   paymentDueAt?: string | null,
   createdAt?: string | null,
   isC2C = false,
 ) {
   const paymentDeadline = getPaymentDeadlineDate(
-    deadline,
+    bid,
     paymentDueAt,
     createdAt,
     isC2C,
@@ -390,7 +424,7 @@ const c2cParticipationStatusGuide = [
   },
 ] as const satisfies readonly StatusGuideItem[];
 
-// 0원 참여(서포터즈 코드) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
+// 0원 참여(코드 참여 포함) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
 // 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "24시간 안에 개최자 계좌로
 // 보내고 '보냈어요'를 눌러주세요" 가 뜬다.
 const freeParticipationStatusGuide = [
@@ -398,7 +432,7 @@ const freeParticipationStatusGuide = [
     icon: ClipboardListIcon,
     label: freeProgressStepLabels[0],
     description:
-      "받은 코드로 자리를 잡은 단계예요. 입금할 금액이 없어 따로 보낼 돈은 없어요.",
+      "참여할 멤버 자리를 잡은 단계예요. 입금할 금액이 없어 따로 보낼 돈은 없어요.",
   },
   {
     icon: CheckIcon,
@@ -553,13 +587,13 @@ function readStoredBidHistoryViewState(keepStoredState: boolean) {
 type BidRecord = {
   amount: number;
   deadline: string;
+  deadlineAt: string | null;
   id: string;
   imageUrl?: string;
   optionLabel: string;
   paidAt: string | null;
   participantCount: number;
   productId: string;
-  rank: number;
   courier?: string;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
@@ -576,7 +610,6 @@ type BidRecord = {
   paymentAmount?: number | null;
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
-  paymentRejectedAt?: string | null;
   createdAt?: string | null;
   participationStatus?: string;
   cancelReason?: string | null;
@@ -602,7 +635,7 @@ function isBidRecordClosed(bid: BidRecord, now: Date) {
     return true;
   }
 
-  const deadlineDate = parseDeadline(bid.deadline);
+  const deadlineDate = getBidRecordDeadlineDate(bid);
 
   return (
     !Number.isNaN(deadlineDate.getTime()) &&
@@ -615,18 +648,8 @@ function isBidRecordPaymentReady(bid: BidRecord, now: Date) {
     return false;
   }
 
-  // C2C 는 확정 후 AWAITING_PAYMENT 에서만 입금 단계다 — LEGACY 의
-  // "마감+1순위" 폴백은 구 경매 응답 보정이라 C2C 에 적용하지 않는다.
-  if (isC2CBidRecord(bid)) {
-    return (
-      isParticipationAwaitingPaymentStatus(bid.participationStatus) &&
-      !isBidRecordPaymentExpired(bid, now)
-    );
-  }
-
   return (
-    (isParticipationAwaitingPaymentStatus(bid.participationStatus) ||
-      (isBidRecordClosed(bid, now) && bid.rank === 1)) &&
+    isParticipationAwaitingPaymentStatus(bid.participationStatus) &&
     !isBidRecordPaymentExpired(bid, now)
   );
 }
@@ -810,7 +833,7 @@ function getBidRecordBuncheolChip(
     return { label: "마감", tone: "closed" };
   }
 
-  const deadlineDate = parseDeadline(bid.deadline);
+  const deadlineDate = getBidRecordDeadlineDate(bid);
 
   if (Number.isNaN(deadlineDate.getTime())) {
     return { label: "모집 중", tone: "dday" };
@@ -948,26 +971,20 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
 // 기한 경과 여부 — 표시 전용이라 아무것도 잠그지 않는다. C2C 기한은 "지나면 개최자가 정리에 나설 수
 // 있는 시각" 이지 참여가 죽는 시각이 아니다 (docs/71 §8-1).
 function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
-  const isC2C = isC2CBidRecord(bid);
-  // C2C 는 AWAITING_PAYMENT 만 기한 대상 — APPLIED(기한 없음)·PAYMENT_SENT(개최자 확인 대기)는 제외한다.
-  const isPaymentCandidate = isC2C
-    ? isParticipationAwaitingPaymentStatus(bid.participationStatus)
-    : isParticipationAwaitingPaymentStatus(bid.participationStatus) ||
-      (isBidRecordClosed(bid, now) && bid.rank === 1);
-
+  // AWAITING_PAYMENT 만 기한 대상 — APPLIED(기한 없음)·PAYMENT_SENT(개최자 확인 대기)는 제외한다.
   if (
     isBidRecordCancelled(bid) ||
     isBidRecordPaymentConfirmed(bid) ||
-    !isPaymentCandidate
+    !isParticipationAwaitingPaymentStatus(bid.participationStatus)
   ) {
     return false;
   }
 
   const paymentDeadline = getPaymentDeadlineDate(
-    bid.deadline,
+    bid,
     bid.paymentDueAt,
     bid.createdAt,
-    isC2C,
+    isC2CBidRecord(bid),
   );
 
   return (
@@ -1268,27 +1285,16 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordPaymentReady(bid, now)) {
     // ⚠️ overdue 검사가 ready 보다 뒤에 있으면 도달하지 못한다 — C2C 는 기한이 지나도 ready 다.
     if (isBidRecordPaymentOverdue(bid, now)) {
-      // 재확인 요청(개최자가 입금 내역을 못 찾음)은 연장된 기한마저 지나도 여전히 가장 중요한
-      // 정보다. 이걸 가리면 이미 보낸 사람이 "지금 보내셔도 됩니다" 만 보고 중복 송금한다.
-      return isC2C && bid.paymentRejectedAt
-        ? "개최자가 입금 내역을 찾지 못했어요. 보낸 내역을 다시 확인해 주세요. 기한이 지나 개최자가 참여를 취소할 수도 있어요."
-        : "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
+      return "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
     }
 
     const remaining = formatPaymentRemainingTime(
-      bid.deadline,
+      bid,
       now,
       bid.paymentDueAt,
       bid.createdAt,
       isC2C,
     );
-
-    // 개최자가 "입금 못 찾음"으로 되돌린 경우. 서버가 입금 대기 구간에서만 값을 채우고 재마킹 시
-    // 지우므로, 값이 있으면 지금이 재확인 구간이다. "반려"라고 쓰면 취소로 오해해 문의가 몰린다
-    // (docs/53 Q-03, docs/54 2-1).
-    if (isC2C && bid.paymentRejectedAt) {
-      return `입금이 확인되지 않았어요 · 다시 확인해 주세요. 기한까지 ${remaining}`;
-    }
 
     return `입금 기한까지 ${remaining}`;
   }
@@ -1298,8 +1304,10 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     : "진행 중인 참여예요.";
 }
 
-function isHostedProductDeadlinePassed(product: ProductDetailItem, now: Date) {
-  const deadlineDate = parseHistoryDeadline(product.deadline);
+type HostedProductItem = ProductDetailItem & { deadlineAt?: string | null };
+
+function isHostedProductDeadlinePassed(product: HostedProductItem, now: Date) {
+  const deadlineDate = getHostedProductDeadlineDate(product);
 
   return (
     !Number.isNaN(deadlineDate.getTime()) &&
@@ -1309,7 +1317,7 @@ function isHostedProductDeadlinePassed(product: ProductDetailItem, now: Date) {
 
 // 「종료」 탭(값 closed) 판정. 서버 ended 가 없는 구 응답이면 기존 규칙(모집 중이 아니거나 마감 지남)으로
 // 폴백한다 — 서버 롤백 안전망이라 지우지 않는다(docs/99 §4-1).
-function isHostedProductClosed(product: ProductDetailItem, now: Date) {
+function isHostedProductClosed(product: HostedProductItem, now: Date) {
   const closedByServer = isHostedBuncheolClosed({
     ended: product.hostEnded,
     status: product.status,
@@ -1332,7 +1340,8 @@ const hostedStatusBadgeClassNames: Record<HostedBuncheolStatusKind, string> = {
   // 입금 진행은 끝난 분철이 아니다 — 회색(끝남)으로 묶지 않는다(docs/98 §5-C, 공개 카드와 같은 취급).
   paymentCollecting: "bg-[#E4F6A5] text-black/70",
   confirmed: "bg-[#E4F6A5] text-black/70",
-  recruitingClosed: "bg-[#f3f3f3] text-black/50",
+  // 마감 뒤 성사 확정 대기(C2C 48시간 유예)도 개최자가 할 일이 남은 분철이라 끝남 색을 쓰지 않는다.
+  recruitingClosed: "bg-[#E4F6A5] text-black/70",
   ended: "bg-[#f3f3f3] text-black/50",
   cancelled: "bg-[#f3f3f3] text-black/50",
 };
@@ -1429,9 +1438,6 @@ function getBidRecordFromParticipation(
     participation.participationStatus ||
     cachedPayment?.participationStatus ||
     "";
-  const rank =
-    participation.closedRank ??
-    (isParticipationAwaitingPaymentStatus(participationStatus) ? 1 : 0);
   const shippingMethods = getShippingMethodsFromOptions(
     participation.shippingOptions ?? [],
   );
@@ -1453,6 +1459,7 @@ function getBidRecordFromParticipation(
     id: participation.participationId,
     amount: serverItemAmount,
     deadline: formatApiDateTime(participation.buncheolDeadline),
+    deadlineAt: participation.buncheolDeadline || null,
     imageUrl:
       participation.thumbnailUrl ??
       getCachedProductImageUrl(participation.buncheolId),
@@ -1475,7 +1482,6 @@ function getBidRecordFromParticipation(
     refundHolder: participation.refundHolder ?? null,
     bundleId: participation.bundleId ?? null,
     paymentSentAt: participation.paymentSentAt ?? null,
-    paymentRejectedAt: participation.paymentRejectedAt ?? null,
     paymentAmount:
       participation.paymentAmount ??
       (typeof serverShippingFee === "number" ? participation.bidAmount : null),
@@ -1486,7 +1492,6 @@ function getBidRecordFromParticipation(
     participationStatus,
     cancelReason: participation.cancelReason ?? null,
     cancellability: participation.cancellability ?? null,
-    rank: rank > 0 ? rank : 0,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
     // ⚠️ 여기에는 캐시 폴백을 붙이지 않는다 — 캐시에 없는 값이고, 붙일 곳도 아니다.
@@ -1526,12 +1531,9 @@ function getCachedBuncheolDetail(
   return detailPromise;
 }
 
-// 취소·삭제된 분철은 상세 조회가 404 를 반환하므로 호출하지 않는다.
-// HOST_CANCELLED 는 isBidRecordCancelled 가 취소로 판정하므로 별도 검사가 필요 없다.
+// 개최자가 취소한 분철(HOST_CANCELLED)은 상세 조회가 404 를 반환하므로 호출하지 않는다.
 function isBuncheolDetailInaccessible(bid: BidRecord) {
-  return (
-    isBidRecordCancelled(bid) || isBuncheolDeletedStatus(bid.buncheolStatus)
-  );
+  return isBidRecordCancelled(bid);
 }
 
 /** 내 참여 목록을 서버에서 다시 읽어 카드로 만든다. 모듈 스코프 — 폴링 effect 의 deps 에 걸리지 않게. */
@@ -1678,7 +1680,7 @@ function getHostedProductCancelBlockedNotice(product: ProductDetailItem) {
 
 function getHostedProductFromBuncheol(
   buncheol: MyHostedBuncheol,
-): ProductDetailItem {
+): HostedProductItem {
   const imageUrl =
     buncheol.thumbnailUrl ?? getCachedProductImageUrl(buncheol.id);
 
@@ -1703,6 +1705,7 @@ function getHostedProductFromBuncheol(
     tone: getToneFromId(buncheol.id),
     courier: "배송 방법 확인 필요",
     deadline: formatApiDateTime(buncheol.deadline),
+    deadlineAt: buncheol.deadline || null,
     description: "",
     flowType: buncheol.flowType ?? null,
     imageUrl,
@@ -1794,13 +1797,12 @@ export function BidHistoryContent({
   const [isStatusHelpSheetClosing, setIsStatusHelpSheetClosing] =
     useState(false);
   const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
-  const paymentCopyToastTimerRef = useRef<number | null>(null);
-  const [paymentCopyToast, setPaymentCopyToast] = useState("");
+  const [paymentCopyToast, showPaymentCopyToast] = useToast(
+    BRIEF_TOAST_DURATION_MS,
+  );
   const [paybackSheetBidId, setPaybackSheetBidId] = useState<string | null>(
     null,
   );
-  const paybackToastTimerRef = useRef<number | null>(null);
-  const [paybackToast, setPaybackToast] = useState("");
   const [selectedPaymentAddressId, setSelectedPaymentAddressId] = useState<
     string | null
   >(null);
@@ -1818,6 +1820,8 @@ export function BidHistoryContent({
   // 보장되지 않아, 취소 직전 출발한 폴링이 늦게 도착하면 낡은 배송비가 다시 깔린다.
   // 세대를 올려 늦게 온 응답을 버린다 — paymentStoreTypeRequestIdRef 와 같은 방식.
   const bidRecordsGenerationRef = useRef(0);
+  // 개최 목록도 같은 방식 — 삭제 버튼의 재발급으로 다시 돈 첫 로딩의 옛 응답이 지운 카드를 되살리지 않게.
+  const hostedProductsGenerationRef = useRef(0);
   const storedAddressState = useSyncExternalStore(
     subscribeDeliveryAddressState,
     readDeliveryAddressState,
@@ -1858,7 +1862,7 @@ export function BidHistoryContent({
     useState<HostedHistoryFilter>("all");
   const [apiBidRecords, setApiBidRecords] = useState<BidRecord[] | null>(null);
   const [apiHostedProducts, setApiHostedProducts] = useState<
-    ProductDetailItem[] | null
+    HostedProductItem[] | null
   >(null);
   const [deletingHostedProductId, setDeletingHostedProductId] = useState<
     string | null
@@ -1867,8 +1871,7 @@ export function BidHistoryContent({
   const [pendingParticipationId, setPendingParticipationId] = useState<
     string | null
   >(null);
-  const actionToastTimerRef = useRef<number | null>(null);
-  const [actionToast, setActionToast] = useState("");
+  const [actionToast, showActionToast] = useToast();
   // 되돌리기 어려운 참여 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
     useState<ConfirmSheetRequest | null>(null);
@@ -2029,7 +2032,7 @@ export function BidHistoryContent({
     : null;
   const selectedPaymentRemainingTime = selectedPaymentBid
     ? formatPaymentCountdown(
-        selectedPaymentBid.deadline,
+        selectedPaymentBid,
         now,
         selectedPaymentBid.paymentDueAt,
         selectedPaymentBid.createdAt,
@@ -2038,7 +2041,7 @@ export function BidHistoryContent({
     : "";
   const selectedPaymentDeadlineMs = selectedPaymentBid
     ? getPaymentDeadlineDate(
-        selectedPaymentBid.deadline,
+        selectedPaymentBid,
         selectedPaymentBid.paymentDueAt,
         selectedPaymentBid.createdAt,
         isSelectedPaymentC2C,
@@ -2060,18 +2063,6 @@ export function BidHistoryContent({
 
       if (paymentSheetCloseTimerRef.current !== null) {
         window.clearTimeout(paymentSheetCloseTimerRef.current);
-      }
-
-      if (paymentCopyToastTimerRef.current !== null) {
-        window.clearTimeout(paymentCopyToastTimerRef.current);
-      }
-
-      if (paybackToastTimerRef.current !== null) {
-        window.clearTimeout(paybackToastTimerRef.current);
-      }
-
-      if (actionToastTimerRef.current !== null) {
-        window.clearTimeout(actionToastTimerRef.current);
       }
 
       if (addressSheetCloseTimerRef.current !== null) {
@@ -2143,10 +2134,26 @@ export function BidHistoryContent({
     }
 
     let isActive = true;
+    // 만료된 토큰은 요청 전에 재발급한다. 토큰이 바뀌면 이 effect 가 새 토큰으로 다시 돌고,
+    // null(재발급 실패 → 로그인 정보 삭제)이면 로그인 화면 이동이 처리하므로 여기선 아무것도 띄우지 않는다.
+    const isAccessTokenUsable = getFreshAccessToken().then(
+      (freshAccessToken) => isActive && freshAccessToken === accessToken,
+    );
+    // 버튼(취소·보냈어요)이 재발급하면 이 effect 가 그 요청과 동시에 다시 돈다. 버튼이 낙관 반영하며
+    // 세대를 올리므로, 그보다 먼저 출발한 목록 응답은 반영 전 상태라 버린다(폴링과 같은 방식).
+    let participationsGeneration = bidRecordsGenerationRef.current;
 
-    requestMyParticipations(accessToken)
+    isAccessTokenUsable
+      .then((isUsable) => {
+        participationsGeneration = bidRecordsGenerationRef.current;
+        return isUsable ? requestMyParticipations(accessToken) : null;
+      })
       .then((participations) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          !participations ||
+          bidRecordsGenerationRef.current !== participationsGeneration
+        ) {
           return;
         }
 
@@ -2216,7 +2223,10 @@ export function BidHistoryContent({
         });
       })
       .catch((error: unknown) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          bidRecordsGenerationRef.current !== participationsGeneration
+        ) {
           return;
         }
 
@@ -2228,9 +2238,19 @@ export function BidHistoryContent({
         );
       });
 
-    requestMyHostedBuncheols(accessToken)
+    let hostedProductsGeneration = hostedProductsGenerationRef.current;
+
+    isAccessTokenUsable
+      .then((isUsable) => {
+        hostedProductsGeneration = hostedProductsGenerationRef.current;
+        return isUsable ? requestMyHostedBuncheols(accessToken) : null;
+      })
       .then((buncheols) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          !buncheols ||
+          hostedProductsGenerationRef.current !== hostedProductsGeneration
+        ) {
           return;
         }
 
@@ -2238,7 +2258,10 @@ export function BidHistoryContent({
         setHostedMessage("");
       })
       .catch((error: unknown) => {
-        if (!isActive) {
+        if (
+          !isActive ||
+          hostedProductsGenerationRef.current !== hostedProductsGeneration
+        ) {
           return;
         }
 
@@ -2506,10 +2529,6 @@ export function BidHistoryContent({
       .filter((product) => {
         const isClosed = isHostedProductClosed(product, now);
 
-        if (isBuncheolDeletedStatus(product.status)) {
-          return false;
-        }
-
         if (hostedFilter === "active") {
           return !isClosed;
         }
@@ -2542,8 +2561,8 @@ export function BidHistoryContent({
             return leftOpenedAt === null ? 1 : -1;
           }
 
-          const leftDeadline = parseHistoryDeadline(left.deadline).getTime();
-          const rightDeadline = parseHistoryDeadline(right.deadline).getTime();
+          const leftDeadline = getHostedProductDeadlineDate(left).getTime();
+          const rightDeadline = getHostedProductDeadlineDate(right).getTime();
           const isLeftDeadlineValid = !Number.isNaN(leftDeadline);
           const isRightDeadlineValid = !Number.isNaN(rightDeadline);
 
@@ -2566,10 +2585,7 @@ export function BidHistoryContent({
   ]);
   const hasAnyHostedRecords = useMemo(
     () =>
-      authState.isLoggedIn &&
-      (apiHostedProducts ?? []).some(
-        (product) => !isBuncheolDeletedStatus(product.status),
-      ),
+      authState.isLoggedIn && (apiHostedProducts ?? []).length > 0,
     [apiHostedProducts, authState.isLoggedIn],
   );
 
@@ -2636,9 +2652,17 @@ export function BidHistoryContent({
     setIsPaymentSheetClosing(false);
 
     if (!selectedBid.hostBankAccount && authState.accessToken) {
-      requestParticipationPaymentDetail(authState.accessToken, selectedBid.id)
+      getFreshAccessToken()
+        .then((accessToken) =>
+          accessToken
+            ? requestParticipationPaymentDetail(accessToken, selectedBid.id)
+            : null,
+        )
         .then((paymentDetail) => {
-          if (paymentStoreTypeRequestIdRef.current !== requestId) {
+          if (
+            !paymentDetail ||
+            paymentStoreTypeRequestIdRef.current !== requestId
+          ) {
             return;
           }
 
@@ -2810,19 +2834,11 @@ export function BidHistoryContent({
         ) ?? records,
     );
 
-    if (paybackToastTimerRef.current !== null) {
-      window.clearTimeout(paybackToastTimerRef.current);
-    }
-
-    setPaybackToast(
+    showActionToast(
       wasRequested
         ? "후기 링크를 수정했어요!"
         : "배송비 환급 신청 완료! 후기 확인 후 배송비를 보내드려요.",
     );
-    paybackToastTimerRef.current = window.setTimeout(() => {
-      setPaybackToast("");
-      paybackToastTimerRef.current = null;
-    }, 3200);
   }
 
   function openStatusHelpSheet() {
@@ -2973,7 +2989,14 @@ export function BidHistoryContent({
     setDeletingHostedProductId(buncheolId);
 
     try {
-      await deleteBuncheol(accessToken, buncheolId);
+      const freshAccessToken = await getFreshAccessToken();
+
+      if (!freshAccessToken) {
+        return;
+      }
+
+      await deleteBuncheol(freshAccessToken, buncheolId);
+      hostedProductsGenerationRef.current += 1;
       setApiHostedProducts((current) =>
         current
           ? current.filter(
@@ -2991,18 +3014,6 @@ export function BidHistoryContent({
     } finally {
       setDeletingHostedProductId(null);
     }
-  }
-
-  function showActionToast(message: string) {
-    if (actionToastTimerRef.current !== null) {
-      window.clearTimeout(actionToastTimerRef.current);
-    }
-
-    setActionToast(message);
-    actionToastTimerRef.current = window.setTimeout(() => {
-      setActionToast("");
-      actionToastTimerRef.current = null;
-    }, 3200);
   }
 
   // 자리 2개 이상 묶음의 카드. 이체 1회 · 배송비 1회 · 택배 1개를 한 장으로 보여준다.
@@ -3405,6 +3416,11 @@ export function BidHistoryContent({
       return;
     }
 
+    if (!bid.bundleId) {
+      showActionToast(MARK_SENT_MISSING_BUNDLE_MESSAGE);
+      return;
+    }
+
     const memberNames = targets.flatMap((target) =>
       getBidRecordOptionLabels(target),
     );
@@ -3462,25 +3478,26 @@ export function BidHistoryContent({
       isParticipationAwaitingPaymentStatus,
     );
 
-    if (targets.length === 0) {
+    if (targets.length === 0 || !bid.bundleId) {
       return;
     }
 
     setPendingParticipationId(bid.id);
 
     try {
-      if (bid.bundleId) {
-        await requestBundlePaymentSent(accessToken, bid.bundleId);
-      } else {
-        // 묶음을 모르는 응답 — 구 동작 그대로 슬롯마다 부른다. 한 건이라도 실패하면 전부 실패로
-        // 다루어 화면과 서버가 갈리지 않게 한다(부분 성공을 낙관적으로 반영하지 않는다).
-        for (const target of targets) {
-          await requestParticipationPaymentSent(accessToken, target.id);
-        }
+      const freshAccessToken = await getFreshAccessToken();
+
+      if (!freshAccessToken) {
+        showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
       }
+
+      await requestBundlePaymentSent(freshAccessToken, bid.bundleId);
 
       const sentAt = new Date().toISOString();
       const markedIds = new Set(targets.map((target) => target.id));
+      // 이보다 먼저 출발한 목록 응답(첫 로딩 재실행·폴링)이 늦게 와서 '입금 대기'로 되돌리지 않게 한다.
+      bidRecordsGenerationRef.current += 1;
       setApiBidRecords((records) =>
         records
           ? records.map((record) =>
@@ -3553,7 +3570,14 @@ export function BidHistoryContent({
     setPendingParticipationId(bid.id);
 
     try {
-      await cancelParticipation(accessToken, bid.id);
+      const freshAccessToken = await getFreshAccessToken();
+
+      if (!freshAccessToken) {
+        showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        return;
+      }
+
+      await cancelParticipation(freshAccessToken, bid.id);
       const cancelPatch = (records: BidRecord[]) =>
         records.map((record) =>
           record.id === bid.id
@@ -3578,7 +3602,7 @@ export function BidHistoryContent({
       const generation = (bidRecordsGenerationRef.current += 1);
 
       try {
-        const records = await fetchBidRecords(accessToken);
+        const records = await fetchBidRecords(freshAccessToken);
 
         if (bidRecordsGenerationRef.current === generation) {
           // ⚠️ 낙관 패치를 다시 얹는다. 서버가 아직 취소를 반영하지 않은 응답을 주면(읽기 지연)
@@ -3701,21 +3725,12 @@ export function BidHistoryContent({
       return;
     }
 
-    if (paymentCopyToastTimerRef.current !== null) {
-      window.clearTimeout(paymentCopyToastTimerRef.current);
-    }
-
     try {
       await navigator.clipboard.writeText(value);
-      setPaymentCopyToast(`${label}가 복사됐어요.`);
+      showPaymentCopyToast(`${label}가 복사됐어요.`);
     } catch {
-      setPaymentCopyToast(`${label}를 복사하지 못했어요.`);
+      showPaymentCopyToast(`${label}를 복사하지 못했어요.`);
     }
-
-    paymentCopyToastTimerRef.current = window.setTimeout(() => {
-      setPaymentCopyToast("");
-      paymentCopyToastTimerRef.current = null;
-    }, 1800);
   }
 
   // 스크롤 복원 단일 이펙트 — 탭 전환 복원(우선)과 세션스토리지 복원(페이지 재진입)을
@@ -4806,17 +4821,10 @@ export function BidHistoryContent({
                   개최자 오픈채팅 참여하기 →
                 </a>
               ) : null}
-              {paymentCopyToast ? (
-                <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                  <p
-                    aria-live="polite"
-                    className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                    role="status"
-                  >
-                    {paymentCopyToast}
-                  </p>
-                </div>
-              ) : null}
+              <Toast
+                className="absolute inset-x-0 bottom-3 px-4"
+                message={paymentCopyToast}
+              />
             </div>
 
             <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
@@ -4875,19 +4883,27 @@ export function BidHistoryContent({
             </div>
 
             {isSelectedPaymentC2C && isSelectedPaymentReady ? (
-              <button
-                className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
-                disabled={
-                  !selectedPaymentBankAccount ||
-                  pendingParticipationId !== null
-                }
-                onClick={() => requestMarkPaymentSent(selectedPaymentBid)}
-                type="button"
-              >
-                {pendingParticipationId !== null
-                  ? "표시하는 중"
-                  : "입금 보냈어요"}
-              </button>
+              <>
+                {!selectedPaymentBid.bundleId ? (
+                  <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                    {MARK_SENT_MISSING_BUNDLE_MESSAGE}
+                  </p>
+                ) : null}
+                <button
+                  className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
+                  disabled={
+                    !selectedPaymentBankAccount ||
+                    !selectedPaymentBid.bundleId ||
+                    pendingParticipationId !== null
+                  }
+                  onClick={() => requestMarkPaymentSent(selectedPaymentBid)}
+                  type="button"
+                >
+                  {pendingParticipationId !== null
+                    ? "표시하는 중"
+                    : "입금 보냈어요"}
+                </button>
+              </>
             ) : isSelectedPaymentSent ? (
               // 되돌리는 전이가 없다 (docs/71 §8-2) — 잘못 눌렀으면 개최자에게 알리는 것이 유일한 경로다.
               <p className="mt-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5 text-[12px] font-medium leading-5 text-black/45">
@@ -4913,17 +4929,10 @@ export function BidHistoryContent({
         request={confirmSheetRequest}
       />
 
-      {actionToast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
-          <p
-            aria-live="polite"
-            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-            role="status"
-          >
-            {actionToast}
-          </p>
-        </div>
-      ) : null}
+      <Toast
+        className="fixed inset-x-0 bottom-24 z-50 px-6"
+        message={actionToast}
+      />
 
       {selectedPaybackBid ? (
         <ShippingFeePaybackSheet
@@ -4941,18 +4950,6 @@ export function BidHistoryContent({
             payback: selectedPaybackBid.payback ?? null,
           }}
         />
-      ) : null}
-
-      {paybackToast ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-6">
-          <p
-            aria-live="polite"
-            className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-            role="status"
-          >
-            {paybackToast}
-          </p>
-        </div>
       ) : null}
 
       {isAddressSheetOpen ? (

@@ -50,6 +50,8 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
   isBuncheolRecruitingStatus,
+  isParticipationCancelledStatus,
+  isParticipationConfirmedStatus,
 } from "@/lib/buncheol-states";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
@@ -90,6 +92,11 @@ import {
   TrashIcon,
 } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import {
+  BRIEF_TOAST_DURATION_MS,
+  Toast,
+  useToast,
+} from "@/components/Toast";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
@@ -100,6 +107,7 @@ import {
   FavoritesContent,
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
+import { PRODUCT_HOME_ENTRY_ID_KEY } from "@/components/ProductCard";
 import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -243,6 +251,10 @@ const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
+const PRODUCT_HOME_ENTRY_STATE_KEY = "__buncheolProductFromHome";
+// 카드를 눌렀는데 상세가 못 그려지면(로딩 중 뒤로가기·조회 실패) 값이 남는다. 오래된 값으로 표시를
+// 붙이면 ‹ 가 홈이 아닌 칸(외부 사이트일 수 있음)으로 back() 하므로 클릭 직후 값만 인정한다.
+const PRODUCT_HOME_ENTRY_MAX_AGE_MS = 10_000;
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
@@ -294,6 +306,8 @@ type CheckoutPaymentItem = {
 type CheckoutPaymentSummary = {
   deliveryAddress: DeliveryAddress | null;
   hostBankAccount: BankAccountInfo | null;
+  // 코드 없이 0원으로 바로 확정된 LEGACY 참여 — "codeConfirmed" 단계를 같이 쓰고 부제만 다르다.
+  isFreeConfirmed: boolean;
   items: CheckoutPaymentItem[];
   paymentDueAt?: string | null;
   productAmount: number;
@@ -409,6 +423,7 @@ type ProductHistoryState = {
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_ARTIST_ENTRY_STATE_KEY]?: unknown;
+  [PRODUCT_HOME_ENTRY_STATE_KEY]?: unknown;
 };
 
 function OptionAvatar({
@@ -456,6 +471,29 @@ function hasFavoritesEntryState() {
 
 function hasArtistEntryState() {
   return getHistoryState()?.[PRODUCT_ARTIST_ENTRY_STATE_KEY] === true;
+}
+
+function hasHomeEntryState() {
+  return getHistoryState()?.[PRODUCT_HOME_ENTRY_STATE_KEY] === true;
+}
+
+function readFreshHomeEntryId(rawValue: string | null) {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const { at, id } = JSON.parse(rawValue) as { at?: unknown; id?: unknown };
+    const ageMs = Date.now() - Number(at);
+
+    return typeof id === "string" &&
+      ageMs >= 0 &&
+      ageMs <= PRODUCT_HOME_ENTRY_MAX_AGE_MS
+      ? id
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function priceToNumber(price: string) {
@@ -779,39 +817,18 @@ function getMyBidsFromOptions(options: ProductOption[]) {
   }, {});
 }
 
-function isConfirmedPurchaseStatus(status: string | undefined) {
-  const normalized = status?.toUpperCase();
-
-  return (
-    normalized === "CONFIRMED" ||
-    normalized === "PAYMENT_CONFIRMED" ||
-    normalized === "PAID"
-  );
-}
-
 function isConfirmedOptionPurchase(option: ProductOption) {
   const saleStatus = option.saleStatus?.toUpperCase();
 
   return Boolean(
     option.purchasePaymentConfirmedAt ||
       saleStatus === "SOLD" ||
-      isConfirmedPurchaseStatus(option.purchasePaymentStatus),
+      isParticipationConfirmedStatus(option.purchasePaymentStatus),
   );
 }
 
-function isInactiveOptionPurchaseStatus(status: string | undefined) {
-  return [
-    "CANCELLED",
-    "CANCELED",
-    "EXPIRED",
-    "FAILED",
-    "REFUNDED",
-    "REJECTED",
-  ].includes(status?.toUpperCase() ?? "");
-}
-
 function hasOptionPurchaseState(option: ProductOption) {
-  if (isInactiveOptionPurchaseStatus(option.purchasePaymentStatus)) {
+  if (isParticipationCancelledStatus(option.purchasePaymentStatus)) {
     return false;
   }
 
@@ -857,7 +874,7 @@ function toOptimisticSaleStatus(
     return "APPLIED";
   }
 
-  if (isConfirmedPurchaseStatus(status)) {
+  if (isParticipationConfirmedStatus(status)) {
     return "SOLD";
   }
 
@@ -1026,7 +1043,7 @@ function getManagementOptionPurchaseState(option: BuncheolManagementOption) {
   }
 
   const participant = option.participants?.find(
-    (item) => !isInactiveOptionPurchaseStatus(item.status),
+    (item) => !isParticipationCancelledStatus(item.status),
   );
 
   if (!participant) {
@@ -1109,7 +1126,6 @@ export function ProductDetail({
   const checkoutSelectedOptionsRef = useRef<CheckoutAddressReturnOption[]>([]);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
   const checkoutAddressSheetCloseFallbackTimerRef = useRef<number | null>(null);
-  const checkoutCopyToastTimerRef = useRef<number | null>(null);
   const productImagePointerStartXRef = useRef<number | null>(null);
   const wasProductImageDraggedRef = useRef(false);
   const [returnQuery] = useState<string | undefined>(initialReturnQuery);
@@ -1153,12 +1169,12 @@ export function ProductDetail({
   const checkoutAddressCreateRef = useRef(false);
   // 공유 시트가 뜨는 동안 재진입을 막는다 (checkoutAddressCreateRef 와 동일 패턴).
   const isSharePendingRef = useRef(false);
-  const productToastTimerRef = useRef<number | null>(null);
-  const [productToast, setProductToast] = useState("");
+  const [productToast, showProductToast] = useToast();
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
-  const [checkoutCopyToast, setCheckoutCopyToast] = useState("");
+  const [checkoutCopyToast, showCheckoutCopyToast, hideCheckoutCopyToast] =
+    useToast(BRIEF_TOAST_DURATION_MS);
   const [auctionOptions, setAuctionOptions] = useState<ProductOption[]>(
     product.options,
   );
@@ -1438,26 +1454,6 @@ export function ProductDetail({
     writeDeliveryAddressState(nextAddressState);
     return nextAddressState;
   }
-
-  function showProductToast(message: string) {
-    if (productToastTimerRef.current !== null) {
-      window.clearTimeout(productToastTimerRef.current);
-    }
-
-    setProductToast(message);
-    productToastTimerRef.current = window.setTimeout(() => {
-      setProductToast("");
-      productToastTimerRef.current = null;
-    }, 3200);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (productToastTimerRef.current !== null) {
-        window.clearTimeout(productToastTimerRef.current);
-      }
-    };
-  }, []);
 
   // 계좌 시트 등장 트랜지션 — 다른 시트들의 rAF 2단계 진입 패턴과 동일.
   useEffect(() => {
@@ -1801,6 +1797,23 @@ export function ProductDetail({
     auctionOptions.every(
       (option) => priceToNumber(getBidBaseline(option)) === 0,
     );
+  // 모든 배송 방법이 실제 0원인 서버 분철. priceToNumber 는 「판매자 안내」(목업)·「-」(공개 미리보기)도
+  // 0 으로 바꾸므로 숫자가 적힌 값만 센다.
+  const isAllShippingFree =
+    product.isApiProduct === true &&
+    shippingMethods.length > 0 &&
+    shippingMethods.every(
+      (method) => /\d/.test(method.price) && priceToNumber(method.price) === 0,
+    );
+  // 돌려받을 배송비가 없으면 환급 안내는 지킬 수 없는 약속이다(서버 환급 판정도 배송비 > 0 을 요구).
+  const showShippingFeePaybackNotice =
+    isShippingFeePaybackProduct && !isAllShippingFree;
+  // 참여 확인 단계의 미리 보기 문구 전용. 결과 화면은 서버 응답(금액 0 + 기한 없음)으로 판정한다.
+  const isFreeCheckoutEstimate =
+    !isC2CProduct &&
+    !isCodeCheckout &&
+    activeBidCount > 0 &&
+    estimatedCheckoutTotal === 0;
   // 서버 수정 가드(validateRecruiting)와 같은 조건으로 맞춘다 — 모집중이고 마감 전일 때만 저장이 통한다.
   // 상태를 안 보면 성사 확정 뒤에도 버튼이 떠서, 개최자가 다 고친 뒤 저장에서야 거부당한다.
   // 로컬 임시 분철(uploaded-)은 서버 가드 대상이 아니라 그대로 둔다.
@@ -2110,13 +2123,19 @@ export function ProductDetail({
     setCheckoutCodeInput("");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
 
     // 이 리셋이 복원된 체크아웃 상태를 지웠을 수 있으므로 재적용을 예약한다.
     if (pendingCheckoutRestoreRef.current?.productId === buncheolId) {
       shouldApplyCheckoutRestoreRef.current = true;
     }
-  }, [buncheolId, product.id, product.isHostedByMe, product.options]);
+  }, [
+    buncheolId,
+    hideCheckoutCopyToast,
+    product.id,
+    product.isHostedByMe,
+    product.options,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2268,7 +2287,7 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -2468,45 +2487,70 @@ export function ProductDetail({
     };
   }, [product.isHostedByMe, refreshDetailOptions]);
 
-  // 재조회를 이미 트리거한 만료 기한. 서버 자동 취소가 늦어도 tick마다 재조회가 반복되지 않게 한다.
-  const refreshedExpiredDueAtsRef = useRef<Set<string>>(new Set());
+  // 지난 입금 기한별 재조회 횟수·마지막 시각. LEGACY 는 서버가 1분 주기로 만료 자리를 풀어 기한 뒤에도
+  // 최대 약 1분 '입금 대기'로 오므로 기한 시각 1회 뒤 15초 간격으로 다시 묻는다(기한당 최대 13회 — 서버가 끝내
+  // 안 풀어도 멈춘다). C2C 는 서버가 기한 뒤 자동으로 풀지 않으므로 기한 시각 1회만 묻는다.
+  const expiredDueAtRefreshesRef = useRef<
+    Map<string, { count: number; lastRefreshedAt: number }>
+  >(new Map());
   const didSeedExpiredDueAtsRef = useRef(false);
 
   useEffect(() => {
-    const expiredDueAts = auctionOptions
-      .map((option) => option.purchasePaymentDueAt)
-      .filter((dueAt): dueAt is string => {
-        if (!dueAt) {
-          return false;
-        }
+    const expiredDueAts = Array.from(
+      new Set(
+        auctionOptions
+          .map((option) => option.purchasePaymentDueAt)
+          .filter((dueAt): dueAt is string => {
+            if (!dueAt) {
+              return false;
+            }
 
-        const dueTime = parseCheckoutDateTime(dueAt).getTime();
+            const dueTime = parseCheckoutDateTime(dueAt).getTime();
 
-        return !Number.isNaN(dueTime) && dueTime <= deadlineTick;
-      });
+            return !Number.isNaN(dueTime) && dueTime <= deadlineTick;
+          }),
+      ),
+    );
+    const refreshes = expiredDueAtRefreshesRef.current;
 
-    // 첫 평가 시점에 이미 지나 있던 기한은 마운트 재조회가 커버하므로 기록만 한다.
+    // 첫 평가 시점에 이미 지나 있던 기한은 마운트 재조회를 1회로 치고, 15초 뒤부터 같은 규칙으로 이어 간다.
     if (!didSeedExpiredDueAtsRef.current) {
       didSeedExpiredDueAtsRef.current = true;
       expiredDueAts.forEach((dueAt) =>
-        refreshedExpiredDueAtsRef.current.add(dueAt),
+        refreshes.set(dueAt, { count: 1, lastRefreshedAt: deadlineTick }),
       );
       return;
     }
 
-    const hasNewlyExpiredDueAt = expiredDueAts.some(
-      (dueAt) => !refreshedExpiredDueAtsRef.current.has(dueAt),
-    );
+    const maxRefreshesPerDueAt = isC2CProduct ? 1 : 13;
+    const retryIntervalMs = 15_000;
+    const shouldRefresh = expiredDueAts.some((dueAt) => {
+      const record = refreshes.get(dueAt);
 
-    if (!hasNewlyExpiredDueAt) {
+      return (
+        !record ||
+        (record.count < maxRefreshesPerDueAt &&
+          deadlineTick - record.lastRefreshedAt >= retryIntervalMs)
+      );
+    });
+
+    if (!shouldRefresh) {
       return;
     }
 
-    expiredDueAts.forEach((dueAt) =>
-      refreshedExpiredDueAtsRef.current.add(dueAt),
-    );
+    // 재조회 한 번은 지금 지나 있는 모든 기한을 함께 확인하므로 각 기한의 1회로 친다.
+    expiredDueAts.forEach((dueAt) => {
+      const count = refreshes.get(dueAt)?.count ?? 0;
+
+      if (count < maxRefreshesPerDueAt) {
+        refreshes.set(dueAt, {
+          count: count + 1,
+          lastRefreshedAt: deadlineTick,
+        });
+      }
+    });
     void refreshDetailOptions();
-  }, [auctionOptions, deadlineTick, refreshDetailOptions]);
+  }, [auctionOptions, deadlineTick, isC2CProduct, refreshDetailOptions]);
 
   function togglePurchaseOption(optionId: string) {
     const option = auctionOptions.find((item) => item.id === optionId);
@@ -2806,6 +2850,7 @@ export function ProductDetail({
       }
 
       let didRequestParticipation = false;
+      let isFreeConfirmedCheckout = false;
 
       try {
         const checkoutRequestItems = submittedBids.map(
@@ -2863,6 +2908,13 @@ export function ProductDetail({
           isC2CProduct && !isC2CCollectingProduct && !result.paymentDueAt;
         // 계좌·기한이 없는 게 정상이라 결제 상세 보충 조회를 태우면 빈 응답을 입금 안내로 오인한다.
         const isCodeConfirmedResult = isCodeCheckout;
+        // LEGACY 0원 + 고른 편의점 배송비 0원은 서버가 즉시 확정하고 계좌·기한 없이 응답한다(유료 LEGACY 는
+        // 기한이 늘 있다). 보충 조회를 태우면 30분 기한이 입금 안내로 뜬다. C2C 신청도 기한이 없어 제외한다.
+        isFreeConfirmedCheckout =
+          !isC2CProduct &&
+          !isCodeCheckout &&
+          result.paymentAmount === 0 &&
+          !result.paymentDueAt;
         let paymentDetail:
           | Awaited<ReturnType<typeof requestParticipationPaymentDetail>>
           | null = null;
@@ -2870,6 +2922,7 @@ export function ProductDetail({
         if (
           !isC2CAppliedResult &&
           !isCodeConfirmedResult &&
+          !isFreeConfirmedCheckout &&
           firstParticipationId &&
           (!result.hostBankAccount ||
             result.paymentAmount === null ||
@@ -2901,12 +2954,13 @@ export function ProductDetail({
         // 확인 스텝 표기와 동일하게 폴백 금액에서도 배송비를 더하지 않는다.
         // 코드 참여는 서버가 0원을 확정해 내려준다. 폴백을 열어 두면 배송비가 캐시에 굳어
         // 참여 내역이 "0원 참여"를 유상으로 표시한다.
-        const totalPaymentAmount = isCodeConfirmedResult
-          ? 0
-          : result.paymentAmount ??
-            paymentDetail?.paymentAmount ??
-            totalBidAmount +
-              (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
+        const totalPaymentAmount =
+          isCodeConfirmedResult || isFreeConfirmedCheckout
+            ? 0
+            : result.paymentAmount ??
+              paymentDetail?.paymentAmount ??
+              totalBidAmount +
+                (isAdditionalC2CApplication ? 0 : estimatedShippingFee);
         const sharedShippingFee = Math.max(
           totalPaymentAmount - totalBidAmount,
           0,
@@ -2920,7 +2974,7 @@ export function ProductDetail({
         // C2C 신청은 APPLIED 로 바로잡는다 (dueAt 부재 = 확정 전 신청).
         const sharedParticipationStatus = isC2CAppliedResult
           ? "APPLIED"
-          : isCodeConfirmedResult
+          : isCodeConfirmedResult || isFreeConfirmedCheckout
             ? "CONFIRMED"
             : result.participationStatus ||
               paymentDetail?.paymentStatus ||
@@ -3036,6 +3090,7 @@ export function ProductDetail({
       setCheckoutPaymentSummary({
         deliveryAddress: nextBidDeliveryAddress,
         hostBankAccount: checkoutHostBankAccount,
+        isFreeConfirmed: isFreeConfirmedCheckout,
         items: paymentItems,
         paymentDueAt: getEarliestPaymentDueAt(paymentItems),
         productAmount: paymentItems.reduce(
@@ -3054,7 +3109,7 @@ export function ProductDetail({
       pendingCheckoutRestoreRef.current = null;
       // C2C 신청은 입금 안내 대신 신청 완료 화면으로 — 계좌·기한이 아직 없다.
       setCheckoutStep(
-        isCodeCheckout
+        isCodeCheckout || isFreeConfirmedCheckout
           ? "codeConfirmed"
           : paymentItems.some((item) => item.participationStatus === "APPLIED")
             ? "applied"
@@ -3088,6 +3143,11 @@ export function ProductDetail({
     }
 
     if (initialReturnSource === "home") {
+      if (hasHomeEntryState()) {
+        router.back();
+        return;
+      }
+
       router.replace("/");
       return;
     }
@@ -3217,6 +3277,30 @@ export function ProductDetail({
     }
   }, [initialReturnSource]);
 
+  // Next 기록엔 idx 가 없어 getHistoryIndex() 로는 판정할 수 없다. 카드가 남긴 일회용 id 로 판정하고,
+  // 표시가 없으면 replace("/") 로 떨어진다. 그려지기 전에 이미 홈으로 돌아갔으면 홈 칸에 붙이지 않는다.
+  useEffect(() => {
+    const homeEntryId = readFreshHomeEntryId(
+      window.sessionStorage.getItem(PRODUCT_HOME_ENTRY_ID_KEY),
+    );
+    window.sessionStorage.removeItem(PRODUCT_HOME_ENTRY_ID_KEY);
+
+    if (
+      initialReturnSource === "home" &&
+      homeEntryId === buncheolId &&
+      window.location.pathname ===
+        `/products/${encodeURIComponent(buncheolId)}`
+    ) {
+      window.history.replaceState(
+        {
+          ...(getHistoryState() ?? {}),
+          [PRODUCT_HOME_ENTRY_STATE_KEY]: true,
+        },
+        "",
+      );
+    }
+  }, [buncheolId, initialReturnSource]);
+
   useEffect(() => {
     if (!isExiting) {
       return;
@@ -3249,10 +3333,6 @@ export function ProductDetail({
 
       if (checkoutAddressSheetCloseFallbackTimerRef.current !== null) {
         window.clearTimeout(checkoutAddressSheetCloseFallbackTimerRef.current);
-      }
-
-      if (checkoutCopyToastTimerRef.current !== null) {
-        window.clearTimeout(checkoutCopyToastTimerRef.current);
       }
     };
   }, []);
@@ -3337,7 +3417,7 @@ export function ProductDetail({
       }
 
       // 내 찜 변경을 목록 카드(홈·아티스트)에도 반영해, 뒤로가기 시 하트 상태가 어긋나 보이지 않게 한다.
-      updateListingCachesLiked(queryClient, buncheolId, nextLiked);
+      await updateListingCachesLiked(queryClient, buncheolId, nextLiked);
     } catch {
       setIsLiked(!nextLiked);
     } finally {
@@ -3478,7 +3558,7 @@ export function ProductDetail({
     setCheckoutPaymentSummary(null);
     setCheckoutCodeInput("");
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -3669,7 +3749,7 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    setCheckoutCopyToast("");
+    hideCheckoutCopyToast();
 
     if (sheetCloseFallbackTimerRef.current !== null) {
       window.clearTimeout(sheetCloseFallbackTimerRef.current);
@@ -3759,19 +3839,10 @@ export function ProductDetail({
   async function copyCheckoutText(value: string, label: string) {
     try {
       await navigator.clipboard.writeText(value);
-      setCheckoutCopyToast(`${label}를 복사했어요.`);
+      showCheckoutCopyToast(`${label}를 복사했어요.`);
     } catch {
-      setCheckoutCopyToast(`${label} 복사에 실패했어요.`);
+      showCheckoutCopyToast(`${label} 복사에 실패했어요.`);
     }
-
-    if (checkoutCopyToastTimerRef.current !== null) {
-      window.clearTimeout(checkoutCopyToastTimerRef.current);
-    }
-
-    checkoutCopyToastTimerRef.current = window.setTimeout(() => {
-      setCheckoutCopyToast("");
-      checkoutCopyToastTimerRef.current = null;
-    }, 1800);
   }
 
   async function handleShareProduct() {
@@ -4088,9 +4159,9 @@ export function ProductDetail({
                 ))}
               </div>
               <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
-                이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이
-                중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께
-                입금해요.
+                {isAllShippingFree
+                  ? "이 분철에서 이용할 수 있는 배송 방법이에요. 참여할 때 이 중에서 택배 받을 편의점 지점을 고르면 되고, 배송비는 따로 내지 않아요."
+                  : "이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이 중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께 입금해요."}
               </p>
             </div>
             ) : null}
@@ -4229,7 +4300,7 @@ export function ProductDetail({
                         <p className="mt-0.5 text-[16px] font-semibold">
                           {getBidBaseline(option)}
                         </p>
-                        {isShippingFeePaybackProduct ? (
+                        {showShippingFeePaybackNotice ? (
                           <p className="mt-0.5 text-[11px] font-semibold text-[#7A8A3A]">
                             배송비만 결제
                           </p>
@@ -4240,7 +4311,7 @@ export function ProductDetail({
                 })}
               </div>
 
-              {isShippingFeePaybackProduct ? (
+              {showShippingFeePaybackNotice ? (
                 <div className="mt-4 rounded-[0.95rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-4">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F]">
@@ -4385,13 +4456,17 @@ export function ProductDetail({
                       : checkoutStep === "applied"
                         ? "개최자가 성사를 확정하면 입금 안내를 드려요."
                         : checkoutStep === "codeConfirmed"
-                          ? "코드가 확인돼 슬롯이 확정됐어요."
+                          ? checkoutPaymentSummary?.isFreeConfirmed
+                            ? "입금할 금액이 없어 바로 참여가 확정됐어요."
+                            : "코드가 확인돼 슬롯이 확정됐어요."
                           : checkoutStep === "confirm"
                             ? isCodeCheckout
                               ? "전달받은 참여 코드를 입력하면 슬롯이 확정돼요."
                               : isC2CProduct && !isC2CCollectingProduct
                                 ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
-                                : "참여하면 입금 계좌와 마감 시각이 안내돼요."
+                                : isFreeCheckoutEstimate
+                                  ? "입금할 금액이 없는 무료 참여예요."
+                                  : "참여하면 입금 계좌와 마감 시각이 안내돼요."
                             : canSelectMultipleMembers
                               ? "신청할 멤버를 선택해 주세요. 여러 자리를 골라 한 번에 신청할 수 있어요."
                               : isC2CProduct
@@ -4677,7 +4752,7 @@ export function ProductDetail({
                           )}
                         </span>
                       </div>
-                      {isShippingFeePaybackProduct ? (
+                      {isShippingFeePaybackProduct && estimatedShippingAmount > 0 ? (
                         <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
                           이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
                           <br />
@@ -4713,7 +4788,9 @@ export function ProductDetail({
                         ? "신청 단계에서는 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 드리고, 확정 전에는 언제든 무료로 취소할 수 있어요."
                         : isC2CCollectingProduct
                           ? "신청하면 24시간 입금 기한이 정해져요. 기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요."
-                          : "참여하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 참여가 자동 취소돼요."}
+                          : isFreeCheckoutEstimate
+                            ? "참여하면 바로 확정돼요. 입금 단계는 없어요."
+                            : "참여하면 입금 마감 시각이 정해져요. 마감 시간 내에 입금하지 않으면 참여가 자동 취소돼요."}
                     </p>
                     {isC2CProduct ? (
                       // 중개자 고지(전상법 §20① — docs/41 §3.3-1) + 미성년자 §13③ 취소 가능성 고지
@@ -4894,13 +4971,10 @@ export function ProductDetail({
                             </span>
                           ) : null}
                         </p>
-                        {checkoutCopyToast ? (
-                          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4">
-                            <p className="soft-panel-enter rounded-full bg-[#DDE7B8] px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.2)]">
-                              {checkoutCopyToast}
-                            </p>
-                          </div>
-                        ) : null}
+                        <Toast
+                          className="absolute inset-x-0 bottom-3 px-4"
+                          message={checkoutCopyToast}
+                        />
                       </div>
 
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
@@ -4918,7 +4992,8 @@ export function ProductDetail({
                             {formatPrice(checkoutPaymentSummary.totalAmount)}
                           </span>
                         </div>
-                        {isShippingFeePaybackProduct ? (
+                        {isShippingFeePaybackProduct &&
+                        checkoutPaymentSummary.shippingAmount > 0 ? (
                           <p className="mt-3 border-t border-white/15 pt-3 text-[12px] font-semibold leading-5 text-[#DDE7B8]">
                             이 분철은 전액 무료로 진행되는 이벤트 분철이에요.
                             <br />
@@ -5396,17 +5471,10 @@ export function ProductDetail({
           </div>
         ) : null}
 
-        {productToast ? (
-          <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[70] flex justify-center px-6">
-            <p
-              aria-live="polite"
-              className="soft-panel-enter rounded-full bg-black/92 px-4 py-3 text-center text-[12px] font-semibold tracking-[-0.04em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-              role="status"
-            >
-              {productToast}
-            </p>
-          </div>
-        ) : null}
+        <Toast
+          className="fixed inset-x-0 bottom-24 z-[70] px-6"
+          message={productToast}
+        />
 
         {isImageViewerOpen && productImages.length > 0 ? (
           <div className="fixed inset-0 z-[60] flex flex-col bg-black">

@@ -21,6 +21,7 @@ import {
   updateShippingAddress,
   type CvsStore,
 } from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import {
   getInitialAuthState,
   readAuthState,
@@ -248,12 +249,21 @@ export function AddressManagementContent({
     setIsAddressListLoading(true);
     setAddressMessage("");
 
-    syncDeliveryAddresses(accessToken)
-      .then(({ isLatest, nextState }) => {
+    // 만료된 토큰은 요청 전에 재발급한다. 토큰이 바뀌면 이 effect 가 새 토큰으로 다시 돌고,
+    // null(재발급 실패)이면 로그아웃 상태 안내가 대신 뜬다 — 자동 폼 열기 의도도 다음 실행에 남겨 둔다.
+    getFreshAccessToken()
+      .then((freshAccessToken) =>
+        isActive && freshAccessToken === accessToken
+          ? syncDeliveryAddresses(accessToken)
+          : null,
+      )
+      .then((syncResult) => {
         // The sync helper commits only if this is still the newest request.
-        if (!isActive || !pendingOpenFormOnEntryRef.current) {
+        if (!isActive || !syncResult || !pendingOpenFormOnEntryRef.current) {
           return;
         }
+
+        const { isLatest, nextState } = syncResult;
 
         pendingOpenFormOnEntryRef.current = false;
 
@@ -351,18 +361,28 @@ export function AddressManagementContent({
     }
 
     setIsSavingAddress(true);
+    let requestAccessToken = accessToken;
 
     try {
+      const freshAccessToken = await getFreshAccessToken();
+
+      if (!freshAccessToken) {
+        setFormErrorMessage("배송지는 로그인 후 이용할 수 있어요.");
+        return;
+      }
+
+      requestAccessToken = freshAccessToken;
+
       const previousAddressIds = new Set(
         deliveryAddresses.map((address) => address.id),
       );
 
-      await createShippingAddress(accessToken, {
+      await createShippingAddress(requestAccessToken, {
         ...addressDraft,
         isDefault: !defaultAddressIds[newAddressStoreType],
       });
 
-      const { nextState } = await syncDeliveryAddresses(accessToken);
+      const { nextState } = await syncDeliveryAddresses(requestAccessToken);
       const addedAddress =
         nextState.addresses.find(
           (address) => !previousAddressIds.has(address.id),
@@ -381,7 +401,7 @@ export function AddressManagementContent({
 
       // 로컬 목록이 낡아 서버가 개수 제한으로 거부했는지 재동기화로 판정한다.
       try {
-        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
+        const { isLatest, nextState } = await syncDeliveryAddresses(requestAccessToken);
 
         if (
           isLatest &&
@@ -415,7 +435,13 @@ export function AddressManagementContent({
 
     if (authState.isLoggedIn && accessToken) {
       try {
-        await updateShippingAddress(accessToken, selectedAddress.id, {
+        const freshAccessToken = await getFreshAccessToken();
+
+        if (!freshAccessToken) {
+          return;
+        }
+
+        await updateShippingAddress(freshAccessToken, selectedAddress.id, {
           alias: selectedAddress.alias,
           branchName: selectedAddress.branchName,
           isDefault: true,
@@ -423,7 +449,7 @@ export function AddressManagementContent({
           storeCode: selectedAddress.storeCode,
           storeType: selectedAddress.storeType,
         });
-        const { isLatest, nextState } = await syncDeliveryAddresses(accessToken);
+        const { isLatest, nextState } = await syncDeliveryAddresses(freshAccessToken);
 
         if (isLatest) {
           commitAddressState(
@@ -467,8 +493,14 @@ export function AddressManagementContent({
       setDeletingAddressIds((current) => [...current, addressId]);
 
       try {
-        await deleteShippingAddress(accessToken, addressId);
-        await syncDeliveryAddresses(accessToken);
+        const freshAccessToken = await getFreshAccessToken();
+
+        if (!freshAccessToken) {
+          return;
+        }
+
+        await deleteShippingAddress(freshAccessToken, addressId);
+        await syncDeliveryAddresses(freshAccessToken);
       } catch (error) {
         setAddressMessage(getDeliveryAddressDeleteErrorMessage(error));
       } finally {

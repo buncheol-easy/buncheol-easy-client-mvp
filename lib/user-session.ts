@@ -32,7 +32,7 @@ export function clearUserSessionState(queryClient: QueryClient) {
   clearSettlementAccountState();
   // 목록의 찜 여부·최애 그룹도 계정 스코프다. gcTime(30분) 안에 다른 계정으로 로그인하면
   // 로그인 키가 그대로 맞아, 이전 사용자의 하트·최애 레일이 첫 페인트에 그려진다.
-  // 비로그인 키는 남긴다 — 서버 프리페치로 채워지는 공용 캐시라 지우면 홈이 다시 전량 조회한다.
+  // 비로그인 키는 남긴다 — 서버 프리페치로 채워지는 공용 캐시라 지우면 홈이 스켈레톤부터 다시 받는다.
   queryClient.removeQueries({
     queryKey: buncheolsQueryKey,
     predicate: (query) => isLoggedInListingQueryKey(query.queryKey),

@@ -12,7 +12,7 @@ import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { FEATURES } from "@/lib/feature-flags";
 import {
   getBuncheolStatusBadgeLabel,
-  isBuncheolDeletedStatus,
+  isParticipationCancelledStatus,
 } from "@/lib/buncheol-states";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
@@ -54,12 +54,9 @@ export type UserProfileStatus = {
 
 // 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
 export const hostingEligibilityReasons = [
-  // 회원 개최 오픈 전 — 사용자가 무엇을 해도 해소되지 않는 유일한 사유다 (서버 USR-035).
-  // 배열 순서는 isHostingEligibilityReason 의 includes 에만 쓰여 동작에 영향이 없다.
-  "NOT_OPEN_YET",
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
-  // 연령대 미확인 — 카카오 재로그인 동의로 회복 가능 (서버 USR-032)
+  // 연령대 미확인 — 카카오 연령대 추가 동의로 회복 가능 (서버 USR-032)
   "AGE_UNVERIFIED",
   // 미성년 확정 — 개최 불가 (서버 USR-033)
   "NOT_ADULT",
@@ -97,17 +94,6 @@ export type UserProfile = {
   // 서버 게이트 위임(client#85) 이후 FE 미사용 — 선차단 재도입 금지, 서버 계약 문서화용으로만 유지.
   canHost?: boolean;
 };
-
-export function isUserProfileComplete(
-  profile: Pick<UserProfile, "nickname" | "phoneNumber"> | null | undefined,
-) {
-  const phoneNumber = profile?.phoneNumber.replace(/\D/g, "") ?? "";
-
-  return (
-    /^[가-힣A-Za-z0-9]{1,20}$/.test(profile?.nickname.trim() ?? "") &&
-    /^01\d{8,9}$/.test(phoneNumber)
-  );
-}
 
 export type UpdateUserProfileRequest = {
   nickname: string;
@@ -335,7 +321,6 @@ export type BuncheolMember = {
   memberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
-  myRank?: number;
   name: string;
   participantCount: number;
   participatedByMe?: boolean;
@@ -449,6 +434,10 @@ export type BuncheolManagementOption = {
   memberName: string;
   participants?: BuncheolManagementParticipant[];
   participationCount: number;
+  // 공개 상세 members[] 의 price(개최자가 정한 멤버 금액)·saleStatus. currentHighestBid 는 참여 금액(배송비 포함)이
+  // 우선이라 자리 가격으로 쓸 수 없다. 관리 응답에는 자리 목록이 없어 상세에서 옮겨 실을 때만 값이 있다.
+  price?: number;
+  saleStatus?: string;
   winner?: BuncheolManagementWinner | null;
 };
 
@@ -509,7 +498,6 @@ export type MyParticipation = {
   // CANCELLABLE | BLOCKED_BY_STATUS | FLOW_NOT_SUPPORTED | BLOCKED_BY_HOST_CONFIRM.
   // 필드가 없는 구 응답이면 null — 화면은 취소 버튼을 남기는 쪽으로 폴백한다.
   cancellability?: string | null;
-  closedRank?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
   thumbnailUrl?: string;
@@ -525,9 +513,6 @@ export type MyParticipation = {
   paymentDueAt?: string | null;
   // C2C "보냈어요" 마킹 시각 — 마킹 안 했으면 null.
   paymentSentAt?: string | null;
-  // 개최자가 "입금 못 찾음"으로 되돌린 시각. 서버가 입금 대기 구간에서만 값을 채워 주므로
-  // 값이 있으면 곧 "재확인이 필요한 상태"다 (docs/53 Q-03).
-  paymentRejectedAt?: string | null;
   createdAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
   // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
@@ -636,6 +621,23 @@ async function fetchWithTimeout(
 
 export function getKakaoAuthorizationUrl() {
   return `${getApiRootUrl()}/oauth2/authorization/kakao`;
+}
+
+// 로그인은 그대로 둔 채 카카오에 연령대만 추가로 동의받는다. 서버가 결과를 /upload?ageRangeConsent= 로 돌려준다.
+export function getKakaoAgeRangeConsentUrl() {
+  return `${getApiRootUrl()}/oauth2/authorization/kakao/age-range`;
+}
+
+export const ageRangeConsentResultParam = "ageRangeConsent";
+
+const ageRangeConsentResults = ["agreed", "cancelled", "failed"] as const;
+
+export type AgeRangeConsentResult = (typeof ageRangeConsentResults)[number];
+
+export function parseAgeRangeConsentResult(
+  value: string | undefined,
+): AgeRangeConsentResult | undefined {
+  return ageRangeConsentResults.find((result) => result === value);
 }
 
 function getAuthHeaders(accessToken?: string): Record<string, string> {
@@ -1751,6 +1753,8 @@ export async function requestUserProfileStatus(accessToken: string) {
   return { isProfileComplete } satisfies UserProfileStatus;
 }
 
+// 가입 미완료 회원은 403(USR-018)이라 200 이면 서버가 가입 완료로 본 회원이다. 응답 값으로 미완료를 다시 판정해
+// /signup/profile 로 보내면 그 화면이 서버 판정대로 곧바로 되돌려 보내 끝없이 오간다(예: 번호 NULL).
 export async function requestUserProfile(accessToken: string) {
   const response = await fetch(`${getVersionedApiBaseUrl()}/users/me`, {
     credentials: "include",
@@ -2731,17 +2735,6 @@ function getBuncheolMemberFromRecord(
   };
 }
 
-function isInactiveBuncheolPaymentStatus(status: string | undefined) {
-  return [
-    "CANCELLED",
-    "CANCELED",
-    "EXPIRED",
-    "FAILED",
-    "REFUNDED",
-    "REJECTED",
-  ].includes(status?.toUpperCase() ?? "");
-}
-
 function getBuncheolParticipantOptionIdentity(record: Record<string, unknown>) {
   const nestedMemberRecord = [
     record.buncheolMember,
@@ -2821,7 +2814,7 @@ function mergeBuncheolMemberPurchaseStates(
       "status",
     ]);
 
-    return !isInactiveBuncheolPaymentStatus(status);
+    return !isParticipationCancelledStatus(status);
   });
 
   if (participantRecords.length === 0) {
@@ -2913,7 +2906,7 @@ function getInheritedShippingFromRecord(data: Record<string, unknown>): {
 
 function getMyParticipationBidsFromRecord(
   data: Record<string, unknown>,
-): Map<string, { bidAmount: number; participationId: string; rank?: number }> {
+): Map<string, { bidAmount: number; participationId: string }> {
   const myParticipation = getNestedData(data.myParticipation);
 
   if (!isRecord(myParticipation)) {
@@ -2943,20 +2936,14 @@ function getMyParticipationBidsFromRecord(
         buncheolMemberId &&
         participationId &&
         bidAmount !== null &&
-        !isInactiveBuncheolPaymentStatus(status)
+        !isParticipationCancelledStatus(status)
       ) {
-        bids.set(buncheolMemberId, {
-          bidAmount,
-          participationId,
-          rank:
-            getOptionalNumberValue(record, ["rank", "closedRank"]) ??
-            undefined,
-        });
+        bids.set(buncheolMemberId, { bidAmount, participationId });
       }
 
       return bids;
     },
-    new Map<string, { bidAmount: number; participationId: string; rank?: number }>(),
+    new Map<string, { bidAmount: number; participationId: string }>(),
   );
 }
 
@@ -2981,7 +2968,7 @@ function getMyParticipationMemberIdsFromRecord(
         "participationStatus",
       ]);
 
-      if (buncheolMemberId && !isInactiveBuncheolPaymentStatus(status)) {
+      if (buncheolMemberId && !isParticipationCancelledStatus(status)) {
         memberIds.add(buncheolMemberId);
       }
 
@@ -3033,7 +3020,6 @@ function getBuncheolDetailFromBody(body: unknown) {
           ...member,
           myBidAmount: myBid.bidAmount,
           myParticipationId: myBid.participationId,
-          myRank: myBid.rank,
           participatedByMe,
         };
       }),
@@ -3965,8 +3951,11 @@ function formatKoreaDateTime(value: string | undefined) {
   return `${partMap.year}년 ${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
 }
 
+// 0원 멤버는 실제 가격이라 「0원」으로 쓴다. 값을 모를 때(음수·NaN·null)만 "-".
 function formatWonAmount(amount: number) {
-  return amount > 0 ? `${amount.toLocaleString("ko-KR")}원` : "-";
+  return Number.isFinite(amount) && amount >= 0
+    ? `${amount.toLocaleString("ko-KR")}원`
+    : "-";
 }
 
 // 배송비는 0원(무료 배송)도 유효한 값이라 "-" 로 표기하지 않는다. 수정 화면이 이 문자열을
@@ -4079,8 +4068,10 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
 export function toProductDetailItem(
   detail: BuncheolDetail,
 ): ProductDetailItem {
+  // 서버가 members 를 비워 보내면 이름만으로 대체 줄을 만든다 — 가격을 모르므로 「0원」이 아니라 "-".
+  const hasServerMembers = detail.members.length > 0;
   const fallbackMembers: BuncheolMember[] =
-    detail.members.length > 0
+    hasServerMembers
       ? detail.members
       : detail.memberNames.map((memberName, index) => ({
           bidMinPrice: 0,
@@ -4106,7 +4097,9 @@ export function toProductDetailItem(
   const options = optionMembers.map((member) => {
     const priceAmount =
       member.bidMinPrice || member.currentBidAmount || member.myBidAmount || 0;
-    const formattedPrice = formatWonAmount(priceAmount);
+    const formattedPrice = hasServerMembers
+      ? formatWonAmount(priceAmount)
+      : "-";
 
     return {
       id: member.id,
@@ -4117,7 +4110,6 @@ export function toProductDetailItem(
       label: member.name,
       myBidAmount: member.myBidAmount,
       myParticipationId: member.myParticipationId,
-      myRank: member.myRank,
       participantCount: member.participantCount,
       participatedByMe: member.participatedByMe,
       price: formattedPrice,
@@ -4140,9 +4132,9 @@ export function toProductDetailItem(
     ...toProductCardItem(detail),
     buncheolId: detail.id,
     courier: shippingMethods[0]?.name ?? "배송 방법 확인 필요",
-    description:
-      detail.description?.trim() ||
-      "판매자가 상품 설명을 작성하지 않았습니다.",
+    // 빈 설명은 비워 둔다 — 안내 문구는 상세 화면이 그린다. 여기서 채우면 수정 폼 설명 칸에
+    // 그 문구가 입력값으로 들어가 그대로 저장된다.
+    description: detail.description?.trim() ?? "",
     flowType: detail.flowType ?? null,
     // 🔴 여기서 빠뜨리면 파서가 값을 읽어도 화면까지 오지 않는다 — 실제로 첫 PR 에서 불리언을
     // 이 줄에 안 실어, 파서·타입·주석은 다 있는데 화면이 못 읽는 상태로 리뷰에 걸렸다.
@@ -4165,10 +4157,17 @@ export function toProductDetailItem(
   };
 }
 
-export async function requestBuncheols(
+export type BuncheolSummaryPage = {
+  hasNext: boolean;
+  items: BuncheolSummary[];
+  nextCursor: string | null;
+};
+
+export async function requestBuncheolPage(
   accessToken?: string,
   params: BuncheolListParams = {},
-) {
+  options: { signal?: AbortSignal } = {},
+): Promise<BuncheolSummaryPage> {
   const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
     params,
   )}`;
@@ -4176,12 +4175,14 @@ export async function requestBuncheols(
     credentials: "omit",
     headers: getAuthHeaders(accessToken),
     method: "GET",
+    signal: options.signal,
   });
 
   if (response.status === 401 && accessToken) {
     response = await fetch(url, {
       credentials: "omit",
       method: "GET",
+      signal: options.signal,
     });
   }
 
@@ -4191,17 +4192,21 @@ export async function requestBuncheols(
 
   const body = await readJsonBody(response);
 
-  const summaries = getBuncheolList(body)
-    .filter(isRecord)
-    .map(getBuncheolSummaryFromRecord)
-    .filter(
-      (item): item is BuncheolSummary =>
-        item !== null && !isBuncheolDeletedStatus(item.status),
-    );
-
   // 목록 API 가 각 분철의 첫 이미지를 thumbnailUrl 로 항상 내려주므로 별도 보강이 필요 없다.
   // (썸네일이 없는 분철 = 이미지 자체가 없는 분철이라 상세를 조회해도 채울 수 없음)
-  return summaries;
+  const items = getBuncheolList(body)
+    .filter(isRecord)
+    .map(getBuncheolSummaryFromRecord)
+    .filter((item): item is BuncheolSummary => item !== null);
+
+  return { ...getBuncheolListPageInfo(body), items };
+}
+
+export async function requestBuncheols(
+  accessToken?: string,
+  params: BuncheolListParams = {},
+) {
+  return (await requestBuncheolPage(accessToken, params)).items;
 }
 
 // signal 은 최대 20페이지 순회 전체에 걸린다. 중간에 끊기면 받은 페이지도 버리고 throw 한다.
@@ -4215,51 +4220,23 @@ export async function requestAllBuncheols(
   let pageCount = 0;
 
   while (pageCount < 20) {
-    const pageParams: BuncheolListParams = {
-      ...params,
-      cursor,
-      size: params.size ?? 50,
-    };
-    const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
-      pageParams,
-    )}`;
-    let response = await fetch(url, {
-      credentials: "omit",
-      headers: getAuthHeaders(accessToken),
-      method: "GET",
-      signal: options.signal,
-    });
+    const page = await requestBuncheolPage(
+      accessToken,
+      {
+        ...params,
+        cursor,
+        size: params.size ?? 50,
+      },
+      options,
+    );
 
-    if (response.status === 401 && accessToken) {
-      response = await fetch(url, {
-        credentials: "omit",
-        method: "GET",
-        signal: options.signal,
-      });
-    }
+    allSummaries.push(...page.items);
 
-    if (!response.ok) {
-      throw new Error(await parseErrorMessage(response));
-    }
-
-    const body = await readJsonBody(response);
-    const pageSummaries = getBuncheolList(body)
-      .filter(isRecord)
-      .map(getBuncheolSummaryFromRecord)
-      .filter(
-        (item): item is BuncheolSummary =>
-          item !== null && !isBuncheolDeletedStatus(item.status),
-      );
-
-    allSummaries.push(...pageSummaries);
-
-    const pageInfo = getBuncheolListPageInfo(body);
-
-    if (!pageInfo.hasNext || !pageInfo.nextCursor) {
+    if (!page.hasNext || !page.nextCursor) {
       break;
     }
 
-    cursor = pageInfo.nextCursor;
+    cursor = page.nextCursor;
     pageCount += 1;
   }
 
@@ -4685,7 +4662,6 @@ export async function requestMyParticipations(accessToken: string) {
           getOptionalStringValue(record, ["cancelReason"]) ?? null,
         cancellability:
           getOptionalStringValue(record, ["cancellability"]) ?? null,
-        closedRank: getOptionalNumberValue(record, ["closedRank", "rank"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(
             lookupRecords,
@@ -4753,8 +4729,6 @@ export async function requestMyParticipations(accessToken: string) {
           null,
         paymentSentAt:
           getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
-        paymentRejectedAt:
-          getOptionalStringValue(record, ["paymentRejectedAt"]) ?? null,
         // 서버는 refundHolder 로 내려주지만, 환불계좌 객체째 실려오는 응답도 대비한다.
         // ⚠️ getNestedBankAccountInfo 를 쓰면 안 된다 — 키에서 못 찾을 때 최상위 record 를 스캔하고,
         // 그 후보 키에 hostAccountHolder·sellerAccountHolder 가 있어 개최자 예금주를 입금자명으로
@@ -4910,9 +4884,7 @@ export async function requestMyHostedBuncheols(accessToken: string) {
       (buncheol): buncheol is MyHostedBuncheol => buncheol !== null,
     );
 
-  return buncheols.filter(
-    (buncheol) => !isBuncheolDeletedStatus(buncheol.status),
-  );
+  return buncheols;
 }
 
 // 분철 상세 응답에는 bookmarked 필드가 없어, 상세 화면의 찜 상태는
@@ -4977,9 +4949,7 @@ export async function requestBookmarkedBuncheols(
       return summaries;
     }, []);
 
-  return summaries.filter(
-    (summary) => !isBuncheolDeletedStatus(summary.status),
-  );
+  return summaries;
 }
 
 export async function addBuncheolBookmark(
@@ -5053,23 +5023,14 @@ export async function requestPaymentConfirmation(
   participationId: string,
   options: { ignoreConflict?: boolean } = {},
 ) {
-  async function sendConfirmationRequest(path: string) {
-    return fetch(`${getVersionedApiBaseUrl()}${path}`, {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participations/${participationId}/confirm`,
+    {
       credentials: "include",
       headers: getAuthHeaders(accessToken),
       method: "POST",
-    });
-  }
-
-  let response = await sendConfirmationRequest(
-    `/participations/${participationId}/confirm`,
+    },
   );
-
-  if (!response.ok && [404, 405].includes(response.status)) {
-    response = await sendConfirmationRequest(
-      `/participations/${participationId}/payment/confirm`,
-    );
-  }
 
   if (!response.ok) {
     if (options.ignoreConflict && response.status === 409) {
@@ -5151,27 +5112,8 @@ export async function requestBundlePaymentSent(
   }
 }
 
-// 묶음이 없는 참여(배포선 창에서 생긴 행)용 폴백. 신규 참여는 전부 묶음을 갖는다.
-export async function requestParticipationPaymentSent(
-  accessToken: string,
-  participationId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment-sent`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-}
-
-// C2C 참여자 자발 취소 — APPLIED(자유)·AWAITING_PAYMENT(허용)에서만 성공한다.
-// PAYMENT_SENT·CONFIRMED 는 서버가 거부(BCH-087)하며 FE 는 문의 안내로 유도한다 (docs/46 §4.4).
+// C2C 참여자 자발 취소. 허용 여부는 서버가 내려주는 cancellability 를 따른다 — 「보냈어요」·입금확인
+// 이후는 BCH-086(문의 안내), 성사 확정을 거친 입금 대기는 BCH-092(개최자 연락)로 거부된다.
 export async function cancelParticipation(
   accessToken: string,
   participationId: string,
@@ -5230,24 +5172,6 @@ export async function submitFeedback(
 
   if (!response.ok) {
     throw new ApiRequestError(await parseErrorMessage(response), response.status);
-  }
-}
-
-export async function requestPaymentExpiration(
-  accessToken: string,
-  participationId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participations/${participationId}/payment/expire`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
   }
 }
 
@@ -6828,6 +6752,55 @@ export async function releaseBundle(accessToken: string, bundleId: string) {
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
+}
+
+// C2C 개최자의 빈 자리 빼기. 기록 없는 자리는 지우고 취소 기록만 남은 자리는 닫는다(이미 닫혔으면 204).
+// 신청 받는 동안에만 통하고, 화면 판정과 갈리면 서버가 거부한다(BCH-118 신청자 · 120 마지막 자리 · 060 · 061).
+export async function removeBuncheolMember(
+  accessToken: string,
+  buncheolId: string,
+  buncheolMemberId: string,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/members/${buncheolMemberId}`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "DELETE",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+}
+
+// 그룹 멤버를 자리로 (다시) 넣는다. 같은 멤버의 닫힌 자리가 있으면 서버가 그 자리를 새 가격으로 다시 연다.
+// memberId 는 group_members.id 다(자리 id 가 아니다).
+export async function addBuncheolMember(
+  accessToken: string,
+  buncheolId: string,
+  { memberId, price }: { memberId: string; price: number },
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/members`,
+    {
+      body: JSON.stringify({ memberId: Number(memberId), price }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  const body = getNestedData(await readJsonBody(response));
+
+  return isRecord(body)
+    ? getOptionalStringValue(body, ["buncheolMemberId"]) ?? null
+    : null;
 }
 
 // 묶음 입금확인 — all-or-nothing. expectedSlotIds 는 화면에 보인 슬롯 집합이며 서버가 가진 것과

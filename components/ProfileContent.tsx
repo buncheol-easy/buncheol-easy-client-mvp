@@ -28,7 +28,6 @@ import {
 } from "@/lib/address-return-state";
 import { createLoginHref } from "@/lib/auth-navigation";
 import {
-  authProfileSetupReturnHrefStorageKey,
   getInitialAuthState,
   readAuthState,
   subscribeAuthState,
@@ -36,7 +35,6 @@ import {
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { clearUserSessionState as clearUserSession } from "@/lib/user-session";
 import {
-  isUserProfileComplete,
   requestLogout,
   requestShippingAddresses,
   requestUserProfile,
@@ -421,22 +419,7 @@ export function ProfileContent({
         accessToken ? requestUserProfile(accessToken) : null,
       )
       .then((profile) => {
-        if (!isActive) {
-          return;
-        }
-
-        if (!profile) {
-          return;
-        }
-
-        if (!isUserProfileComplete(profile)) {
-          clearProfileStateCache();
-          setUserProfile(null);
-          window.sessionStorage.setItem(
-            authProfileSetupReturnHrefStorageKey,
-            "/profile",
-          );
-          router.replace("/signup/profile");
+        if (!isActive || !profile) {
           return;
         }
 
@@ -473,7 +456,7 @@ export function ProfileContent({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, authState.isLoggedIn, router]);
+  }, [authState.accessToken, authState.isLoggedIn]);
 
   useEffect(() => {
     if (!authState.isLoggedIn || !authState.accessToken) {

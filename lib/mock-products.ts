@@ -8,7 +8,6 @@ export type ProductOption = {
   buncheolMemberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
-  myRank?: number;
   participatedByMe?: boolean;
   purchasePaymentConfirmedAt?: string;
   purchasePaymentDueAt?: string;
