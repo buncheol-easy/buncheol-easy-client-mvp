@@ -140,11 +140,8 @@ export function DesktopBrandPanel() {
           <br />
           <em>쉬워진다.</em>
         </p>
-        <p className="desktop-web-brand__body">
-          이름값 하는
-          <br />
-          분철 전용 공간.
-        </p>
+        <span aria-hidden="true" className="desktop-web-brand__rule" />
+        <p className="desktop-web-brand__body">이름값 하는 분철 전용 공간.</p>
       </aside>
       <aside className="desktop-web-help" aria-label="폰으로 이어 보기와 도움">
         <PageQrCode url={`${window.location.origin}${pathname}`} />
