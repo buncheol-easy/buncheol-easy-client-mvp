@@ -697,6 +697,22 @@ body.is-pwa-standalone {
   }
 }
 
+/* 상세 상단 멤버 칩을 눌러 내려온 멤버 행을 잠깐 연두로 표시한다. */
+.member-row-flash {
+  animation: member-row-flash 1600ms ease-out;
+}
+
+@keyframes member-row-flash {
+  0%,
+  30% {
+    box-shadow: inset 0 0 0 999px rgba(215, 255, 95, 0.32);
+  }
+
+  100% {
+    box-shadow: inset 0 0 0 999px rgba(215, 255, 95, 0);
+  }
+}
+
 @keyframes idol-selection-enter {
   from {
     opacity: 0;

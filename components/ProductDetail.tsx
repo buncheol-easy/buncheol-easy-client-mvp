@@ -95,7 +95,6 @@ import {
 import { writeSettlementAccountState } from "@/lib/settlement-account-store";
 import {
   BackIcon,
-  ChevronDownIcon,
   ClockIcon,
   CloseIcon,
   EditIcon,
@@ -105,7 +104,11 @@ import {
   TrashIcon,
 } from "@/components/icons";
 import { HelpText } from "@/components/HelpText";
-import { type MemberChipState, MemberChips } from "@/components/MemberChips";
+import {
+  type MemberChip,
+  type MemberChipState,
+  MemberChips,
+} from "@/components/MemberChips";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   OpensAtBand,
@@ -1307,6 +1310,19 @@ export function ProductDetail({
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const memberListRef = useRef<HTMLDivElement | null>(null);
+  const memberRowFlashTimerRef = useRef<number | null>(null);
+  const [flashedMemberOptionId, setFlashedMemberOptionId] = useState<
+    string | null
+  >(null);
+
+  useEffect(
+    () => () => {
+      if (memberRowFlashTimerRef.current !== null) {
+        window.clearTimeout(memberRowFlashTimerRef.current);
+      }
+    },
+    [],
+  );
   const sheetDragStartYRef = useRef<number | null>(null);
   const checkoutSelectedOptionsRef = useRef<CheckoutAddressReturnOption[]>([]);
   const checkoutAddressSheetEnterAnimationFrameRef = useRef<number | null>(null);
@@ -2139,7 +2155,8 @@ export function ProductDetail({
           : !isPurchasableStatus || isBidUnavailable
             ? "참여 불가"
             : null;
-  const headerMemberChips = auctionOptions.map((option) => ({
+  const headerMemberChips: MemberChip[] = auctionOptions.map((option) => ({
+    id: option.id,
     name: option.label,
     state: getOptionMemberChipState(
       option,
@@ -4391,15 +4408,33 @@ export function ProductDetail({
     router.push("/profile/bids");
   }
 
-  function scrollToMemberList() {
+  // 상단 칩을 누르면 그 멤버 행으로 내려가 잠깐 표시해, 목록에서 어디인지 바로 보이게 한다.
+  function scrollToMemberRow(member: MemberChip) {
     const prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
+    const row = memberListRef.current?.querySelector<HTMLElement>(
+      `[data-member-option-id="${CSS.escape(member.id ?? "")}"]`,
+    );
 
-    memberListRef.current?.scrollIntoView({
+    (row ?? memberListRef.current)?.scrollIntoView({
       behavior: prefersReducedMotion ? "auto" : "smooth",
-      block: "start",
+      block: row ? "center" : "start",
     });
+
+    if (!row || !member.id) {
+      return;
+    }
+
+    if (memberRowFlashTimerRef.current !== null) {
+      window.clearTimeout(memberRowFlashTimerRef.current);
+    }
+
+    setFlashedMemberOptionId(member.id);
+    memberRowFlashTimerRef.current = window.setTimeout(() => {
+      setFlashedMemberOptionId(null);
+      memberRowFlashTimerRef.current = null;
+    }, 1600);
   }
 
   const panelAndSheets = (
@@ -4594,23 +4629,16 @@ export function ProductDetail({
 
           <section className="px-5 pt-6">
             {headerMemberChips.length > 0 ? (
-              <button
-                type="button"
-                className={`block w-full rounded-[0.8rem] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${revealOnEnter ? "detail-reveal" : ""}`}
-                onClick={scrollToMemberList}
+              <div
+                className={revealOnEnter ? "detail-reveal" : undefined}
                 style={revealOnEnter ? getRevealStyle(1) : undefined}
               >
                 <MemberChips
                   members={headerMemberChips}
+                  onSelect={scrollToMemberRow}
                   size="detail"
-                  trailing={
-                    <span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-black/55">
-                      멤버 보기
-                      <ChevronDownIcon />
-                    </span>
-                  }
                 />
-              </button>
+              </div>
             ) : null}
 
             {/* 제목 전문 노출은 이 화면(분철 상세)에서만 한다(docs/56 H-03).
@@ -4809,7 +4837,12 @@ export function ProductDetail({
                         overlayLabel
                           ? "bg-[#fafafa]"
                           : "bg-white"
+                      } ${
+                        flashedMemberOptionId === option.id
+                          ? "member-row-flash"
+                          : ""
                       }`}
+                      data-member-option-id={option.id}
                     >
                       {/*
                         상태 칩을 행 위에 덮지 않고 이름 아래로 내린다.
