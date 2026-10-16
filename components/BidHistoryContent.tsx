@@ -111,12 +111,8 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
-import {
-  BRIEF_TOAST_DURATION_MS,
-  Toast,
-  useAppToast,
-  useToast,
-} from "@/components/Toast";
+import { CopyButton } from "@/components/CopyButton";
+import { useAppToast } from "@/components/Toast";
 
 function formatPrice(price: number) {
   return `${price.toLocaleString("ko-KR")}원`;
@@ -1798,9 +1794,6 @@ export function BidHistoryContent({
   const [isStatusHelpSheetClosing, setIsStatusHelpSheetClosing] =
     useState(false);
   const statusHelpSheetCloseTimerRef = useRef<number | null>(null);
-  const [paymentCopyToast, showPaymentCopyToast] = useToast(
-    BRIEF_TOAST_DURATION_MS,
-  );
   const [paybackSheetBidId, setPaybackSheetBidId] = useState<string | null>(
     null,
   );
@@ -3698,13 +3691,12 @@ export function BidHistoryContent({
               </p>
             ) : null}
           </div>
-          <button
-            className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-[#D7FF5F]"
-            onClick={() => void copyCardAccount(account.account, account.bank)}
-            type="button"
-          >
-            복사
-          </button>
+          <CopyButton
+            label="복사"
+            onCopyFailed={showAccountCopyFailedToast}
+            value={account.account}
+            variant="dark"
+          />
         </div>
         <p className="mt-2 break-keep text-[11px] font-medium leading-4 text-black/35">
           {BROKER_NOTICE}
@@ -3713,30 +3705,8 @@ export function BidHistoryContent({
     );
   }
 
-  // 시트의 복사 토스트는 그 시트 안에 absolute 로 박혀 있어 카드에서 못 쓴다 — 카드 N장이 상태
-  // 하나를 공유하면 어디서 복사했는지 안 보인다. 화면 단위 토스트를 쓰고 은행명을 넣어 구분한다.
-  async function copyCardAccount(value: string, bank: string) {
-    const prefix = bank.trim() ? `${bank.trim()} ` : "";
-
-    try {
-      await navigator.clipboard.writeText(value);
-      showToast(`${prefix}계좌번호가 복사됐어요.`, "success");
-    } catch {
-      showToast("계좌번호를 복사하지 못했어요. 길게 눌러 복사해 주세요.", "error");
-    }
-  }
-
-  async function copyTransferText(value: string, label: string) {
-    if (!value.trim() || value.includes("준비 중")) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(value);
-      showPaymentCopyToast(`${label}가 복사됐어요.`);
-    } catch {
-      showPaymentCopyToast(`${label}를 복사하지 못했어요.`);
-    }
+  function showAccountCopyFailedToast() {
+    showToast("계좌번호를 복사하지 못했어요. 길게 눌러 복사해 주세요.", "error");
   }
 
   // 스크롤 복원 단일 이펙트 — 탭 전환 복원(우선)과 세션스토리지 복원(페이지 재진입)을
@@ -4772,21 +4742,16 @@ export function BidHistoryContent({
                       : "개최자가 등록한 계좌로 입금해 주세요."}
                   </p>
                 </div>
-                <button
-                  className="h-9 shrink-0 rounded-full bg-black px-3 text-[12px] font-semibold text-[#D7FF5F] disabled:bg-black/10 disabled:text-black/30"
-                  disabled={!selectedPaymentBankAccount}
-                  onClick={() =>
-                    selectedPaymentBankAccount
-                      ? void copyTransferText(
-                          selectedPaymentBankAccount.account,
-                          "계좌번호",
-                        )
-                      : undefined
+                <CopyButton
+                  disabled={
+                    !selectedPaymentBankAccount?.account.trim() ||
+                    selectedPaymentBankAccount.account.includes("준비 중")
                   }
-                  type="button"
-                >
-                  계좌 복사
-                </button>
+                  label="계좌 복사"
+                  onCopyFailed={showAccountCopyFailedToast}
+                  value={selectedPaymentBankAccount?.account ?? ""}
+                  variant="dark"
+                />
               </div>
               {selectedPaymentBid.refundHolder ? (
                 // 입금자명은 LEGACY 자동 입금확인(페이액션)의 매칭 키이고, C2C 에서는 개최자가 통장에서
@@ -4827,10 +4792,6 @@ export function BidHistoryContent({
                   개최자 오픈채팅 참여하기 →
                 </a>
               ) : null}
-              <Toast
-                className="absolute inset-x-0 bottom-3 px-4"
-                message={paymentCopyToast}
-              />
             </div>
 
             <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">

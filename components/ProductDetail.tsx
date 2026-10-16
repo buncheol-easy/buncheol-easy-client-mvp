@@ -104,12 +104,8 @@ import {
   OpensAtBand,
   aboveDetailOpensAtBandClassName,
 } from "@/components/OpensAtBand";
-import {
-  BRIEF_TOAST_DURATION_MS,
-  Toast,
-  useAppToast,
-  useToast,
-} from "@/components/Toast";
+import { CopyButton } from "@/components/CopyButton";
+import { useAppToast } from "@/components/Toast";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
@@ -1230,8 +1226,6 @@ export function ProductDetail({
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
-  const [checkoutCopyToast, showCheckoutCopyToast, hideCheckoutCopyToast] =
-    useToast(BRIEF_TOAST_DURATION_MS);
   // 서버가 내려준 자리 상태. 화면은 오픈 시각을 반영한 auctionOptions 를 읽는다.
   const [serverAuctionOptions, setServerAuctionOptions] = useState<ProductOption[]>(
     product.options,
@@ -2260,7 +2254,6 @@ export function ProductDetail({
     setCheckoutCodeInput("");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    hideCheckoutCopyToast();
 
     // 이 리셋이 복원된 체크아웃 상태를 지웠을 수 있으므로 재적용을 예약한다.
     if (pendingCheckoutRestoreRef.current?.productId === buncheolId) {
@@ -2268,7 +2261,6 @@ export function ProductDetail({
     }
   }, [
     buncheolId,
-    hideCheckoutCopyToast,
     product.id,
     product.isHostedByMe,
     product.options,
@@ -2424,7 +2416,6 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    hideCheckoutCopyToast();
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -3768,7 +3759,6 @@ export function ProductDetail({
     setCheckoutPaymentSummary(null);
     setCheckoutCodeInput("");
     setCheckoutError("");
-    hideCheckoutCopyToast();
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -3959,7 +3949,6 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    hideCheckoutCopyToast();
 
     if (sheetCloseFallbackTimerRef.current !== null) {
       window.clearTimeout(sheetCloseFallbackTimerRef.current);
@@ -4044,15 +4033,6 @@ export function ProductDetail({
         checkoutAddressSheetEnterAnimationFrameRef.current = null;
         setIsCheckoutAddressSheetEntered(true);
       });
-  }
-
-  async function copyCheckoutText(value: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      showCheckoutCopyToast(`${label}를 복사했어요.`);
-    } catch {
-      showCheckoutCopyToast(`${label} 복사에 실패했어요.`);
-    }
   }
 
   async function handleShareProduct() {
@@ -5189,21 +5169,17 @@ export function ProductDetail({
                                 : "참여 내역에서 다시 확인해 주세요."}
                             </p>
                           </div>
-                          <button
-                            className="h-9 shrink-0 rounded-full bg-[#DDE7B8] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.18)] disabled:bg-black/10 disabled:text-black/30"
+                          <CopyButton
                             disabled={!checkoutPaymentSummary.hostBankAccount}
-                            onClick={() =>
-                              checkoutPaymentSummary.hostBankAccount
-                                ? void copyCheckoutText(
-                                    checkoutPaymentSummary.hostBankAccount.account,
-                                    "계좌번호",
-                                  )
-                                : undefined
+                            label="계좌 복사"
+                            onCopyFailed={() =>
+                              showToast("계좌번호 복사에 실패했어요.", "error")
                             }
-                            type="button"
-                          >
-                            계좌 복사
-                          </button>
+                            value={
+                              checkoutPaymentSummary.hostBankAccount?.account ??
+                              ""
+                            }
+                          />
                         </div>
                         {checkoutRefundAccount?.holder ? (
                           <>
@@ -5236,10 +5212,6 @@ export function ProductDetail({
                             </span>
                           ) : null}
                         </p>
-                        <Toast
-                          className="absolute inset-x-0 bottom-3 px-4"
-                          message={checkoutCopyToast}
-                        />
                       </div>
 
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
