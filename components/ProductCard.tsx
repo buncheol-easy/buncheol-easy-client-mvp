@@ -298,7 +298,7 @@ function getCardOpening(item: ProductCardItem) {
 }
 
 function getAvailableMemberSummary(memberNames: string[]) {
-  return memberNames.join(" · ");
+  return memberNames.join(", ");
 }
 
 function isRecentlyUploaded(uploadedAt?: string) {

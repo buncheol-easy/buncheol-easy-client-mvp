@@ -3446,7 +3446,7 @@ export function BidHistoryContent({
           }`.trim(),
         },
         ...(memberNames.length > 0
-          ? [{ label: "멤버", value: memberNames.join(" · ") }]
+          ? [{ label: "멤버", value: memberNames.join(", ") }]
           : []),
       ],
       onConfirm: () => {
@@ -4331,7 +4331,7 @@ export function BidHistoryContent({
                       }}
                       description={
                         hostedFilter === "active"
-                          ? "모집·입금·배송이 진행 중인 분철이 여기에 보여요."
+                          ? "모집부터 배송까지 진행 중인 분철이 여기에 보여요."
                           : "배송까지 끝나거나 취소된 분철이 여기로 옮겨져요."
                       }
                       title={
@@ -4343,7 +4343,7 @@ export function BidHistoryContent({
                   ) : (
                     <EmptyState
                       action={{ href: "/upload", label: "분철 개최하기" }}
-                      description="내가 연 분철의 입금 확인·운송장 등록을 여기서 관리해요."
+                      description="내가 연 분철의 입금 확인과 운송장 등록을 여기서 관리해요."
                       title="아직 개최한 분철이 없어요"
                     />
                   )
@@ -4580,7 +4580,7 @@ export function BidHistoryContent({
               ) : (
                 <HelpText className="px-1 pt-3">
                   사진 아래 칩은 분철 자체의 상태예요. 모집 중에는 마감까지 남은
-                  날(D-day)을, 마감 후에는 진행 확정·취소 여부를 보여줘요.
+                  날(D-day)을, 마감 후에는 진행 확정인지 취소인지 보여줘요.
                 </HelpText>
               )}
               {isHostingHelpSheet ? null : isStatusGuideC2C ? (

@@ -790,7 +790,7 @@ export function ProfileContent({
           {!authState.isLoggedIn ? (
             <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5">
               <p className="text-[14px] font-medium leading-5 text-black/45">
-                로그인하면 환불·입금받을 계좌를 저장해 둘 수 있어요.
+                로그인하면 환불받고 입금받을 계좌를 저장해 둘 수 있어요.
               </p>
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (

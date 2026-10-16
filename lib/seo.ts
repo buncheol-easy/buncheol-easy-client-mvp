@@ -60,8 +60,8 @@ export function formatMemberNamesForSearch(names: string[], limit = 6) {
   const unique = Array.from(new Set(names.map((name) => name.trim()).filter(Boolean)));
 
   if (unique.length <= limit) {
-    return unique.join("·");
+    return unique.join(", ");
   }
 
-  return `${unique.slice(0, limit).join("·")} 등`;
+  return `${unique.slice(0, limit).join(", ")} 등`;
 }

@@ -131,12 +131,12 @@ export function BusinessFooter({
       <div className="mt-3 space-y-1.5 border-l-2 border-black/18 pl-3">
         <HelpText size="caption">
           분철이지가 직접 개최하는 분철은 분철이지가 통신판매 당사자이며,
-          상품·거래 정보와 청약철회·환불 등 거래에 관한 책임은 분철이지에
+          상품과 거래 정보, 청약철회와 환불 등 거래에 관한 책임은 분철이지에
           있습니다.
         </HelpText>
         <HelpText size="caption">
           회원이 개최하는 분철은 분철이지가 통신판매중개자로서 거래 당사자가
-          아니며, 대금은 개최자 계좌로 직접 입금됩니다. 상품·거래에 관한 책임은
+          아니며, 대금은 개최자 계좌로 직접 입금됩니다. 상품과 거래에 관한 책임은
           개최자에게 있습니다.
         </HelpText>
         <HelpText size="caption">

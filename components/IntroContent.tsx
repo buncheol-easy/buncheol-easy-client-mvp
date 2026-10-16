@@ -115,7 +115,7 @@ function getIntroRecentState(item: BuncheolSummary) {
   }
 
   if (item.memberNames.length > 0) {
-    return item.memberNames.slice(0, 2).join(" · ");
+    return item.memberNames.slice(0, 2).join(", ");
   }
 
   return item.groupName || "모집 중";
@@ -993,7 +993,7 @@ const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progre
         </div>
 
         <div className="intro-confirm-pulse mt-4 flex h-14 items-center justify-center rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
-          입금했어요 · 보냈어요 표시
+          입금 보냈어요
         </div>
       </div>
     </div>
@@ -1258,7 +1258,7 @@ const introPainPoints = [
     items: [
       { after: "명단에서 버튼으로 한 번에", before: "입금 확인 DM 한 명씩" },
       { after: "배송지가 한 화면에 모여요", before: "주소 하나씩 받아 적기" },
-      { after: "인원 미달이면 자동 취소·안내", before: "성사 여부 수동 공지" },
+      { after: "인원 미달이면 자동으로 취소하고 안내", before: "성사 여부 수동 공지" },
     ],
     role: "개최자",
   },
@@ -1789,7 +1789,7 @@ export function IntroContent() {
                 맡기지 않는 방법.
               </h2>
               <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
-                포토카드·특전은 대부분 멤버 랜덤이에요.
+                포토카드와 특전은 대부분 멤버 랜덤이에요.
                 <br />
                 그런데 멤버 수만큼 세트를 사면, 판매처가 중복 없이 전 멤버를
                 보내줘요.

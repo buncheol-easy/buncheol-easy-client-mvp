@@ -765,7 +765,7 @@ const MEMBER_STATUS_CHIP_LABELS = {
   otherPaymentWaiting: "다른 사람이 입금 중이에요",
   otherPaymentChecking: "입금 확인 중이에요",
   otherPaymentOverdue: "입금 기한이 지났어요",
-  codeOnly: "서포터즈 배정 · 코드 참여",
+  codeOnly: "서포터즈 전용 자리",
   notOpen: "오픈 전",
 } as const;
 
@@ -1841,7 +1841,7 @@ export function ProductDetail({
     const holder = refundAccountForm.holder.trim();
 
     if (!bank || !account || !holder) {
-      setRefundAccountError("은행·계좌번호·예금주를 모두 입력해 주세요.");
+      setRefundAccountError("은행, 계좌번호, 예금주를 모두 입력해 주세요.");
       return;
     }
 
@@ -1857,7 +1857,7 @@ export function ProductDetail({
       account.replace(/\D/g, "").length > bankAccountFieldMaxLength
     ) {
       setRefundAccountError(
-        `은행·계좌번호·예금주는 ${bankAccountFieldMaxLength}자 이내로 입력해 주세요.`,
+        `은행, 계좌번호, 예금주는 ${bankAccountFieldMaxLength}자 이내로 입력해 주세요.`,
       );
       return;
     }
@@ -1957,7 +1957,7 @@ export function ProductDetail({
       setCheckoutError(
         `이 분철은 ${availableShippingStoreTypes
           .map(getConvenienceStoreLabel)
-          .join("·")} 지점으로만 받을 수 있어요.`,
+          .join("나 ")} 지점으로만 받을 수 있어요.`,
       );
       return;
     }
@@ -4731,7 +4731,7 @@ export function ProductDetail({
                 </p>
                 <HelpText className="mt-1.5">
                   분철이지는 통신판매중개자로 거래 당사자가 아니에요. 대금은
-                  개최자 계좌로 직접 입금돼요. 상품·거래에 관한 책임은 개최자에게
+                  개최자 계좌로 직접 입금돼요. 상품과 거래에 관한 책임은 개최자에게
                   있어요.
                 </HelpText>
                 {productOpenChatHref ? (
@@ -5324,7 +5324,7 @@ export function ProductDetail({
                       </div>
                       <HelpText className="mt-2.5">
                         {isAdditionalC2CApplication
-                          ? "추가 신청은 첫 신청과 같은 배송지·입금자명으로 묶여요. 배송비도 추가로 부과되지 않아요."
+                          ? "추가 신청은 첫 신청과 같은 배송지와 입금자명으로 묶여요. 배송비도 추가로 부과되지 않아요."
                           : "택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요."}
                       </HelpText>
                       {/* 재번들은 이 블록에서 배송지를 새로 고르는 사람이라 위 수령 안내가 그대로
@@ -6033,7 +6033,7 @@ export function ProductDetail({
                   {isCheckoutAddressCreatePending
                     ? "배송지 등록 중"
                     : isAddressLimitReached
-                      ? `배송지가 가득 찼어요 (최대 ${maxDeliveryAddressCount}개) · 관리로 이동`
+                      ? `배송지가 가득 찼어요 (최대 ${maxDeliveryAddressCount}개). 관리하러 가기`
                       : "+ 새 배송지 추가"}
                 </button>
               </div>

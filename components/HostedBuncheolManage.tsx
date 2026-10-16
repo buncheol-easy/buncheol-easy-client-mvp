@@ -1072,7 +1072,7 @@ export function HostedBuncheolManage({
     // 개최자가 통장에서 대조하는 값 그대로 — 입금자명과 묶음 총액. 이체가 한 번이므로 합계로 묻는다.
     const depositorName = getDepositorName(head);
     const total = bundle.slots.reduce((sum, slot) => sum + slot.amount, 0);
-    const memberNames = bundle.slots.map(getSlotMemberLabel).join(" · ");
+    const memberNames = bundle.slots.map(getSlotMemberLabel).join(", ");
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
@@ -1159,7 +1159,7 @@ export function HostedBuncheolManage({
     }
 
     const depositorName = getDepositorName(bundle.slots[0]);
-    const memberNames = bundle.slots.map(getSlotMemberLabel).join(" · ");
+    const memberNames = bundle.slots.map(getSlotMemberLabel).join(", ");
 
     setConfirmSheetRequest({
       confirmLabel: "제외",

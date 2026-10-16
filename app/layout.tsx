@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.webmanifest",
   title: {
-    default: "분철이지 | 최애 포카 분철 모집부터 입금·배송까지 한 번에",
+    default: "분철이지 | 최애 포카 분철 모집부터 배송까지 한 번에",
     template: "%s | 분철이지",
   },
   description: siteDescription,
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "분철이지",
     locale: "ko_KR",
-    title: "분철이지 | 최애 포카 분철 모집부터 입금·배송까지 한 번에",
+    title: "분철이지 | 최애 포카 분철 모집부터 배송까지 한 번에",
     description: siteDescription,
     images: ["/brand/logo-black.png"],
   },

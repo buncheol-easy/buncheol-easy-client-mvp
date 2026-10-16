@@ -599,7 +599,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                   </h2>
                   <p className="mt-2 break-keep text-[14px] font-semibold leading-6 text-black/65">
                     탈퇴하면 계정이 비활성화되고 다시 되돌릴 수 없어요. 거래
-                    기록은 분쟁·정산 확인을 위해 관련 법령에 따라 보관돼요.
+                    기록은 분쟁과 정산 확인을 위해 관련 법령에 따라 보관돼요.
                   </p>
                   {hasUnclaimedPayback ? (
                     <div className="mt-4 rounded-[0.9rem] bg-[#FFF8E1] px-4 py-3 text-[13px] font-semibold leading-6 text-[#8D6708]">
