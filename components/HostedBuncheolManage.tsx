@@ -126,12 +126,13 @@ function formatKoreaDateTime(value: string | undefined) {
   return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
+// 금액을 하나도 모르면 0 이 아니라 null — 0 은 「0원」으로 그려져 실제 0원 자리와 구분되지 않는다.
 function getHighestBidAmount(option: BuncheolManagementOption) {
   return (
     option.currentHighestBid ??
     option.winner?.paymentAmount ??
     option.winner?.bidAmount ??
-    0
+    null
   );
 }
 
