@@ -17,7 +17,7 @@ export const aboveDetailOpensAtBandClassName = "bottom-[90px]";
  * 넓은 카드·2열 카드·상세 사진이 크기만 달리해 함께 쓰고, 상세 띠에만 남은 시간을 더한다.
  */
 export function OpensAtBand({ nowMs, opensAtMs, size }: OpensAtBandProps) {
-  const opensAtLabel = `${formatOpensAt(opensAtMs, nowMs)} 참여 오픈`;
+  const opensAtText = formatOpensAt(opensAtMs, nowMs);
   const waitingLabel = "오픈 대기 중";
 
   if (size === "grid") {
@@ -25,7 +25,10 @@ export function OpensAtBand({ nowMs, opensAtMs, size }: OpensAtBandProps) {
       <div className="absolute inset-x-0 bottom-0 bg-black px-2.5 py-2 tracking-[-0.04em]">
         <p className="flex items-start gap-[5px] text-[13px] font-bold leading-[18px] text-[#D7FF5F]">
           <ClockIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 break-keep">{opensAtLabel}</span>
+          {/* 좁은 카드에서는 「참여 오픈」을 한 덩어리로 다음 줄에 넘긴다. */}
+          <span className="min-w-0">
+            {opensAtText} <span className="whitespace-nowrap">참여 오픈</span>
+          </span>
         </p>
         <p className="text-[10.5px] font-semibold leading-4 tracking-[-0.02em] text-white/70">
           {waitingLabel}
@@ -47,7 +50,7 @@ export function OpensAtBand({ nowMs, opensAtMs, size }: OpensAtBandProps) {
         <ClockIcon
           className={isDetail ? "h-5 w-5 shrink-0" : "h-[18px] w-[18px] shrink-0"}
         />
-        <span className="min-w-0 whitespace-nowrap">{opensAtLabel}</span>
+        <span className="min-w-0 whitespace-nowrap">{opensAtText} 참여 오픈</span>
         <span className="ml-auto whitespace-nowrap text-[12px] font-semibold tracking-[-0.02em] text-white/70">
           {waitingLabel}
         </span>
