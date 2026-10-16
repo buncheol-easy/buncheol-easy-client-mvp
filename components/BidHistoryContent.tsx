@@ -129,6 +129,9 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
 const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
 export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
+// 묶음 id 가 없으면 「보냈어요」를 서버에 보낼 수 없다. 버튼을 막고 이 문구를 미리 보여 준다.
+const MARK_SENT_MISSING_BUNDLE_MESSAGE =
+  "묶음 정보가 없어 「입금 보냈어요」를 누를 수 없어요. 고객센터로 문의해 주세요.";
 
 function parseDeadline(deadline: string) {
   const match = deadline
@@ -1529,7 +1532,6 @@ function getCachedBuncheolDetail(
 }
 
 // 개최자가 취소한 분철(HOST_CANCELLED)은 상세 조회가 404 를 반환하므로 호출하지 않는다.
-// HOST_CANCELLED 는 isBidRecordCancelled 가 취소로 판정한다.
 function isBuncheolDetailInaccessible(bid: BidRecord) {
   return isBidRecordCancelled(bid);
 }
@@ -3415,9 +3417,7 @@ export function BidHistoryContent({
     }
 
     if (!bid.bundleId) {
-      showActionToast(
-        "이 참여는 묶음 정보가 없어 표시할 수 없어요. 고객센터로 문의해 주세요.",
-      );
+      showActionToast(MARK_SENT_MISSING_BUNDLE_MESSAGE);
       return;
     }
 
@@ -4883,19 +4883,27 @@ export function BidHistoryContent({
             </div>
 
             {isSelectedPaymentC2C && isSelectedPaymentReady ? (
-              <button
-                className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
-                disabled={
-                  !selectedPaymentBankAccount ||
-                  pendingParticipationId !== null
-                }
-                onClick={() => requestMarkPaymentSent(selectedPaymentBid)}
-                type="button"
-              >
-                {pendingParticipationId !== null
-                  ? "표시하는 중"
-                  : "입금 보냈어요"}
-              </button>
+              <>
+                {!selectedPaymentBid.bundleId ? (
+                  <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                    {MARK_SENT_MISSING_BUNDLE_MESSAGE}
+                  </p>
+                ) : null}
+                <button
+                  className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
+                  disabled={
+                    !selectedPaymentBankAccount ||
+                    !selectedPaymentBid.bundleId ||
+                    pendingParticipationId !== null
+                  }
+                  onClick={() => requestMarkPaymentSent(selectedPaymentBid)}
+                  type="button"
+                >
+                  {pendingParticipationId !== null
+                    ? "표시하는 중"
+                    : "입금 보냈어요"}
+                </button>
+              </>
             ) : isSelectedPaymentSent ? (
               // 되돌리는 전이가 없다 (docs/71 §8-2) — 잘못 눌렀으면 개최자에게 알리는 것이 유일한 경로다.
               <p className="mt-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5 text-[12px] font-medium leading-5 text-black/45">
