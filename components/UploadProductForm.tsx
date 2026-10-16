@@ -768,11 +768,13 @@ export function UploadProductForm({
   const [closingDate, setClosingDate] = useState("");
   // 운영진 계정만 쓰는 예약 오픈 시각. 비우면 등록하자마자 열린다.
   const [opensAtValue, setOpensAtValue] = useState("");
-  // 운영진 계정이면 오픈 시각 칸을 보이고 운영진 개최 API 를 부른다. null 은 조회 중, 실패면 회원으로 본다.
+  // 운영진 계정이면 오픈 시각 칸을 보이고 운영진 개최 API 를 부른다. null 은 조회 중이거나 조회 실패.
   const [isStaffHost, setIsStaffHost] = useState<boolean | null>(null);
+  const [isStaffHostCheckFailed, setIsStaffHostCheckFailed] = useState(false);
+  const [staffHostCheckAttempt, setStaffHostCheckAttempt] = useState(0);
   const isStaffOpensAtShown = isStaffHost === true && !isEditMode;
-  // 조회 전에 제출하면 운영진도 회원 API 로 나가 오픈 시각 없이 바로 열린 분철이 된다.
-  const isStaffHostLoading = !isEditMode && isStaffHost === null;
+  // 확인 전에 제출하면 운영진도 회원 API 로 나가 오픈 시각 없이 바로 열린 분철이 된다. 실패도 회원으로 보지 않는다.
+  const isStaffHostUnknown = !isEditMode && isStaffHost === null;
   const [description, setDescription] = useState("");
   const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -1410,20 +1412,30 @@ export function UploadProductForm({
         accessToken ? requestUserProfile(accessToken) : null,
       )
       .then((profile) => {
-        if (isActive) {
-          setIsStaffHost(profile?.canHost === true);
+        if (!isActive) {
+          return;
+        }
+        if (profile) {
+          setIsStaffHost(profile.canHost === true);
+        } else {
+          setIsStaffHostCheckFailed(true);
         }
       })
       .catch(() => {
         if (isActive) {
-          setIsStaffHost(false);
+          setIsStaffHostCheckFailed(true);
         }
       });
 
     return () => {
       isActive = false;
     };
-  }, [authState.isLoggedIn, isEditMode]);
+  }, [authState.isLoggedIn, isEditMode, staffHostCheckAttempt]);
+
+  function retryStaffHostCheck() {
+    setIsStaffHostCheckFailed(false);
+    setStaffHostCheckAttempt((attempt) => attempt + 1);
+  }
 
   useEffect(() => {
     const query = idolQuery.trim();
@@ -2137,7 +2149,7 @@ export function UploadProductForm({
   }
 
   function handleSubmit() {
-    if (isStaffHostLoading) {
+    if (isStaffHostUnknown) {
       return;
     }
 
@@ -3784,7 +3796,7 @@ export function UploadProductForm({
 
             <button
               className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60"
-              disabled={isSubmitPending || isStaffHostLoading}
+              disabled={isSubmitPending || isStaffHostUnknown}
               onClick={handleSubmit}
               type="button"
             >
@@ -3792,6 +3804,21 @@ export function UploadProductForm({
                 ? isEditMode ? "수정 중…" : "등록 중…"
                 : isEditMode ? "수정 완료" : "등록하기"}
             </button>
+            {isStaffHostUnknown && isStaffHostCheckFailed ? (
+              <p
+                className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55"
+                role="alert"
+              >
+                운영진 여부를 확인하지 못했어요.{" "}
+                <button
+                  className="px-1 py-1 underline underline-offset-2"
+                  onClick={retryStaffHostCheck}
+                  type="button"
+                >
+                  다시 시도
+                </button>
+              </p>
+            ) : null}
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
                 {submitError}
