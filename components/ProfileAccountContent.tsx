@@ -612,7 +612,7 @@ export function ProfileAccountContent({ onBack }: ProfileAccountContentProps) {
                   </div>
                   <div className="mt-5 grid grid-cols-2 gap-2">
                     <button
-                      className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                      className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/60 disabled:text-black/25"
                       disabled={isDeleting}
                       onClick={() => setIsDeleteConfirmOpen(false)}
                       type="button"

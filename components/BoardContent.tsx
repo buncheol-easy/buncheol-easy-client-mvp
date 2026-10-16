@@ -47,7 +47,7 @@ export const BOARD_SKIP_ENTER_KEY = "skip-board-enter-animation";
 function getCategoryTone(category: BoardCategory) {
   return category === "notice"
     ? "bg-black text-white"
-    : "bg-[#f2f2f2] text-black/55";
+    : "bg-[#f2f2f2] text-black/60";
 }
 
 function getHistoryIndex() {

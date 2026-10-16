@@ -775,7 +775,7 @@ export function ProfileContent({
               <button
                 className={`shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold ${
                   hasSettlementAccount
-                    ? "bg-[#f4f4f4] text-black/55"
+                    ? "bg-[#f4f4f4] text-black/60"
                     : "bg-[#CFE86B] text-black shadow-[0_8px_20px_rgba(120,132,82,0.22)]"
                 }`}
                 onClick={startSettlementAccountEdit}
@@ -873,7 +873,7 @@ export function ProfileContent({
                 isSettlementAccountFormDirty ||
                 isEditingSettlementAccount ? (
                   <button
-                    className="h-9 flex-1 rounded-full bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
+                    className="h-9 flex-1 rounded-full bg-white text-[14px] font-semibold text-black/60 ring-1 ring-black/10"
                     disabled={isSettlementAccountPanelExiting}
                     onClick={cancelSettlementAccountEdit}
                     type="button"
@@ -965,7 +965,7 @@ export function ProfileContent({
               </p>
             </div>
             <Link
-              className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[13px] font-semibold text-black/55"
+              className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[13px] font-semibold text-black/60"
               href={
                 authState.isLoggedIn
                   ? "/profile/addresses"

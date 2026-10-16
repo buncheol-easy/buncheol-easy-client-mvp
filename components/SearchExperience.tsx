@@ -56,6 +56,7 @@ import {
   toMemberRailItem,
 } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
+import { chromeBlack } from "@/lib/system-chrome";
 
 type SearchExperienceProps = {
   query?: string;
@@ -306,11 +307,11 @@ export function SearchExperience({
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--system-bottom-color",
-      hasResults ? "#000000" : "#ffffff",
+      hasResults ? chromeBlack : "#ffffff",
     );
 
     return () => {
-      document.documentElement.style.setProperty("--system-bottom-color", "#000000");
+      document.documentElement.style.setProperty("--system-bottom-color", chromeBlack);
     };
   }, [hasResults]);
 

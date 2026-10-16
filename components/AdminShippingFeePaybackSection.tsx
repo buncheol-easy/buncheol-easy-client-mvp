@@ -343,7 +343,7 @@ export function AdminShippingFeePaybackSection({
                             </span>
                           ) : null}
                         </td>
-                        <td className="truncate px-4 py-3.5 text-black/55">
+                        <td className="truncate px-4 py-3.5 text-black/60">
                           {item.refundAccount
                             ? `${item.refundAccount.bank} ${item.refundAccount.account}`
                             : "-"}
@@ -479,7 +479,7 @@ export function AdminShippingFeePaybackSection({
                       />
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <button
-                          className="h-11 rounded-full bg-[#f3f3f3] text-[13px] font-semibold text-black/55"
+                          className="h-11 rounded-full bg-[#f3f3f3] text-[13px] font-semibold text-black/60"
                           onClick={() => {
                             setIsRejectFormOpen(false);
                             setRejectReason("");

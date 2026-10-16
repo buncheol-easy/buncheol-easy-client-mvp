@@ -656,7 +656,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
                   <span className="text-[14px] font-semibold tracking-[-0.04em]">
                     {method}
                   </span>
-                  <span className="text-[14px] font-semibold tracking-[-0.04em] text-black/55">
+                  <span className="text-[14px] font-semibold tracking-[-0.04em] text-black/60">
                     {price}
                   </span>
                 </div>
@@ -939,7 +939,7 @@ const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progre
                 <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-semibold text-[#D7FF5F]">
                   CU
                 </span>
-                <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/55">
+                <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/60">
                   배송지 고정
                 </span>
               </div>
@@ -1041,7 +1041,7 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
 
           <div className="px-4 py-4">
             <p className="text-[13px] font-semibold text-black/40">운영 요약</p>
-            <p className="mt-1 text-[14px] font-semibold text-black/55">
+            <p className="mt-1 text-[14px] font-semibold text-black/60">
               입금 확인 후 운송장 등록까지 한 곳에서 처리해요.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2">

@@ -642,7 +642,7 @@ export function AddressManagementContent({
                           className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                             isDefault
                               ? "bg-[#DDE7B8] text-black"
-                              : "bg-white text-black/55"
+                              : "bg-white text-black/60"
                           }`}
                         >
                           {getConvenienceStoreLabel(address.storeType)}
@@ -666,7 +666,7 @@ export function AddressManagementContent({
                     ) : (
                       <div className="flex w-[8.3rem] shrink-0 items-center justify-end gap-2">
                         <button
-                          className="h-8 rounded-full bg-white px-2.5 text-[12px] font-semibold text-black/55 ring-1 ring-black/10"
+                          className="h-8 rounded-full bg-white px-2.5 text-[12px] font-semibold text-black/60 ring-1 ring-black/10"
                           onClick={() => setAsDefaultAddress(address.id)}
                           type="button"
                         >
@@ -731,7 +731,7 @@ export function AddressManagementContent({
                           ) : null}
                         </div>
                         <button
-                          className="shrink-0 rounded-full bg-[#f4f4f4] px-3 py-2 text-[12px] font-semibold text-black/55"
+                          className="shrink-0 rounded-full bg-[#f4f4f4] px-3 py-2 text-[12px] font-semibold text-black/60"
                           disabled={!isFormOpen}
                           onClick={() => {
                             setHasTouchedAddressForm(true);
@@ -745,7 +745,7 @@ export function AddressManagementContent({
                     </div>
                   ) : (
                     <button
-                      className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[0.85rem] bg-white text-[14px] font-semibold text-black/55 ring-1 ring-black/10"
+                      className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[0.85rem] bg-white text-[14px] font-semibold text-black/60 ring-1 ring-black/10"
                       disabled={!isFormOpen}
                       onClick={() => {
                         setHasTouchedAddressForm(true);

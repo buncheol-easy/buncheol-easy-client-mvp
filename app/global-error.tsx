@@ -57,7 +57,7 @@ export default function GlobalError({
               <h1 className="mt-2 text-[24px] font-semibold leading-tight tracking-[-0.05em]">
                 화면을 불러오지 못했어요
               </h1>
-              <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/55">
+              <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/60">
                 일시적인 문제일 수 있어요.
                 <br />
                 잠시 후 다시 시도해 주세요.

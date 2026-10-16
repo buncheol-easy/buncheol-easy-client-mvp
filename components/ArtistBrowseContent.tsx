@@ -441,7 +441,7 @@ export function ArtistBrowseContent({
                     className={`flex aspect-square w-full items-center justify-center overflow-hidden rounded-full text-[12.5px] font-bold tracking-[-0.04em] transition ${
                       selectedMemberId === null
                         ? "scale-95 bg-brand-accent text-black"
-                        : "bg-white text-black/55 ring-1 ring-black/10"
+                        : "bg-white text-black/60 ring-1 ring-black/10"
                     }`}
                   >
                     {/* 원 안까지 "전체" 를 쓰면 바로 밑 캡션과 같은 글자가 두 번 보인다.
@@ -515,7 +515,7 @@ export function ArtistBrowseContent({
               {isMemberListCollapsible ? (
                 <button
                   aria-expanded={isMemberListExpanded}
-                  className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-full border border-black/10 bg-white text-[12.5px] font-semibold tracking-[-0.04em] text-black/55"
+                  className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-full border border-black/10 bg-white text-[12.5px] font-semibold tracking-[-0.04em] text-black/60"
                   onClick={() => setIsMemberListExpanded((current) => !current)}
                   type="button"
                 >

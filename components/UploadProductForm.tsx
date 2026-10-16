@@ -2844,7 +2844,7 @@ export function UploadProductForm({
                                 <span className="text-[15px] font-semibold tracking-[-0.04em]">
                                   {option.label}
                                 </span>
-                                <span className="text-[15px] font-semibold text-black/55">
+                                <span className="text-[15px] font-semibold text-black/60">
                                   {option.priceLabel}
                                 </span>
                               </div>
@@ -2889,7 +2889,7 @@ export function UploadProductForm({
                                   가격
                                 </p>
                               </div>
-                              <p className="shrink-0 text-[14px] font-semibold text-black/55">
+                              <p className="shrink-0 text-[14px] font-semibold text-black/60">
                                 {member.priceLabel}
                               </p>
                             </div>
@@ -3148,7 +3148,7 @@ export function UploadProductForm({
                 </span>
                 <input
                   {...getSubmitFieldErrorProps("purchaseSource")}
-                  className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/55"
+                  className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/60"
                   disabled={isApiEditMode}
                   maxLength={maxPurchaseSourceLength}
                   onChange={(event) =>
@@ -3304,7 +3304,7 @@ export function UploadProductForm({
                                   className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-white font-semibold ring-1 ring-black/10 ${
                                     isExcluded
                                       ? "w-8 text-black"
-                                      : "w-8 text-black/55"
+                                      : "w-8 text-black/60"
                                   }`}
                                   disabled={isApiEditMode}
                                   onClick={() =>
@@ -3535,7 +3535,7 @@ export function UploadProductForm({
                             <input
                               aria-invalid={isShippingFeeSlotInvalid(option)}
                               aria-label={`${option} 배송비`}
-                              className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/55"
+                              className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 disabled:text-black/60"
                               data-submit-invalid={
                                 isShippingFeeSlotInvalid(option)
                                   ? "true"
@@ -3806,7 +3806,7 @@ export function UploadProductForm({
             </button>
             {isStaffHostUnknown && isStaffHostCheckFailed ? (
               <p
-                className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55"
+                className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/60"
                 role="alert"
               >
                 운영진 여부를 확인하지 못했어요.{" "}
@@ -3820,7 +3820,7 @@ export function UploadProductForm({
               </p>
             ) : null}
             {submitError ? (
-              <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
+              <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/60">
                 {submitError}
               </p>
             ) : null}

@@ -845,7 +845,7 @@ function getBidRecordBuncheolChip(
 }
 
 const buncheolChipToneClasses: Record<BuncheolChipTone, string> = {
-  dday: "bg-[#f1f1f1] text-black/55",
+  dday: "bg-[#f1f1f1] text-black/60",
   urgent: "bg-black text-[#D7FF5F]",
   // 확정은 결론이 난 차분한 긍정 상태 — 원색 라임은 urgent 전용으로 남기고 연한 틴트를 쓴다.
   confirmed: "bg-[#E4F6A5] text-black/70",
@@ -3159,7 +3159,7 @@ export function BidHistoryContent({
                   className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                     isBidRecordCancelled(slot)
                       ? "bg-[#f7f7f7] text-black/30 line-through"
-                      : "bg-[#f1f1f1] text-black/55"
+                      : "bg-[#f1f1f1] text-black/60"
                   }`}
                   key={slot.id}
                 >
@@ -3216,7 +3216,7 @@ export function BidHistoryContent({
             <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5">
               {cancellationNotice ? (
                 <div className="mb-3 flex flex-col items-center gap-1.5">
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/55">
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/60">
                     {cancellationNotice.label}
                   </span>
                   <p className="break-keep text-center text-[11px] font-medium leading-4 text-black/40">
@@ -3330,7 +3330,7 @@ export function BidHistoryContent({
                   .filter((slot) => canCancelBidRecord(slot))
                   .map((slot) => (
                     <button
-                      className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] font-semibold text-black/55 disabled:text-black/25"
+                      className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] font-semibold text-black/60 disabled:text-black/25"
                       disabled={pendingParticipationId !== null}
                       key={slot.id}
                       onClick={() => requestCancelParticipation(slot)}
@@ -3348,7 +3348,7 @@ export function BidHistoryContent({
                 key={slot.deliveryId}
               >
                 <p className="text-[12px] font-medium text-black/40">배송</p>
-                <p className="mt-1 text-[13px] font-semibold text-black/55">
+                <p className="mt-1 text-[13px] font-semibold text-black/60">
                   {slot.trackingNumber
                     ? `운송장 ${slot.trackingNumber}`
                     : "운송장 등록 대기"}
@@ -4185,7 +4185,7 @@ export function BidHistoryContent({
                           ) : null}
                           {canCancel ? (
                             <button
-                              className="shrink-0 rounded-full border border-black/[0.08] bg-white px-3 py-2 text-[13px] font-semibold text-black/55 disabled:text-black/25"
+                              className="shrink-0 rounded-full border border-black/[0.08] bg-white px-3 py-2 text-[13px] font-semibold text-black/60 disabled:text-black/25"
                               disabled={isActionPending}
                               onClick={() => requestCancelParticipation(bid)}
                               type="button"
@@ -4215,7 +4215,7 @@ export function BidHistoryContent({
                               <p className="text-[11px] font-medium text-black/35">
                                 배송
                               </p>
-                              <p className="mt-1 truncate text-[13px] font-semibold text-black/55">
+                              <p className="mt-1 truncate text-[13px] font-semibold text-black/60">
                                 {bid.trackingNumber
                                   ? `운송장 ${bid.trackingNumber}`
                                   : "운송장 등록 대기"}
@@ -4235,12 +4235,12 @@ export function BidHistoryContent({
                             후기를 다시 확인해 주세요
                           </p>
                           {bid.payback?.rejectReason ? (
-                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/55">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/60">
                               반려 사유: {bid.payback.rejectReason}
                             </p>
                           ) : null}
                           {paybackDeadlineNotice ? (
-                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/55">
+                            <p className="mt-0.5 break-keep text-[12px] font-medium leading-5 text-black/60">
                               {paybackDeadlineNotice}
                             </p>
                           ) : null}
@@ -4295,7 +4295,7 @@ export function BidHistoryContent({
                           {getPaybackStatus(bid) === "REQUESTED" ? (
                             <div className="mt-2 flex justify-end">
                               <button
-                                className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black/55 ring-1 ring-black/10"
+                                className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black/60 ring-1 ring-black/10"
                                 onClick={() => setPaybackSheetBidId(bid.id)}
                                 type="button"
                               >
@@ -4465,7 +4465,7 @@ export function BidHistoryContent({
                       ) : null}
                       {canDelete ? (
                         <button
-                          className="h-9 rounded-full border border-black/[0.08] bg-white px-4 text-[13px] font-semibold text-black/55 disabled:text-black/25"
+                          className="h-9 rounded-full border border-black/[0.08] bg-white px-4 text-[13px] font-semibold text-black/60 disabled:text-black/25"
                           disabled={
                             deletingHostedProductId ===
                             (product.buncheolId ?? product.id)
@@ -4789,7 +4789,7 @@ export function BidHistoryContent({
               </p>
               {selectedPaymentOpenChatHref ? (
                 <a
-                  className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/55 underline underline-offset-2"
+                  className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/60 underline underline-offset-2"
                   href={selectedPaymentOpenChatHref}
                   rel="noreferrer"
                   target="_blank"
@@ -4808,7 +4808,7 @@ export function BidHistoryContent({
                         {getConvenienceStoreLabel(paymentDeliveryAddress.storeType)}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/55">
+                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 text-[10px] font-semibold text-black/60">
                       배송지 고정
                     </span>
                   </div>
