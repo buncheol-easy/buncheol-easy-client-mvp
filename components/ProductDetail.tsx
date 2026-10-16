@@ -2601,37 +2601,105 @@ export function ProductDetail({
     void refreshDetailOptions();
   });
 
-  // 오픈 시각 정각에 화면을 열고(1초 틱을 기다리지 않는다), 그사이 팔린 자리를 반영하려고 상세를 다시 부른다.
-  // 정각에 몰리는 재조회는 0~1초 무작위로 흩는다. 비로그인 화면은 refreshDetailOptions 가 바로 돌아간다.
+  // 오픈 시각 정각에 화면을 연다(1초 틱을 기다리지 않는다). 타이머가 정각보다 일찍 불리면 남은 만큼 다시 건다.
   useEffect(() => {
     if (opensAtMs === null) {
       return;
     }
 
-    const msUntilOpen = opensAtMs - (Date.now() + serverClockOffsetMs);
+    const targetOpensAtMs = opensAtMs;
+    let openTimer: number | null = null;
 
-    // setTimeout 은 약 24.8일을 넘는 지연을 즉시 실행으로 처리한다.
-    if (msUntilOpen <= 0 || msUntilOpen > maxTimerDelayMs) {
-      return;
+    function scheduleOpenTick() {
+      const msUntilOpen = targetOpensAtMs - (Date.now() + serverClockOffsetMs);
+
+      // setTimeout 은 약 24.8일을 넘는 지연을 즉시 실행으로 처리한다.
+      if (msUntilOpen <= 0 || msUntilOpen > maxTimerDelayMs) {
+        openTimer = null;
+        return;
+      }
+
+      openTimer = window.setTimeout(() => {
+        setDeadlineTick(Date.now());
+        scheduleOpenTick();
+      }, msUntilOpen);
     }
 
-    let refreshTimer: number | null = null;
-    const openTimer = window.setTimeout(() => {
-      setDeadlineTick(Date.now());
-      refreshTimer = window.setTimeout(
-        () => refreshDetailOptionsAtOpen(),
-        Math.random() * 1000,
-      );
-    }, msUntilOpen);
+    scheduleOpenTick();
 
     return () => {
-      window.clearTimeout(openTimer);
-
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
+      if (openTimer !== null) {
+        window.clearTimeout(openTimer);
       }
     };
   }, [opensAtMs, serverClockOffsetMs]);
+
+  // 화면이 꺼졌다 켜지면 페이지 타이머는 늦게 불릴 수 있다. 보이는 순간 지금 시각으로 다시 그린다.
+  const hasOpensAt = opensAtMs !== null;
+
+  useEffect(() => {
+    if (!hasOpensAt) {
+      return;
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        setDeadlineTick(Date.now());
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [hasOpensAt]);
+
+  // 열린 것을 본 순간(정각 타이머든 1초 틱이든) 오픈 시각당 한 번 상세를 다시 불러와 그사이 팔린 자리를 반영한다.
+  // 정각에 몰리는 재조회는 0~1초 무작위로 흩는다. 비로그인 화면에서는 refreshDetailOptions 가 아무것도 하지 않는다.
+  // 오픈 뒤에 연 화면은 마운트 재조회가 이미 최신 상태를 가져오므로 다시 부르지 않는다.
+  const sawBeforeOpenRef = useRef(false);
+  const refreshedOpensAtRef = useRef<number | null>(null);
+  // 예약은 다시 그리거나 시계 차이를 다시 재도 지우지 않고 언마운트 때만 지운다.
+  const openRefreshTimerRef = useRef<{ id: number | null }>({ id: null });
+
+  useEffect(() => {
+    if (isBeforeOpen) {
+      sawBeforeOpenRef.current = true;
+      return;
+    }
+
+    if (
+      !hasOpened ||
+      !sawBeforeOpenRef.current ||
+      refreshedOpensAtRef.current === opensAtMs
+    ) {
+      return;
+    }
+
+    const openRefreshTimer = openRefreshTimerRef.current;
+
+    refreshedOpensAtRef.current = opensAtMs;
+
+    if (openRefreshTimer.id !== null) {
+      window.clearTimeout(openRefreshTimer.id);
+    }
+
+    openRefreshTimer.id = window.setTimeout(() => {
+      openRefreshTimer.id = null;
+      refreshDetailOptionsAtOpen();
+    }, Math.random() * 1000);
+  }, [hasOpened, isBeforeOpen, opensAtMs]);
+
+  useEffect(() => {
+    const openRefreshTimer = openRefreshTimerRef.current;
+
+    return () => {
+      if (openRefreshTimer.id !== null) {
+        window.clearTimeout(openRefreshTimer.id);
+      }
+    };
+  }, []);
 
   // 지난 입금 기한별 재조회 횟수·마지막 시각. LEGACY 는 서버가 1분 주기로 만료 자리를 풀어 기한 뒤에도
   // 최대 약 1분 '입금 대기'로 오므로 기한 시각 1회 뒤 15초 간격으로 다시 묻는다(기한당 최대 13회 — 서버가 끝내
