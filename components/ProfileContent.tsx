@@ -961,9 +961,6 @@ export function ProfileContent({
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 기본 배송지
               </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                GS25·CU 각각 기본 지점을 하나씩 저장할 수 있어요.
-              </p>
             </div>
             <Link
               className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[13px] font-semibold text-black/55"

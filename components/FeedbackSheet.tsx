@@ -119,11 +119,11 @@ export function FeedbackSheet({ onClose }: FeedbackSheetProps) {
             <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
               의견 보내기
             </h2>
-            <p className="mt-1 text-[13px] font-medium text-black/45">
+            <HelpText className="mt-1">
               {isSubmitted
                 ? "소중한 의견 고맙습니다."
-                : "불편했던 점이나 아쉬운 점을 남겨주세요."}
-            </p>
+                : "분철이지를 사용하면서 불편했던 점이나 아쉬운 점을 남겨주세요."}
+            </HelpText>
           </div>
           <button
             aria-label="닫기"
