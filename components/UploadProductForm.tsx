@@ -38,10 +38,12 @@ import {
 } from "@/lib/hosted-products-store";
 import {
   createBuncheol,
+  createStaffBuncheol,
   requestBuncheolDetail,
   requestGroupMembers,
   requestGroups,
   requestMyHostedBuncheols,
+  requestUserProfile,
   toProductDetailItem,
   updateBuncheol,
 } from "@/lib/auth-api";
@@ -103,6 +105,8 @@ const maxTitleLength = 64;
 const maxPurchaseSourceLength = 20;
 const maxDescriptionLength = 700;
 const scheduleYearOptionCount = 5;
+// 서버 BCH-129 와 같은 문구.
+const opensAtInvalidMessage = "오픈 시각은 지금 이후, 마감 전으로 정해 주세요.";
 const hourOptions = Array.from({ length: 24 }, (_, index) => index);
 const memberPriceUnitWon = 100;
 const minimumPricePromptExitDelay = 220;
@@ -114,7 +118,8 @@ const emptyProductDescriptionPlaceholders = new Set([
   "상품 설명이 없어요.",
 ]);
 
-type ScheduleField = "closing";
+// opening 은 운영진 개최에서만 보이는 예약 오픈 시각(선택).
+type ScheduleField = "closing" | "opening";
 type SchedulePart = "year" | "month" | "day" | "hour";
 type SubmitFieldKey =
   | "photos"
@@ -125,6 +130,7 @@ type SubmitFieldKey =
   | "minHeadcount"
   | "shipping"
   | "closingDate"
+  | "opensAt"
   | "openChatUrl";
 
 /*
@@ -760,6 +766,15 @@ export function UploadProductForm({
   const [isMinimumPricePromptOpen, setIsMinimumPricePromptOpen] =
     useState(false);
   const [closingDate, setClosingDate] = useState("");
+  // 운영진 계정만 쓰는 예약 오픈 시각. 비우면 등록하자마자 열린다.
+  const [opensAtValue, setOpensAtValue] = useState("");
+  // 운영진 계정이면 오픈 시각 칸을 보이고 운영진 개최 API 를 부른다. null 은 조회 중이거나 조회 실패.
+  const [isStaffHost, setIsStaffHost] = useState<boolean | null>(null);
+  const [isStaffHostCheckFailed, setIsStaffHostCheckFailed] = useState(false);
+  const [staffHostCheckAttempt, setStaffHostCheckAttempt] = useState(0);
+  const isStaffOpensAtShown = isStaffHost === true && !isEditMode;
+  // 확인 전에 제출하면 운영진도 회원 API 로 나가 오픈 시각 없이 바로 열린 분철이 된다. 실패도 회원으로 보지 않는다.
+  const isStaffHostUnknown = !isEditMode && isStaffHost === null;
   const [description, setDescription] = useState("");
   const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -801,6 +816,7 @@ export function UploadProductForm({
   const formSignature = JSON.stringify({
     closingDate,
     description,
+    opensAtValue,
     excludedMemberIds,
     memberMinimumPrices,
     minHeadcount,
@@ -1229,6 +1245,15 @@ export function UploadProductForm({
       return { field: "closingDate", message: "마감 기한을 선택해 주세요." };
     }
 
+    // "지금 이후" 검사는 제출 순간에 한다(submitForm). 렌더 중에는 지금 시각을 읽지 않는다.
+    if (
+      isStaffOpensAtShown &&
+      opensAtValue &&
+      new Date(opensAtValue).getTime() >= new Date(closingDate).getTime()
+    ) {
+      return { field: "opensAt", message: opensAtInvalidMessage };
+    }
+
     // 선택 입력(생성 모드 전용) — 값이 있으면 카카오 오픈채팅 주소만 허용한다.
     if (
       !isEditMode &&
@@ -1373,6 +1398,44 @@ export function UploadProductForm({
     loginReturnHref,
     router,
   ]);
+
+  // 오픈 시각은 고치는 API 가 없어(운영 SQL 로만 정정) 수정 모드에서는 읽지 않는다.
+  useEffect(() => {
+    if (isEditMode || !authState.isLoggedIn) {
+      return;
+    }
+
+    let isActive = true;
+
+    getFreshAccessToken()
+      .then((accessToken) =>
+        accessToken ? requestUserProfile(accessToken) : null,
+      )
+      .then((profile) => {
+        if (!isActive) {
+          return;
+        }
+        if (profile) {
+          setIsStaffHost(profile.canHost === true);
+        } else {
+          setIsStaffHostCheckFailed(true);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setIsStaffHostCheckFailed(true);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [authState.isLoggedIn, isEditMode, staffHostCheckAttempt]);
+
+  function retryStaffHostCheck() {
+    setIsStaffHostCheckFailed(false);
+    setStaffHostCheckAttempt((attempt) => attempt + 1);
+  }
 
   useEffect(() => {
     const query = idolQuery.trim();
@@ -2008,12 +2071,15 @@ export function UploadProductForm({
     }));
   }
   function getScheduleValue(field: ScheduleField) {
-    void field;
-    return closingDate;
+    return field === "opening" ? opensAtValue : closingDate;
   }
 
   function updateScheduleValue(field: ScheduleField, value: string) {
-    void field;
+    if (field === "opening") {
+      setOpensAtValue(value);
+      return;
+    }
+
     setClosingDate(value);
   }
 
@@ -2083,6 +2149,10 @@ export function UploadProductForm({
   }
 
   function handleSubmit() {
+    if (isStaffHostUnknown) {
+      return;
+    }
+
     // 버튼이 살아 있으므로 제출 경로에서 다시 막는다 — 버튼 활성화가 곧 제출 허용이 아니다.
     if (submitBlock) {
       // 이전 서버 에러가 남아 있으면 인라인 안내와 하단 문구가 서로 다른 말을 한다.
@@ -2264,6 +2334,16 @@ export function UploadProductForm({
       return;
     }
 
+    // 폼을 열어 둔 채 정시가 지나면 고른 오픈 시각이 과거가 된다. 마감 전 검사는 submitBlock 이 했다.
+    if (
+      isStaffOpensAtShown &&
+      opensAtValue &&
+      new Date(opensAtValue).getTime() <= Date.now()
+    ) {
+      setSubmitError(opensAtInvalidMessage);
+      return;
+    }
+
     if (
       !isApiEditMode &&
       authState.isLoggedIn &&
@@ -2355,33 +2435,42 @@ export function UploadProductForm({
         }
 
         if (!isEditMode) {
-          const createdBuncheolId = await createBuncheol(
-            accessToken,
-            {
-              buncheolMembers: apiMembers,
-              cuShippingFee: getStoreShippingFee(
-                selectedShipping,
-                shippingPrices,
-                "CU",
-              ),
-              // 이 경로의 closingDate 유효성은 submitBlock 이 이미 보장한다.
-              deadline: new Date(closingDate).toISOString(),
-              description: product.description || undefined,
-              groupId: apiGroupId,
-              minHeadcount: parsedMinHeadcount,
-              // 검증을 통과한 정규화 값(스킴 보정·호스트 소문자화)을 전송한다.
-              openChatUrl: normalizeOpenChatUrlInput(openChatUrl) ?? undefined,
-              gs25ShippingFee: getStoreShippingFee(
-                selectedShipping,
-                shippingPrices,
-                "GS",
-              ),
-              purchaseSite: purchaseSource.trim(),
-              thumbnailIndex: coverPhotoIndex,
-              title: title.trim(),
-            },
-            imageFiles,
-          );
+          const createRequest = {
+            buncheolMembers: apiMembers,
+            cuShippingFee: getStoreShippingFee(
+              selectedShipping,
+              shippingPrices,
+              "CU",
+            ),
+            // 이 경로의 closingDate 유효성은 submitBlock 이 이미 보장한다.
+            deadline: new Date(closingDate).toISOString(),
+            description: product.description || undefined,
+            groupId: apiGroupId,
+            minHeadcount: parsedMinHeadcount,
+            // 검증을 통과한 정규화 값(스킴 보정·호스트 소문자화)을 전송한다.
+            openChatUrl: normalizeOpenChatUrlInput(openChatUrl) ?? undefined,
+            gs25ShippingFee: getStoreShippingFee(
+              selectedShipping,
+              shippingPrices,
+              "GS",
+            ),
+            purchaseSite: purchaseSource.trim(),
+            thumbnailIndex: coverPhotoIndex,
+            title: title.trim(),
+          };
+          // 운영진은 오픈 시각을 비워도 운영진 API 로 연다. 회원 개최 API 는 오픈 시각을 받지 않는다.
+          const createdBuncheolId = isStaffOpensAtShown
+            ? await createStaffBuncheol(
+                accessToken,
+                {
+                  ...createRequest,
+                  opensAt: opensAtValue
+                    ? new Date(opensAtValue).toISOString()
+                    : undefined,
+                },
+                imageFiles,
+              )
+            : await createBuncheol(accessToken, createRequest, imageFiles);
           // 새로 개최한 분철이 홈 목록에 바로 뜨도록 목록 쿼리를 무효화한다.
           void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
 
@@ -3485,8 +3574,12 @@ export function UploadProductForm({
               </h2>
               {renderSubmitFieldError("closingDate")}
               <div className="mt-3 grid gap-3">
-                {(
-                  [["closing", "마감 기한", closingDate]] as const
+                {(isStaffOpensAtShown
+                  ? ([
+                      ["closing", "마감 기한", closingDate],
+                      ["opening", "오픈 시각 (선택)", opensAtValue],
+                    ] as const)
+                  : ([["closing", "마감 기한", closingDate]] as const)
                 ).map(([field, label, value]) => {
                   let scheduleParts = getScheduleParts(value);
                   const minScheduleValue = getNextAvailableScheduleValue();
@@ -3537,10 +3630,38 @@ export function UploadProductForm({
                   const isActive = activeScheduleField === field;
 
                   return (
-                    <div key={field}>
-                      <span className="text-[13px] font-semibold text-black/45">
-                        {label}
-                      </span>
+                    <div
+                      key={field}
+                      ref={
+                        field === "opening"
+                          ? registerSubmitField("opensAt")
+                          : undefined
+                      }
+                    >
+                      {field === "opening" ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[13px] font-semibold text-black/45">
+                            {label}
+                          </span>
+                          {value ? (
+                            <button
+                              className="-mr-2 px-2 py-1 text-[12px] font-semibold text-black/45"
+                              data-submit-focus="skip"
+                              onClick={() => {
+                                setOpensAtValue("");
+                                setActiveScheduleField(null);
+                              }}
+                              type="button"
+                            >
+                              지우기
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-[13px] font-semibold text-black/45">
+                          {label}
+                        </span>
+                      )}
                       <button
                         className={`mt-2 flex h-14 w-full items-center justify-between rounded-[0.9rem] border px-4 text-left outline-none ${
                           isActive
@@ -3612,6 +3733,14 @@ export function UploadProductForm({
                           </div>
                         </div>
                       </SoftPanel>
+                      {field === "opening" ? (
+                        <>
+                          {renderSubmitFieldError("opensAt")}
+                          <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                            비워 두면 등록하자마자 열려요.
+                          </p>
+                        </>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -3667,7 +3796,7 @@ export function UploadProductForm({
 
             <button
               className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60"
-              disabled={isSubmitPending}
+              disabled={isSubmitPending || isStaffHostUnknown}
               onClick={handleSubmit}
               type="button"
             >
@@ -3675,6 +3804,21 @@ export function UploadProductForm({
                 ? isEditMode ? "수정 중…" : "등록 중…"
                 : isEditMode ? "수정 완료" : "등록하기"}
             </button>
+            {isStaffHostUnknown && isStaffHostCheckFailed ? (
+              <p
+                className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55"
+                role="alert"
+              >
+                운영진 여부를 확인하지 못했어요.{" "}
+                <button
+                  className="px-1 py-1 underline underline-offset-2"
+                  onClick={retryStaffHostCheck}
+                  type="button"
+                >
+                  다시 시도
+                </button>
+              </p>
+            ) : null}
             {submitError ? (
               <p className="mt-3 break-keep text-center text-[13px] font-semibold leading-5 text-black/55">
                 {submitError}

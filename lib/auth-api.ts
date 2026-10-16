@@ -47,6 +47,8 @@ export const USER_BANK_ACCOUNT_NOT_REGISTERED_CODE = "USR-025";
 export const HOST_CANNOT_PARTICIPATE_CODE = "BCH-066";
 // 가입 미완료(전화번호 없음). 진입 가드가 놓친 경우의 참여 403 이 이 코드로 온다.
 export const PROFILE_INCOMPLETE_CODE = "USR-018";
+// 예약 오픈 전 운영진 분철에 코드 없이 참여. 화면은 오픈 전 버튼을 꺼 두므로 시계가 어긋났을 때만 온다.
+export const BUNCHEOL_NOT_OPEN_YET_CODE = "BCH-128";
 
 export type UserProfileStatus = {
   isProfileComplete: boolean;
@@ -90,8 +92,8 @@ export type UserProfile = {
   name: string;
   phoneNumber: string;
   bankAccount: BankAccountInfo | null;
-  // 백엔드 개최 권한 제한 반영 전 응답에는 없는 필드라 undefined를 허용한다.
-  // 서버 게이트 위임(client#85) 이후 FE 미사용 — 선차단 재도입 금지, 서버 계약 문서화용으로만 유지.
+  // 운영진 계정 여부. 개최 폼의 오픈 시각 칸과 운영진 개최 API 선택에만 쓴다.
+  // 개최 가능 여부 선차단에는 쓰지 않는다(client#85, 판정은 서버 개최 자격 조회).
   canHost?: boolean;
 };
 
@@ -161,6 +163,12 @@ export type CreateBuncheolRequest = {
   /** 대표사진으로 쓸 images 파트 내 인덱스(0-base, 필수). 이미지 순서는 업로드 순서 그대로 저장된다. */
   thumbnailIndex: number;
   title: string;
+};
+
+// 운영진 개최(POST /v1/staff/buncheols). 언제나 운영진 분철로 만들어지고, 오픈 시각은 이 요청에만 있다.
+export type CreateStaffBuncheolRequest = CreateBuncheolRequest & {
+  /** 예약 오픈 시각(ISO). 비우면 등록하자마자 열린다. 지금 이후·마감 전이 아니면 400(BCH-129). */
+  opensAt?: string;
 };
 
 // 대표사진 지정은 필수 — thumbnailImageId(유지 이미지)와 thumbnailIndex(신규 이미지) 중 정확히 하나를 보내야 한다.
@@ -304,6 +312,8 @@ export type BuncheolSummary = {
   memberNames: string[];
   memberSlotCount?: number;
   minHeadcount?: number | null;
+  // 예약 오픈 시각(ISO). 오픈 시각을 넣은 운영진 분철에만 있고, 없으면 null(바로 열린 분철).
+  opensAt?: string | null;
   // 오픈 이벤트 배송비 돌려받기 대상 분철(전 슬롯 0원 + 이벤트 활성) 여부.
   // 서버가 판정해 내려주며, 필드가 없는 응답이면 undefined → 배지를 노출하지 않는다 (안전 폴백).
   shippingFeePaybackTarget?: boolean;
@@ -365,6 +375,8 @@ export type BuncheolDetail = BuncheolSummary & {
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
   openChatUrl?: string | null;
   purchaseSite?: string;
+  // 서버가 이 응답을 만든 시각(ISO). 화면의 예약 오픈 카운트다운을 서버 시계에 맞추는 기준이다.
+  serverTime?: string | null;
   shippingOptions: BuncheolShippingOption[];
 };
 
@@ -2457,6 +2469,7 @@ function getBuncheolSummaryFromRecord(
       "memberCount",
     ]),
     minHeadcount: getOptionalNumberValue(record, ["minHeadcount"]),
+    opensAt: getOptionalStringValue(record, ["opensAt"]) ?? null,
     freeShippingEventTarget:
       getBooleanValue(record, [
         "freeShippingEventTarget",
@@ -2695,6 +2708,7 @@ function getBuncheolMemberFromRecord(
 
   return {
     // CODE_ONLY 는 공석이라 선택 가능으로 둔다 — 자격은 체크아웃의 코드 입력이 가른다.
+    // NOT_OPEN(예약 오픈 전)은 고를 수 없다. 오픈 시각이 지나면 상세 화면이 서버 시계로 연다.
     available: normalizedSaleStatus
       ? normalizedSaleStatus === "AVAILABLE" || normalizedSaleStatus === "CODE_ONLY"
       : getBooleanValue(record, ["available", "isAvailable"]) ?? undefined,
@@ -3126,6 +3140,7 @@ function getBuncheolDetailFromBody(body: unknown) {
       "purchaseSource",
       "source",
     ]),
+    serverTime: getOptionalStringValue(data, ["serverTime"]) ?? null,
     shippingOptions,
   } satisfies BuncheolDetail;
 }
@@ -4044,6 +4059,7 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     member: getMemberLabel(summary.memberNames),
     availableMemberNames: summary.availableMemberNames,
     minHeadcount: summary.minHeadcount,
+    opensAt: summary.opensAt ?? null,
     targetMembers: summary.memberNames,
     uploadedAt: formatKoreaDateTime(summary.createdAt),
     createdAt: summary.createdAt,
@@ -4151,6 +4167,7 @@ export function toProductDetailItem(
     minHeadcount: detail.minHeadcount,
     options,
     purchaseSource: detail.purchaseSite ?? "공식 판매처",
+    serverTime: detail.serverTime ?? null,
     shippingMethods: shippingMethods.length > 0 ? shippingMethods : undefined,
     status: detail.status,
     targetMembers: memberNames,
@@ -4339,16 +4356,18 @@ export class BuncheolHostPermissionError extends Error {
   }
 }
 
-export async function createBuncheol(
+// 회원 개최와 운영진 개최는 경로만 다르고 요청 파트·응답·오류 처리가 같다.
+async function postBuncheolForm(
+  path: string,
   accessToken: string,
-  body: CreateBuncheolRequest,
-  images: Blob[] = [],
+  body: CreateBuncheolRequest | CreateStaffBuncheolRequest,
+  images: Blob[],
 ) {
   const formData = new FormData();
   appendJsonFormPart(formData, body);
   appendImageFormParts(formData, images);
 
-  const response = await fetch(`${getVersionedApiBaseUrl()}/buncheols`, {
+  const response = await fetch(`${getVersionedApiBaseUrl()}${path}`, {
     body: formData,
     credentials: "include",
     headers: getAuthHeaders(accessToken),
@@ -4394,6 +4413,23 @@ export async function createBuncheol(
   }
 
   return "";
+}
+
+export async function createBuncheol(
+  accessToken: string,
+  body: CreateBuncheolRequest,
+  images: Blob[] = [],
+) {
+  return postBuncheolForm("/buncheols", accessToken, body, images);
+}
+
+// 운영진 계정(canHost)만 통한다. 회원 계정이면 403 USR-031(BuncheolHostPermissionError).
+export async function createStaffBuncheol(
+  accessToken: string,
+  body: CreateStaffBuncheolRequest,
+  images: Blob[] = [],
+) {
+  return postBuncheolForm("/staff/buncheols", accessToken, body, images);
 }
 
 export async function updateBuncheol(

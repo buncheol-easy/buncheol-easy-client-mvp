@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
+import { OpensAtBand } from "@/components/OpensAtBand";
 import {
   getArtistRestoreIndexKey,
   getArtistScrollTopKey,
@@ -27,6 +28,7 @@ import {
   isBuncheolPaymentCollectingStatus,
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
+import { parseIsoTimeMs } from "@/lib/buncheol-open-time";
 import { getHistoryIndex } from "@/lib/history-index";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
@@ -66,6 +68,8 @@ export type ProductCardItem = {
   // 배송비 0원 이벤트 대상(운영진 개최 + 배송비 전액 0원) 분철 배지. 서버 판정값이라 사용자 개최(C2C) 분철이
   // 배송비를 0원으로 잡아도 false 로 내려온다. 필드가 없는 구 응답이면 배지를 띄우지 않는다.
   isFreeShippingEvent?: boolean;
+  // 예약 오픈 시각(ISO). 운영진 분철에 오픈 시각을 넣었을 때만 있다.
+  opensAt?: string | null;
 };
 
 type ProductCardProps = {
@@ -258,6 +262,19 @@ function getProductCardBadge(item: ProductCardItem) {
   };
 }
 
+// 예약 오픈 전 모집 중인 운영진 분철이면 띠에 쓸 오픈 시각과 지금 시각(오늘·내일 표기용)을 돌려준다.
+// 지난 오픈 시각은 카드를 다시 그릴 때(목록을 다시 볼 때) 사라진다.
+function getCardOpening(item: ProductCardItem) {
+  const opensAtMs = parseIsoTimeMs(item.opensAt);
+  const nowMs = Date.now();
+
+  return opensAtMs !== null &&
+    opensAtMs > nowMs &&
+    isProductCardPurchasable(item)
+    ? { nowMs, opensAtMs }
+    : null;
+}
+
 function getAvailableMemberSummary(memberNames: string[]) {
   return memberNames.join(" · ");
 }
@@ -296,15 +313,21 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const targetTags = getTargetTags(item);
   const deadlineBadge = getProductCardBadge(item);
   const isPurchasable = isProductCardPurchasable(item);
+  // 오픈 전에는 사진 아래 띠가 상태 칩과 「D-n」을 대신한다.
+  const opening = getCardOpening(item);
   // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
   // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
   const shouldDimCard =
     !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
   // 서버가 availableMemberNames 를 내려준 경우에만 남은 멤버로 취급한다(null = 데이터 없음).
   // 데이터가 없는 카드(찜 목록 등)는 전체 멤버를 남은 멤버처럼 보여주는 대신 대상 멤버 태그로 대체한다.
-  const availableMemberNames = Array.isArray(item.availableMemberNames)
-    ? getUniqueMemberNames(item.availableMemberNames)
-    : null;
+  // 오픈 전에는 상세처럼 코드 참여로 찬 자리도 가리므로 전체 멤버를 남은 멤버로 보인다.
+  const availableMemberNames =
+    opening && item.targetMembers?.length
+      ? getUniqueMemberNames(item.targetMembers)
+      : Array.isArray(item.availableMemberNames)
+        ? getUniqueMemberNames(item.availableMemberNames)
+        : null;
   const shouldPeekOptionRail = (availableMemberNames?.length ?? 0) > 3;
   const availableMemberSummary = availableMemberNames?.length
     ? getAvailableMemberSummary(availableMemberNames)
@@ -538,15 +561,17 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           ) : null}
           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
             <div className="flex min-w-0 flex-col items-start gap-1.5">
-              <span
-                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
-                  isPurchasable
-                    ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
-                    : "bg-black/55 text-white/80"
-                }`}
-              >
-                {deadlineBadge.label}
-              </span>
+              {opening ? null : (
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm ${
+                    isPurchasable
+                      ? "bg-[#DDE7B8] text-black shadow-[0_8px_22px_rgba(120,132,82,0.22)]"
+                      : "bg-black/55 text-white/80"
+                  }`}
+                >
+                  {deadlineBadge.label}
+                </span>
+              )}
               {showPaybackBadge ? (
                 <span className="inline-flex rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.2)]">
                   배송비 돌려받는 무료 분철
@@ -578,7 +603,13 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
               <HeartIcon filled={isLiked} />
             </button>
           </div>
-          {deadlineBadge.value ? (
+          {opening ? (
+            <OpensAtBand
+              nowMs={opening.nowMs}
+              opensAtMs={opening.opensAtMs}
+              size="wide"
+            />
+          ) : deadlineBadge.value ? (
             <span className="absolute bottom-3 left-3 rounded-full bg-black/76 px-2.5 py-1 text-[13px] font-semibold tracking-[-0.04em] text-white backdrop-blur-sm">
               {deadlineBadge.value}
             </span>
@@ -676,26 +707,35 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         {shouldDimCard ? (
           <div className="absolute inset-0 bg-black/45" />
         ) : null}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
-          <p
-            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
-              isPurchasable
-                ? "bg-[#DDE7B8] text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)]"
-                : "bg-black/40 text-white/75"
-            }`}
-          >
-            {deadlineBadge.label}
-          </p>
-          {deadlineBadge.value ? (
-            <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em] drop-shadow-[0_1px_6px_rgba(0,0,0,0.65)]">
-              {deadlineBadge.value}
+        {opening ? (
+          <OpensAtBand
+            nowMs={opening.nowMs}
+            opensAtMs={opening.opensAtMs}
+            size="grid"
+          />
+        ) : (
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-3 pb-3 pt-16 text-white">
+            <p
+              className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm ${
+                isPurchasable
+                  ? "bg-[#DDE7B8] text-black shadow-[0_6px_18px_rgba(120,132,82,0.22)]"
+                  : "bg-black/40 text-white/75"
+              }`}
+            >
+              {deadlineBadge.label}
             </p>
-          ) : null}
-        </div>
+            {deadlineBadge.value ? (
+              <p className="mt-1 text-[17px] font-semibold tracking-[-0.04em] drop-shadow-[0_1px_6px_rgba(0,0,0,0.65)]">
+                {deadlineBadge.value}
+              </p>
+            ) : null}
+          </div>
+        )}
         <button
           type="button"
           aria-label={isLiked ? "찜 해제" : "찜하기"}
-          className={`absolute bottom-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full ${
+          // 오픈 전에는 아래 띠와 겹치지 않게 위 오른쪽으로 올린다.
+          className={`absolute ${opening ? "right-2 top-2" : "bottom-2 right-2"} inline-flex h-9 w-9 items-center justify-center rounded-full ${
             isLiked
               ? "heart-on-image heart-on-image--active text-like"
               : "heart-on-image text-white"

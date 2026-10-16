@@ -122,7 +122,7 @@ function formatPrice(price: number) {
 }
 
 const kstOffsetHours = 9;
-const paymentDeadlineMinutes = 30;
+const paymentDeadlineMinutes = 10;
 // C2C 입금 창 — 성사 확정 후 24시간 (docs/46 §7.1-3). 카운트다운 상한 보정에 쓴다.
 const c2cPaymentWindowMs = 24 * 60 * 60_000;
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
@@ -244,7 +244,7 @@ function getPaymentDeadlineDate(
   createdAt?: string | null,
   isC2C = false,
 ) {
-  // C2C 는 기한이 서버 일괄 산정값(paymentDueAt) 하나뿐이다 — 선점+30분 폴백을 적용하면
+  // C2C 는 기한이 서버 일괄 산정값(paymentDueAt) 하나뿐이다 — 선점+10분 폴백을 적용하면
   // 확정 전(기한 없음) 참여를 만료로 오판하므로, 값이 없으면 "기한 없음"(NaN)으로 둔다.
   if (isC2C) {
     return paymentDueAt ? new Date(paymentDueAt) : new Date(Number.NaN);
@@ -287,7 +287,7 @@ function formatPaymentRemainingTime(
 }
 
 // 결제 정보 시트의 실시간 카운트다운 표기. 분철 상세와 동일하게 서버·클라이언트
-// 시계 오차로 남은 시간이 입금 창(LEGACY 30분 / C2C 24시간)을 초과해 보이지 않도록
+// 시계 오차로 남은 시간이 입금 창(LEGACY 10분 / C2C 24시간)을 초과해 보이지 않도록
 // 상한을 걸고, 진행 중인 초를 포함해 올림으로 표시한다.
 function formatPaymentCountdown(
   bid: Pick<BidRecord, "deadline" | "deadlineAt">,
@@ -378,7 +378,7 @@ const freeProgressStepLabels = [
 // 라벨은 진행바(bidProgressStepLabels / c2cProgressStepLabels)와 같은 문자열을 재사용한다 —
 // 두 곳이 어긋나면 안내 시트와 진행바가 서로 다른 단계 이름을 보여주게 된다.
 //
-// 안내가 두 벌인 이유: 입금 시점이 달라(LEGACY 즉시 30분 / C2C 확정 뒤 24시간) 한 벌로 합치면
+// 안내가 두 벌인 이유: 입금 시점이 달라(LEGACY 즉시 10분 / C2C 확정 뒤 24시간) 한 벌로 합치면
 // 한쪽이 반드시 오안내가 된다.
 type StatusGuideItem = {
   icon: typeof BanknoteIcon;
@@ -464,7 +464,7 @@ const legacyParticipationStatusGuide = [
     icon: BanknoteIcon,
     label: bidProgressStepLabels[0],
     description:
-      "참여 후 30분 안에 꼭 입금해야 하는 단계예요. 계좌번호는 입금 정보 버튼에서 확인할 수 있어요.",
+      "참여 후 10분 안에 꼭 입금해야 하는 단계예요. 계좌번호는 입금 정보 버튼에서 확인할 수 있어요.",
   },
   {
     icon: CheckIcon,
@@ -1603,7 +1603,7 @@ async function getBidRecordWithShippingData(
       deliveryId: mergedBidRecord.deliveryId ?? paymentDetail.deliveryId ?? null,
       deliveryStatus:
         paymentDetail.deliveryStatus ?? mergedBidRecord.deliveryStatus ?? null,
-      // 목록 응답에 flowType 이 빠지면 C2C 참여가 LEGACY(30분 창·만료 폴백)로
+      // 목록 응답에 flowType 이 빠지면 C2C 참여가 LEGACY(10분 창·만료 폴백)로
       // 퇴화하므로 상세 응답으로 보강한다. 오픈채팅·보냈어요 시각도 동일.
       flowType: mergedBidRecord.flowType ?? paymentDetail.flowType ?? null,
       openChatUrl:
@@ -4622,7 +4622,7 @@ export function BidHistoryContent({
                   <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
                     분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
                     입금돼요. 분철이지가 직접 개최한 분철은 신청 단계 없이 참여
-                    즉시 30분 안에 입금하면 돼요.
+                    즉시 10분 안에 입금하면 돼요.
                   </p>
                 </>
               ) : (

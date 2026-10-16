@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -14,6 +15,7 @@ import { useRouter } from "next/navigation";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import {
   ApiRequestError,
+  BUNCHEOL_NOT_OPEN_YET_CODE,
   HOST_CANNOT_PARTICIPATE_CODE,
   PROFILE_INCOMPLETE_CODE,
   USER_BANK_ACCOUNT_NOT_REGISTERED_CODE,
@@ -53,6 +55,12 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
 } from "@/lib/buncheol-states";
+import {
+  formatCountdownClock,
+  formatOpenCountdown,
+  formatOpensAt,
+  parseIsoTimeMs,
+} from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
@@ -92,6 +100,10 @@ import {
   TrashIcon,
 } from "@/components/icons";
 import { BottomNavigator } from "@/components/BottomNavigator";
+import {
+  OpensAtBand,
+  aboveDetailOpensAtBandClassName,
+} from "@/components/OpensAtBand";
 import {
   BRIEF_TOAST_DURATION_MS,
   Toast,
@@ -272,11 +284,12 @@ const CvsStoreSearchSheet = dynamic(
   { ssr: false },
 );
 
-// 서버 입금 기한 정책(선점 후 30분 칼컷, ParticipationService.PAYMENT_WINDOW)과 동일해야 한다.
-const paymentWindowMs = 30 * 60 * 1000;
+// 서버 입금 기한 정책(참여 후 10분 칼컷, ParticipationService.STAFF_PAYMENT_TIME_LIMIT)과 동일해야 한다.
+const paymentWindowMs = 10 * 60 * 1000;
 // C2C 입금 창 — 성사 확정·추가 모집(즉시입금) 후 24시간 (docs/46 §7.1-3).
 const c2cPaymentWindowMs = 24 * 60 * 60 * 1000;
 const sheetDragCloseThreshold = 72;
+const maxTimerDelayMs = 2_147_483_647;
 const kstOffsetHours = 9;
 
 // applied 는 C2C 신청(무입금) 완료 화면 — 계좌·기한 없이 확정 대기를 안내한다.
@@ -581,16 +594,43 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
     }).format(deadlineDate)}`;
   }
 
-  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
-  const minutes = Math.floor((totalSeconds % 3_600) / 60);
-  const seconds = totalSeconds % 60;
-  const clock = [
-    hours.toString().padStart(2, "0"),
-    minutes.toString().padStart(2, "0"),
-    seconds.toString().padStart(2, "0"),
-  ].join(":");
+  return `${formatCountdownClock(totalSeconds)} 남음`;
+}
 
-  return `${clock} 남음`;
+function isNotOpenOption(option: ProductOption) {
+  return option.saleStatus?.toUpperCase() === "NOT_OPEN";
+}
+
+// 오픈 전에는 다른 사람이 차지한 자리(코드 참여 등)도 「오픈 전」으로 가린다. 서버 값은 그대로 두고 화면에서만
+// 가려서, 오픈 시각이 되면 서버에 다시 묻지 않고 실제 상태(「매진」 등)를 드러낸다.
+function isTakenByOthers(option: ProductOption, myBid?: number) {
+  return (
+    !isOptionParticipatedByMe(option, myBid) &&
+    (isOccupiedPurchaseOption(option) ||
+      hasOptionPurchaseState(option) ||
+      option.participantCount > 0)
+  );
+}
+
+function hideTakenOptionBeforeOpen(option: ProductOption): ProductOption {
+  return {
+    ...option,
+    available: false,
+    participantCount: 0,
+    purchaseParticipationId: undefined,
+    purchasePaymentConfirmedAt: undefined,
+    purchasePaymentDueAt: undefined,
+    purchasePaymentStatus: undefined,
+    saleStatus: "NOT_OPEN",
+  };
+}
+
+// 오픈 시각이 지나면 서버가 「오픈 전」으로 내려 둔 빈 자리를 시계만으로 연다. 정각 몰림에 조회를 더하지 않으려고
+// 정각에는 서버에 다시 묻지 않는다 — 그사이 팔린 자리는 참여 시트를 열 때와 참여 409 뒤 재조회로 맞춰진다.
+function openNotOpenOption(option: ProductOption): ProductOption {
+  return isNotOpenOption(option)
+    ? { ...option, available: true, saleStatus: "AVAILABLE" }
+    : option;
 }
 
 function parseCheckoutDateTime(value: string | null | undefined) {
@@ -618,7 +658,7 @@ function formatPaymentDueCountdown(
     return "-";
   }
 
-  // 입금 기한은 입금 창(LEGACY 30분 / C2C 24시간)을 넘을 수 없다. 서버 절대시각과
+  // 입금 기한은 입금 창(LEGACY 10분 / C2C 24시간)을 넘을 수 없다. 서버 절대시각과
   // 클라이언트 시계의 오차로 남은시간이 창을 초과해 보이지 않도록 상한을 건다.
   const remainingMilliseconds = Math.min(
     dueDate.getTime() - now,
@@ -677,6 +717,7 @@ const PURCHASE_OPTION_LABELS = {
   applied: "신청이 완료된 멤버예요",
   codeOnly: "서포터즈에게 배정된 멤버예요",
   complete: "참여가 완료됐어요",
+  notOpen: "아직 열리지 않은 멤버예요",
   paymentWaiting: "입금 대기중",
   unavailable: "선택할 수 없는 멤버예요",
 } as const;
@@ -690,6 +731,7 @@ const MEMBER_STATUS_CHIP_LABELS = {
   otherComplete: "매진",
   otherPaymentWaiting: "다른 사람이 참여 진행 중이에요",
   codeOnly: "서포터즈 배정 · 코드 참여",
+  notOpen: "오픈 전",
 } as const;
 
 // "내 참여" 칩 스타일 — 참여 내역으로 가는 버튼이라 눌리는 것으로 읽혀야 한다.
@@ -879,9 +921,11 @@ function toOptimisticSaleStatus(
   }
 
   // 상태를 못 읽었으면 점유 사실만 확실하다. 이미 점유로 내려와 있던 값은 유지한다.
+  // NOT_OPEN 도 빈 자리다 — 오픈 직후 화면이 열어 준 자리는 다시 불러오기 전까지 이 값으로 남아 있다.
   return currentSaleStatus &&
     currentSaleStatus.toUpperCase() !== "AVAILABLE" &&
-    currentSaleStatus.toUpperCase() !== "CLOSED"
+    currentSaleStatus.toUpperCase() !== "CLOSED" &&
+    currentSaleStatus.toUpperCase() !== "NOT_OPEN"
     ? currentSaleStatus
     : "AWAITING_PAYMENT";
 }
@@ -908,6 +952,10 @@ function getOptionPurchaseOverlayLabel(
 
   if (saleStatus === "CODE_ONLY") {
     return PURCHASE_OPTION_LABELS.codeOnly;
+  }
+
+  if (saleStatus === "NOT_OPEN") {
+    return PURCHASE_OPTION_LABELS.notOpen;
   }
 
   if (saleStatus === "AVAILABLE") {
@@ -959,7 +1007,11 @@ function resolveOptionOverlayLabel(
     shouldUseParticipantCount,
   );
 
-  if (optionLabel === null || optionLabel === PURCHASE_OPTION_LABELS.codeOnly) {
+  if (
+    optionLabel === null ||
+    optionLabel === PURCHASE_OPTION_LABELS.codeOnly ||
+    optionLabel === PURCHASE_OPTION_LABELS.notOpen
+  ) {
     return blockLabel ?? optionLabel;
   }
 
@@ -998,6 +1050,10 @@ function getOptionPurchaseBlockChipLabel(
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.codeOnly) {
     return MEMBER_STATUS_CHIP_LABELS.codeOnly;
+  }
+
+  if (overlayLabel === PURCHASE_OPTION_LABELS.notOpen) {
+    return MEMBER_STATUS_CHIP_LABELS.notOpen;
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.applied) {
@@ -1175,7 +1231,8 @@ export function ProductDetail({
   const [checkoutError, setCheckoutError] = useState("");
   const [checkoutCopyToast, showCheckoutCopyToast, hideCheckoutCopyToast] =
     useToast(BRIEF_TOAST_DURATION_MS);
-  const [auctionOptions, setAuctionOptions] = useState<ProductOption[]>(
+  // 서버가 내려준 자리 상태. 화면은 오픈 시각을 반영한 auctionOptions 를 읽는다.
+  const [serverAuctionOptions, setServerAuctionOptions] = useState<ProductOption[]>(
     product.options,
   );
   const [bidAmounts, setBidAmounts] = useState<Record<string, string>>({});
@@ -1194,6 +1251,13 @@ export function ProductDetail({
   const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
     product.openChatUrl ?? null,
   );
+  // 예약 오픈 시각도 재조회로 덮는다 — 운영자가 오픈 시각을 고치면 다시 불러온 응답의 시각으로 다시 센다.
+  const [opensAtFromApi, setOpensAtFromApi] = useState<string | null>(
+    product.opensAt ?? null,
+  );
+  // 서버 시각 - 브라우저 시각(ms). 응답을 받은 뒤에 재므로 서버보다 늦게 가는 쪽으로만 어긋난다
+  // (= 정각보다 일찍 열리지 않는다). 0 으로 시작해야 하이드레이션 첫 렌더가 SSR HTML 과 같다.
+  const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0);
   // 상속 배송지도 같은 이유로 로컬에 둔다 — prop 은 마운트 시점 응답이라 신청해도 갱신되지 않고,
   // 그러면 "첫 신청과 묶인다" 판정만 켜지고 주소는 안 뜨는 어긋난 화면이 된다.
   const [inheritedShippingFromApi, setInheritedShippingFromApi] =
@@ -1215,6 +1279,42 @@ export function ProductDetail({
     () => initialNowMs ?? Date.now(),
   );
   const buncheolId = product.buncheolId ?? product.id;
+  // 오픈 대기 버튼에는 오픈 시각이 없어("참여 오픈까지 {남은 시간}"), 오픈 시각은 화면 낭독용 설명으로 붙인다.
+  const opensAtDescriptionId = useId();
+  const opensAtMs = parseIsoTimeMs(opensAtFromApi);
+  const serverNowMs = deadlineTick + serverClockOffsetMs;
+  // 오픈 판정의 정본은 서버(상세 NOT_OPEN, 참여 409 BCH-128)다. 화면은 서버 시계로 같은 시각에 열기만 한다.
+  const hasOpened = opensAtMs !== null && serverNowMs >= opensAtMs;
+  const isBeforeOpen = opensAtMs !== null && !hasOpened;
+  // 재조회로 갱신되는 현재 상태. prop 은 마운트 시점 값이라 그대로 읽으면 성사 확정이 화면에 안 걸린다.
+  const productStatus = statusFromApi ?? product.status;
+  // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
+  const isCancelledProduct = isBuncheolCancelledStatus(productStatus);
+  // 띠와 같이 모집 중일 때만 가린다(오픈 전에 취소된 분철은 실제 참여 현황을 보인다).
+  // 개최자는 오픈 전에도 실제 자리 상태를 본다(관리 화면과 같은 정보).
+  const shouldHideTakenSlots =
+    isBeforeOpen &&
+    isBuncheolPurchasableStatus(productStatus) &&
+    !isCancelledProduct &&
+    product.isHostedByMe !== true &&
+    isHostedByMeFromApi !== true;
+  const auctionOptions = useMemo(() => {
+    if (hasOpened) {
+      return serverAuctionOptions.some(isNotOpenOption)
+        ? serverAuctionOptions.map(openNotOpenOption)
+        : serverAuctionOptions;
+    }
+
+    if (shouldHideTakenSlots) {
+      return serverAuctionOptions.map((option) =>
+        isTakenByOthers(option, myBids[option.id])
+          ? hideTakenOptionBeforeOpen(option)
+          : option,
+      );
+    }
+
+    return serverAuctionOptions;
+  }, [hasOpened, myBids, serverAuctionOptions, shouldHideTakenSlots]);
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
@@ -1349,7 +1449,11 @@ export function ProductDetail({
    * 매진 멤버는 "누가 이미 나갔는지"가 정보라 숨기지 않고 아래에 그대로 둔다.
    */
   function getOptionSortRank(option: ProductOption) {
-    if (isOptionSelectable(option, myBids[option.id], product.isApiProduct === true)) {
+    // 오픈 전 자리는 열릴 자리와 같은 순위에 둔다 — 정각에 목록 순서가 뒤바뀌지 않게.
+    if (
+      isNotOpenOption(option) ||
+      isOptionSelectable(option, myBids[option.id], product.isApiProduct === true)
+    ) {
       return 0;
     }
 
@@ -1732,10 +1836,6 @@ export function ProductDetail({
     product.deadline,
     deadlineTick,
   );
-  // 재조회로 갱신되는 현재 상태. prop 은 마운트 시점 값이라 그대로 읽으면 성사 확정이 화면에 안 걸린다.
-  const productStatus = statusFromApi ?? product.status;
-  // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
-  const isCancelledProduct = isBuncheolCancelledStatus(productStatus);
   const isConfirmedProduct = isBuncheolConfirmedStatus(productStatus);
   const isC2CProduct = getFlowType(product.flowType) === "C2C";
   // E1(docs/46 §4.7): C2C 확정 후(PAYMENT_COLLECTING) 빈 슬롯은 즉시입금으로 추가 신청을
@@ -1761,6 +1861,12 @@ export function ProductDetail({
   const isPurchasableStatus =
     isBuncheolPurchasableStatus(productStatus) || isC2CCollectingProduct;
   const isDeadlineBlocked = isDeadlinePassed && !isC2CCollectingProduct;
+  // 오픈 전 모집 중이면 사진 아래 띠가 상태 배지를 대신한다(카드와 같은 모양). 정각에 사라진다.
+  const showOpensAtBand =
+    isBeforeOpen &&
+    isPurchasableStatus &&
+    !isCancelledProduct &&
+    !isDeadlineBlocked;
   const shouldDimProductMedia =
     !isPublicPreview &&
     (!isPurchasableStatus || isCancelledProduct || isDeadlineBlocked);
@@ -1880,16 +1986,32 @@ export function ProductDetail({
   const productOpenChatHref = isC2CProduct
     ? getSafeOpenChatHref(openChatUrlFromApi)
     : null;
-  const canBidProduct =
+  const canBidIfSelectable =
     !isPublicPreview &&
     !isBidUnavailable &&
     !isHostedProduct &&
     (!hasMyActiveParticipation || isC2CProduct) &&
     !isDeadlineBlocked &&
-    isPurchasableStatus &&
-    hasSelectableOption;
+    isPurchasableStatus;
+  const canBidProduct = canBidIfSelectable && hasSelectableOption;
+  // 오픈 전에는 참여 버튼을 늘 꺼 두고 그 자리에 오픈 시각과 남은 시간을 띄운다.
+  const isWaitingForOpen =
+    isBeforeOpen && canBidIfSelectable && auctionOptions.some(isNotOpenOption);
+  // 코드 전용 빈 자리는 오픈 전에도 코드로 참여할 수 있어(서버도 허용) 버튼 위 「코드로 참여하기」로 시트를 연다.
+  const canJoinWithCodeBeforeOpen =
+    isWaitingForOpen &&
+    canBidProduct &&
+    auctionOptions.some(
+      (option) =>
+        option.requiresCode === true &&
+        isOptionSelectable(
+          option,
+          myBids[option.id],
+          product.isApiProduct === true,
+        ),
+    );
   const isMainBidButtonDisabled =
-    !isPublicPreview && (isBidUnavailable || !canBidProduct);
+    !isPublicPreview && (isBidUnavailable || !canBidProduct || isWaitingForOpen);
   const optionParticipationCount = auctionOptions.reduce((sum, option) => {
     const explicitCount = Math.max(0, option.participantCount);
     const occupiedSlotCount =
@@ -1900,12 +2022,15 @@ export function ProductDetail({
     return sum + Math.max(explicitCount, occupiedSlotCount);
   }, 0);
   const parsedProductParticipationCount = Number.parseInt(product.reviews, 10);
-  const currentParticipationCount = Math.max(
-    optionParticipationCount,
-    Number.isNaN(parsedProductParticipationCount)
-      ? 0
-      : parsedProductParticipationCount,
-  );
+  // 오픈 전에 가린 자리는 서버 참여 수(reviews)에도 들어 있어, 가리는 동안은 자리에서 센 값만 쓴다.
+  const currentParticipationCount = shouldHideTakenSlots
+    ? optionParticipationCount
+    : Math.max(
+        optionParticipationCount,
+        Number.isNaN(parsedProductParticipationCount)
+          ? 0
+          : parsedProductParticipationCount,
+      );
   const minHeadcount =
     typeof product.minHeadcount === "number" && product.minHeadcount > 0
       ? product.minHeadcount
@@ -2111,8 +2236,19 @@ export function ProductDetail({
     product.status,
   ]);
 
+  // SSR 로 받은 상세는 하이드레이션 때, 브라우저가 받은 상세는 화면에 넘어온 때 시계 차이를 잰다.
   useEffect(() => {
-    setAuctionOptions(product.options);
+    setOpensAtFromApi(product.opensAt ?? null);
+
+    const serverTimeMs = parseIsoTimeMs(product.serverTime);
+
+    if (serverTimeMs !== null) {
+      setServerClockOffsetMs(serverTimeMs - Date.now());
+    }
+  }, [product.opensAt, product.serverTime]);
+
+  useEffect(() => {
+    setServerAuctionOptions(product.options);
     setMyBids(getMyBidsFromOptions(product.options));
     checkoutSelectedOptionsRef.current = [];
     setBidAmounts({});
@@ -2405,6 +2541,7 @@ export function ProductDetail({
 
     try {
       const detail = await requestBuncheolDetail(accessToken, buncheolId);
+      const receivedAt = Date.now();
 
       if (isStale()) {
         return;
@@ -2413,6 +2550,13 @@ export function ProductDetail({
       const isHosted = detail.isHostedByMe === true;
       const refreshedProduct = toProductDetailItem(detail);
       const refreshedMyBids = getMyBidsFromOptions(refreshedProduct.options);
+      const refreshedServerTimeMs = parseIsoTimeMs(refreshedProduct.serverTime);
+
+      if (refreshedServerTimeMs !== null) {
+        setServerClockOffsetMs(refreshedServerTimeMs - receivedAt);
+      }
+
+      setOpensAtFromApi(refreshedProduct.opensAt ?? null);
       setIsHostedByMeFromApi(isHosted);
       setOpenChatUrlFromApi(refreshedProduct.openChatUrl ?? null);
       setInheritedShippingFromApi(
@@ -2423,7 +2567,7 @@ export function ProductDetail({
       );
       // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
-      setAuctionOptions(refreshedProduct.options);
+      setServerAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
       setBidAmounts((current) =>
         refreshedProduct.options.reduce<Record<string, string>>(
@@ -2456,7 +2600,7 @@ export function ProductDetail({
         );
 
         if (!isStale()) {
-          setAuctionOptions((currentOptions) =>
+          setServerAuctionOptions((currentOptions) =>
             mergeManagementOptionPurchaseStates(
               currentOptions,
               managementDetail.options,
@@ -2486,6 +2630,60 @@ export function ProductDetail({
       detailRefreshRequestIdRef.current += 1;
     };
   }, [product.isHostedByMe, refreshDetailOptions]);
+
+  // 오픈 시각 정각에 화면을 연다(1초 틱을 기다리지 않는다). 타이머가 정각보다 일찍 불리면 남은 만큼 다시 건다.
+  useEffect(() => {
+    if (opensAtMs === null) {
+      return;
+    }
+
+    const targetOpensAtMs = opensAtMs;
+    let openTimer: number | null = null;
+
+    function scheduleOpenTick() {
+      const msUntilOpen = targetOpensAtMs - (Date.now() + serverClockOffsetMs);
+
+      // setTimeout 은 약 24.8일을 넘는 지연을 즉시 실행으로 처리한다.
+      if (msUntilOpen <= 0 || msUntilOpen > maxTimerDelayMs) {
+        openTimer = null;
+        return;
+      }
+
+      openTimer = window.setTimeout(() => {
+        setDeadlineTick(Date.now());
+        scheduleOpenTick();
+      }, msUntilOpen);
+    }
+
+    scheduleOpenTick();
+
+    return () => {
+      if (openTimer !== null) {
+        window.clearTimeout(openTimer);
+      }
+    };
+  }, [opensAtMs, serverClockOffsetMs]);
+
+  // 화면이 꺼졌다 켜지면 페이지 타이머는 늦게 불릴 수 있다. 보이는 순간 지금 시각으로 다시 그린다.
+  const hasOpensAt = opensAtMs !== null;
+
+  useEffect(() => {
+    if (!hasOpensAt) {
+      return;
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        setDeadlineTick(Date.now());
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [hasOpensAt]);
 
   // 지난 입금 기한별 재조회 횟수·마지막 시각. LEGACY 는 서버가 1분 주기로 만료 자리를 풀어 기한 뒤에도
   // 최대 약 1분 '입금 대기'로 오므로 기한 시각 1회 뒤 15초 간격으로 다시 묻는다(기한당 최대 13회 — 서버가 끝내
@@ -2608,7 +2806,7 @@ export function ProductDetail({
   ) {
     // 진행 중인 재조회를 무효화해, 참여 이전 스냅샷이 방금 반영한 내 참여를 덮어쓰지 않게 한다.
     detailRefreshRequestIdRef.current += 1;
-    setAuctionOptions((currentOptions) =>
+    setServerAuctionOptions((currentOptions) =>
       currentOptions.map((option) => {
         if (onlyParticipationResults && !participationResults.has(option.id)) {
           return option;
@@ -2909,7 +3107,7 @@ export function ProductDetail({
         // 계좌·기한이 없는 게 정상이라 결제 상세 보충 조회를 태우면 빈 응답을 입금 안내로 오인한다.
         const isCodeConfirmedResult = isCodeCheckout;
         // LEGACY 0원 + 고른 편의점 배송비 0원은 서버가 즉시 확정하고 계좌·기한 없이 응답한다(유료 LEGACY 는
-        // 기한이 늘 있다). 보충 조회를 태우면 30분 기한이 입금 안내로 뜬다. C2C 신청도 기한이 없어 제외한다.
+        // 기한이 늘 있다). 보충 조회를 태우면 10분 기한이 입금 안내로 뜬다. C2C 신청도 기한이 없어 제외한다.
         isFreeConfirmedCheckout =
           !isC2CProduct &&
           !isCodeCheckout &&
@@ -3060,6 +3258,9 @@ export function ProductDetail({
           setCheckoutError(
             "내가 연 분철은 참여할 수 없어요. 다른 계정으로 전환해 주세요.",
           );
+        } else if (errorCode === BUNCHEOL_NOT_OPEN_YET_CODE) {
+          // 아래 재조회가 오픈 시각과 자리 상태를 서버 값으로 다시 맞춘다.
+          setCheckoutError("아직 열리지 않은 분철이에요.");
         } else if (didDeadlinePass) {
           setCheckoutError("참여 기한이 지났어요.");
         } else if (isProfileIncomplete) {
@@ -4039,7 +4240,13 @@ export function ProductDetail({
                     total={productImages.length}
                   />
                   {productImages.length > 1 ? (
-                    <div className="absolute bottom-4 right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur">
+                    <div
+                      className={`absolute right-4 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur ${
+                        showOpensAtBand
+                          ? aboveDetailOpensAtBandClassName
+                          : "bottom-4"
+                      }`}
+                    >
                       {visibleProductImageIndex + 1}/{productImages.length}
                     </div>
                   ) : null}
@@ -4049,7 +4256,13 @@ export function ProductDetail({
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_66%_22%,rgba(255,255,255,0.56),transparent_22%)]" />
                   <div className="absolute bottom-8 left-8 h-[68%] w-[48%] rotate-[-8deg] rounded-[1.2rem] border border-white/35 bg-black/75 shadow-[0_22px_50px_rgba(0,0,0,0.28)]" />
                   <div className="absolute bottom-10 right-8 h-[72%] w-[52%] rotate-[7deg] rounded-[1.2rem] border border-black/10 bg-white/90 shadow-[0_22px_50px_rgba(0,0,0,0.2)]" />
-                  <div className="absolute bottom-5 left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur">
+                  <div
+                    className={`absolute left-5 right-5 rounded-[1rem] bg-white/90 px-4 py-3 backdrop-blur ${
+                      showOpensAtBand
+                        ? aboveDetailOpensAtBandClassName
+                        : "bottom-5"
+                    }`}
+                  >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-black/45">
                       {product.era}
                     </p>
@@ -4059,17 +4272,25 @@ export function ProductDetail({
                   </div>
                 </>
               )}
-              <div
-                className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
-                  isPurchasableStatus &&
-                  !isCancelledProduct &&
-                  !isDeadlineBlocked
-                    ? "bg-[#DDE7B8] text-black"
-                    : "bg-black/75 text-white backdrop-blur"
-                }`}
-              >
-                {product.badge}
-              </div>
+              {showOpensAtBand && opensAtMs !== null ? (
+                <OpensAtBand
+                  nowMs={serverNowMs}
+                  opensAtMs={opensAtMs}
+                  size="detail"
+                />
+              ) : (
+                <div
+                  className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
+                    isPurchasableStatus &&
+                    !isCancelledProduct &&
+                    !isDeadlineBlocked
+                      ? "bg-[#DDE7B8] text-black"
+                      : "bg-black/75 text-white backdrop-blur"
+                  }`}
+                >
+                  {product.badge}
+                </div>
+              )}
             </div>
           </section>
 
@@ -4337,10 +4558,20 @@ export function ProductDetail({
         </div>
 
         <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
-          {!isHostedProduct &&
-          !isCancelledProduct &&
-          !isDeadlineBlocked &&
-          isPurchasableStatus ? (
+          {canJoinWithCodeBeforeOpen ? (
+            <div className="mb-1 flex justify-center">
+              <button
+                className="px-3 py-1 text-[13px] font-semibold tracking-[-0.04em] text-black underline underline-offset-4"
+                onClick={handleBidButtonClick}
+                type="button"
+              >
+                코드로 참여하기
+              </button>
+            </div>
+          ) : !isHostedProduct &&
+            !isCancelledProduct &&
+            !isDeadlineBlocked &&
+            isPurchasableStatus ? (
             <p className="mb-2 text-center text-[11px] font-medium text-black/40">
               {isC2CProduct
                 ? isC2CCollectingProduct
@@ -4362,7 +4593,15 @@ export function ProductDetail({
           ) : (
             <button
               type="button"
-              className="h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+              aria-describedby={
+                isWaitingForOpen ? opensAtDescriptionId : undefined
+              }
+              className={
+                // 오픈 대기 중에는 꺼져 있어도 남은 시간이 읽혀야 한다.
+                isWaitingForOpen
+                  ? "h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                  : "h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+              }
               disabled={isMainBidButtonDisabled}
               onClick={
                 isMainBidButtonDisabled ? undefined : handleBidButtonClick
@@ -4371,7 +4610,16 @@ export function ProductDetail({
               {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
                   반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
                   같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
-              {isPublicPreview
+              {isWaitingForOpen && opensAtMs !== null ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="text-[15px] text-white/[0.78]">
+                    참여 오픈까지
+                  </span>
+                  <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
+                    {formatOpenCountdown(opensAtMs, serverNowMs)}
+                  </span>
+                </span>
+              ) : isPublicPreview
                 ? isC2CProduct
                   ? "로그인하고 신청하기"
                   : "로그인하고 참여하기"
@@ -4386,6 +4634,11 @@ export function ProductDetail({
                     : getBidUnavailableMessage()}
             </button>
           )}
+          {isWaitingForOpen && opensAtMs !== null ? (
+            <span hidden id={opensAtDescriptionId}>
+              {formatOpensAt(opensAtMs, serverNowMs)}에 참여가 열려요
+            </span>
+          ) : null}
         </div>
 
         {isSheetOpen ? (
@@ -4802,15 +5055,18 @@ export function ProductDetail({
                         있습니다.
                       </p>
                     ) : null}
-                    {checkoutError ? (
-                      <p
-                        className="error-shake rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
-                        key={checkoutError}
-                      >
-                        {checkoutError}
-                      </p>
-                    ) : null}
                   </div>
+
+                  {/* 스크롤 영역 밖, 버튼 바로 위에 둔다 — 안에 두면 내용이 길 때 스크롤해야 보인다. */}
+                  {checkoutError ? (
+                    <p
+                      className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
+                      key={checkoutError}
+                      role="alert"
+                    >
+                      {checkoutError}
+                    </p>
+                  ) : null}
 
                   <div className="mt-4 grid grid-cols-[0.42fr_0.58fr] gap-2">
                     <button

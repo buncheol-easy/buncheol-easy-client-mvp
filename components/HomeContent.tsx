@@ -1419,7 +1419,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 </div>
               ))}
               <p className="px-1 pt-1 text-[12px] font-medium leading-5 text-black/40">
-                분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 30분 안에
+                분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 10분 안에
                 입금하면 돼요. 분철이지는 통신판매중개자이며, 회원 개최 분철의
                 대금은 개최자 계좌로 직접 입금돼요.
               </p>
