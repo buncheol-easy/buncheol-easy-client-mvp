@@ -624,7 +624,7 @@ function isNotOpenOption(option: ProductOption) {
 }
 
 // 오픈 시각이 지나면 서버가 「오픈 전」으로 내려 둔 빈 자리를 시계만으로 연다. 정각 몰림에 조회를 더하지 않으려고
-// 정각에는 서버에 다시 묻지 않는다 — 그사이 팔린 자리는 참여 409 뒤 재조회로 맞춰진다.
+// 정각에는 서버에 다시 묻지 않는다 — 그사이 팔린 자리는 참여 시트를 열 때와 참여 409 뒤 재조회로 맞춰진다.
 function openNotOpenOption(option: ProductOption): ProductOption {
   return isNotOpenOption(option)
     ? { ...option, available: true, saleStatus: "AVAILABLE" }
