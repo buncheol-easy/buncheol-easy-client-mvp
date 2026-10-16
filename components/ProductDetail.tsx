@@ -1286,12 +1286,12 @@ export function ProductDetail({
   // 오픈 판정의 정본은 서버(상세 NOT_OPEN, 참여 409 BCH-128)다. 화면은 서버 시계로 같은 시각에 열기만 한다.
   const hasOpened = opensAtMs !== null && serverNowMs >= opensAtMs;
   const isBeforeOpen = opensAtMs !== null && !hasOpened;
-  // 개최자는 오픈 전에도 실제 자리 상태를 본다(관리 화면과 같은 정보).
   // 재조회로 갱신되는 현재 상태. prop 은 마운트 시점 값이라 그대로 읽으면 성사 확정이 화면에 안 걸린다.
   const productStatus = statusFromApi ?? product.status;
   // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
   const isCancelledProduct = isBuncheolCancelledStatus(productStatus);
   // 띠와 같이 모집 중일 때만 가린다(오픈 전에 취소된 분철은 실제 참여 현황을 보인다).
+  // 개최자는 오픈 전에도 실제 자리 상태를 본다(관리 화면과 같은 정보).
   const shouldHideTakenSlots =
     isBeforeOpen &&
     isBuncheolPurchasableStatus(productStatus) &&
@@ -4635,7 +4635,7 @@ export function ProductDetail({
             </button>
           )}
           {isWaitingForOpen && opensAtMs !== null ? (
-            <span className="sr-only" id={opensAtDescriptionId}>
+            <span hidden id={opensAtDescriptionId}>
               {formatOpensAt(opensAtMs, serverNowMs)}에 참여가 열려요
             </span>
           ) : null}
