@@ -107,6 +107,7 @@ import {
 import {
   BRIEF_TOAST_DURATION_MS,
   Toast,
+  useAppToast,
   useToast,
 } from "@/components/Toast";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
@@ -1225,7 +1226,7 @@ export function ProductDetail({
   const checkoutAddressCreateRef = useRef(false);
   // 공유 시트가 뜨는 동안 재진입을 막는다 (checkoutAddressCreateRef 와 동일 패턴).
   const isSharePendingRef = useRef(false);
-  const [productToast, showProductToast] = useToast();
+  const showToast = useAppToast();
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
@@ -1626,7 +1627,7 @@ export function ProductDetail({
       // "등록했어요" 토스트와 "등록이 필요해요" 배너가 동시에 뜨지 않는다.
       setCheckoutError("");
       setIsRefundAccountSheetOpen(false);
-      showProductToast("계좌를 등록했어요. 이어서 참여해 주세요.");
+      showToast("계좌를 등록했어요. 이어서 참여해 주세요.", "success");
     } catch (error: unknown) {
       setRefundAccountError(
         error instanceof Error ? error.message : "계좌를 저장하지 못했어요.",
@@ -1752,7 +1753,7 @@ export function ProductDetail({
       if (addedAddress) {
         setCheckoutDeliveryAddress(addedAddress);
         setCheckoutError("");
-        showProductToast("배송지를 등록했어요. 이어서 참여해 주세요.");
+        showToast("배송지를 등록했어요. 이어서 참여해 주세요.", "success");
       } else {
         setCheckoutError(
           "배송지 등록 결과를 확인하지 못했어요. 목록에서 배송지를 선택해 주세요.",
@@ -2760,11 +2761,22 @@ export function ProductDetail({
       return;
     }
 
+    const canAddToSelection =
+      canSelectMultipleMembers && option.requiresCode !== true;
+
+    if (
+      bidAmounts[optionId] !== "selected" &&
+      canAddToSelection &&
+      Object.keys(bidAmounts).length >= maxSelectableMemberCount
+    ) {
+      showToast(
+        `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
+      );
+      return;
+    }
+
     setBidAmounts((current) => {
       let nextAmounts: Record<string, string>;
-
-      const canAddToSelection =
-        canSelectMultipleMembers && option.requiresCode !== true;
 
       if (current[optionId] === "selected") {
         nextAmounts = { ...current };
@@ -2773,9 +2785,6 @@ export function ProductDetail({
         canAddToSelection &&
         Object.keys(current).length >= maxSelectableMemberCount
       ) {
-        showProductToast(
-          `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
-        );
         nextAmounts = current;
       } else if (canAddToSelection) {
         // 자리를 여러 개 잡으면 한 묶음이 된다 — 이체 1회 · 배송비 1회 · 택배 1개.
@@ -4093,9 +4102,9 @@ export function ProductDetail({
           buncheol_id: buncheolId,
           method: "clipboard",
         });
-        showProductToast("분철 링크를 복사했어요.");
+        showToast("분철 링크를 복사했어요.", "success");
       } catch {
-        showProductToast("링크 복사에 실패했어요.");
+        showToast("링크 복사에 실패했어요.", "error");
       }
     } finally {
       isSharePendingRef.current = false;
@@ -5726,11 +5735,6 @@ export function ProductDetail({
             />
           </div>
         ) : null}
-
-        <Toast
-          className="fixed inset-x-0 bottom-24 z-[70] px-6"
-          message={productToast}
-        />
 
         {isImageViewerOpen && productImages.length > 0 ? (
           <div className="fixed inset-0 z-[60] flex flex-col bg-black">

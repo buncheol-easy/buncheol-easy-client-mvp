@@ -114,6 +114,7 @@ import {
 import {
   BRIEF_TOAST_DURATION_MS,
   Toast,
+  useAppToast,
   useToast,
 } from "@/components/Toast";
 
@@ -1871,7 +1872,7 @@ export function BidHistoryContent({
   const [pendingParticipationId, setPendingParticipationId] = useState<
     string | null
   >(null);
-  const [actionToast, showActionToast] = useToast();
+  const showToast = useAppToast();
   // 되돌리기 어려운 참여 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
     useState<ConfirmSheetRequest | null>(null);
@@ -2834,10 +2835,11 @@ export function BidHistoryContent({
         ) ?? records,
     );
 
-    showActionToast(
+    showToast(
       wasRequested
         ? "후기 링크를 수정했어요!"
         : "배송비 환급 신청 완료! 후기 확인 후 배송비를 보내드려요.",
+      "success",
     );
   }
 
@@ -3398,8 +3400,9 @@ export function BidHistoryContent({
 
     // 버튼이 이미 disabled 라 도달하지 않지만, 계좌 없이 마킹되면 "안 보낸 돈을 보냈다" 가 되므로 남긴다.
     if (!account) {
-      showActionToast(
+      showToast(
         "개최자 계좌를 불러오지 못했어요. 새로고침 후 다시 시도해 주세요.",
+        "error",
       );
       return;
     }
@@ -3410,14 +3413,15 @@ export function BidHistoryContent({
     );
     // 폴링이 상태를 바꿔 대상이 사라졌을 수 있다 — 모달을 띄우면 확인해도 아무 일이 안 일어난다.
     if (targets.length === 0) {
-      showActionToast(
+      showToast(
         "참여 상태가 바뀌었어요. 새로고침 후 다시 확인해 주세요.",
+        "error",
       );
       return;
     }
 
     if (!bid.bundleId) {
-      showActionToast(MARK_SENT_MISSING_BUNDLE_MESSAGE);
+      showToast(MARK_SENT_MISSING_BUNDLE_MESSAGE, "error");
       return;
     }
 
@@ -3465,7 +3469,7 @@ export function BidHistoryContent({
     const accessToken = authState.accessToken;
 
     if (!accessToken) {
-      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
       return;
     }
 
@@ -3488,7 +3492,7 @@ export function BidHistoryContent({
       const freshAccessToken = await getFreshAccessToken();
 
       if (!freshAccessToken) {
-        showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
@@ -3518,16 +3522,18 @@ export function BidHistoryContent({
       );
 
       setHistoryMessage("");
-      showActionToast(
+      showToast(
         "보냈어요 표시 완료! 개최자가 입금을 확인하면 알려드릴게요.",
+        "success",
       );
       closePaymentSheet();
     } catch (error) {
-      // historyMessage 는 시트 백드롭(z-40)에 가려 안 보인다 — 시트 위(z-50) 토스트로 알린다.
-      showActionToast(
+      // historyMessage 는 시트 백드롭(z-40)에 가려 안 보인다 — 시트 위에 뜨는 토스트로 알린다.
+      showToast(
         error instanceof Error
           ? error.message
           : "보냈어요 표시에 실패했어요. 잠시 후 다시 시도해 주세요.",
+        "error",
       );
     } finally {
       setPendingParticipationId(null);
@@ -3559,7 +3565,7 @@ export function BidHistoryContent({
     const accessToken = authState.accessToken;
 
     if (!accessToken) {
-      showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+      showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
       return;
     }
 
@@ -3573,7 +3579,7 @@ export function BidHistoryContent({
       const freshAccessToken = await getFreshAccessToken();
 
       if (!freshAccessToken) {
-        showActionToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
@@ -3594,7 +3600,7 @@ export function BidHistoryContent({
       // 자발 취소 건은 목록에서 사라지므로(docs/56 H-05) 카드가 증발한 것처럼 보이지 않게 알린다.
       // ⚠️ 재조회보다 <b>먼저</b> 알린다 — 재조회는 참여 건마다 상세를 더 부를 수 있어 수 초가
       // 걸리고, 그동안 토스트가 안 뜨면 사용자가 다시 누른다.
-      showActionToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.");
+      showToast("참여를 취소했어요. 취소한 참여는 목록에서 사라져요.", "success");
 
       // 🔴 배송비는 "살아 있는 자리 중 가장 먼저 만들어진 것" 이 진다 — 그 판정을 서버가 읽는
       // 시점에 하므로, 취소하면 남은 자리의 배송비가 바뀐다. 다시 묻지 않으면 남은 카드가
@@ -3623,7 +3629,7 @@ export function BidHistoryContent({
       setHistoryMessage(failureMessage);
       // 서버가 성사 확정 후 취소를 거부하면(BCH-092) 그 사유가 사용자에게 닿아야 한다 —
       // historyMessage 는 목록 맨 위라 카드까지 스크롤한 상태에서는 보이지 않는다 (docs/56 H-09).
-      showActionToast(failureMessage);
+      showToast(failureMessage, "error");
     } finally {
       setPendingParticipationId(null);
     }
@@ -3714,9 +3720,9 @@ export function BidHistoryContent({
 
     try {
       await navigator.clipboard.writeText(value);
-      showActionToast(`${prefix}계좌번호가 복사됐어요.`);
+      showToast(`${prefix}계좌번호가 복사됐어요.`, "success");
     } catch {
-      showActionToast("계좌번호를 복사하지 못했어요. 길게 눌러 복사해 주세요.");
+      showToast("계좌번호를 복사하지 못했어요. 길게 눌러 복사해 주세요.", "error");
     }
   }
 
@@ -4927,11 +4933,6 @@ export function BidHistoryContent({
       <ConfirmSheet
         onCancel={() => setConfirmSheetRequest(null)}
         request={confirmSheetRequest}
-      />
-
-      <Toast
-        className="fixed inset-x-0 bottom-24 z-50 px-6"
-        message={actionToast}
       />
 
       {selectedPaybackBid ? (

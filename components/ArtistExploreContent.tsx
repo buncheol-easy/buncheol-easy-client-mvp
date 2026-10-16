@@ -12,7 +12,7 @@ import {
 import { useRouter } from "next/navigation";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { Toast, useToast } from "@/components/Toast";
+import { useAppToast } from "@/components/Toast";
 import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import { ARTIST_LIST_ENTRY_GROUP_KEY } from "@/lib/artist-browse";
 import {
@@ -206,7 +206,7 @@ export function ArtistExploreContent({
   const pendingGroupIdsRef = useRef(new Set<string>());
   const cardTapGuardUntilRef = useRef(0);
   // 한도 초과처럼 화면을 바꿀 필요 없는 안내는 잠깐 떴다 사라지는 토스트로 알린다.
-  const [toast, showToast] = useToast();
+  const showToast = useAppToast();
 
   const favoriteGroups = groups.filter((group) => group.favorited);
   const favoriteCount = favoriteGroups.length;
@@ -591,10 +591,6 @@ export function ArtistExploreContent({
         </div>
       </div>
 
-      <Toast
-        className="absolute inset-x-0 bottom-6 z-20 px-6"
-        message={toast}
-      />
     </div>
   );
 }
