@@ -6,6 +6,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
+import { ToastProvider } from "@/components/Toast";
 import { CONTACT_EMAIL, SITE_URL, X_PROFILE_URL } from "@/lib/site";
 import { blackChromeViewport } from "@/lib/system-chrome";
 import { Suspense } from "react";
@@ -110,11 +111,13 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <SystemChromeColorSync />
         </Suspense>
-        <QueryProvider>{children}</QueryProvider>
-        {/* 장식 패널이지만 X 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
-            라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
-        <DesktopBrandPanel />
-        <TestAccountSwitcher />
+        <ToastProvider>
+          <QueryProvider>{children}</QueryProvider>
+          {/* 장식 패널이지만 X 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
+              라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
+          <DesktopBrandPanel />
+          <TestAccountSwitcher />
+        </ToastProvider>
         <JsonLd data={organizationJsonLd} />
       </body>
       {process.env.NEXT_PUBLIC_GA_ID && (

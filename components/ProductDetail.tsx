@@ -4,10 +4,12 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type PointerEvent,
 } from "react";
 import dynamic from "next/dynamic";
@@ -104,11 +106,11 @@ import {
   OpensAtBand,
   aboveDetailOpensAtBandClassName,
 } from "@/components/OpensAtBand";
-import {
-  BRIEF_TOAST_DURATION_MS,
-  Toast,
-  useToast,
-} from "@/components/Toast";
+import { CopyButton } from "@/components/CopyButton";
+import { AmountChangeBadge, RollingNumber } from "@/components/RollingNumber";
+import { ProductDetailBidBarSkeleton } from "@/components/ProductDetailSkeleton";
+import { SkeletonGroup } from "@/components/SkeletonGroup";
+import { useAppToast } from "@/components/Toast";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
@@ -139,7 +141,18 @@ type ProductDetailProps = {
   startEntered?: boolean;
   renderShell?: boolean;
   onExitingChange?: (isExiting: boolean) => void;
+  // 로그인 사용자의 개최자 여부를 아직 받는 중이면 하단 버튼 자리에 뼈대를 그린다.
+  isViewerStateLoading?: boolean;
+  // 뼈대 다음에 들어온 상세는 내용을 위에서부터 차례로 드러낸다.
+  revealOnEnter?: boolean;
 };
+
+// 접수 체크를 보여 준 뒤 다음 단계로 넘긴다. 링이 차고 체크가 다 그려지는 약 0.65초에 여유를 둔 길이.
+const CHECKOUT_SUCCESS_HOLD_MS = 900;
+
+function getRevealStyle(index: number) {
+  return { "--reveal-index": index } as CSSProperties;
+}
 
 type ProductImageNavProps = {
   index: number;
@@ -300,6 +313,18 @@ type CheckoutSheetStep =
   | "applied"
   // 코드 참여 확정 — 결제가 없어 입금 안내("payment")를 태우면 안 된다.
   | "codeConfirmed";
+
+const CHECKOUT_STEP_ORDER: Record<CheckoutSheetStep, number> = {
+  options: 0,
+  confirm: 1,
+  payment: 2,
+  applied: 2,
+  codeConfirmed: 2,
+};
+
+// 시트 높이가 바뀌는 동안에도 열고 닫는 transform·opacity 전환은 살아 있어야 한다.
+const CHECKOUT_SHEET_HEIGHT_TRANSITION =
+  "height var(--duration-screen) var(--motion-pop), transform var(--duration-screen) var(--motion-pop), opacity var(--duration-screen) var(--motion-pop)";
 
 type CheckoutDraftItem = {
   bidAmount: number;
@@ -1155,6 +1180,8 @@ export function ProductDetail({
   startEntered = false,
   renderShell = true,
   onExitingChange,
+  isViewerStateLoading = false,
+  revealOnEnter = false,
 }: ProductDetailProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -1194,6 +1221,114 @@ export function ProductDetail({
   const [sheetDragOffset, setSheetDragOffset] = useState(0);
   const [checkoutStep, setCheckoutStep] =
     useState<CheckoutSheetStep>("options");
+  // 시트가 열린 채 단계가 바뀔 때만 앞·뒤 방향으로 내용을 밀어 넣는다. 열리는 순간은 시트 자체가 올라온다.
+  const [checkoutStepMotion, setCheckoutStepMotion] = useState<{
+    direction: "forward" | "back" | null;
+    isSheetOpen: boolean;
+    step: CheckoutSheetStep;
+  }>({ direction: null, isSheetOpen, step: checkoutStep });
+
+  if (
+    checkoutStepMotion.step !== checkoutStep ||
+    checkoutStepMotion.isSheetOpen !== isSheetOpen
+  ) {
+    setCheckoutStepMotion({
+      direction:
+        checkoutStepMotion.isSheetOpen &&
+        isSheetOpen &&
+        checkoutStepMotion.step !== checkoutStep
+          ? CHECKOUT_STEP_ORDER[checkoutStep] >
+            CHECKOUT_STEP_ORDER[checkoutStepMotion.step]
+            ? "forward"
+            : "back"
+          : null,
+      isSheetOpen,
+      step: checkoutStep,
+    });
+  }
+
+  const checkoutStepEnterClassName =
+    checkoutStepMotion.direction === "forward"
+      ? "checkout-step-forward"
+      : checkoutStepMotion.direction === "back"
+        ? "checkout-step-back"
+        : "";
+  const checkoutSheetPanelRef = useRef<HTMLElement>(null);
+  const checkoutSheetHeightRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const panel = checkoutSheetPanelRef.current;
+
+    if (!isSheetOpen || !panel) {
+      checkoutSheetHeightRef.current = null;
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      if (!panel.style.height) {
+        checkoutSheetHeightRef.current = panel.offsetHeight;
+      }
+    });
+
+    observer.observe(panel);
+
+    return () => observer.disconnect();
+  }, [isSheetOpen]);
+
+  // 단계가 바뀌면 시트 높이를 이전 높이에서 새 높이로 이어 준다. 자동 높이는 전환이 안 돼 잰 값으로 옮긴다.
+  useLayoutEffect(() => {
+    const panel = checkoutSheetPanelRef.current;
+    const previousHeight = checkoutSheetHeightRef.current;
+
+    if (!panel || previousHeight === null) {
+      return;
+    }
+
+    const nextHeight = panel.offsetHeight;
+
+    checkoutSheetHeightRef.current = nextHeight;
+
+    if (
+      Math.abs(nextHeight - previousHeight) < 2 ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    const finish = () => {
+      panel.style.height = "";
+      panel.style.overflow = "";
+
+      // 드래그 중에는 React 가 transition: none 을 넣는다 — 이 효과가 넣은 값만 걷는다.
+      if (panel.style.transition === CHECKOUT_SHEET_HEIGHT_TRANSITION) {
+        panel.style.transition = "";
+      }
+    };
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (event.target === panel && event.propertyName === "height") {
+        finish();
+      }
+    };
+
+    panel.style.height = `${previousHeight}px`;
+    panel.style.overflow = "hidden";
+    panel.style.transition = CHECKOUT_SHEET_HEIGHT_TRANSITION;
+    void panel.offsetHeight;
+    panel.style.height = `${nextHeight}px`;
+    panel.addEventListener("transitionend", handleTransitionEnd);
+
+    const fallbackTimer = window.setTimeout(finish, 450);
+
+    return () => {
+      panel.removeEventListener("transitionend", handleTransitionEnd);
+      window.clearTimeout(fallbackTimer);
+      // 전환 도중 단계가 또 바뀌면 지금 보이는 높이에서 이어 간다. 끝난 뒤라면 새 내용 높이라 쓰면 안 된다.
+      if (panel.style.height) {
+        checkoutSheetHeightRef.current = panel.getBoundingClientRect().height;
+      }
+      finish();
+    };
+  }, [checkoutStep]);
   const [checkoutDeliveryAddress, setCheckoutDeliveryAddress] =
     useState<DeliveryAddress | null>(null);
   const [isCheckoutAddressSheetOpen, setIsCheckoutAddressSheetOpen] =
@@ -1225,12 +1360,10 @@ export function ProductDetail({
   const checkoutAddressCreateRef = useRef(false);
   // 공유 시트가 뜨는 동안 재진입을 막는다 (checkoutAddressCreateRef 와 동일 패턴).
   const isSharePendingRef = useRef(false);
-  const [productToast, showProductToast] = useToast();
+  const showToast = useAppToast();
   const [checkoutPaymentSummary, setCheckoutPaymentSummary] =
     useState<CheckoutPaymentSummary | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
-  const [checkoutCopyToast, showCheckoutCopyToast, hideCheckoutCopyToast] =
-    useToast(BRIEF_TOAST_DURATION_MS);
   // 서버가 내려준 자리 상태. 화면은 오픈 시각을 반영한 auctionOptions 를 읽는다.
   const [serverAuctionOptions, setServerAuctionOptions] = useState<ProductOption[]>(
     product.options,
@@ -1243,6 +1376,30 @@ export function ProductDetail({
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const [isDeletePending, setIsDeletePending] = useState(false);
   const [isBidSubmitPending, setIsBidSubmitPending] = useState(false);
+  // 접수에 성공해 체크를 보여 주는 동안 다음에 열 단계를 들고 있는다.
+  const [checkoutStepAfterSuccess, setCheckoutStepAfterSuccess] =
+    useState<CheckoutSheetStep | null>(null);
+  // 체크를 보여 주는 동안 확인 화면의 선택·금액이 비지 않게, 접수 결과 반영을 다음 단계로 넘길 때 한다.
+  const pendingSubmittedBidStateRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!checkoutStepAfterSuccess) {
+      return;
+    }
+
+    const holdMs = window.matchMedia("(prefers-reduced-motion: reduce)")
+      .matches
+      ? 0
+      : CHECKOUT_SUCCESS_HOLD_MS;
+    const timer = window.setTimeout(() => {
+      pendingSubmittedBidStateRef.current?.();
+      pendingSubmittedBidStateRef.current = null;
+      setCheckoutStep(checkoutStepAfterSuccess);
+      setCheckoutStepAfterSuccess(null);
+    }, holdMs);
+
+    return () => window.clearTimeout(timer);
+  }, [checkoutStepAfterSuccess]);
   const [isHostedByMeFromApi, setIsHostedByMeFromApi] = useState(
     product.isHostedByMe === true,
   );
@@ -1626,7 +1783,7 @@ export function ProductDetail({
       // "등록했어요" 토스트와 "등록이 필요해요" 배너가 동시에 뜨지 않는다.
       setCheckoutError("");
       setIsRefundAccountSheetOpen(false);
-      showProductToast("계좌를 등록했어요. 이어서 참여해 주세요.");
+      showToast("계좌를 등록했어요. 이어서 참여해 주세요.", "success");
     } catch (error: unknown) {
       setRefundAccountError(
         error instanceof Error ? error.message : "계좌를 저장하지 못했어요.",
@@ -1752,7 +1909,7 @@ export function ProductDetail({
       if (addedAddress) {
         setCheckoutDeliveryAddress(addedAddress);
         setCheckoutError("");
-        showProductToast("배송지를 등록했어요. 이어서 참여해 주세요.");
+        showToast("배송지를 등록했어요. 이어서 참여해 주세요.", "success");
       } else {
         setCheckoutError(
           "배송지 등록 결과를 확인하지 못했어요. 목록에서 배송지를 선택해 주세요.",
@@ -2259,7 +2416,8 @@ export function ProductDetail({
     setCheckoutCodeInput("");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    hideCheckoutCopyToast();
+    setCheckoutStepAfterSuccess(null);
+    pendingSubmittedBidStateRef.current = null;
 
     // 이 리셋이 복원된 체크아웃 상태를 지웠을 수 있으므로 재적용을 예약한다.
     if (pendingCheckoutRestoreRef.current?.productId === buncheolId) {
@@ -2267,7 +2425,6 @@ export function ProductDetail({
     }
   }, [
     buncheolId,
-    hideCheckoutCopyToast,
     product.id,
     product.isHostedByMe,
     product.options,
@@ -2423,7 +2580,8 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    hideCheckoutCopyToast();
+    setCheckoutStepAfterSuccess(null);
+    pendingSubmittedBidStateRef.current = null;
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -2760,11 +2918,22 @@ export function ProductDetail({
       return;
     }
 
+    const canAddToSelection =
+      canSelectMultipleMembers && option.requiresCode !== true;
+
+    if (
+      bidAmounts[optionId] !== "selected" &&
+      canAddToSelection &&
+      Object.keys(bidAmounts).length >= maxSelectableMemberCount
+    ) {
+      showToast(
+        `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
+      );
+      return;
+    }
+
     setBidAmounts((current) => {
       let nextAmounts: Record<string, string>;
-
-      const canAddToSelection =
-        canSelectMultipleMembers && option.requiresCode !== true;
 
       if (current[optionId] === "selected") {
         nextAmounts = { ...current };
@@ -2773,9 +2942,6 @@ export function ProductDetail({
         canAddToSelection &&
         Object.keys(current).length >= maxSelectableMemberCount
       ) {
-        showProductToast(
-          `한 번에 최대 ${maxSelectableMemberCount}자리까지 신청할 수 있어요.`,
-        );
         nextAmounts = current;
       } else if (canAddToSelection) {
         // 자리를 여러 개 잡으면 한 묶음이 된다 — 이체 1회 · 배송비 1회 · 택배 1개.
@@ -3287,7 +3453,10 @@ export function ProductDetail({
         return;
       }
 
-      applySubmittedBidState(participationResults, true);
+      // 진행 중인 재조회가 참여 이전 스냅샷으로 덮지 않게 지금 무효화하고, 화면 반영만 미룬다.
+      detailRefreshRequestIdRef.current += 1;
+      pendingSubmittedBidStateRef.current = () =>
+        applySubmittedBidState(participationResults, true);
       setCheckoutPaymentSummary({
         deliveryAddress: nextBidDeliveryAddress,
         hostBankAccount: checkoutHostBankAccount,
@@ -3309,7 +3478,7 @@ export function ProductDetail({
       });
       pendingCheckoutRestoreRef.current = null;
       // C2C 신청은 입금 안내 대신 신청 완료 화면으로 — 계좌·기한이 아직 없다.
-      setCheckoutStep(
+      setCheckoutStepAfterSuccess(
         isCodeCheckout || isFreeConfirmedCheckout
           ? "codeConfirmed"
           : paymentItems.some((item) => item.participationStatus === "APPLIED")
@@ -3759,7 +3928,8 @@ export function ProductDetail({
     setCheckoutPaymentSummary(null);
     setCheckoutCodeInput("");
     setCheckoutError("");
-    hideCheckoutCopyToast();
+    setCheckoutStepAfterSuccess(null);
+    pendingSubmittedBidStateRef.current = null;
     setIsSheetOpen(true);
     setIsSheetClosing(false);
 
@@ -3807,7 +3977,8 @@ export function ProductDetail({
   }
 
   function closeSheet() {
-    if (isSheetClosing) {
+    // 접수 체크를 보여 주는 짧은 사이에 닫히면 입금 안내를 놓친다.
+    if (isSheetClosing || checkoutStepAfterSuccess) {
       return;
     }
 
@@ -3844,7 +4015,7 @@ export function ProductDetail({
   }
 
   function startSheetDrag(event: PointerEvent<HTMLButtonElement>) {
-    if (isSheetClosing) {
+    if (isSheetClosing || checkoutStepAfterSuccess) {
       return;
     }
 
@@ -3950,7 +4121,8 @@ export function ProductDetail({
     setCheckoutStep("confirm");
     setCheckoutPaymentSummary(null);
     setCheckoutError("");
-    hideCheckoutCopyToast();
+    setCheckoutStepAfterSuccess(null);
+    pendingSubmittedBidStateRef.current = null;
 
     if (sheetCloseFallbackTimerRef.current !== null) {
       window.clearTimeout(sheetCloseFallbackTimerRef.current);
@@ -4037,15 +4209,6 @@ export function ProductDetail({
       });
   }
 
-  async function copyCheckoutText(value: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      showCheckoutCopyToast(`${label}를 복사했어요.`);
-    } catch {
-      showCheckoutCopyToast(`${label} 복사에 실패했어요.`);
-    }
-  }
-
   async function handleShareProduct() {
     // 공유 시트가 뜨는 사이 한 번 더 누르면 Web Share 가 InvalidStateError 로 거절한다.
     // 그대로 두면 시트가 열린 채 복사 폴백이 돌아 토스트와 중복 이벤트가 남는다.
@@ -4093,9 +4256,9 @@ export function ProductDetail({
           buncheol_id: buncheolId,
           method: "clipboard",
         });
-        showProductToast("분철 링크를 복사했어요.");
+        showToast("분철 링크를 복사했어요.", "success");
       } catch {
-        showProductToast("링크 복사에 실패했어요.");
+        showToast("링크 복사에 실패했어요.", "error");
       }
     } finally {
       isSharePendingRef.current = false;
@@ -4185,7 +4348,10 @@ export function ProductDetail({
         </header>
 
         <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32">
-          <section className="px-4">
+          <section
+            className={`px-4 ${revealOnEnter ? "detail-reveal" : ""}`}
+            style={revealOnEnter ? getRevealStyle(0) : undefined}
+          >
             <div
               className={`product-hero-media product-detail-media relative overflow-hidden rounded-[1.35rem] bg-gradient-to-br ${product.tone}`}
             >
@@ -4295,16 +4461,25 @@ export function ProductDetail({
           </section>
 
           <section className="px-5 pt-6">
-            <p className="text-[13px] font-semibold leading-5 text-black/40">
+            <p
+              className={`text-[13px] font-semibold leading-5 text-black/40 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(1) : undefined}
+            >
               {targetTags.join(" ")}
             </p>
 
             {/* 제목 전문 노출은 이 화면(분철 상세)에서만 한다(docs/56 H-03).
                 목록·카드·개최 관리는 기존 truncate/line-clamp 를 유지한다. */}
-            <h1 className="mt-4 break-keep break-words text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
+            <h1
+              className={`mt-4 break-keep break-words text-[27px] font-semibold leading-[1.18] tracking-[-0.06em] ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(2) : undefined}
+            >
               {product.title}
             </h1>
-            <div className="mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)]">
+            <div
+              className={`mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)] ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(3) : undefined}
+            >
               <div className="grid grid-cols-[0.86fr_1.14fr] divide-x divide-black/10 border-b border-black/10">
                 <div className="min-w-0 px-4 py-3.5">
                   <p className="text-[12px] font-medium text-black/45">구매처</p>
@@ -4331,13 +4506,13 @@ export function ProductDetail({
                       {isConfirmedProduct ? (
                         "진행 확정"
                       ) : (
-                        <>
-                          현재 {currentParticipationCount.toLocaleString("ko-KR")}
-                          {participationDenominator !== null
-                            ? `/${participationDenominator.toLocaleString("ko-KR")}`
-                            : ""}
-                          명
-                        </>
+                        <RollingNumber
+                          value={`현재 ${currentParticipationCount.toLocaleString("ko-KR")}${
+                            participationDenominator !== null
+                              ? `/${participationDenominator.toLocaleString("ko-KR")}`
+                              : ""
+                          }명`}
+                        />
                       )}
                     </p>
                   </div>
@@ -4360,7 +4535,10 @@ export function ProductDetail({
             </div>
 
             {shippingMethods.length > 0 ? (
-            <div className="mt-7 border-t border-black/10 pt-6">
+            <div
+              className={`mt-7 border-t border-black/10 pt-6 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(4) : undefined}
+            >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 배송 방법
               </h2>
@@ -4387,7 +4565,10 @@ export function ProductDetail({
             </div>
             ) : null}
 
-            <div className="mt-8 border-t border-black/10 pt-6">
+            <div
+              className={`mt-8 border-t border-black/10 pt-6 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(4) : undefined}
+            >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 상품 설명
               </h2>
@@ -4422,7 +4603,10 @@ export function ProductDetail({
               </div>
             ) : null}
 
-            <div className="mt-8 border-t border-black/10 pt-6">
+            <div
+              className={`mt-8 border-t border-black/10 pt-6 ${revealOnEnter ? "detail-reveal" : ""}`}
+              style={revealOnEnter ? getRevealStyle(4) : undefined}
+            >
               <div className="flex items-end justify-between gap-3">
                 <h2 className="text-[18px] font-semibold">
                   멤버
@@ -4557,88 +4741,99 @@ export function ProductDetail({
           </section>
         </div>
 
-        <div className="product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
-          {canJoinWithCodeBeforeOpen ? (
-            <div className="mb-1 flex justify-center">
-              <button
-                className="px-3 py-1 text-[13px] font-semibold tracking-[-0.04em] text-black underline underline-offset-4"
-                onClick={handleBidButtonClick}
-                type="button"
-              >
-                코드로 참여하기
-              </button>
-            </div>
-          ) : !isHostedProduct &&
-            !isCancelledProduct &&
-            !isDeadlineBlocked &&
-            isPurchasableStatus ? (
-            <p className="mb-2 text-center text-[11px] font-medium text-black/40">
-              {isC2CProduct
-                ? isC2CCollectingProduct
-                  ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
-                  : "지금은 신청만 하고, 개최자가 확정하면 입금해요."
-                : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
-            </p>
-          ) : null}
-          {canManageHostedProduct ? (
-            <button
-              className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-              onClick={() =>
-                router.push(`/products/${encodeURIComponent(buncheolId)}/manage`)
-              }
-              type="button"
-            >
-              내 분철 관리하기
-            </button>
+        <div
+          className={`product-detail-bid-bar absolute bottom-0 left-0 right-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)] ${revealOnEnter ? "detail-reveal" : ""}`}
+          style={revealOnEnter ? getRevealStyle(5) : undefined}
+        >
+          {isViewerStateLoading ? (
+            <SkeletonGroup aria-label="참여 버튼을 준비하고 있어요" role="status">
+              <ProductDetailBidBarSkeleton />
+            </SkeletonGroup>
           ) : (
-            <button
-              type="button"
-              aria-describedby={
-                isWaitingForOpen ? opensAtDescriptionId : undefined
-              }
-              className={
-                // 오픈 대기 중에는 꺼져 있어도 남은 시간이 읽혀야 한다.
-                isWaitingForOpen
-                  ? "h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
-                  : "h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
-              }
-              disabled={isMainBidButtonDisabled}
-              onClick={
-                isMainBidButtonDisabled ? undefined : handleBidButtonClick
-              }
-            >
-              {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
-                  반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
-                  같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
+            <>
+              {canJoinWithCodeBeforeOpen ? (
+                <div className="mb-1 flex justify-center">
+                  <button
+                    className="px-3 py-1 text-[13px] font-semibold tracking-[-0.04em] text-black underline underline-offset-4"
+                    onClick={handleBidButtonClick}
+                    type="button"
+                  >
+                    코드로 참여하기
+                  </button>
+                </div>
+              ) : !isHostedProduct &&
+                !isCancelledProduct &&
+                !isDeadlineBlocked &&
+                isPurchasableStatus ? (
+                <p className="mb-2 text-center text-[11px] font-medium text-black/40">
+                  {isC2CProduct
+                    ? isC2CCollectingProduct
+                      ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
+                      : "지금은 신청만 하고, 개최자가 확정하면 입금해요."
+                    : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
+                </p>
+              ) : null}
+              {canManageHostedProduct ? (
+                <button
+                  className="h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                  onClick={() =>
+                    router.push(`/products/${encodeURIComponent(buncheolId)}/manage`)
+                  }
+                  type="button"
+                >
+                  내 분철 관리하기
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-describedby={
+                    isWaitingForOpen ? opensAtDescriptionId : undefined
+                  }
+                  className={
+                    // 오픈 대기 중에는 꺼져 있어도 남은 시간이 읽혀야 한다.
+                    isWaitingForOpen
+                      ? "h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_28px_rgba(0,0,0,0.18)]"
+                      : "h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+                  }
+                  disabled={isMainBidButtonDisabled}
+                  onClick={
+                    isMainBidButtonDisabled ? undefined : handleBidButtonClick
+                  }
+                >
+                  {/* C2C 의 "신청"은 무입금 슬롯 선점이라 "참여"와 다른 단계다 — 그대로 둔다.
+                      반면 기존 플로우의 "구매하기"는 참여 내역·참여 현황·"1번만 참여할 수 있어요"와
+                      같은 행동을 가리키면서 혼자 다른 말을 쓰고 있어 "참여하기"로 맞춘다. */}
+                  {isWaitingForOpen && opensAtMs !== null ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="text-[15px] text-white/[0.78]">
+                        참여 오픈까지
+                      </span>
+                      <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
+                        {formatOpenCountdown(opensAtMs, serverNowMs)}
+                      </span>
+                    </span>
+                  ) : isPublicPreview
+                    ? isC2CProduct
+                      ? "로그인하고 신청하기"
+                      : "로그인하고 참여하기"
+                    : isBidUnavailable
+                      ? isC2CProduct
+                        ? "신청하기"
+                        : "참여하기"
+                      : canBidProduct
+                        ? isC2CProduct && !isC2CCollectingProduct
+                          ? "신청하기"
+                          : "참여하기"
+                        : getBidUnavailableMessage()}
+                </button>
+              )}
               {isWaitingForOpen && opensAtMs !== null ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="text-[15px] text-white/[0.78]">
-                    참여 오픈까지
-                  </span>
-                  <span className="text-[24px] font-bold tracking-[-0.02em] [font-variant-numeric:tabular-nums]">
-                    {formatOpenCountdown(opensAtMs, serverNowMs)}
-                  </span>
+                <span hidden id={opensAtDescriptionId}>
+                  {formatOpensAt(opensAtMs, serverNowMs)}에 참여가 열려요
                 </span>
-              ) : isPublicPreview
-                ? isC2CProduct
-                  ? "로그인하고 신청하기"
-                  : "로그인하고 참여하기"
-                : isBidUnavailable
-                  ? isC2CProduct
-                    ? "신청하기"
-                    : "참여하기"
-                  : canBidProduct
-                    ? isC2CProduct && !isC2CCollectingProduct
-                      ? "신청하기"
-                      : "참여하기"
-                    : getBidUnavailableMessage()}
-            </button>
+              ) : null}
+            </>
           )}
-          {isWaitingForOpen && opensAtMs !== null ? (
-            <span hidden id={opensAtDescriptionId}>
-              {formatOpensAt(opensAtMs, serverNowMs)}에 참여가 열려요
-            </span>
-          ) : null}
         </div>
 
         {isSheetOpen ? (
@@ -4654,6 +4849,7 @@ export function ProductDetail({
               aria-label="멤버 선택 닫기"
             />
             <section
+              ref={checkoutSheetPanelRef}
               className={`bid-sheet-panel relative w-full rounded-t-[1.4rem] bg-white px-5 pb-5 pt-3 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isSheetEntered && !isSheetClosing ? "bid-sheet-panel-active" : ""
               }`}
@@ -4687,7 +4883,21 @@ export function ProductDetail({
                 <span className="h-1 w-10 rounded-full bg-black/15" />
               </button>
               <div className="flex items-start justify-between gap-4">
-                <div>
+                <div
+                  className={
+                    checkoutStepMotion.direction ? "checkout-step-title-enter" : ""
+                  }
+                  key={checkoutStep}
+                >
+                  {checkoutStep === "payment" ? (
+                    <p className="checkout-done-row">
+                      <svg aria-hidden="true" viewBox="0 0 18 18">
+                        <circle cx="9" cy="9" r="9" />
+                        <path d="M5.2 9.3l2.5 2.5 5-5.2" />
+                      </svg>
+                      참여가 접수됐어요
+                    </p>
+                  ) : null}
                   <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
                     {checkoutStep === "payment"
                       ? "입금 안내"
@@ -4738,7 +4948,7 @@ export function ProductDetail({
               </div>
 
               {checkoutStep === "options" ? (
-                <>
+                <div className={checkoutStepEnterClassName}>
                   <div className="sheet-scroll mt-3 max-h-[44dvh] space-y-1.5 overflow-y-auto pr-1 [touch-action:pan-y]">
                     {sortedAuctionOptions.map((option) => {
                       const isSelected = bidAmounts[option.id] === "selected";
@@ -4823,16 +5033,20 @@ export function ProductDetail({
 
                   <div className="mt-5 flex items-center justify-between border-t border-black/10 pt-4">
                     <span className="text-[14px] font-medium text-black/45">
-                      선택 멤버 {activeBidCount}명
+                      <RollingNumber value={`선택 멤버 ${activeBidCount}명`} />
                     </span>
-                    <span className="text-[22px] font-semibold tracking-[-0.05em]">
-                      {formatPrice(totalBidAmount)}
+                    <span className="relative text-[22px] font-semibold tracking-[-0.05em]">
+                      <RollingNumber value={formatPrice(totalBidAmount)} />
+                      <AmountChangeBadge
+                        amount={totalBidAmount}
+                        format={formatPrice}
+                      />
                     </span>
                   </div>
 
                   <button
                     type="button"
-                    className="mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+                    className="cta-ready-pop mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
                     disabled={
                       activeBidCount === 0 || isBidSubmitPending || !canBidProduct
                     }
@@ -4840,11 +5054,11 @@ export function ProductDetail({
                   >
                     {isBidSubmitPending ? "확인 중" : "다음"}
                   </button>
-                </>
+                </div>
               ) : null}
 
               {checkoutStep === "confirm" ? (
-                <>
+                <div className={checkoutStepEnterClassName}>
                   <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                       <p className="text-[12px] font-semibold text-black/40">선택 멤버</p>
@@ -4998,11 +5212,13 @@ export function ProductDetail({
                       <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
                         <span className="text-[14px] font-semibold text-white/70">총 예상 금액</span>
                         <span className="text-[22px] font-semibold tracking-[-0.05em] text-[#DDE7B8]">
-                          {formatPrice(
-                            isAdditionalC2CApplication
-                              ? totalBidAmount
-                              : estimatedCheckoutTotal,
-                          )}
+                          <RollingNumber
+                            value={formatPrice(
+                              isAdditionalC2CApplication
+                                ? totalBidAmount
+                                : estimatedCheckoutTotal,
+                            )}
+                          />
                         </span>
                       </div>
                       {isShippingFeePaybackProduct && estimatedShippingAmount > 0 ? (
@@ -5068,17 +5284,32 @@ export function ProductDetail({
                     </p>
                   ) : null}
 
-                  <div className="mt-4 grid grid-cols-[0.42fr_0.58fr] gap-2">
+                  <div
+                    className="checkout-submit-row mt-4"
+                    data-state={
+                      checkoutStepAfterSuccess
+                        ? "done"
+                        : isBidSubmitPending
+                          ? "pending"
+                          : "idle"
+                    }
+                  >
                     <button
-                      className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
+                      className="checkout-submit-prev h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
+                      disabled={isBidSubmitPending || checkoutStepAfterSuccess !== null}
                       onClick={() => setCheckoutStep("options")}
                       type="button"
                     >
                       이전
                     </button>
                     <button
-                      className="h-14 rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+                      className={`checkout-submit-main h-14 rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] ${
+                        isBidSubmitPending || checkoutStepAfterSuccess
+                          ? ""
+                          : "disabled:bg-black/20 disabled:text-white"
+                      }`}
                       disabled={
+                        checkoutStepAfterSuccess !== null ||
                         isBidSubmitPending ||
                         activeBidCount === 0 ||
                         !canBidProduct ||
@@ -5088,25 +5319,60 @@ export function ProductDetail({
                       onClick={() => void handleSubmitBids()}
                       type="button"
                     >
-                      {isCodeCheckout
-                        ? isBidSubmitPending
-                          ? "코드 확인 중"
-                          : "코드 입력하고 참여하기"
-                        : isC2CProduct && !isC2CCollectingProduct
-                          ? isBidSubmitPending
-                            ? "신청 접수 중"
-                            : "이대로 신청할게요!"
-                          : isBidSubmitPending
-                            ? "참여 접수 중"
-                            : "이대로 참여할게요!"}
+                      <span className="checkout-submit-label">
+                        {isCodeCheckout
+                          ? checkoutStepAfterSuccess
+                            ? "참여가 확정됐어요"
+                            : isBidSubmitPending
+                              ? "코드 확인 중"
+                              : "코드 입력하고 참여하기"
+                          : isC2CProduct && !isC2CCollectingProduct
+                            ? checkoutStepAfterSuccess
+                              ? "신청이 접수됐어요"
+                              : isBidSubmitPending
+                                ? "신청 접수 중"
+                                : "이대로 신청할게요!"
+                            : checkoutStepAfterSuccess
+                              ? "참여가 접수됐어요"
+                              : isBidSubmitPending
+                                ? "참여 접수 중"
+                                : "이대로 참여할게요!"}
+                      </span>
                     </button>
+                    <svg
+                      aria-hidden="true"
+                      className="checkout-submit-ring"
+                      viewBox="0 0 76 76"
+                    >
+                      <circle
+                        className="checkout-submit-ring-track"
+                        cx="38"
+                        cy="38"
+                        r="34"
+                      />
+                      <circle
+                        className="checkout-submit-ring-arc"
+                        cx="38"
+                        cy="38"
+                        pathLength={100}
+                        r="34"
+                      />
+                    </svg>
+                    <span aria-hidden="true" className="checkout-submit-ripple" />
+                    <svg
+                      aria-hidden="true"
+                      className="checkout-submit-check"
+                      viewBox="0 0 26 26"
+                    >
+                      <path d="M6 13.5l4.6 4.6L20.5 8" />
+                    </svg>
                   </div>
-                </>
+                </div>
               ) : null}
 
               {checkoutStep === "payment" ? (
                 checkoutPaymentSummary ? (
-                  <>
+                  <div className="checkout-step-rise">
                     <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                         <div className="flex items-start justify-between gap-4">
@@ -5180,21 +5446,17 @@ export function ProductDetail({
                                 : "참여 내역에서 다시 확인해 주세요."}
                             </p>
                           </div>
-                          <button
-                            className="h-9 shrink-0 rounded-full bg-[#DDE7B8] px-3 text-[12px] font-semibold text-black shadow-[0_8px_20px_rgba(120,132,82,0.18)] disabled:bg-black/10 disabled:text-black/30"
+                          <CopyButton
                             disabled={!checkoutPaymentSummary.hostBankAccount}
-                            onClick={() =>
-                              checkoutPaymentSummary.hostBankAccount
-                                ? void copyCheckoutText(
-                                    checkoutPaymentSummary.hostBankAccount.account,
-                                    "계좌번호",
-                                  )
-                                : undefined
+                            label="계좌 복사"
+                            onCopyFailed={() =>
+                              showToast("계좌번호 복사에 실패했어요.", "error")
                             }
-                            type="button"
-                          >
-                            계좌 복사
-                          </button>
+                            value={
+                              checkoutPaymentSummary.hostBankAccount?.account ??
+                              ""
+                            }
+                          />
                         </div>
                         {checkoutRefundAccount?.holder ? (
                           <>
@@ -5227,10 +5489,6 @@ export function ProductDetail({
                             </span>
                           ) : null}
                         </p>
-                        <Toast
-                          className="absolute inset-x-0 bottom-3 px-4"
-                          message={checkoutCopyToast}
-                        />
                       </div>
 
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
@@ -5245,7 +5503,13 @@ export function ProductDetail({
                         <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
                           <span className="text-[14px] font-semibold text-white/70">총 입금액</span>
                           <span className="text-[23px] font-semibold tracking-[-0.05em] text-[#DDE7B8]">
-                            {formatPrice(checkoutPaymentSummary.totalAmount)}
+                            <RollingNumber
+                              startDelayMs={280}
+                              startFrom={formatPrice(0)}
+                              value={formatPrice(
+                                checkoutPaymentSummary.totalAmount,
+                              )}
+                            />
                           </span>
                         </div>
                         {isShippingFeePaybackProduct &&
@@ -5281,7 +5545,7 @@ export function ProductDetail({
                         참여 내역 보기
                       </button>
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <div className="mt-5 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5 text-[14px] font-semibold text-black/45">
                     입금 정보를 불러오고 있어요.
@@ -5290,7 +5554,7 @@ export function ProductDetail({
               ) : null}
 
               {checkoutStep === "applied" && checkoutPaymentSummary ? (
-                <>
+                <div className="checkout-step-rise">
                   <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                       <p className="text-[12px] font-semibold text-[#DDE7B8]">
@@ -5376,11 +5640,11 @@ export function ProductDetail({
                       참여 내역 보기
                     </button>
                   </div>
-                </>
+                </div>
               ) : null}
 
               {checkoutStep === "codeConfirmed" && checkoutPaymentSummary ? (
-                <>
+                <div className="checkout-step-rise">
                   <div className="sheet-scroll mt-5 max-h-[48dvh] space-y-3 overflow-y-auto pr-1 [touch-action:pan-y]">
                     <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
                       <p className="text-[12px] font-semibold text-[#DDE7B8]">
@@ -5444,7 +5708,7 @@ export function ProductDetail({
                       참여 내역 보기
                     </button>
                   </div>
-                </>
+                </div>
               ) : null}
             </section>
           </div>
@@ -5726,11 +5990,6 @@ export function ProductDetail({
             />
           </div>
         ) : null}
-
-        <Toast
-          className="fixed inset-x-0 bottom-24 z-[70] px-6"
-          message={productToast}
-        />
 
         {isImageViewerOpen && productImages.length > 0 ? (
           <div className="fixed inset-0 z-[60] flex flex-col bg-black">

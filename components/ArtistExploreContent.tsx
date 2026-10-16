@@ -12,7 +12,8 @@ import {
 import { useRouter } from "next/navigation";
 import { ArtistImage } from "@/components/ArtistRail";
 import { BusinessFooter } from "@/components/BusinessFooter";
-import { Toast, useToast } from "@/components/Toast";
+import { useAppToast } from "@/components/Toast";
+import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import { ARTIST_LIST_ENTRY_GROUP_KEY } from "@/lib/artist-browse";
 import {
@@ -206,7 +207,7 @@ export function ArtistExploreContent({
   const pendingGroupIdsRef = useRef(new Set<string>());
   const cardTapGuardUntilRef = useRef(0);
   // 한도 초과처럼 화면을 바꿀 필요 없는 안내는 잠깐 떴다 사라지는 토스트로 알린다.
-  const [toast, showToast] = useToast();
+  const showToast = useAppToast();
 
   const favoriteGroups = groups.filter((group) => group.favorited);
   const favoriteCount = favoriteGroups.length;
@@ -502,14 +503,18 @@ export function ArtistExploreContent({
         ) : null}
 
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-3">
+          <SkeletonGroup
+            aria-label="아티스트를 불러오는 중"
+            className="grid grid-cols-2 gap-3"
+            role="status"
+          >
             {Array.from({ length: 8 }).map((_, index) => (
               <div
-                className="h-[194px] rounded-[1.2rem] bg-[#f5f5f5]"
+                className="skeleton-surface h-[194px] rounded-[1.2rem] bg-black/8"
                 key={index}
               />
             ))}
-          </div>
+          </SkeletonGroup>
         ) : (
           /* 0건일 때도 그리드를 유지한다. 빈 상태와 삼항으로 가르면 0건 ↔ N건을 오갈 때마다
              카드 전부가 remount 되고 content-reveal 이 재생된다. */
@@ -591,10 +596,6 @@ export function ArtistExploreContent({
         </div>
       </div>
 
-      <Toast
-        className="absolute inset-x-0 bottom-6 z-20 px-6"
-        message={toast}
-      />
     </div>
   );
 }
