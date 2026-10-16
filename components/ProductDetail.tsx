@@ -106,6 +106,7 @@ import {
   aboveDetailOpensAtBandClassName,
 } from "@/components/OpensAtBand";
 import { CopyButton } from "@/components/CopyButton";
+import { AmountChangeBadge, RollingNumber } from "@/components/RollingNumber";
 import { ProductDetailBidBarSkeleton } from "@/components/ProductDetailSkeleton";
 import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useAppToast } from "@/components/Toast";
@@ -4345,13 +4346,13 @@ export function ProductDetail({
                       {isConfirmedProduct ? (
                         "진행 확정"
                       ) : (
-                        <>
-                          현재 {currentParticipationCount.toLocaleString("ko-KR")}
-                          {participationDenominator !== null
-                            ? `/${participationDenominator.toLocaleString("ko-KR")}`
-                            : ""}
-                          명
-                        </>
+                        <RollingNumber
+                          value={`현재 ${currentParticipationCount.toLocaleString("ko-KR")}${
+                            participationDenominator !== null
+                              ? `/${participationDenominator.toLocaleString("ko-KR")}`
+                              : ""
+                          }명`}
+                        />
                       )}
                     </p>
                   </div>
@@ -4857,16 +4858,20 @@ export function ProductDetail({
 
                   <div className="mt-5 flex items-center justify-between border-t border-black/10 pt-4">
                     <span className="text-[14px] font-medium text-black/45">
-                      선택 멤버 {activeBidCount}명
+                      <RollingNumber value={`선택 멤버 ${activeBidCount}명`} />
                     </span>
-                    <span className="text-[22px] font-semibold tracking-[-0.05em]">
-                      {formatPrice(totalBidAmount)}
+                    <span className="relative text-[22px] font-semibold tracking-[-0.05em]">
+                      <RollingNumber value={formatPrice(totalBidAmount)} />
+                      <AmountChangeBadge
+                        amount={totalBidAmount}
+                        format={formatPrice}
+                      />
                     </span>
                   </div>
 
                   <button
                     type="button"
-                    className="mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
+                    className="cta-ready-pop mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
                     disabled={
                       activeBidCount === 0 || isBidSubmitPending || !canBidProduct
                     }
@@ -5032,11 +5037,13 @@ export function ProductDetail({
                       <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
                         <span className="text-[14px] font-semibold text-white/70">총 예상 금액</span>
                         <span className="text-[22px] font-semibold tracking-[-0.05em] text-[#DDE7B8]">
-                          {formatPrice(
-                            isAdditionalC2CApplication
-                              ? totalBidAmount
-                              : estimatedCheckoutTotal,
-                          )}
+                          <RollingNumber
+                            value={formatPrice(
+                              isAdditionalC2CApplication
+                                ? totalBidAmount
+                                : estimatedCheckoutTotal,
+                            )}
+                          />
                         </span>
                       </div>
                       {isShippingFeePaybackProduct && estimatedShippingAmount > 0 ? (
@@ -5271,7 +5278,13 @@ export function ProductDetail({
                         <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
                           <span className="text-[14px] font-semibold text-white/70">총 입금액</span>
                           <span className="text-[23px] font-semibold tracking-[-0.05em] text-[#DDE7B8]">
-                            {formatPrice(checkoutPaymentSummary.totalAmount)}
+                            <RollingNumber
+                              startDelayMs={280}
+                              startFrom={formatPrice(0)}
+                              value={formatPrice(
+                                checkoutPaymentSummary.totalAmount,
+                              )}
+                            />
                           </span>
                         </div>
                         {isShippingFeePaybackProduct &&

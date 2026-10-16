@@ -2324,6 +2324,105 @@ body.is-pwa-standalone .bid-sheet-panel {
   }
 }
 
+/* ── 굴러가는 숫자 ─────────────────────────────────────
+   자리마다 0~9 띠를 두고 바뀐 자리만 굴린다. 같은 위치(오른쪽 끝 기준)의 자리는
+   같은 요소로 남아 transform 전환이 이어진다. */
+.rolling-number {
+  display: inline-flex;
+  position: relative;
+  white-space: pre;
+}
+
+.rolling-number-track {
+  display: inline-flex;
+}
+
+.rolling-number-digit,
+.rolling-number-static {
+  display: inline-block;
+  height: 1.2em;
+  line-height: 1.2em;
+}
+
+.rolling-number-static::before,
+.rolling-number-sizer::before,
+.rolling-number-reel > span::before {
+  content: attr(data-char);
+}
+
+/* 자리 폭은 지금 보이는 숫자의 폭을 따른다. 고정폭이면 1 옆이 비어 "1 0,000원"처럼 보인다. */
+.rolling-number-digit {
+  overflow: clip;
+  position: relative;
+}
+
+.rolling-number-sizer {
+  visibility: hidden;
+}
+
+.rolling-number-reel {
+  left: 0;
+  position: absolute;
+  right: 0;
+  text-align: center;
+  top: 0;
+  transition: transform 750ms var(--motion-spring);
+}
+
+.rolling-number-reel > span {
+  display: block;
+  height: 1.2em;
+}
+
+.amount-change-badge {
+  animation: amount-change 900ms var(--motion-pop) both;
+  white-space: nowrap;
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  top: -8px;
+}
+
+.amount-change-badge--down {
+  color: var(--text-muted);
+}
+
+@keyframes amount-change {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  25% {
+    opacity: 1;
+    transform: none;
+  }
+
+  75% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* 꺼져 있던 CTA 가 켜지는 순간 한 번만 살짝 커진다. */
+.cta-ready-pop:enabled {
+  animation: cta-ready-pop 320ms var(--motion-spring);
+}
+
+@keyframes cta-ready-pop {
+  45% {
+    transform: scale(1.025);
+  }
+}
+
 /* ── 복사 버튼 ───────────────────────────────────────── */
 .copy-button {
   align-items: center;
