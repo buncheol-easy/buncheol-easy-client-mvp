@@ -16,6 +16,10 @@ export const viewport = whiteChromeViewport;
 // 바뀌는 데이터라 홈(60초)보다 길게 잡는다.
 export const revalidate = 600;
 
+// 빌드 때 프리렌더되는 경로라 백엔드가 매달리면 정적 생성 상한(60초)에 걸려 빌드가 실패한다.
+// 홈 프리페치와 같은 상한을 둔다.
+const ARTISTS_PREFETCH_TIMEOUT_MS = 10_000;
+
 export default async function ArtistsPage() {
   if (!FEATURES.favoriteArtists) {
     redirect("/");
@@ -34,7 +38,10 @@ export default async function ArtistsPage() {
 
   await queryClient.prefetchQuery({
     queryKey: allGroupsQueryKey,
-    queryFn: () => requestGroups(""),
+    queryFn: () =>
+      requestGroups("", {
+        signal: AbortSignal.timeout(ARTISTS_PREFETCH_TIMEOUT_MS),
+      }),
   });
 
   if (!queryClient.getQueryData(allGroupsQueryKey)) {

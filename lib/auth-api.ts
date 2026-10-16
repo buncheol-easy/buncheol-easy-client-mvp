@@ -4166,6 +4166,7 @@ export type BuncheolSummaryPage = {
 export async function requestBuncheolPage(
   accessToken?: string,
   params: BuncheolListParams = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<BuncheolSummaryPage> {
   const url = `${getVersionedApiBaseUrl()}/buncheols${getRequestQuery(
     params,
@@ -4174,12 +4175,14 @@ export async function requestBuncheolPage(
     credentials: "omit",
     headers: getAuthHeaders(accessToken),
     method: "GET",
+    signal: options.signal,
   });
 
   if (response.status === 401 && accessToken) {
     response = await fetch(url, {
       credentials: "omit",
       method: "GET",
+      signal: options.signal,
     });
   }
 
@@ -4206,20 +4209,26 @@ export async function requestBuncheols(
   return (await requestBuncheolPage(accessToken, params)).items;
 }
 
+// signal 은 최대 20페이지 순회 전체에 걸린다. 중간에 끊기면 받은 페이지도 버리고 throw 한다.
 export async function requestAllBuncheols(
   accessToken?: string,
   params: BuncheolListParams = {},
+  options: { signal?: AbortSignal } = {},
 ) {
   const allSummaries: BuncheolSummary[] = [];
   let cursor = params.cursor;
   let pageCount = 0;
 
   while (pageCount < 20) {
-    const page = await requestBuncheolPage(accessToken, {
-      ...params,
-      cursor,
-      size: params.size ?? 50,
-    });
+    const page = await requestBuncheolPage(
+      accessToken,
+      {
+        ...params,
+        cursor,
+        size: params.size ?? 50,
+      },
+      options,
+    );
 
     allSummaries.push(...page.items);
 
@@ -5634,7 +5643,10 @@ function getRecentSearchKeywordFromRecord(
   return { id, keyword };
 }
 
-export async function requestGroups(keyword = ""): Promise<ApiGroup[]> {
+export async function requestGroups(
+  keyword = "",
+  options: { signal?: AbortSignal } = {},
+): Promise<ApiGroup[]> {
   const searchParams = keyword
     ? `?${new URLSearchParams({ keyword }).toString()}`
     : "";
@@ -5643,6 +5655,7 @@ export async function requestGroups(keyword = ""): Promise<ApiGroup[]> {
     {
       credentials: "omit",
       method: "GET",
+      signal: options.signal,
     },
   );
 
