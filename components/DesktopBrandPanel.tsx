@@ -136,16 +136,14 @@ export function DesktopBrandPanel() {
         />
         {/* 페이지별 h1 과 중복되지 않도록 데스크톱 장식 태그라인은 제목 요소를 쓰지 않는다. */}
         <p className="desktop-web-brand__title">
-          최애만
+          분철이
           <br />
-          골라 담는
-          <br />
-          <em>분철.</em>
+          <em>쉬워진다.</em>
         </p>
         <p className="desktop-web-brand__body">
-          멤버별 모집부터 편의점 택배까지,
+          이름값 하는
           <br />
-          분철을 한 화면에서.
+          분철 전용 공간.
         </p>
       </aside>
       <aside className="desktop-web-help" aria-label="폰으로 이어 보기와 도움">
@@ -186,7 +184,7 @@ export function DesktopBrandPanel() {
               의견 남기기
               <small>앱 화면 안에서 바로 보내요</small>
             </span>
-            <ForwardIcon className="desktop-web-help__arrow h-4 w-4 shrink-0" />
+            <ForwardIcon className="desktop-web-help__arrow desktop-web-help__arrow--forward h-4 w-4 shrink-0" />
           </button>
           <a
             className="desktop-web-help__link"
