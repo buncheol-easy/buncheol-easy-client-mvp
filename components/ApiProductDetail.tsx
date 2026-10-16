@@ -8,6 +8,7 @@ import {
   productDetailShellClassName,
   productPagePanelClassName,
 } from "@/components/ProductDetail";
+import { ProductDetailSkeleton } from "@/components/ProductDetailSkeleton";
 import { trackEvent } from "@/lib/analytics";
 import type { ProductCardItem } from "@/components/ProductCard";
 import {
@@ -29,6 +30,9 @@ import { readUploadedProduct } from "@/lib/hosted-products-store";
 import { readPublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
+
+// 서버 렌더·하이드레이션 동안은 false, 그 뒤로는 true.
+const subscribeNothing = () => () => {};
 
 type ApiProductDetailProps = {
   id: string;
@@ -168,7 +172,7 @@ export function ApiProductDetail({
   const [product, setProduct] = useState<ProductDetailItem | null>(
     initialProduct,
   );
-  const [message, setMessage] = useState("분철 정보를 불러오고 있습니다.");
+  const [message, setMessage] = useState("");
   // 상세 조회 실패 시 안내 문구만 남는 막다른 길이 되지 않도록 홈 이동 버튼을 함께 노출한다.
   const [hasLoadError, setHasLoadError] = useState(false);
   // 404 전용 — 참여·입금 이력이 있는 사용자가 환불 확인 경로를 잃지 않게 참여 내역 링크를 함께 띄운다.
@@ -183,6 +187,19 @@ export function ApiProductDetail({
   // 전환 도중 패널이 최종 위치로 스냅하는 점프를 막는다.
   const [isShellSettled, setIsShellSettled] = useState(false);
   const [isDetailExiting, setIsDetailExiting] = useState(false);
+  // 서버 렌더 상세는 익명 조회라 개최자 여부가 없다. 로그인 상태로 다시 받기 전까지는
+  // 하단 버튼을 그리지 않아야 「참여하기」→「내 분철 관리하기」로 바뀌는 깜빡임이 없다.
+  const [isViewerDetailLoaded, setIsViewerDetailLoaded] = useState(false);
+  // 서버 HTML 은 로그아웃 스냅샷이라, 하이드레이션 전에 버튼을 그리면 로그인 사용자에게 한 번 더 바뀌어 보인다.
+  const isHydrated = useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false,
+  );
+  // 뼈대를 거쳐 들어올 때만 내용을 차례로 드러낸다. 서버 HTML 로 바로 그린 상세는 그대로 둔다.
+  const [shouldRevealDetail] = useState(
+    () => !isDirectEntry || initialProduct === null,
+  );
 
   useEffect(() => {
     const enterAnimationFrame = window.requestAnimationFrame(() => {
@@ -224,7 +241,7 @@ export function ApiProductDetail({
 
     const loadingFrame = window.requestAnimationFrame(() => {
       if (isActive) {
-        setMessage("분철 정보를 불러오고 있습니다.");
+        setMessage("");
         setHasLoadError(false);
         setIsNotFoundError(false);
       }
@@ -316,6 +333,7 @@ export function ApiProductDetail({
         });
         setMessage("");
         setHasLoadError(false);
+        setIsViewerDetailLoaded(true);
 
         if (viewedBuncheolIdRef.current !== id) {
           viewedBuncheolIdRef.current = id;
@@ -326,6 +344,8 @@ export function ApiProductDetail({
         if (!isActive) {
           return;
         }
+
+        setIsViewerDetailLoaded(true);
 
         // 404(삭제·개최자 취소)는 캐시 프리뷰로 덮지 않는다 — 이미 사라진 분철이
         // 카드에 남은 옛 정보로 계속 살아 있는 것처럼 보인다.
@@ -380,16 +400,20 @@ export function ApiProductDetail({
           initialReturnGroupId={returnGroupId}
           initialReturnQuery={returnQuery}
           initialReturnSource={returnSource}
+          isViewerStateLoading={
+            !isHydrated || (authState.isLoggedIn && !isViewerDetailLoaded)
+          }
           onExitingChange={setIsDetailExiting}
           product={product}
           renderShell={false}
+          revealOnEnter={shouldRevealDetail}
           startEntered
         />
       ) : (
         <div
-          className={`${productPagePanelClassName} items-center justify-center px-6 ${
-            isShellEntered ? "product-page-active" : ""
-          }`}
+          className={`${productPagePanelClassName} ${
+            hasLoadError ? "items-center justify-center px-6" : ""
+          } ${isShellEntered ? "product-page-active" : ""}`}
           onTransitionEnd={(event) => {
             if (
               event.currentTarget === event.target &&
@@ -399,9 +423,13 @@ export function ApiProductDetail({
             }
           }}
         >
-          <p className="text-center text-[15px] font-semibold text-black/45">
-            {message}
-          </p>
+          {hasLoadError ? (
+            <p className="text-center text-[15px] font-semibold text-black/45">
+              {message}
+            </p>
+          ) : (
+            <ProductDetailSkeleton />
+          )}
           {hasLoadError ? (
             <Link
               className="mt-6 inline-flex h-12 items-center justify-center rounded-full bg-black px-8 text-[15px] font-semibold tracking-[-0.04em] text-white"

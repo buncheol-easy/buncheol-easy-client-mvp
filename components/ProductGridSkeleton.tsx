@@ -1,3 +1,5 @@
+import { SkeletonGroup } from "@/components/SkeletonGroup";
+
 type ProductGridSkeletonProps = {
   ariaLabel: string;
   count?: number;
@@ -17,7 +19,7 @@ export function ProductGridSkeleton({
 }: ProductGridSkeletonProps) {
   if (variant === "wide") {
     return (
-      <div
+      <SkeletonGroup
         aria-label={ariaLabel}
         className={`space-y-3 pb-6 ${className}`}
         role="status"
@@ -50,12 +52,12 @@ export function ProductGridSkeleton({
             </div>
           </div>
         ))}
-      </div>
+      </SkeletonGroup>
     );
   }
 
   return (
-    <div
+    <SkeletonGroup
       aria-label={ariaLabel}
       className={`grid grid-cols-2 gap-x-4 gap-y-7 pb-6 ${className}`}
       role="status"
@@ -76,6 +78,6 @@ export function ProductGridSkeleton({
           </div>
         </div>
       ))}
-    </div>
+    </SkeletonGroup>
   );
 }

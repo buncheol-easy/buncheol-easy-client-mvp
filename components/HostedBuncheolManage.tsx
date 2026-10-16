@@ -10,7 +10,7 @@ import {
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { HelpText } from "@/components/HelpText";
-import { Toast, useToast } from "@/components/Toast";
+import { useAppToast } from "@/components/Toast";
 import {
   addBuncheolMember,
   ApiRequestError,
@@ -541,7 +541,7 @@ export function HostedBuncheolManage({
   const [loadMessage, setLoadMessage] = useState(
     "개최한 분철 정보를 불러오고 있어요.",
   );
-  const [toast, showToast] = useToast();
+  const showToast = useAppToast();
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(
     null,
   );
@@ -802,12 +802,12 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!deliveryId) {
-      showToast("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.", "error");
       return;
     }
 
     if (!trackingNumber) {
-      showToast("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.", "error");
       return;
     }
 
@@ -835,12 +835,13 @@ export function HostedBuncheolManage({
           trackingNumber,
         },
       }));
-      showToast("운송장 번호를 등록했어요.");
+      showToast("운송장 번호를 등록했어요.", "success");
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "운송장 번호를 등록하지 못했어요.",
+        "error",
       );
     } finally {
       setRegisteringTrackingId(null);
@@ -855,7 +856,7 @@ export function HostedBuncheolManage({
     }
 
     if (!participationId) {
-      showToast("입금 확인에 필요한 참여 ID가 없어요.");
+      showToast("입금 확인에 필요한 참여 ID가 없어요.", "error");
       return;
     }
 
@@ -874,12 +875,13 @@ export function HostedBuncheolManage({
       const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
-      showToast("입금 확인이 완료됐어요.");
+      showToast("입금 확인이 완료됐어요.", "success");
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
+        "error",
       );
     } finally {
       setConfirmingPaymentId(null);
@@ -931,6 +933,7 @@ export function HostedBuncheolManage({
       setOpenChatUrlError("");
       showToast(
         normalizedUrl ? "오픈채팅 링크를 저장했어요." : "오픈채팅 링크를 지웠어요.",
+        "success",
       );
 
       try {
@@ -984,7 +987,7 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
@@ -993,12 +996,14 @@ export function HostedBuncheolManage({
       await reloadManagementDetail(accessToken);
       showToast(
         `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}${countUnit}에 입금 안내가 발송됐어요.`,
+        "success",
       );
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "성사 확정을 처리하지 못했어요.",
+        "error",
       );
     } finally {
       setPendingC2CAction(null);
@@ -1034,18 +1039,19 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
       await finalizeBuncheolCollected(accessToken, id);
       await reloadManagementDetail(accessToken);
-      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
+      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.", "success");
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "진행 확정을 처리하지 못했어요.",
+        "error",
       );
     } finally {
       setPendingC2CAction(null);
@@ -1098,7 +1104,7 @@ export function HostedBuncheolManage({
     }
 
     if (!bundle.bundleId) {
-      showToast(MISSING_BUNDLE_MESSAGE);
+      showToast(MISSING_BUNDLE_MESSAGE, "error");
       return;
     }
 
@@ -1110,14 +1116,14 @@ export function HostedBuncheolManage({
       accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
       await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
 
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
-      showToast("입금 확인이 완료됐어요.");
+      showToast("입금 확인이 완료됐어요.", "success");
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1129,6 +1135,7 @@ export function HostedBuncheolManage({
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
+        "error",
       );
 
       // 다른 탭에서 이미 확인·제외됐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
@@ -1174,7 +1181,7 @@ export function HostedBuncheolManage({
     }
 
     if (!bundle.bundleId) {
-      showToast(MISSING_BUNDLE_MESSAGE);
+      showToast(MISSING_BUNDLE_MESSAGE, "error");
       return;
     }
 
@@ -1186,13 +1193,13 @@ export function HostedBuncheolManage({
       accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
       await releaseBundle(accessToken, bundle.bundleId);
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 제외가 실패로 보이지 않게.
-      showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
+      showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.", "success");
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1202,6 +1209,7 @@ export function HostedBuncheolManage({
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : "참여를 빼지 못했어요.",
+        "error",
       );
 
       // 그사이 입금이 확인됐거나 다른 탭에서 뺐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
@@ -1261,7 +1269,7 @@ export function HostedBuncheolManage({
     const deliveryId = participant.delivery?.deliveryId;
 
     if (!deliveryId) {
-      showToast("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.", "error");
       return;
     }
 
@@ -1270,7 +1278,7 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!trackingNumber) {
-      showToast("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.", "error");
       return;
     }
 
@@ -1286,7 +1294,7 @@ export function HostedBuncheolManage({
       accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
@@ -1316,6 +1324,7 @@ export function HostedBuncheolManage({
         mode === "edit"
           ? "운송장 번호를 수정했어요."
           : "운송장 번호를 등록했어요.",
+        "success",
       );
 
       try {
@@ -1330,6 +1339,7 @@ export function HostedBuncheolManage({
           : mode === "edit"
             ? "운송장 번호를 수정하지 못했어요."
             : "운송장 번호를 등록하지 못했어요.",
+        "error",
       );
 
       // 그사이 배송 완료로 넘어갔으면 서버가 409 로 거절한다 — 다시 불러와 「수정」을 거둔다.
@@ -1386,14 +1396,14 @@ export function HostedBuncheolManage({
       accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
       await removeBuncheolMember(accessToken, id, option.buncheolMemberId);
       // 홈·아티스트 카드의 멤버 칩이 60초 저장본으로 남지 않게 한다.
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
-      showToast(`${option.memberName} 멤버를 뺐어요.`);
+      showToast(`${option.memberName} 멤버를 뺐어요.`, "success");
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1403,6 +1413,7 @@ export function HostedBuncheolManage({
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : "멤버를 빼지 못했어요.",
+        "error",
       );
 
       // 그사이 신청이 들어왔거나 다른 탭에서 뺐으면 서버가 거부한다 — 다시 불러와 지금 상태를 보여 준다.
@@ -1537,7 +1548,7 @@ export function HostedBuncheolManage({
       });
       setAddMemberSheet(null);
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
-      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`);
+      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`, "success");
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1567,7 +1578,7 @@ export function HostedBuncheolManage({
       }
 
       setAddMemberSheet(null);
-      showToast(error.message);
+      showToast(error.message, "error");
 
       if (accessToken) {
         try {
@@ -3027,11 +3038,6 @@ export function HostedBuncheolManage({
       <ConfirmSheet
         onCancel={() => setConfirmSheetRequest(null)}
         request={confirmSheetRequest}
-      />
-
-      <Toast
-        className="fixed inset-x-0 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-50 px-6"
-        message={toast}
       />
     </main>
   );

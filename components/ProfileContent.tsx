@@ -1007,7 +1007,7 @@ export function ProfileContent({
                         {!authState.isLoggedIn ? (
                           "로그인 후 저장할 수 있어요"
                         ) : isDefaultAddressLoading ? (
-                          <span className="block h-4 w-32 animate-pulse rounded-full bg-black/10" />
+                          <span className="skeleton-surface block h-4 w-32 rounded-full bg-black/10" />
                         ) : (
                           address
                             ? getDeliveryAddressDisplayBranchName(address)

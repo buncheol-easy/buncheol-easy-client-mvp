@@ -14,6 +14,8 @@
   --motion-pop: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-snap: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-soft: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* 넘침이 이동량의 10% 안쪽인 스프링. 체크·숫자·작은 버튼처럼 움직이는 거리가 짧은 것에만 쓴다. */
+  --motion-spring: cubic-bezier(0.34, 1.25, 0.64, 1);
 
   /*
    * ── 디자인 토큰 ──────────────────────────────────────────────
@@ -439,7 +441,9 @@ body.is-pwa-standalone {
   }
 
   body.desktop-web-shell:has(> main.system-chrome-black) > main .fixed,
-  body.desktop-web-shell:has(> main.system-chrome-white) > main .fixed {
+  body.desktop-web-shell:has(> main.system-chrome-white) > main .fixed,
+  body.desktop-web-shell:has(> main.system-chrome-black) > main .toast-stack,
+  body.desktop-web-shell:has(> main.system-chrome-white) > main .toast-stack {
     position: absolute;
   }
 
@@ -871,13 +875,14 @@ body.is-pwa-standalone {
   }
 }
 
-@keyframes skeleton-shimmer {
+/* --skeleton-x 는 SkeletonGroup 이 칸마다 넣는다. 묶음 안의 모든 칸을 빛 한 줄기가 같은 박자로 지나간다. */
+@keyframes skeleton-sweep {
   from {
-    transform: translateX(-120%);
+    transform: translateX(calc(-1 * var(--skeleton-band) - var(--skeleton-x, 0px)));
   }
 
   to {
-    transform: translateX(120%);
+    transform: translateX(calc(var(--skeleton-span, 430px) - var(--skeleton-x, 0px)));
   }
 }
 
@@ -978,21 +983,31 @@ body.is-pwa-standalone {
 }
 
 .skeleton-surface {
+  --skeleton-band: 160px;
   overflow: hidden;
   position: relative;
 }
 
 .skeleton-surface::after {
-  animation: skeleton-shimmer 1300ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: skeleton-sweep 1200ms linear infinite;
   background: linear-gradient(
-    110deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.46) 42%,
-    transparent 76%
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
   );
+  bottom: 0;
   content: "";
-  inset: 0;
+  left: 0;
   position: absolute;
+  top: 0;
+  width: var(--skeleton-band);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-surface::after {
+    content: none;
+  }
 }
 
 .motion-carousel {
@@ -2103,9 +2118,11 @@ body.is-pwa-standalone .bid-sheet-panel {
   *,
   *::before,
   *::after {
+    animation-delay: 0s !important;
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
+    transition-delay: 0s !important;
     transition-duration: 1ms !important;
   }
 }
@@ -2123,3 +2140,659 @@ body.is-pwa-standalone .bid-sheet-panel {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
+
+/* ── 토스트 ─────────────────────────────────────────────
+   앱 전체 알림은 ToastProvider 한 곳에서 하단 버튼 바로 위에 띄운다.
+   연달아 뜨면 이전 알림은 뒤로 밀려 위쪽 테두리만 겹쳐 보인다. */
+.toast-stack {
+  bottom: calc(6rem + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: center;
+  left: 0;
+  padding-inline: 1.5rem;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+  z-index: 80;
+}
+
+.toast-stack-inner {
+  height: 0;
+  max-width: 26rem;
+  position: relative;
+  width: 100%;
+}
+
+.toast-pill {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.92);
+  border-radius: 999px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  color: #fff;
+  display: flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 8px;
+  justify-content: center;
+  letter-spacing: -0.04em;
+  line-height: 1.4;
+  padding: 12px 16px;
+  text-align: center;
+  word-break: keep-all;
+}
+
+.toast-pill[data-tone] {
+  padding: 10px 16px 10px 10px;
+}
+
+.toast-item {
+  --toast-depth: 0;
+  bottom: 0;
+  left: 0;
+  margin-inline: auto;
+  max-width: 100%;
+  overflow: hidden;
+  position: absolute;
+  right: 0;
+  transform: translateY(calc(var(--toast-depth) * -9px))
+    scale(calc(1 - var(--toast-depth) * 0.055));
+  transform-origin: 50% 100%;
+  transition:
+    transform 420ms var(--motion-spring),
+    opacity 260ms ease,
+    width var(--duration-screen) var(--motion-pop),
+    height var(--duration-screen) var(--motion-pop),
+    background-color 260ms ease;
+  width: fit-content;
+}
+
+.toast-item > * {
+  transition: opacity 180ms ease;
+}
+
+.toast-item[data-state="entering"] {
+  opacity: 0;
+  transform: translateY(18px) scale(0.94);
+}
+
+.toast-item[data-state="leaving"] {
+  opacity: 0;
+  transform: translateY(calc(var(--toast-depth) * -9px + 10px))
+    scale(calc(0.96 - var(--toast-depth) * 0.055));
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+
+.toast-item[data-depth="1"] {
+  background: #2b2b2b;
+}
+
+.toast-item[data-depth="2"] {
+  background: #474747;
+}
+
+.toast-item:not([data-depth="0"]) > * {
+  opacity: 0;
+}
+
+.toast-item[data-depth="3"] {
+  visibility: hidden;
+}
+
+.toast-icon {
+  border-radius: 50%;
+  display: grid;
+  flex: none;
+  height: 20px;
+  place-items: center;
+  width: 20px;
+}
+
+.toast-icon svg {
+  fill: none;
+  height: 12px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  width: 12px;
+}
+
+.toast-icon--success {
+  background: var(--brand-base);
+  stroke: var(--foreground);
+}
+
+.toast-icon--success path {
+  animation: draw-stroke 320ms var(--motion-snap) 140ms both;
+  stroke-dasharray: 14;
+}
+
+.toast-icon--error {
+  background: #e5484d;
+  stroke: #fff;
+}
+
+.toast-inline-enter {
+  animation: soft-panel-enter 360ms var(--motion-pop) both;
+}
+
+.toast-inline-leave {
+  animation: toast-inline-leave 200ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes toast-inline-leave {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+@keyframes draw-stroke {
+  from {
+    stroke-dashoffset: var(--draw-length, 14);
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ── 굴러가는 숫자 ─────────────────────────────────────
+   자리마다 0~9 띠를 두고 바뀐 자리만 굴린다. 같은 위치(오른쪽 끝 기준)의 자리는
+   같은 요소로 남아 transform 전환이 이어진다. */
+.rolling-number {
+  display: inline-flex;
+  position: relative;
+  white-space: pre;
+}
+
+.rolling-number-track {
+  display: inline-flex;
+}
+
+.rolling-number-digit,
+.rolling-number-static {
+  display: inline-block;
+  height: 1.2em;
+  line-height: 1.2em;
+}
+
+.rolling-number-static::before,
+.rolling-number-sizer::before,
+.rolling-number-reel > span::before {
+  content: attr(data-char);
+}
+
+/* 자리 폭은 지금 보이는 숫자의 폭을 따른다. 고정폭이면 1 옆이 비어 "1 0,000원"처럼 보인다. */
+.rolling-number-digit {
+  overflow: clip;
+  position: relative;
+}
+
+.rolling-number-sizer {
+  visibility: hidden;
+}
+
+.rolling-number-reel {
+  left: 0;
+  position: absolute;
+  right: 0;
+  text-align: center;
+  top: 0;
+  transition: transform 750ms var(--motion-spring);
+}
+
+.rolling-number-reel > span {
+  display: block;
+  height: 1.2em;
+}
+
+.amount-change-badge {
+  animation: amount-change 900ms var(--motion-pop) both;
+  white-space: nowrap;
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  top: -8px;
+}
+
+.amount-change-badge--down {
+  color: var(--text-muted);
+}
+
+@keyframes amount-change {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  25% {
+    opacity: 1;
+    transform: none;
+  }
+
+  75% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* 꺼져 있던 CTA 가 켜지는 순간 한 번만 살짝 커진다. */
+.cta-ready-pop:enabled {
+  animation: cta-ready-pop 320ms var(--motion-spring);
+}
+
+@keyframes cta-ready-pop {
+  45% {
+    transform: scale(1.025);
+  }
+}
+
+/* ── 복사 버튼 ───────────────────────────────────────── */
+.copy-button {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 5px;
+  height: 2.25rem;
+  justify-content: center;
+  padding-inline: 0.75rem;
+  position: relative;
+  transition:
+    background-color 240ms ease,
+    transform 160ms var(--motion-spring);
+}
+
+.copy-button:active {
+  transform: scale(0.95);
+}
+
+.copy-button:disabled {
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: none;
+  color: var(--text-disabled);
+}
+
+.copy-button--soft {
+  background: var(--brand-soft);
+  box-shadow: 0 8px 20px rgba(120, 132, 82, 0.18);
+  color: var(--foreground);
+}
+
+.copy-button--soft[data-copied="true"] {
+  background: var(--brand-base);
+}
+
+.copy-button--dark {
+  background: var(--foreground);
+  color: var(--brand-strong);
+}
+
+.copy-button-icon {
+  height: 14px;
+  position: relative;
+  width: 14px;
+}
+
+.copy-button-icon svg {
+  fill: none;
+  height: 14px;
+  inset: 0;
+  position: absolute;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 14px;
+}
+
+.copy-button-icon .copy-button-check path {
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  stroke-width: 2.2;
+  transition: stroke-dashoffset 320ms var(--motion-snap);
+}
+
+.copy-button-icon .copy-button-copy {
+  transition:
+    opacity 150ms ease,
+    transform 220ms var(--motion-pop);
+}
+
+.copy-button[data-copied="true"] .copy-button-copy {
+  opacity: 0;
+  transform: scale(0.4);
+}
+
+.copy-button[data-copied="true"] .copy-button-check path {
+  stroke-dashoffset: 0;
+  transition-delay: 90ms;
+}
+
+/* 지금 보이는 문구만 폭을 차지한다. 두 문구 중 긴 쪽에 맞추면 짧은 문구일 때 아이콘과 어긋나 보인다. */
+.copy-button-label {
+  display: inline-grid;
+  height: 18px;
+  interpolate-size: allow-keywords;
+  line-height: 18px;
+  overflow: hidden;
+  position: relative;
+  transition: width 260ms var(--motion-pop);
+  width: auto;
+}
+
+.copy-button-label > span {
+  transition:
+    transform 260ms var(--motion-pop),
+    opacity 200ms ease;
+  white-space: nowrap;
+}
+
+.copy-button-label > [data-active="false"] {
+  left: 50%;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, 100%);
+}
+
+.copy-button[data-copied="true"] .copy-button-label > [data-active="false"] {
+  transform: translate(-50%, -100%);
+}
+
+.copy-button[data-copied="true"]::after {
+  animation: copy-button-ring 640ms var(--motion-pop) both;
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+@keyframes copy-button-ring {
+  from {
+    box-shadow: 0 0 0 0 rgba(207, 232, 107, 0.9);
+  }
+
+  to {
+    box-shadow: 0 0 0 9px rgba(207, 232, 107, 0);
+  }
+}
+
+/* ── 참여 접수 순간 ─────────────────────────────────────
+   제출하면 버튼이 원으로 오므라들고 링이 돈다. 접수되면 링이 차고 체크가 그려진 뒤
+   다음 단계가 아래에서 올라온다(ProductDetail 의 CHECKOUT_SUCCESS_HOLD_MS). */
+.checkout-submit-row {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  position: relative;
+  transition: gap 480ms var(--motion-pop);
+}
+
+.checkout-submit-prev,
+.checkout-submit-main {
+  overflow: hidden;
+  transition:
+    flex-basis 480ms var(--motion-pop),
+    opacity 200ms ease,
+    border-radius 480ms var(--motion-pop),
+    padding 480ms var(--motion-pop);
+  white-space: nowrap;
+}
+
+.checkout-submit-prev {
+  flex: 0 0 calc(42% - 0.25rem);
+}
+
+.checkout-submit-main {
+  flex: 0 0 calc(58% - 0.25rem);
+}
+
+.checkout-submit-label {
+  transition: opacity 150ms ease;
+}
+
+.checkout-submit-row[data-state="pending"],
+.checkout-submit-row[data-state="done"] {
+  gap: 0;
+}
+
+.checkout-submit-row[data-state="pending"] .checkout-submit-prev,
+.checkout-submit-row[data-state="done"] .checkout-submit-prev {
+  flex-basis: 0;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.checkout-submit-row[data-state="pending"] .checkout-submit-main,
+.checkout-submit-row[data-state="done"] .checkout-submit-main {
+  border-radius: 50%;
+  flex-basis: 3.5rem;
+  pointer-events: none;
+}
+
+.checkout-submit-row[data-state="pending"] .checkout-submit-label,
+.checkout-submit-row[data-state="done"] .checkout-submit-label {
+  opacity: 0;
+}
+
+.checkout-submit-ring,
+.checkout-submit-check,
+.checkout-submit-ripple {
+  left: 50%;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+}
+
+.checkout-submit-ring {
+  height: 76px;
+  margin: -38px 0 0 -38px;
+  width: 76px;
+}
+
+.checkout-submit-ring circle {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 4;
+}
+
+.checkout-submit-ring .checkout-submit-ring-track {
+  stroke: var(--surface-3);
+}
+
+.checkout-submit-ring .checkout-submit-ring-arc {
+  stroke: var(--foreground);
+  stroke-dasharray: 26 74;
+  transform-origin: 38px 38px;
+}
+
+.checkout-submit-row[data-state="pending"] .checkout-submit-ring {
+  opacity: 1;
+  transition: opacity 200ms ease 260ms;
+}
+
+.checkout-submit-row[data-state="pending"] .checkout-submit-ring-arc {
+  animation: checkout-ring-spin 900ms linear infinite;
+}
+
+.checkout-submit-row[data-state="done"] .checkout-submit-ring {
+  opacity: 1;
+}
+
+.checkout-submit-row[data-state="done"] .checkout-submit-ring-arc {
+  stroke: var(--brand-ink);
+  stroke-dasharray: 100 0;
+  transition:
+    stroke-dasharray 320ms var(--motion-snap),
+    stroke 300ms ease;
+}
+
+.checkout-submit-check {
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  width: 26px;
+}
+
+.checkout-submit-check path {
+  fill: none;
+  stroke: var(--foreground);
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3.2;
+}
+
+.checkout-submit-row[data-state="done"] .checkout-submit-check {
+  opacity: 1;
+}
+
+.checkout-submit-row[data-state="done"] .checkout-submit-check path {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 420ms var(--motion-snap) 220ms;
+}
+
+.checkout-submit-ripple {
+  border-radius: 50%;
+  height: 3.5rem;
+  margin: -1.75rem 0 0 -1.75rem;
+  width: 3.5rem;
+}
+
+.checkout-submit-row[data-state="done"] .checkout-submit-ripple {
+  animation: checkout-ripple 600ms var(--motion-pop) 250ms both;
+}
+
+@keyframes checkout-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes checkout-ripple {
+  from {
+    box-shadow: 0 0 0 0 rgba(207, 232, 107, 0.85);
+    opacity: 1;
+  }
+
+  to {
+    box-shadow: 0 0 0 26px rgba(207, 232, 107, 0);
+    opacity: 1;
+  }
+}
+
+.checkout-step-rise {
+  animation: checkout-step-rise 560ms var(--motion-pop) both;
+}
+
+@keyframes checkout-step-rise {
+  from {
+    opacity: 0;
+    transform: translateY(40%);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.checkout-done-row {
+  align-items: center;
+  color: var(--brand-ink);
+  display: flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.checkout-done-row svg {
+  height: 18px;
+  width: 18px;
+}
+
+.checkout-done-row circle {
+  animation: checkout-done-pop 400ms var(--motion-soft) 120ms both;
+  fill: var(--brand-base);
+  transform-origin: 9px 9px;
+}
+
+.checkout-done-row path {
+  --draw-length: 14;
+  animation: draw-stroke 360ms var(--motion-snap) 380ms both;
+  fill: none;
+  stroke: var(--foreground);
+  stroke-dasharray: 14;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+
+@keyframes checkout-done-pop {
+  from {
+    transform: scale(0);
+  }
+}
+
+/* ── 상세: 뼈대 다음 차례로 드러남 ────────────────────── */
+.detail-reveal {
+  animation: detail-reveal 380ms var(--motion-pop) both;
+  animation-delay: calc(80ms + var(--reveal-index, 0) * 60ms);
+}
+
+@keyframes detail-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* 참여 시트 안에서 단계가 바뀔 때: 앞으로 가면 오른쪽에서, 이전으로 가면 왼쪽에서 들어온다. */
+.checkout-step-forward {
+  animation: checkout-step-forward var(--duration-screen) var(--motion-pop) both;
+}
+
+.checkout-step-back {
+  animation: checkout-step-back var(--duration-screen) var(--motion-pop) both;
+}
+
+.checkout-step-title-enter {
+  animation: checkout-step-title var(--duration-screen) var(--motion-pop) both;
+}
+
+@keyframes checkout-step-forward {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
+@keyframes checkout-step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+@keyframes checkout-step-title {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
