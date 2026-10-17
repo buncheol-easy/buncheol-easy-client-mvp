@@ -1631,7 +1631,7 @@ export function HostedBuncheolManage({
           </header>
 
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
-            <p className="break-keep text-[15px] font-semibold leading-6 text-black/55">
+            <p className="break-keep text-[15px] font-semibold leading-6 text-black/60">
               {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : loadMessage}
             </p>
             {isLoadingDetail ? null : (
@@ -1718,7 +1718,7 @@ export function HostedBuncheolManage({
                 <p className="text-[13px] font-semibold text-black/40">
                   운영 요약
                 </p>
-                <p className="mt-1 text-[14px] font-semibold text-black/55">
+                <p className="mt-1 text-[14px] font-semibold text-black/60">
                   입금 확인 후 운송장 등록까지 한 곳에서 처리해요.
                 </p>
               </div>
@@ -1994,7 +1994,7 @@ export function HostedBuncheolManage({
                       </span>
                       {slotState.kind === "empty" ? (
                         <button
-                          className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                          className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                           disabled={isLastOpenSlot || pendingC2CAction !== null}
                           onClick={() => requestRemoveMemberSlot(option)}
                           type="button"
@@ -2246,7 +2246,7 @@ export function HostedBuncheolManage({
                               같은 이름이 두 줄 뜬다. */}
                           {head.participantNickname !== depositorName &&
                           !isSyntheticParticipantName(head.participantNickname) ? (
-                            <p className="truncate text-[13px] font-semibold text-black/55">
+                            <p className="truncate text-[13px] font-semibold text-black/60">
                               <span className="mr-1.5 text-black/35">참여자</span>
                               {head.participantNickname}
                             </p>
@@ -2294,7 +2294,7 @@ export function HostedBuncheolManage({
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {bundle.slots.map((slot) => (
                           <span
-                            className="rounded-full bg-[#f1f1f1] px-2 py-0.5 text-[11px] font-semibold text-black/55"
+                            className="rounded-full bg-[#f1f1f1] px-2 py-0.5 text-[11px] font-semibold text-black/60"
                             key={slot.participationId}
                           >
                             {getSlotMemberLabel(slot)}
@@ -2318,7 +2318,7 @@ export function HostedBuncheolManage({
                             </HelpText>
                           ) : null}
                           <button
-                            className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                            className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                             disabled={!canRelease || pendingC2CAction !== null}
                             onClick={() => requestReleaseBundle(bundle)}
                             type="button"
@@ -2391,7 +2391,7 @@ export function HostedBuncheolManage({
                                 </p>
                                 {hasTracking && !isEditingTracking ? (
                                   <div className="mt-1.5 flex items-center justify-between gap-2">
-                                    <p className="min-w-0 text-[13px] font-semibold text-black/55">
+                                    <p className="min-w-0 text-[13px] font-semibold text-black/60">
                                       운송장 {entry.delivery.trackingNumber}
                                       {getDeliveryStatusLabel(
                                         entry.delivery.status,
@@ -2401,7 +2401,7 @@ export function HostedBuncheolManage({
                                     </p>
                                     {canEditTracking ? (
                                       <button
-                                        className="h-8 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                        className="h-8 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                                         disabled={pendingC2CAction !== null}
                                         onClick={() => {
                                           setParticipantTrackingInputs(
@@ -2444,7 +2444,7 @@ export function HostedBuncheolManage({
                                     {isEditingTracking ? (
                                       <>
                                         <button
-                                          className="h-10 shrink-0 rounded-full border border-black/10 bg-white px-3.5 text-[13px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                          className="h-10 shrink-0 rounded-full border border-black/10 bg-white px-3.5 text-[13px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                                           disabled={isRegistering}
                                           onClick={() => {
                                             setEditingTrackingOwnerId(null);
@@ -2679,7 +2679,7 @@ export function HostedBuncheolManage({
                                     입금 확인
                                   </p>
                                   <div className="mt-2 space-y-1">
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         참여자
                                       </span>
@@ -2698,19 +2698,19 @@ export function HostedBuncheolManage({
                                     </p>
                                     {/* 통장에 찍히는 건 예금주명이라, 닉네임(참여자)만으로는 대조가 안 된다 (docs/53 Q-18).
                                         C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         입금자명
                                       </span>
                                       {optionDepositorName ?? "-"}
                                     </p>
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         입금액
                                       </span>
                                       {formatWonAmount(paymentAmount)}
                                     </p>
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         {isPaymentConfirmed ? "확인" : "기한"}
                                       </span>
@@ -2749,7 +2749,7 @@ export function HostedBuncheolManage({
                               <p className="text-[11px] font-medium text-black/35">
                                 입금 확인
                               </p>
-                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
+                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/60">
                                 {option.winner
                                   ? isPaymentDuePassed
                                     ? "입금 기한이 지났어요."
@@ -2787,7 +2787,7 @@ export function HostedBuncheolManage({
                                     ) : null}
                                   </div>
                                 ) : (
-                                  <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
+                                  <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/60">
                                     배송 정보가 아직 내려오지 않았어요.
                                   </p>
                                 )}
@@ -2895,7 +2895,7 @@ export function HostedBuncheolManage({
             ) : null}
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
-                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/60 disabled:text-black/25"
                 disabled={isSavingOpenChatUrl}
                 onClick={() => {
                   setOpenChatUrlDraft(null);
@@ -3011,7 +3011,7 @@ export function HostedBuncheolManage({
             ) : null}
             <div className="mt-4 grid shrink-0 grid-cols-2 gap-2">
               <button
-                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/60 disabled:text-black/25"
                 disabled={pendingC2CAction === "add-member"}
                 onClick={closeAddMemberSheet}
                 type="button"

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { chromeBlack } from "@/lib/system-chrome";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -9,7 +10,7 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     background_color: "#ffffff",
-    theme_color: "#000000",
+    theme_color: chromeBlack,
     icons: [
       {
         src: "/icon.png",

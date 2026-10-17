@@ -24,7 +24,7 @@ export default function ProductNotFound() {
         <h1 className="mt-2 text-[24px] font-semibold leading-tight tracking-[-0.05em]">
           존재하지 않는 분철이에요
         </h1>
-        <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/55">
+        <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/60">
           삭제됐거나 주소가 잘못된 분철이에요.
           <br />
           진행 중인 다른 분철을 둘러보세요.

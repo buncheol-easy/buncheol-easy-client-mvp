@@ -238,7 +238,7 @@ export function ShippingFeePaybackSheet({
           </button>
 
           <div className="mt-4">
-            <p className="text-[13px] font-semibold text-black/55">
+            <p className="text-[13px] font-semibold text-black/60">
               작성한 후기 트윗 링크
             </p>
             <input
@@ -280,7 +280,7 @@ export function ShippingFeePaybackSheet({
                 </p>
               </>
             ) : (
-              <p className="mt-1 text-[13px] font-medium leading-5 text-black/55">
+              <p className="mt-1 text-[13px] font-medium leading-5 text-black/60">
                 참여할 때 등록한 환불 계좌로 돌려드려요.
               </p>
             )}

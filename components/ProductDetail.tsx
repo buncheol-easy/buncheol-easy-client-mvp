@@ -4730,7 +4730,7 @@ export function ProductDetail({
                     <span className="text-[14px] font-semibold tracking-[-0.04em]">
                       {method.name}
                     </span>
-                    <span className="text-[14px] font-semibold tracking-[-0.04em] text-black/55">
+                    <span className="text-[14px] font-semibold tracking-[-0.04em] text-black/60">
                       {method.price}
                     </span>
                   </div>
@@ -5245,7 +5245,7 @@ export function ProductDetail({
                                   className={`inline-flex h-7 min-w-[52px] items-center justify-center rounded-full px-2.5 text-[12px] font-semibold transition-colors ${
                                     isSelected
                                       ? "bg-brand-soft text-black"
-                                      : "bg-surface-2 text-black/55"
+                                      : "bg-surface-2 text-black/60"
                                   }`}
                                 >
                                   {isSelected ? "해제" : "선택"}
@@ -5301,7 +5301,7 @@ export function ProductDetail({
                             key={option.id}
                             className="flex items-center justify-between gap-3 text-[13px] font-semibold tracking-[-0.04em]"
                           >
-                            <span className="truncate text-black/55">{option.label}</span>
+                            <span className="truncate text-black/60">{option.label}</span>
                             <span className="shrink-0">{formatPrice(bidAmount)}</span>
                           </div>
                         ))}
@@ -5347,7 +5347,7 @@ export function ProductDetail({
                         </div>
                         {isAdditionalC2CApplication ? null : (
                           <button
-                            className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/55"
+                            className="h-9 shrink-0 rounded-full bg-[#f3f3f3] px-3 text-[12px] font-semibold text-black/60"
                             onClick={() => void openCheckoutAddressSheet()}
                             type="button"
                           >
@@ -5828,7 +5828,7 @@ export function ProductDetail({
                     </div>
 
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
-                      <div className="flex items-center justify-between text-[13px] font-semibold text-black/55">
+                      <div className="flex items-center justify-between text-[13px] font-semibold text-black/60">
                         <span>성사 시 입금할 금액</span>
                         <span className="text-[16px] tracking-[-0.04em] text-black">
                           {formatPrice(checkoutPaymentSummary.totalAmount)}

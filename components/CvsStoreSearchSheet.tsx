@@ -610,7 +610,7 @@ export function CvsStoreSearchSheet({
             </div>
 
             {limitedBrand ? (
-              <p className="mt-2.5 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 text-[12px] font-semibold text-black/55 ring-1 ring-[#E4F6A5]/60">
+              <p className="mt-2.5 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                 이 분철은 {limitedBrand} 지점으로만 받을 수 있어요.
               </p>
             ) : (
@@ -650,7 +650,7 @@ export function CvsStoreSearchSheet({
             </p>
           ) : debouncedKeyword.trim().length < 2 ? (
             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-8 text-center">
-              <p className="text-[14px] font-semibold text-black/55">
+              <p className="text-[14px] font-semibold text-black/60">
                 자주 가는 편의점을 찾아보세요
               </p>
               <HelpText align="center" className="mt-1">
@@ -666,7 +666,7 @@ export function CvsStoreSearchSheet({
             </p>
           ) : stores.length === 0 ? (
             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-6 text-center">
-              <p className="text-[14px] font-semibold text-black/55">
+              <p className="text-[14px] font-semibold text-black/60">
                 검색 결과가 없어요
               </p>
               <p className="mt-1 text-[12.5px] font-medium text-black/40">
@@ -700,7 +700,7 @@ export function CvsStoreSearchSheet({
                         className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                           isSelected
                             ? "bg-[#DDE7B8] text-black"
-                            : "bg-white text-black/55"
+                            : "bg-white text-black/60"
                         }`}
                       >
                         {store.brand}

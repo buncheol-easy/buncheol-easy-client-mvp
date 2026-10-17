@@ -373,7 +373,7 @@ export function FavoritesContent({
                       className={`h-10 w-full px-3 text-left text-[13px] font-semibold tracking-[-0.04em] ${
                         isActive
                           ? "bg-[#E4F6A5] text-black"
-                          : "text-black/55"
+                          : "text-black/60"
                       }`}
                       key={value}
                       onClick={() => {

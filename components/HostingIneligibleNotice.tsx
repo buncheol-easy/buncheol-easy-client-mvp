@@ -349,7 +349,7 @@ export function HostingIneligibleNotice({
                       <p className="text-[15px] font-semibold tracking-[-0.04em]">
                         {item.title}
                       </p>
-                      <p className="mt-1.5 break-keep text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/55">
+                      <p className="mt-1.5 break-keep text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/60">
                         {item.description}
                       </p>
                     </li>

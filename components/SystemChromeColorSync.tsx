@@ -2,8 +2,9 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
+import { chromeBlack } from "@/lib/system-chrome";
 
-const black = "#000000";
+const black = chromeBlack;
 const white = "#ffffff";
 
 type ChromeColors = {

@@ -837,7 +837,7 @@ function AdminImpersonationPanel({ accessToken }: { accessToken: string }) {
               재현 링크 복사
             </button>
             <button
-              className="h-10 rounded-full border border-black/10 px-4 text-[13px] font-semibold text-black/55"
+              className="h-10 rounded-full border border-black/10 px-4 text-[13px] font-semibold text-black/60"
               onClick={() => void copyText(issued.accessToken, "토큰")}
               type="button"
             >
@@ -968,7 +968,7 @@ function StatusBadge({
           : status === "AWAITING_CONFIRMATION"
             ? "bg-black text-white"
             : status === "CANCELLED"
-              ? "bg-[#f1f1f1] text-black/55"
+              ? "bg-[#f1f1f1] text-black/60"
             : "bg-[#f1f1f1] text-black/45"
       }`}
     >
@@ -1419,7 +1419,7 @@ export function AdminPaymentsDashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="flex h-10 items-center gap-2 rounded-full bg-white px-4 text-[13px] font-semibold text-black/55">
+            <span className="flex h-10 items-center gap-2 rounded-full bg-white px-4 text-[13px] font-semibold text-black/60">
               <span className="h-2 w-2 rounded-full bg-[#CFE86B]" />
               {adminLoginId}
             </span>
@@ -1598,7 +1598,7 @@ export function AdminPaymentsDashboard() {
                           </p>
                         </td>
                         <td className="px-4 py-4">
-                          <p className="truncate text-[13px] font-semibold text-black/55">
+                          <p className="truncate text-[13px] font-semibold text-black/60">
                             {getRefundAccountLabel(record.refundAccount)}
                           </p>
                         </td>

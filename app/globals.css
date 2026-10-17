@@ -4,8 +4,8 @@
   --app-viewport-height: 100lvh;
   --background: #f2f1ed;
   --foreground: #111111;
-  --system-bottom-color: #000000;
-  --system-top-color: #000000;
+  --system-bottom-color: #111111;
+  --system-top-color: #111111;
   --brand-accent: #d7ff5f;
   --brand-accent-foreground: #111111;
   /* 찜·최애 활성 색. 브랜드 액센트(라임)와 별개로, "찜 = 빨강" 관습을 따른다.
@@ -67,6 +67,9 @@
 }
 
 @theme inline {
+  /* 완전한 검정(#000)은 흰 바탕과 대비가 21:1 이라 넓은 면에서 눈이 피로하다. bg-black·text-black·text-black/60 같은
+     투명도 회색까지 이 값을 따른다. 바꾸면 lib/system-chrome.ts 의 chromeBlack 도 같이 바꾼다. */
+  --color-black: #111111;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-like: var(--like);
@@ -234,8 +237,8 @@ html:has(.system-chrome-black),
 body:has(.app-header),
 body:has(.search-header),
 body:has(.system-chrome-black) {
-  --system-top-color: #000000;
-  background: #000000;
+  --system-top-color: #111111;
+  background: #111111;
 }
 
 html:has(.favorites-header),
@@ -256,13 +259,13 @@ body:has(.system-chrome-white) {
 
 html:has(.system-chrome-bottom-black),
 body:has(.system-chrome-bottom-black) {
-  --system-bottom-color: #000000;
+  --system-bottom-color: #111111;
 }
 
 html:has(body.is-browser-tab .system-chrome-bottom-black),
 body.is-browser-tab:has(.system-chrome-bottom-black) {
-  --system-bottom-color: #000000;
-  background: #000000;
+  --system-bottom-color: #111111;
+  background: #111111;
 }
 
 html:has(.system-chrome-bottom-white),
@@ -1340,13 +1343,13 @@ body.is-pwa-standalone {
   }
 
   82% {
-    background: #000;
+    background: #111111;
     color: #fff;
     transform: scale(1.015);
   }
 
   100% {
-    background: #000;
+    background: #111111;
     color: #fff;
     transform: scale(1);
   }

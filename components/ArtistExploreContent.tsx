@@ -433,7 +433,7 @@ export function ArtistExploreContent({
             type="search"
             value={query}
           />
-          <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/55 shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
+          <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/60 shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
             {favoriteCount}/{FAVORITE_GROUP_LIMIT}
           </span>
         </label>

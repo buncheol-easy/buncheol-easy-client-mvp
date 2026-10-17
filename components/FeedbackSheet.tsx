@@ -183,7 +183,7 @@ export function FeedbackSheet({ onClose }: FeedbackSheetProps) {
 
               <div className="mt-4">
                 <label
-                  className="block text-[13px] font-semibold text-black/55"
+                  className="block text-[13px] font-semibold text-black/60"
                   htmlFor="feedback-content"
                 >
                   어떤 점이 불편하셨나요?
