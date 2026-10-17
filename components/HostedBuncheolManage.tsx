@@ -967,13 +967,13 @@ export function HostedBuncheolManage({
         : `지금까지 신청된 멤버는 ${applicantCount}명이에요. 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
-        void runConfirmRecruitment(applicantCount);
+        void runConfirmRecruitment();
       },
       title: "성사를 확정할까요?",
     });
   }
 
-  async function runConfirmRecruitment(applicantCount: number) {
+  async function runConfirmRecruitment() {
     if (pendingC2CAction) {
       return;
     }
@@ -988,11 +988,11 @@ export function HostedBuncheolManage({
         return;
       }
 
-      const result = await confirmBuncheolRecruitment(accessToken, id);
+      await confirmBuncheolRecruitment(accessToken, id);
 
       await reloadManagementDetail(accessToken);
       showToast(
-        `성사를 확정했어요. 멤버 ${result.awaitingCount ?? applicantCount}명의 신청자에게 입금 안내가 발송됐어요.`,
+        "성사를 확정했어요. 신청자 전원에게 입금 안내가 발송됐어요.",
         "success",
       );
     } catch (error: unknown) {
