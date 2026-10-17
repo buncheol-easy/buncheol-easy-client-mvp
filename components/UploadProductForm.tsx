@@ -1225,7 +1225,7 @@ export function UploadProductForm({
     if (!isValidMinHeadcount(minHeadcount, targetMembers.length)) {
       return {
         field: "minHeadcount",
-        message: `최소 진행 인원을 1-${targetMembers.length}명으로 입력해 주세요.`,
+        message: `최소 진행 멤버 수를 1-${targetMembers.length}명으로 입력해 주세요.`,
       };
     }
 
@@ -2331,7 +2331,7 @@ export function UploadProductForm({
     }
 
     if (!isApiEditMode && !isValidMinHeadcount(minHeadcount, targetMembers.length)) {
-      setSubmitError("최소 진행 인원을 대상 멤버 수 안에서 입력해 주세요.");
+      setSubmitError("최소 진행 멤버 수를 대상 멤버 수 이하로 입력해 주세요.");
       return;
     }
 
@@ -3384,16 +3384,16 @@ export function UploadProductForm({
                         두 버튼은 각자 aria-label 을 갖고 있어 label 을 없애도 잃는 게 없다. */}
                     <div className="mt-4 rounded-[0.9rem] border border-black/10 bg-white px-4 py-4">
                       <span className="text-[13px] font-semibold text-black/45">
-                        최소 진행 인원
+                        최소 진행 멤버 수
                       </span>
                       {/* label 을 걷어내면서 사라진 "제목 ↔ 컨트롤" 연결을 그룹 이름으로 대신 준다. */}
                       <div
-                        aria-label="최소 진행 인원"
+                        aria-label="최소 진행 멤버 수"
                         className="mt-4 grid grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] p-2"
                         role="group"
                       >
                         <button
-                          aria-label="최소 진행 인원 줄이기"
+                          aria-label="최소 진행 멤버 수 줄이기"
                           className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-white text-black shadow-[0_4px_12px_rgba(0,0,0,0.08)] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none"
                           disabled={!canDecreaseMinHeadcount}
                           onClick={() =>
@@ -3415,7 +3415,7 @@ export function UploadProductForm({
                           </p>
                         </div>
                         <button
-                          aria-label="최소 진행 인원 늘리기"
+                          aria-label="최소 진행 멤버 수 늘리기"
                           className="motion-icon-button flex h-11 w-11 items-center justify-center rounded-full bg-[#F3FFC6] text-black shadow-[0_4px_12px_rgba(190,230,70,0.2)] ring-1 ring-[#CDEB55] disabled:bg-transparent disabled:text-black/20 disabled:shadow-none disabled:ring-0"
                           disabled={!canIncreaseMinHeadcount}
                           onClick={() =>
