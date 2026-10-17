@@ -807,11 +807,17 @@ function getOptionPaymentWaitingLabel(
   now: number,
   isMine: boolean,
   isC2C: boolean,
+  isInSheet: boolean,
 ) {
   const isOverdue = isPaymentOverdue(option, now);
 
   if (isMine && isParticipationPaymentSentStatus(option.myParticipationStatus)) {
     return MEMBER_STATUS_CHIP_LABELS.myPaymentSent;
+  }
+
+  // 시트 안에서는 참여 내역으로 가는 버튼이 없으니 할 일 대신 상태를 말한다.
+  if (isMine && isInSheet) {
+    return MEMBER_STATUS_CHIP_LABELS.myPaymentWaitingInSheet;
   }
 
   if (isMine) {
@@ -1172,6 +1178,7 @@ function getOptionPurchaseBlockChipLabel(
   now: number,
   isMine: boolean,
   isC2C: boolean,
+  isInSheet = false,
 ) {
   if (!overlayLabel) {
     return null;
@@ -1202,7 +1209,7 @@ function getOptionPurchaseBlockChipLabel(
   }
 
   if (overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting) {
-    return getOptionPaymentWaitingLabel(option, now, isMine, isC2C);
+    return getOptionPaymentWaitingLabel(option, now, isMine, isC2C, isInSheet);
   }
 
   return overlayLabel;
@@ -5163,18 +5170,15 @@ export function ProductDetail({
                         option,
                         myBids[option.id],
                       );
-                      // 시트 안에서는 참여 내역으로 가는 버튼이 없으니 할 일 대신 상태를 말한다.
                       const displayedOverlayLabel =
-                        isMineOption &&
-                        overlayLabel === PURCHASE_OPTION_LABELS.paymentWaiting
-                          ? MEMBER_STATUS_CHIP_LABELS.myPaymentWaitingInSheet
-                          : getOptionPurchaseBlockChipLabel(
-                              overlayLabel,
-                              option,
-                              deadlineTick,
-                              isMineOption,
-                              isC2CProduct,
-                            );
+                        getOptionPurchaseBlockChipLabel(
+                          overlayLabel,
+                          option,
+                          deadlineTick,
+                          isMineOption,
+                          isC2CProduct,
+                          true,
+                        );
                       const paymentTimer = getOptionPaymentTimer(
                         overlayLabel,
                         option,
