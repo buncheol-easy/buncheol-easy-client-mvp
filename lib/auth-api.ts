@@ -331,6 +331,7 @@ export type BuncheolMember = {
   memberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
+  myParticipationStatus?: string;
   name: string;
   participantCount: number;
   participatedByMe?: boolean;
@@ -2992,6 +2993,37 @@ function getMyParticipationMemberIdsFromRecord(
   );
 }
 
+function getMyParticipationStatusesFromRecord(
+  data: Record<string, unknown>,
+): Map<string, string> {
+  const myParticipation = getNestedData(data.myParticipation);
+
+  if (!isRecord(myParticipation)) {
+    return new Map();
+  }
+
+  return getRecordListValue(myParticipation, ["bids", "participations"]).reduce(
+    (statuses, record) => {
+      const buncheolMemberId = getStringValue(record, [
+        "buncheolMemberId",
+        "memberSlotId",
+        "optionId",
+      ]);
+      const status = getOptionalStringValue(record, [
+        "status",
+        "participationStatus",
+      ]);
+
+      if (buncheolMemberId && status && !isParticipationCancelledStatus(status)) {
+        statuses.set(buncheolMemberId, status);
+      }
+
+      return statuses;
+    },
+    new Map<string, string>(),
+  );
+}
+
 function getBuncheolDetailFromBody(body: unknown) {
   const data = getNestedData(body);
 
@@ -3007,6 +3039,7 @@ function getBuncheolDetailFromBody(body: unknown) {
 
   const myParticipationBids = getMyParticipationBidsFromRecord(data);
   const myParticipationMemberIds = getMyParticipationMemberIdsFromRecord(data);
+  const myParticipationStatuses = getMyParticipationStatusesFromRecord(data);
   const inheritedShipping = getInheritedShippingFromRecord(data);
   const members = mergeBuncheolMemberPurchaseStates(
     getRecordListValue(data, [
@@ -3023,17 +3056,20 @@ function getBuncheolDetailFromBody(body: unknown) {
           member.participatedByMe ??
           (myParticipationMemberIds.has(member.id) ? true : undefined);
         const myBid = myParticipationBids.get(member.id);
+        const myParticipationStatus = myParticipationStatuses.get(member.id);
 
         if (!myBid) {
-          return participatedByMe === member.participatedByMe
+          return participatedByMe === member.participatedByMe &&
+            myParticipationStatus === undefined
             ? member
-            : { ...member, participatedByMe };
+            : { ...member, myParticipationStatus, participatedByMe };
         }
 
         return {
           ...member,
           myBidAmount: myBid.bidAmount,
           myParticipationId: myBid.participationId,
+          myParticipationStatus,
           participatedByMe,
         };
       }),
@@ -4126,6 +4162,7 @@ export function toProductDetailItem(
       label: member.name,
       myBidAmount: member.myBidAmount,
       myParticipationId: member.myParticipationId,
+      myParticipationStatus: member.myParticipationStatus,
       participantCount: member.participantCount,
       participatedByMe: member.participatedByMe,
       price: formattedPrice,

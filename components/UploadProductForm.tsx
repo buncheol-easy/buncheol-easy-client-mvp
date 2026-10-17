@@ -60,6 +60,7 @@ import { rankGroupSearchResults } from "@/lib/group-presenters";
 import type { IdolGroup } from "@/lib/mock-idol-directory";
 import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
+import { HelpText } from "@/components/HelpText";
 
 type PhotoPreview = {
   file?: File;
@@ -2654,10 +2655,10 @@ export function UploadProductForm({
                               type="file"
                             />
                           </label>
-                          <p className="mt-3 text-[12px] font-semibold text-black/40">
+                          <HelpText className="mt-3">
                             대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과
                             구성품이 잘 보이는 사진이 좋아요.
-                          </p>
+                          </HelpText>
                           {renderSubmitFieldError("photos")}
                           <Toast className="mt-3" message={photoLimitToast} />
                         </>
@@ -3002,10 +3003,10 @@ export function UploadProductForm({
                     type="file"
                   />
                 </label>
-                <p className="mt-3 text-[12px] font-semibold text-black/40">
+                <HelpText className="mt-3">
                   대표 사진은 올린 뒤 고를 수 있어요. 포카 실물과 구성품이 잘
                   보이는 사진이 좋아요.
-                </p>
+                </HelpText>
                 {renderSubmitFieldError("photos")}
                 <Toast className="mt-3" message={photoLimitToast} />
               </>
@@ -3784,10 +3785,10 @@ export function UploadProductForm({
                       type="url"
                       value={openChatUrl}
                     />
-                    <span className="mt-1.5 block text-[12px] font-medium leading-5 text-black/35">
+                    <HelpText as="span" className="mt-1.5">
                       참여자와 소통할 카카오 오픈채팅 링크예요. 분철 상세와 입금
                       안내 화면에 노출돼요.
-                    </span>
+                    </HelpText>
                   </label>
                   {renderSubmitFieldError("openChatUrl")}
                 </div>

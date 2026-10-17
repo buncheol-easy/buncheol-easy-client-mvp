@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { HelpText } from "@/components/HelpText";
 
 export type ConfirmSheetDetail = {
   label: string;
@@ -117,9 +118,7 @@ export function ConfirmSheet({
           {request.title}
         </h2>
         {request.description ? (
-          <p className="mt-2 whitespace-pre-line text-[13px] font-medium leading-5 text-black/50">
-            {request.description}
-          </p>
+          <HelpText className="mt-2">{request.description}</HelpText>
         ) : null}
         {request.details?.length ? (
           <dl className="mt-4 space-y-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5">
@@ -142,10 +141,10 @@ export function ConfirmSheet({
           <div className="mt-3 space-y-1">
             {warnings.map((warning, index) => (
               <p
-                className={`text-[12px] leading-5 ${
+                className={`break-keep text-[13px] leading-[1.55] ${
                   index === warnings.length - 1
-                    ? "font-semibold text-black/70"
-                    : "font-medium text-black/45"
+                    ? "font-semibold text-black/75"
+                    : "font-medium text-black/60"
                 }`}
                 key={`${warning}-${index}`}
               >

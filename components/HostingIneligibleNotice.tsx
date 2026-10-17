@@ -59,7 +59,7 @@ const hostingRequirementItems = [
   {
     title: "동시에 열 수 있는 개수가 정해져 있어요",
     description:
-      "모집·입금 수집이 진행 중인 분철이 한도를 채우면 새로 개최할 수 없어요. 입금을 확인해 진행 확정하면 자리가 비어요. 참여는 개수 제한 없이 자유롭게 하실 수 있어요.",
+      "모집 중이거나 입금을 받는 중인 분철이 한도를 채우면 새로 개최할 수 없어요. 입금을 확인해 진행 확정하면 자리가 비어요. 참여는 개수 제한 없이 자유롭게 하실 수 있어요.",
   },
 ];
 
@@ -134,7 +134,7 @@ function getNoticeCopy(
         {
           title: "어디서 등록하나요",
           description:
-            "마이페이지 > 정산 계좌에서 은행·계좌번호·예금주를 등록하면 바로 개최할 수 있어요.",
+            "마이페이지 > 정산 계좌에서 은행, 계좌번호, 예금주를 등록하면 바로 개최할 수 있어요.",
         },
         {
           title: "예금주명이 중요해요",
@@ -176,7 +176,7 @@ function getNoticeCopy(
     return {
       headline: "동시에 열 수 있는 분철을 다 채웠어요",
       description:
-        "모집·입금 수집이 진행 중인 분철이 한도를 채워 새로 열 수 없어요. 진행 확정하거나 정리하면 다시 개최할 수 있어요.",
+        "모집 중이거나 입금을 받는 중인 분철이 한도를 채워 새로 열 수 없어요. 진행 확정하거나 정리하면 다시 개최할 수 있어요.",
       sectionTitle: "이렇게 하면 돼요",
       items: [
         {
@@ -191,7 +191,7 @@ function getNoticeCopy(
         },
       ],
       // /profile/bids 는 "참여한 분철" 탭으로 열리고 탭을 지정할 쿼리가 없어, 라벨을 화면 그대로 맞춘다.
-      primaryAction: { label: "참여·개최 기록 보기", href: "/profile/bids" },
+      primaryAction: { label: "참여와 개최 기록 보기", href: "/profile/bids" },
     };
   }
 
@@ -199,7 +199,7 @@ function getNoticeCopy(
   if (variant === "requirements") {
     return {
       headline: "이제 직접 분철을 열 수 있어요",
-      description: "성인이고 연락처·정산 계좌를 등록했다면 바로 개최할 수 있어요.",
+      description: "성인이고 연락처와 정산 계좌를 등록했다면 바로 개최할 수 있어요.",
       sectionTitle: "개최 자격 조건",
       items: hostingRequirementItems,
       primaryAction: { label: "분철 개최하러 가기", href: "/upload" },

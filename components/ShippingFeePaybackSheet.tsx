@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { HelpText } from "@/components/HelpText";
 import { CloseIcon } from "@/components/icons";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
@@ -283,14 +284,13 @@ export function ShippingFeePaybackSheet({
                 참여할 때 등록한 환불 계좌로 돌려드려요.
               </p>
             )}
-            <p className="mt-2 text-[12px] font-medium leading-5 text-black/45">
+            <HelpText className="mt-2">
               {refundAccount
                 ? `후기 확인이 끝나면 배송비 ${paybackAmountLabel}을 위 계좌로 보내드려요.`
                 : `후기 확인이 끝나면 배송비 ${paybackAmountLabel}을 참여할 때 등록한 환불 계좌로 보내드려요.`}
-              <br />
               참여 시점에 등록된 계좌로만 보낼 수 있어서, 계좌가 바뀌었다면
               고객센터로 알려 주세요.
-            </p>
+            </HelpText>
           </div>
 
           {submitError ? (

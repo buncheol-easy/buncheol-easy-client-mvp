@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
+import { type MemberChip, MemberChips } from "@/components/MemberChips";
 import { OpensAtBand } from "@/components/OpensAtBand";
 import {
   getArtistRestoreIndexKey,
@@ -93,6 +94,27 @@ function getUniqueMemberNames(names: string[]) {
     .map((tag) => tag.trim())
     .filter(Boolean)
     .filter((tag, index, tags) => tags.indexOf(tag) === index);
+}
+
+// 전체 멤버를 슬롯 순서대로 깔고, 지금 고를 수 있는지는 칩 모양으로 가른다. 닫힌 분철은 카드가 이미 흐려지니
+// 취소선 없이 회색으로만 둔다 — 다 팔린 것처럼 읽히지 않게.
+function getCardMemberChips(
+  item: ProductCardItem,
+  availableMemberNames: string[] | null,
+  isClosed: boolean,
+): MemberChip[] | null {
+  const memberNames = getUniqueMemberNames(item.targetMembers ?? []);
+
+  if (memberNames.length === 0 || availableMemberNames === null) {
+    return null;
+  }
+
+  const availableNames = new Set(availableMemberNames);
+
+  return memberNames.map((name) => ({
+    name,
+    state: isClosed ? "ended" : availableNames.has(name) ? "open" : "taken",
+  }));
 }
 
 function parseKoreaDateTime(value: string) {
@@ -276,7 +298,7 @@ function getCardOpening(item: ProductCardItem) {
 }
 
 function getAvailableMemberSummary(memberNames: string[]) {
-  return memberNames.join(" · ");
+  return memberNames.join(", ");
 }
 
 function isRecentlyUploaded(uploadedAt?: string) {
@@ -319,15 +341,19 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
   const shouldDimCard =
     !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
-  // 서버가 availableMemberNames 를 내려준 경우에만 남은 멤버로 취급한다(null = 데이터 없음).
-  // 데이터가 없는 카드(찜 목록 등)는 전체 멤버를 남은 멤버처럼 보여주는 대신 대상 멤버 태그로 대체한다.
-  // 오픈 전에는 상세처럼 코드 참여로 찬 자리도 가리므로 전체 멤버를 남은 멤버로 보인다.
+  // 서버가 availableMemberNames 를 내려준 경우에만 자리 상태를 그린다(null = 데이터 없음 → 대상 멤버 태그).
+  // 오픈 전에는 상세처럼 코드 참여로 찬 자리도 가리므로 전체 멤버를 고를 수 있는 멤버로 보인다.
   const availableMemberNames =
     opening && item.targetMembers?.length
       ? getUniqueMemberNames(item.targetMembers)
       : Array.isArray(item.availableMemberNames)
         ? getUniqueMemberNames(item.availableMemberNames)
         : null;
+  const memberChips = getCardMemberChips(
+    item,
+    availableMemberNames,
+    shouldDimCard,
+  );
   const shouldPeekOptionRail = (availableMemberNames?.length ?? 0) > 3;
   const availableMemberSummary = availableMemberNames?.length
     ? getAvailableMemberSummary(availableMemberNames)
@@ -619,28 +645,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         <div
           className={`px-3.5 py-3.5 ${shouldDimCard ? "opacity-60" : ""}`}
         >
-          {availableMemberNames !== null ? (
-            <div>
-              {availableMemberNames.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-[#D7FF5F]">
-                    남은 멤버
-                  </span>
-                  {availableMemberNames.map((memberName) => (
-                    <span
-                      className="rounded-full bg-[#EEF8C8] px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-black/70 ring-1 ring-[#CFE86B]/55"
-                      key={memberName}
-                    >
-                      {memberName}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <span className="rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-black/38">
-                  남은 멤버 없음
-                </span>
-              )}
-            </div>
+          {memberChips !== null ? (
+            <MemberChips members={memberChips} />
           ) : (
             // 칩 행(24px)과 높이를 맞춰 데이터 유무에 따른 카드 높이 차이를 없앤다.
             <p className="line-clamp-1 text-[12px] font-semibold leading-6 text-black/40">
