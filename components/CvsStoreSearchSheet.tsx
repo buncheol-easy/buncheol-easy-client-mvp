@@ -16,6 +16,7 @@ import {
   type KakaoMarker,
   type KakaoMarkerImage,
 } from "@/lib/kakao-map";
+import { HelpText } from "@/components/HelpText";
 
 const SHEET_CLOSE_MS = 280;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -652,11 +653,12 @@ export function CvsStoreSearchSheet({
               <p className="text-[14px] font-semibold text-black/55">
                 자주 가는 편의점을 찾아보세요
               </p>
-              <p className="mt-1 text-[12.5px] font-medium leading-5 text-black/40">
-                지점명이나 도로명 주소를 두 글자 이상 입력하면
-                <br />
-                지점 위치를 지도에서 보여드려요.
-              </p>
+              <HelpText align="center" className="mt-1">
+                <span className="block">
+                  지점명이나 도로명 주소를 두 글자 이상 입력하면
+                </span>
+                <span className="block">지점 위치를 지도에서 보여드려요.</span>
+              </HelpText>
             </div>
           ) : isLoading && stores.length === 0 ? (
             <p className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-6 text-center text-[13px] font-semibold text-black/40">

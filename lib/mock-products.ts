@@ -8,6 +8,8 @@ export type ProductOption = {
   buncheolMemberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
+  // 내 활성 참여의 상태(상세 myParticipation). 멤버 saleStatus 는 C2C 「보냈어요」를 입금 대기로 접어 내린다.
+  myParticipationStatus?: string;
   participatedByMe?: boolean;
   purchasePaymentConfirmedAt?: string;
   purchasePaymentDueAt?: string;

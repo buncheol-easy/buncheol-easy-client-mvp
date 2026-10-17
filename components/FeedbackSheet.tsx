@@ -7,6 +7,7 @@ import { trackEvent } from "@/lib/analytics";
 import { submitFeedback } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { readAuthState } from "@/lib/auth-store";
+import { HelpText } from "@/components/HelpText";
 
 const SHEET_CLOSE_MS = 280;
 const MAX_CONTENT_LENGTH = 500;
@@ -118,11 +119,11 @@ export function FeedbackSheet({ onClose }: FeedbackSheetProps) {
             <h2 className="text-[21px] font-semibold tracking-[-0.06em]">
               의견 보내기
             </h2>
-            <p className="mt-1 text-[13px] font-medium text-black/45">
+            <HelpText className="mt-1">
               {isSubmitted
                 ? "소중한 의견 고맙습니다."
-                : "불편했던 점이나 아쉬운 점을 남겨주세요."}
-            </p>
+                : "분철이지를 사용하면서 불편했던 점이나 아쉬운 점을 남겨주세요."}
+            </HelpText>
           </div>
           <button
             aria-label="닫기"
@@ -174,10 +175,10 @@ export function FeedbackSheet({ onClose }: FeedbackSheetProps) {
                 <p className="text-[12px] font-semibold text-black/40">
                   먼저 알려드려요
                 </p>
-                <p className="mt-1.5 text-[13px] font-medium leading-5 text-black/60">
+                <HelpText className="mt-1.5">
                   답장은 따로 드리지 않지만, 남겨주신 의견은 전부 읽고 반영하고
                   있어요. 급한 문의는 고객센터로 연락 주세요.
-                </p>
+                </HelpText>
               </div>
 
               <div className="mt-4">

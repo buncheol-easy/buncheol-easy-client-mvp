@@ -34,7 +34,7 @@ const keyPoints = [
 
 const hostRequirements = [
   "카카오 연령대 20대 이상",
-  "닉네임·전화번호",
+  "닉네임과 전화번호",
   "정산 계좌(지원금도 여기로)",
 ] as const;
 
@@ -189,7 +189,7 @@ export function EventGuideContent() {
                       ))}
                     </div>
                     <p className="mt-3 text-[13px] font-medium text-[#868C95]">
-                      GS25·CU 둘 다 골랐다면 둘 다 0원이에요.
+                      GS25와 CU를 둘 다 골랐다면 둘 다 0원이에요.
                     </p>
                   </div>
                 </Reveal>
@@ -211,7 +211,7 @@ export function EventGuideContent() {
                       성사 확정하기
                     </div>
                     <p className="mt-3 text-[13px] font-medium text-[#868C95]">
-                      계좌·입금 안내는 알림톡이 보내요.
+                      계좌와 입금 안내는 알림톡이 보내요.
                     </p>
                   </div>
                 </Reveal>
@@ -326,7 +326,7 @@ export function EventGuideContent() {
                 지금 열어볼까요?
               </h2>
               <p className="relative z-10 mt-3 break-keep text-[15px] font-medium leading-[1.6] tracking-[-0.02em] text-white/55">
-                계좌·운송장 안내는 알림톡이 대신 보내요.
+                계좌와 운송장 안내는 알림톡이 대신 보내요.
               </p>
             </Reveal>
 

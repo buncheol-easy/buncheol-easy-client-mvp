@@ -106,6 +106,7 @@ import {
   writeCachedParticipationPayment,
 } from "@/lib/participation-payment-cache";
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
+import { HelpText } from "@/components/HelpText";
 import { SlidingFilterChips, SlidingTabs } from "@/components/SlidingTabs";
 import {
   ConfirmSheet,
@@ -389,7 +390,7 @@ const c2cParticipationStatusGuide = [
     icon: ClipboardListIcon,
     label: c2cProgressStepLabels[0],
     description:
-      "원하는 멤버 자리를 잡아둔 단계예요. 아직 입금하지 않아요 — 개최자가 성사를 확정하면 알림톡으로 입금 안내를 보내드려요.",
+      "원하는 멤버 자리를 잡아둔 단계예요. 아직 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 보내드려요.",
   },
   {
     icon: BanknoteIcon,
@@ -929,7 +930,7 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
         : !isC2C
           ? "개최자가 참여를 뺐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
           : hasTrace
-            ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 개최자에게 먼저 알려 주세요 — 대금은 개최자 계좌로 갔어요. 연락이 어려우면 고객센터로 문의해 주세요."
+            ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 대금은 개최자 계좌에 있으니 개최자에게 먼저 알려 주세요. 연락이 어려우면 고객센터로 문의해 주세요."
             : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주시고, 연락이 어려우면 고객센터로 문의해 주세요.",
     };
   }
@@ -961,7 +962,7 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     description: isFreeBidRecord(bid)
       ? buncheolCancelDescription
       : isC2C
-        ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 보냈다면 환불은 개최자가 진행해요 — 지연되면 고객센터로 문의해 주세요.`
+        ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 보냈다면 환불은 개최자가 진행해요. 늦어지면 고객센터로 문의해 주세요.`
         : `${buncheolCancelDescription} 이미 입금했다면 등록한 환불 계좌로 환불돼요.`,
   };
 }
@@ -1283,7 +1284,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordPaymentReady(bid, now)) {
     // ⚠️ overdue 검사가 ready 보다 뒤에 있으면 도달하지 못한다 — C2C 는 기한이 지나도 ready 다.
     if (isBidRecordPaymentOverdue(bid, now)) {
-      return "입금 기한이 지났어요. 지금 보내셔도 됩니다. 다만 기한이 지나면 개최자가 참여를 취소할 수 있어요.";
+      return "입금 기한이 지났어요. 지금 보내도 되지만, 개최자가 참여를 취소할 수 있어요.";
     }
 
     const remaining = formatPaymentRemainingTime(
@@ -3219,9 +3220,9 @@ export function BidHistoryContent({
                   <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/55">
                     {cancellationNotice.label}
                   </span>
-                  <p className="break-keep text-center text-[11px] font-medium leading-4 text-black/40">
+                  <HelpText align="center">
                     {cancellationNotice.description}
-                  </p>
+                  </HelpText>
                 </div>
               ) : null}
               <div className="relative">
@@ -3317,9 +3318,7 @@ export function BidHistoryContent({
             ) : null}
 
             {cancelBlockedNotice ? (
-              <p className="mt-3 break-keep text-[12px] font-medium leading-5 text-black/40">
-                {cancelBlockedNotice}
-              </p>
+              <HelpText className="mt-3">{cancelBlockedNotice}</HelpText>
             ) : null}
 
             {/* 취소는 자리 단위 API 뿐이다 — 묶음판이 없고, 같은 묶음의 두 자리를 동시에 취소하면
@@ -3447,7 +3446,7 @@ export function BidHistoryContent({
           }`.trim(),
         },
         ...(memberNames.length > 0
-          ? [{ label: "멤버", value: memberNames.join(" · ") }]
+          ? [{ label: "멤버", value: memberNames.join(", ") }]
           : []),
       ],
       onConfirm: () => {
@@ -3703,9 +3702,9 @@ export function BidHistoryContent({
             variant="dark"
           />
         </div>
-        <p className="mt-2 break-keep text-[11px] font-medium leading-4 text-black/35">
+        <HelpText className="mt-2" size="caption">
           {BROKER_NOTICE}
-        </p>
+        </HelpText>
       </div>
     );
   }
@@ -4092,11 +4091,9 @@ export function BidHistoryContent({
                             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
                               {cancellationNotice.label}
                             </span>
-                            {/* break-keep 없이는 좁은 폭에서 "환불돼 / 요." 처럼 어절 중간이
-                                끊긴다 — 한국어는 단어 안에서 줄을 넘기지 않는다. */}
-                            <p className="break-keep text-center text-[11px] font-medium leading-4 text-black/40">
+                            <HelpText align="center">
                               {cancellationNotice.description}
-                            </p>
+                            </HelpText>
                           </div>
                         ) : null}
                         <div className="relative">
@@ -4171,9 +4168,9 @@ export function BidHistoryContent({
                         </a>
                       ) : null}
                       {cancelBlockedNotice ? (
-                        <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                        <HelpText className="mt-3">
                           {cancelBlockedNotice}
-                        </p>
+                        </HelpText>
                       ) : null}
                       {renderCardHostAccount([bid])}
                       {canOpenPaymentSheet || canCancel || isPaymentSent ? (
@@ -4334,7 +4331,7 @@ export function BidHistoryContent({
                       }}
                       description={
                         hostedFilter === "active"
-                          ? "모집·입금·배송이 진행 중인 분철이 여기에 보여요."
+                          ? "모집부터 배송까지 진행 중인 분철이 여기에 보여요."
                           : "배송까지 끝나거나 취소된 분철이 여기로 옮겨져요."
                       }
                       title={
@@ -4346,7 +4343,7 @@ export function BidHistoryContent({
                   ) : (
                     <EmptyState
                       action={{ href: "/upload", label: "분철 개최하기" }}
-                      description="내가 연 분철의 입금 확인·운송장 등록을 여기서 관리해요."
+                      description="내가 연 분철의 입금 확인과 운송장 등록을 여기서 관리해요."
                       title="아직 개최한 분철이 없어요"
                     />
                   )
@@ -4449,9 +4446,9 @@ export function BidHistoryContent({
                     </div>
                     </Link>
                     {cancelBlockedNotice ? (
-                      <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                      <HelpText className="mt-3">
                         {cancelBlockedNotice}
-                      </p>
+                      </HelpText>
                     ) : null}
                     <div className="mt-3 flex justify-end gap-2 border-t border-black/[0.08] pt-3">
                       {product.isApiProduct ? (
@@ -4560,65 +4557,63 @@ export function BidHistoryContent({
                       <p className="text-[13px] font-semibold tracking-[-0.04em]">
                         {item.label}
                       </p>
-                      <p className="mt-1 text-[12px] font-medium leading-5 text-black/50">
-                        {item.description}
-                      </p>
+                      <HelpText className="mt-1">{item.description}</HelpText>
                     </div>
                   </div>
                 ))}
               </div>
               {isHostingHelpSheet ? (
                 <>
-                  <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
+                  <HelpText className="px-1 pt-3">
                     각 단계의 버튼은 분철 카드의 &lsquo;관리하기&rsquo; 안에
                     있어요. 참여자에게는 단계가 바뀔 때마다 알림톡이 나가요.
-                  </p>
+                  </HelpText>
                   {hasC2CHostedProduct ? (
-                    <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                    <HelpText className="px-1 pt-2">
                       대금은 분철이지를 거치지 않고 내 계좌로 바로 들어와요.
-                      입금한 참여자가 취소되면 환불은 개최자가 직접 해야 하고,
-                      &lsquo;관리하기&rsquo;에서 환불이 필요한 참여와 계좌를
-                      확인할 수 있어요.
-                    </p>
+                      입금한 참여자가 취소되면 환불은 개최자가 직접 해야 해요.
+                      환불할 참여와 계좌는 &lsquo;관리하기&rsquo;에서 볼 수
+                      있어요.
+                    </HelpText>
                   ) : null}
                 </>
               ) : (
-                <p className="px-1 pt-3 text-[12px] font-medium leading-5 text-black/40">
+                <HelpText className="px-1 pt-3">
                   사진 아래 칩은 분철 자체의 상태예요. 모집 중에는 마감까지 남은
-                  날(D-day)을, 마감 후에는 진행 확정·취소 여부를 보여줘요.
-                </p>
+                  날(D-day)을, 마감 후에는 진행 확정인지 취소인지 보여줘요.
+                </HelpText>
               )}
               {isHostingHelpSheet ? null : isStatusGuideC2C ? (
                 <>
-                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                  <HelpText className="px-1 pt-2">
                     성사가 확정되지 않으면 참여가 취소돼요. 입금 기한이 지나도
-                    자동으로 취소되진 않지만, 그때부터 개최자가 참여를 뺄 수
-                    있어요. 입금 전이었다면 돌려받을 금액이 없고, 이미 보냈다면
+                    자동 취소는 아니지만, 그때부터 개최자가 참여를 뺄 수 있어요.
+                    입금 전이었다면 돌려받을 금액이 없고, 이미 보냈다면
                     개최자에게 먼저 알려 주세요.
-                  </p>
-                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                  </HelpText>
+                  <HelpText className="px-1 pt-2">
                     성사 확정 전까지는 참여를 직접 취소할 수 있어요. 확정된
                     뒤에는 개최자에게 먼저 알려 주세요.
-                  </p>
-                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                  </HelpText>
+                  <HelpText className="px-1 pt-2">
                     분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
                     입금돼요. 분철이지가 직접 개최한 분철은 신청 단계 없이 참여
                     즉시 10분 안에 입금하면 돼요.
-                  </p>
+                  </HelpText>
                 </>
               ) : (
                 <>
-                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                  <HelpText className="px-1 pt-2">
                     마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
                     취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로
                     환불돼요.
-                  </p>
-                  <p className="px-1 pt-2 text-[12px] font-medium leading-5 text-black/40">
+                  </HelpText>
+                  <HelpText className="px-1 pt-2">
                     위 순서는 분철이지가 직접 개최한 분철 기준이에요. 회원이
-                    개최한 분철은 신청(무입금) 후 개최자가 성사를 확정하면 24시간
-                    입금 안내를 받고, 송금 뒤 &lsquo;보냈어요&rsquo;를 눌러야
-                    해요.
-                  </p>
+                    개최한 분철은 먼저 신청만 하고, 개최자가 성사를 확정하면
+                    24시간 안에 입금해요. 송금한 뒤에는 &lsquo;보냈어요&rsquo;를
+                    눌러 주세요.
+                  </HelpText>
                 </>
               )}
             </div>
@@ -4724,11 +4719,11 @@ export function BidHistoryContent({
                   ? selectedPaymentRemainingTime
                   : selectedPaymentStatusLabel}
               </p>
-              <p className="mt-1 text-[12px] font-medium leading-5 text-white/60">
+              <HelpText className="mt-1" tone="dark">
                 {isSelectedPaymentCountingDown
                   ? "기한 안에 아래 계좌로 입금해 주세요."
                   : selectedPaymentStatusDescription}
-              </p>
+              </HelpText>
             </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
               <div className="flex items-start justify-between gap-3">
@@ -4769,11 +4764,11 @@ export function BidHistoryContent({
                       {selectedPaymentBid.refundHolder}
                     </span>
                   </p>
-                  <p className="mt-1.5 text-[12px] font-medium leading-5 text-black/45">
+                  <HelpText className="mt-1.5">
                     {isSelectedPaymentC2C
                       ? "이 이름으로 보내야 개최자가 입금을 확인할 수 있어요."
                       : "이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로 보내면 확인이 늦어질 수 있어요."}
-                  </p>
+                  </HelpText>
                 </>
               ) : null}
               {/*
@@ -4782,11 +4777,11 @@ export function BidHistoryContent({
                 화면에 표시된다"고 공표하고 있고, 신청(APPLIED) 후 알림톡을 받고 오는 경로에서는
                 사용자가 개최자 계좌를 보는 화면이 이 시트뿐이다.
               */}
-              <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+              <HelpText className="mt-3">
                 {isSelectedPaymentC2C
                   ? `송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. ${BROKER_NOTICE}`
                   : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요."}
-              </p>
+              </HelpText>
               {selectedPaymentOpenChatHref ? (
                 <a
                   className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/55 underline underline-offset-2"
@@ -4857,9 +4852,9 @@ export function BidHistoryContent({
             {isSelectedPaymentC2C && isSelectedPaymentReady ? (
               <>
                 {!selectedPaymentBid.bundleId ? (
-                  <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                  <HelpText className="mt-3">
                     {MARK_SENT_MISSING_BUNDLE_MESSAGE}
-                  </p>
+                  </HelpText>
                 ) : null}
                 <button
                   className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
@@ -4878,10 +4873,10 @@ export function BidHistoryContent({
               </>
             ) : isSelectedPaymentSent ? (
               // 되돌리는 전이가 없다 (docs/71 §8-2) — 잘못 눌렀으면 개최자에게 알리는 것이 유일한 경로다.
-              <p className="mt-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5 text-[12px] font-medium leading-5 text-black/45">
+              <HelpText className="mt-4 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5">
                 보냈다고 표시한 뒤에는 되돌릴 수 없어요. 잘못 눌렀다면 개최자에게
                 알려 주세요.
-              </p>
+              </HelpText>
             ) : (
               <button
                 className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"

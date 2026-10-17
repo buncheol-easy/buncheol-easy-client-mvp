@@ -20,6 +20,8 @@ import {
 } from "@/lib/buncheol-states";
 import { X_HANDLE, X_PROFILE_URL } from "@/lib/site";
 import { BusinessFooter } from "@/components/BusinessFooter";
+import { HelpText } from "@/components/HelpText";
+import { type MemberChip, MemberChips } from "@/components/MemberChips";
 import {
   BackIcon,
   BanknoteIcon,
@@ -113,7 +115,7 @@ function getIntroRecentState(item: BuncheolSummary) {
   }
 
   if (item.memberNames.length > 0) {
-    return item.memberNames.slice(0, 2).join(" · ");
+    return item.memberNames.slice(0, 2).join(", ");
   }
 
   return item.groupName || "모집 중";
@@ -325,44 +327,77 @@ export function MiniPhone({
 }
 
 // 홈 목록 카드 — components/ProductCard.tsx 의 wide variant 를 그대로 옮긴 구성.
-const introHomeProducts = [
+const introHomeProducts: {
+  deadline: string;
+  image: string;
+  isNew: boolean;
+  members: MemberChip[];
+  purchasable: boolean;
+  status: string;
+  title: string;
+}[] = [
   {
-    availableMembers: ["셔누", "민혁", "기현", "형원", "아이엠"],
     deadline: "D-2",
     image: "/intro-products/monsta-x-main.png",
     isNew: true,
+    members: [
+      { name: "셔누", state: "open" },
+      { name: "민혁", state: "open" },
+      { name: "기현", state: "taken" },
+      { name: "형원", state: "open" },
+      { name: "주헌", state: "taken" },
+      { name: "아이엠", state: "open" },
+    ],
     purchasable: true,
     status: "구매 가능",
     title: "MONSTA X 팬콘 특전 포카 분철",
   },
   {
-    availableMembers: ["재민", "런쥔", "제노"],
     deadline: "D-4",
     image: "/intro-products/nct-dream-main.png",
     isNew: false,
+    members: [
+      { name: "마크", state: "taken" },
+      { name: "런쥔", state: "open" },
+      { name: "제노", state: "open" },
+      { name: "해찬", state: "taken" },
+      { name: "재민", state: "open" },
+    ],
     purchasable: true,
     status: "구매 가능",
     title: "NCT DREAM 일본 럭드 분철",
   },
   {
-    availableMembers: ["장원영", "리즈"],
     deadline: "D-DAY",
     image: "/intro-products/ive-main.png",
     isNew: false,
+    members: [
+      { name: "안유진", state: "taken" },
+      { name: "가을", state: "taken" },
+      { name: "레이", state: "taken" },
+      { name: "장원영", state: "open" },
+      { name: "리즈", state: "open" },
+      { name: "이서", state: "taken" },
+    ],
     purchasable: true,
     status: "구매 가능",
     title: "IVE 시즌그리팅 포카 분철",
   },
   {
-    availableMembers: [],
     deadline: "",
     image: "/intro-products/seventeen-main.png",
     isNew: false,
+    members: [
+      { name: "에스쿱스", state: "ended" },
+      { name: "원우", state: "ended" },
+      { name: "민규", state: "ended" },
+      { name: "버논", state: "ended" },
+    ],
     purchasable: false,
     status: "모집 종료",
     title: "세븐틴 팬미팅 MD 포카 분철",
   },
-] as const;
+];
 
 function MiniBottomNav() {
   return (
@@ -435,10 +470,10 @@ function HomeMiniScreen() {
           <div className="space-y-3 pt-2">
             {introHomeProducts.map(
               ({
-                availableMembers,
                 deadline,
                 image,
                 isNew,
+                members,
                 purchasable,
                 status,
                 title,
@@ -478,25 +513,7 @@ function HomeMiniScreen() {
                   <div
                     className={`px-3.5 py-3.5 ${purchasable ? "" : "opacity-60"}`}
                   >
-                    {availableMembers.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-[#D7FF5F]">
-                          남은 멤버
-                        </span>
-                        {availableMembers.map((memberName) => (
-                          <span
-                            className="rounded-full bg-[#EEF8C8] px-2.5 py-1 text-[11px] font-semibold leading-4 tracking-[-0.04em] text-black/70 ring-1 ring-[#CFE86B]/55"
-                            key={memberName}
-                          >
-                            {memberName}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="inline-flex rounded-full bg-black/5 px-2.5 py-1 text-[11px] font-semibold text-black/38">
-                        남은 멤버 없음
-                      </span>
-                    )}
+                    <MemberChips members={members} />
                     <div className="mt-2 flex items-start justify-between gap-3">
                       <p className="min-w-0 text-[16px] font-semibold leading-6 tracking-[-0.04em] text-black">
                         {title}
@@ -598,9 +615,13 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
         </div>
 
         <div className="px-5 pt-6">
-          <p className="text-[13px] font-semibold leading-5 text-black/40">
-            #런쥔 #제노 #해찬 #재민 #천러 #지성
-          </p>
+          <MemberChips
+            members={memberSlots.map(({ member, soldOut }) => ({
+              name: member,
+              state: soldOut ? "taken" : "open",
+            }))}
+            size="detail"
+          />
           <h3 className="mt-4 text-[27px] font-semibold leading-[1.18] tracking-[-0.06em]">
             드림 2026 시즌팩 포카 분철
           </h3>
@@ -633,10 +654,10 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
                   style={{ width: "66%" }}
                 />
               </div>
-              <p className="mt-2 text-[12px] font-semibold text-black/40">
+              <HelpText className="mt-2">
                 분철 진행 최소 인원까지 2명 남았어요. 인원을 채우면 진행이
                 확정돼요.
-              </p>
+              </HelpText>
             </div>
           </div>
 
@@ -662,11 +683,10 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
-              이 분철에서 이용할 수 있는 배송 방법과 배송비예요. 참여할 때 이
-              중에서 택배 받을 편의점 지점을 고르고, 배송비는 상품 금액과 함께
-              입금해요.
-            </p>
+            <HelpText className="mt-3">
+              참여할 때 이 중에서 택배 받을 편의점을 골라요. 배송비는 상품
+              금액과 함께 입금해요.
+            </HelpText>
           </div>
 
           <div className="mt-8 border-t border-black/10 pt-6">
@@ -731,9 +751,9 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
       </div>
 
       <div className="absolute inset-x-0 bottom-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
-        <p className="mb-2 text-center text-[11px] font-medium text-black/40">
-          지금은 신청만 하고, 개최자가 확정하면 입금해요.
-        </p>
+        <HelpText align="center" className="mb-2" size="caption">
+          신청만 하면 끝! 입금은 분철이 확정된 뒤에 해요.
+        </HelpText>
         <div className="flex h-14 items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]">
           신청하기
         </div>
@@ -973,7 +993,7 @@ const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progre
         </div>
 
         <div className="intro-confirm-pulse mt-4 flex h-14 items-center justify-center rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)]">
-          입금했어요 · 보냈어요 표시
+          입금 보냈어요
         </div>
       </div>
     </div>
@@ -1096,9 +1116,9 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
               참여자 관리
             </h2>
             {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다. */}
-            <p className="mt-1 text-[13px] font-medium text-black/40">
-              {"참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조해 확인하고, 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."}
-            </p>
+            <HelpText className="mt-1">
+              {"참여자가 송금 후 '보냈어요'를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요. 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."}
+            </HelpText>
           </div>
 
           <div className="grid gap-3">
@@ -1238,7 +1258,7 @@ const introPainPoints = [
     items: [
       { after: "명단에서 버튼으로 한 번에", before: "입금 확인 DM 한 명씩" },
       { after: "배송지가 한 화면에 모여요", before: "주소 하나씩 받아 적기" },
-      { after: "인원 미달이면 자동 취소·안내", before: "성사 여부 수동 공지" },
+      { after: "인원 미달이면 자동으로 취소하고 안내", before: "성사 여부 수동 공지" },
     ],
     role: "개최자",
   },
@@ -1769,7 +1789,7 @@ export function IntroContent() {
                 맡기지 않는 방법.
               </h2>
               <p className="mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-[#5A6069]">
-                포토카드·특전은 대부분 멤버 랜덤이에요.
+                포토카드와 특전은 대부분 멤버 랜덤이에요.
                 <br />
                 그런데 멤버 수만큼 세트를 사면, 판매처가 중복 없이 전 멤버를
                 보내줘요.

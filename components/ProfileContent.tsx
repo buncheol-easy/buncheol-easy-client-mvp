@@ -62,6 +62,7 @@ import {
   getDeliveryAddressDisplayBranchName,
   getDefaultDeliveryAddressesByType,
 } from "@/lib/mock-delivery-addresses";
+import { HelpText } from "@/components/HelpText";
 
 const settlementAccountPanelExitMs = 180;
 const profileStateCacheKey = "buncheol-profile-state-cache";
@@ -763,11 +764,11 @@ export function ProfileContent({
                   참여자로서 환불받을 때, 개최자로서 참여자 입금을 받을 때.
                   예금주명은 입금자명 대조 기준이기도 한데(docs/53 Q-17) 지금까지 약관에만
                   적혀 있었다. 입금 확인이 지연되는 실제 원인이라 여기서 한 번 짚는다. */}
-              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/45">
-                환불과 개최 입금을 받는 계좌예요. 예금주명은 입금자명 확인에도
-                쓰여요. 이미 진행 중인 참여·분철에는 그 시점의 계좌가 쓰이고,
-                여기서 바꿔도 소급되지 않아요.
-              </p>
+              <HelpText className="mt-1">
+                환불받을 때와 개최한 분철의 입금을 받을 때 써요. 예금주명은 실제
+                통장과 똑같이 적어 주세요. 바꾼 계좌는 다음 참여와 개최부터
+                쓰여요.
+              </HelpText>
             </div>
             {authState.isLoggedIn &&
             !isEditingSettlementAccount &&
@@ -789,7 +790,7 @@ export function ProfileContent({
           {!authState.isLoggedIn ? (
             <div className="mt-4 rounded-[0.95rem] bg-[#f7f7f7] px-4 py-5">
               <p className="text-[14px] font-medium leading-5 text-black/45">
-                로그인하면 환불·입금받을 계좌를 저장해 둘 수 있어요.
+                로그인하면 환불받고 입금받을 계좌를 저장해 둘 수 있어요.
               </p>
             </div>
           ) : isEditingSettlementAccount || isSettlementAccountFormDirty ? (
@@ -960,9 +961,6 @@ export function ProfileContent({
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 기본 배송지
               </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/45">
-                GS25·CU 각각 기본 지점을 하나씩 저장할 수 있어요.
-              </p>
             </div>
             <Link
               className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[13px] font-semibold text-black/55"
@@ -1058,9 +1056,9 @@ export function ProfileContent({
               <h2 className="text-[16px] font-semibold tracking-[-0.04em] text-black/70">
                 의견 보내기
               </h2>
-              <p className="mt-1 truncate text-[13px] font-medium text-black/40">
-                불편했던 점, 아쉬운 점을 남겨주세요
-              </p>
+              <HelpText as="span" className="mt-1">
+                분철이지를 사용하면서 불편했던 점, 아쉬운 점을 남겨주세요
+              </HelpText>
             </div>
             <span className="shrink-0 rounded-full bg-[#f4f4f4] px-3.5 py-2 text-[12px] font-semibold text-black/45">
               남기기

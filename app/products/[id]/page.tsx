@@ -57,7 +57,7 @@ function buildBuncheolSearchDescription(detail: BuncheolDetail, title: string) {
     .filter((price) => Number.isFinite(price) && price >= 0);
   const priceLabel =
     prices.length > 0 ? ` ${Math.min(...prices).toLocaleString("ko-KR")}원부터` : "";
-  const lineup = memberNames ? ` · ${memberNames} 멤버별${priceLabel}` : "";
+  const lineup = memberNames ? `. ${memberNames} 멤버별${priceLabel}` : "";
 
   return `${subject}${lineup}. 분철이지에서 원하는 멤버를 골라 참여하고 입금 확인부터 배송까지 한 화면에서 확인하세요.`;
 }

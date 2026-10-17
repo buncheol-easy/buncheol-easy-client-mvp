@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   Banknote,
   Bell,
   Camera,
@@ -62,6 +63,7 @@ export const CameraIcon = createIcon(Camera, "h-6 w-6");
 export const MinusIcon = createIcon(Minus, "h-6 w-6");
 export const ProfileIcon = createIcon(UserRound, "h-6 w-6");
 export const ChevronDownIcon = createIcon(ChevronDown, "h-3.5 w-3.5");
+export const ArrowUpRightIcon = createIcon(ArrowUpRight, "h-4 w-4");
 export const BanknoteIcon = createIcon(Banknote, "h-3.5 w-3.5");
 export const ClipboardListIcon = createIcon(ClipboardList, "h-3.5 w-3.5");
 export const ClockIcon = createIcon(Clock, "h-4 w-4");

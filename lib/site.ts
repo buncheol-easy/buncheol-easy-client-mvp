@@ -9,6 +9,10 @@ export const SITE_URL =
 export const X_PROFILE_URL = "https://x.com/buncheoleasy";
 export const X_HANDLE = "@buncheoleasy";
 
+// 고객센터(카카오톡 채널). ⚠️ 바꾸면 개인정보처리방침·통신판매중개자 고지의 문의처가 바뀌는 개정이라,
+// 방침 시행일 항목에 개정 이력을 남긴다.
+export const KAKAO_CHANNEL_URL = "https://pf.kakao.com/_LqxnGX";
+
 // 공식 문의 이메일. ⚠️ 바꾸면 개인정보처리방침 보호책임자 문의처가 바뀌는 개정이라, 방침 시행일 항목에
 // 개정 이력을 남긴다(공지 기간은 방침의 '방침의 변경' 조항).
 export const CONTACT_EMAIL = "contact@buncheoleasy.com";
