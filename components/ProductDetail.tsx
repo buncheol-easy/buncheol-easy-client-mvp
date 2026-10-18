@@ -1610,7 +1610,12 @@ export function ProductDetail({
           ),
       )
       .map((option) => ({
-        bidAmount: priceToNumber(getBidBaseline(option)),
+        // 코드 자리도 목록에는 정가를 보이지만(일반 자리와 구분되지 않게), 서버가 0원으로 확정하므로
+        // 시트 합계·확인 단계·참여 캐시 금액은 0원으로 잡는다.
+        bidAmount:
+          option.requiresCode === true
+            ? 0
+            : priceToNumber(getBidBaseline(option)),
         option,
       }));
   }, [auctionOptions, bidAmounts, myBids, product.isApiProduct]);
