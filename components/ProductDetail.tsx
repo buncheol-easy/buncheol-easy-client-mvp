@@ -916,7 +916,10 @@ function getOptionMemberChipState(
     shouldUseParticipantCount,
   );
 
-  return overlayLabel === null || overlayLabel === PURCHASE_OPTION_LABELS.notOpen
+  // 빈 코드 자리는 코드로 고를 수 있는 자리라 칩에서는 일반 빈자리와 똑같이 그린다(코드 자리임을 드러내지 않는다).
+  return overlayLabel === null ||
+    overlayLabel === PURCHASE_OPTION_LABELS.notOpen ||
+    overlayLabel === PURCHASE_OPTION_LABELS.codeOnly
     ? "open"
     : "taken";
 }
