@@ -901,6 +901,7 @@ function getOptionMemberChipState(
   myBid: number | undefined,
   shouldUseParticipantCount: boolean,
   isBuncheolClosed: boolean,
+  isHidingSlotsBeforeOpen: boolean,
 ): MemberChipState {
   if (isOptionParticipatedByMe(option, myBid)) {
     return "mine";
@@ -916,10 +917,13 @@ function getOptionMemberChipState(
     shouldUseParticipantCount,
   );
 
-  // 빈 코드 자리는 코드로 고를 수 있는 자리라 칩에서는 일반 빈자리와 똑같이 그린다(코드 자리임을 드러내지 않는다).
-  return overlayLabel === null ||
-    overlayLabel === PURCHASE_OPTION_LABELS.notOpen ||
-    overlayLabel === PURCHASE_OPTION_LABELS.codeOnly
+  // 오픈 전에는 빈 코드 자리도 다른 멤버와 같은 칩으로 가린다(카드도 오픈 전엔 전체 멤버가 연두).
+  // 오픈 뒤에는 실제 상태대로 회색 — 서버 목록도 빈 코드 자리를 남은 멤버에서 빼서 카드와 같다.
+  if (overlayLabel === PURCHASE_OPTION_LABELS.codeOnly) {
+    return isHidingSlotsBeforeOpen ? "open" : "taken";
+  }
+
+  return overlayLabel === null || overlayLabel === PURCHASE_OPTION_LABELS.notOpen
     ? "open"
     : "taken";
 }
@@ -2178,6 +2182,7 @@ export function ProductDetail({
       myBids[option.id],
       product.isApiProduct === true,
       productOptionBlockLabel !== null,
+      shouldHideTakenSlots,
     ),
   }));
   const hasOthersPaymentWaiting =
