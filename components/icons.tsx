@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   Banknote,
   Bell,
   Camera,
@@ -7,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Clock,
   Heart,
   House,
   Minus,
@@ -61,8 +63,10 @@ export const CameraIcon = createIcon(Camera, "h-6 w-6");
 export const MinusIcon = createIcon(Minus, "h-6 w-6");
 export const ProfileIcon = createIcon(UserRound, "h-6 w-6");
 export const ChevronDownIcon = createIcon(ChevronDown, "h-3.5 w-3.5");
+export const ArrowUpRightIcon = createIcon(ArrowUpRight, "h-4 w-4");
 export const BanknoteIcon = createIcon(Banknote, "h-3.5 w-3.5");
 export const ClipboardListIcon = createIcon(ClipboardList, "h-3.5 w-3.5");
+export const ClockIcon = createIcon(Clock, "h-4 w-4");
 export const TruckIcon = createIcon(Truck, "h-3.5 w-3.5");
 export const UsersRoundIcon = createIcon(UsersRound, "h-3.5 w-3.5");
 export const PackageCheckIcon = createIcon(PackageCheck, "h-3.5 w-3.5");
@@ -109,6 +113,34 @@ export function KakaoIcon({ className = "h-5 w-5" }: IconProps) {
       viewBox="0 0 24 24"
     >
       <path d="M12 3C6.99 3 2.93 6.2 2.93 10.15c0 2.53 1.68 4.75 4.2 6.01-.18.65-.67 2.42-.77 2.8-.12.47.17.46.36.34.15-.1 2.39-1.62 3.36-2.28.63.09 1.27.14 1.92.14 5.01 0 9.07-3.2 9.07-7.15S17.01 3 12 3z" />
+    </svg>
+  );
+}
+
+// 배너 점 옆 10px 버튼용. 스트로크 아이콘은 이 크기에서 선이 1px 아래로 가늘어져 단색 채움으로 그린다.
+export function PauseFilledIcon({ className = "h-2.5 w-2.5" }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 10 10"
+    >
+      <rect height="8" rx="0.8" width="2.4" x="1.5" y="1" />
+      <rect height="8" rx="0.8" width="2.4" x="6.1" y="1" />
+    </svg>
+  );
+}
+
+export function PlayFilledIcon({ className = "h-2.5 w-2.5" }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 10 10"
+    >
+      <path d="M2.5 1.4v7.2a.6.6 0 0 0 .9.5l5.6-3.6a.6.6 0 0 0 0-1L3.4.9a.6.6 0 0 0-.9.5z" />
     </svg>
   );
 }

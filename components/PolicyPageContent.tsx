@@ -70,7 +70,7 @@ export function PolicyPageContent({
                 시행일 {effectiveDate}
               </p>
             ) : null}
-            <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/55">
+            <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/60">
               {description}
             </p>
           </section>

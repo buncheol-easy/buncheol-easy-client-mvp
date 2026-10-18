@@ -21,6 +21,7 @@ import { CloseIcon } from "@/components/icons";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { SearchHeader } from "@/components/SearchHeader";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
 import {
@@ -55,6 +56,7 @@ import {
   toMemberRailItem,
 } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
+import { chromeBlack } from "@/lib/system-chrome";
 
 type SearchExperienceProps = {
   query?: string;
@@ -305,11 +307,11 @@ export function SearchExperience({
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--system-bottom-color",
-      hasResults ? "#000000" : "#ffffff",
+      hasResults ? chromeBlack : "#ffffff",
     );
 
     return () => {
-      document.documentElement.style.setProperty("--system-bottom-color", "#000000");
+      document.documentElement.style.setProperty("--system-bottom-color", chromeBlack);
     };
   }, [hasResults]);
 
@@ -974,52 +976,60 @@ export function SearchExperience({
 
   function renderRecentSearchSkeleton() {
     return (
-      <div aria-label="최근 검색어를 불러오는 중" className="mt-4 flex flex-wrap gap-3" role="status">
+      <SkeletonGroup
+        aria-label="최근 검색어를 불러오는 중"
+        className="mt-4 flex flex-wrap gap-3"
+        role="status"
+      >
         {Array.from({ length: 4 }).map((_, index) => (
           <span
-            className="h-10 w-24 animate-pulse rounded-full bg-black/8"
+            className="skeleton-surface h-10 w-24 rounded-full bg-black/8"
             key={`recent-search-skeleton-${index}`}
           />
         ))}
-      </div>
+      </SkeletonGroup>
     );
   }
 
   function renderPopularGroupSkeleton() {
     return (
-      <div aria-label="인기 아티스트를 불러오는 중" className="mt-5 border-y border-black/10" role="status">
+      <SkeletonGroup
+        aria-label="인기 아티스트를 불러오는 중"
+        className="mt-5 border-y border-black/10"
+        role="status"
+      >
         {Array.from({ length: 5 }).map((_, index) => (
           <div
             className="grid h-[72px] w-full grid-cols-[3.5rem_4.5rem_1fr] items-center border-b border-black/10 last:border-b-0"
             key={`popular-group-skeleton-${index}`}
           >
-            <span className="h-6 w-6 animate-pulse rounded-full bg-black/8" />
-            <span className="h-12 w-12 animate-pulse rounded-full bg-black/8" />
+            <span className="h-6 w-6 skeleton-surface rounded-full bg-black/8" />
+            <span className="h-12 w-12 skeleton-surface rounded-full bg-black/8" />
             <span>
-              <span className="block h-5 w-32 animate-pulse rounded-full bg-black/8" />
-              <span className="mt-2 block h-3 w-20 animate-pulse rounded-full bg-black/8" />
+              <span className="block h-5 w-32 skeleton-surface rounded-full bg-black/8" />
+              <span className="mt-2 block h-3 w-20 skeleton-surface rounded-full bg-black/8" />
             </span>
           </div>
         ))}
-      </div>
+      </SkeletonGroup>
     );
   }
 
   function renderSearchRailSkeleton() {
     return (
-      <div
+      <SkeletonGroup
         aria-label="검색 필터를 불러오는 중"
         className="flex gap-4 overflow-hidden pb-4"
         role="status"
       >
         {Array.from({ length: 5 }).map((_, index) => (
           <div className="min-w-[65px]" key={`search-rail-skeleton-${index}`}>
-            <div className="h-[65px] w-[65px] animate-pulse rounded-[1.1rem] bg-black/8" />
-            <div className="mt-2 h-3 w-12 animate-pulse rounded-full bg-black/8" />
-            <div className="mt-1 h-2.5 w-9 animate-pulse rounded-full bg-black/8" />
+            <div className="h-[65px] w-[65px] skeleton-surface rounded-[1.1rem] bg-black/8" />
+            <div className="mt-2 h-3 w-12 skeleton-surface rounded-full bg-black/8" />
+            <div className="mt-1 h-2.5 w-9 skeleton-surface rounded-full bg-black/8" />
           </div>
         ))}
-      </div>
+      </SkeletonGroup>
     );
   }
 

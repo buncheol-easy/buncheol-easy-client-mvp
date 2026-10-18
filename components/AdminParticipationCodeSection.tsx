@@ -333,7 +333,7 @@ export function AdminParticipationCodeSection({
           </button>
         </div>
         {message ? (
-          <p className="mt-3 text-[13px] font-medium leading-5 text-black/55">
+          <p className="mt-3 text-[13px] font-medium leading-5 text-black/60">
             {message}
           </p>
         ) : null}
@@ -460,7 +460,7 @@ export function AdminParticipationCodeSection({
                         {isPending ? "발급 중" : "코드 발급"}
                       </button>
                       <button
-                        className="h-11 rounded-full bg-white px-4 text-[14px] font-semibold text-black/55 ring-1 ring-black/10 disabled:text-black/25"
+                        className="h-11 rounded-full bg-white px-4 text-[14px] font-semibold text-black/60 ring-1 ring-black/10 disabled:text-black/25"
                         disabled={isBusy || slot.taken}
                         onClick={() => void handleAccessTypeChange(slot, "OPEN")}
                         type="button"
@@ -502,14 +502,11 @@ export function AdminParticipationCodeSection({
                   <p className="mt-0.5 text-[12px] font-medium text-black/45">
                     {formatPrice(slot.price)}
                     {slot.taken ? " · 참여자 있음" : ""}
-                    {!slot.taken && slot.price > 0 ? " · 0원 슬롯만 전환 가능" : ""}
                   </p>
                 </div>
                 <button
                   className="h-9 rounded-full bg-white px-3 text-[12px] font-semibold text-black/60 ring-1 ring-black/10 disabled:text-black/25"
-                  disabled={
-                    pendingSlotId !== null || slot.taken || slot.price > 0
-                  }
+                  disabled={pendingSlotId !== null || slot.taken}
                   onClick={() => void handleAccessTypeChange(slot, "CODE_ONLY")}
                   type="button"
                 >

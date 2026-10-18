@@ -2,11 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CloseIcon } from "@/components/icons";
-import {
-  BRIEF_TOAST_DURATION_MS,
-  Toast,
-  useToast,
-} from "@/components/Toast";
+import { useAppToast } from "@/components/Toast";
 import {
   getInitialAuthState,
   readAuthState,
@@ -53,7 +49,7 @@ export function TestAccountSwitcher() {
     null,
   );
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
-  const [toastMessage, showToast] = useToast(BRIEF_TOAST_DURATION_MS);
+  const showToast = useAppToast();
   const reloadTimerRef = useRef<number | null>(null);
   const activeAccount =
     accounts.find((account) => account.id === activeAccountId) ?? null;
@@ -137,13 +133,13 @@ export function TestAccountSwitcher() {
       clearSettlementAccountState();
       setActiveAccountId(account.id);
       setIsOpen(false);
-      showToast(`${data.label ?? account.label}로 전환했어요.`);
+      showToast(`${data.label ?? account.label}로 전환했어요.`, "success");
 
       reloadTimerRef.current = window.setTimeout(() => {
         window.location.reload();
       }, 450);
     } catch {
-      showToast("계정 전환에 실패했어요.");
+      showToast("계정 전환에 실패했어요.", "error");
     } finally {
       setSwitchingAccountId(null);
     }
@@ -169,11 +165,6 @@ export function TestAccountSwitcher() {
           {activeAccount?.label ?? "계정"}
         </span>
       </button>
-
-      <Toast
-        className="fixed inset-x-0 bottom-28 z-[80] px-5"
-        message={toastMessage}
-      />
 
       {isOpen ? (
         <div

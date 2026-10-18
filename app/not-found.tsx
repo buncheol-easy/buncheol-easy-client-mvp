@@ -36,7 +36,7 @@ export default function NotFound() {
           <h1 className="mt-2 text-[24px] font-semibold leading-tight tracking-[-0.05em]">
             페이지를 찾을 수 없어요
           </h1>
-          <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/55">
+          <p className="mt-3 text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/60">
             주소가 잘못 입력됐거나
             <br />
             삭제된 페이지일 수 있어요.

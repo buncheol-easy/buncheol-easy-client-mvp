@@ -11,7 +11,6 @@ import {
   requestBuncheolDetail,
   toProductDetailItem,
 } from "@/lib/auth-api";
-import { isBuncheolDeletedStatus } from "@/lib/buncheol-states";
 import type { ProductDetailItem } from "@/lib/mock-products";
 import { formatMemberNamesForSearch } from "@/lib/seo";
 import { SITE_URL } from "@/lib/site";
@@ -58,7 +57,7 @@ function buildBuncheolSearchDescription(detail: BuncheolDetail, title: string) {
     .filter((price) => Number.isFinite(price) && price >= 0);
   const priceLabel =
     prices.length > 0 ? ` ${Math.min(...prices).toLocaleString("ko-KR")}원부터` : "";
-  const lineup = memberNames ? ` · ${memberNames} 멤버별${priceLabel}` : "";
+  const lineup = memberNames ? `. ${memberNames} 멤버별${priceLabel}` : "";
 
   return `${subject}${lineup}. 분철이지에서 원하는 멤버를 골라 참여하고 입금 확인부터 배송까지 한 화면에서 확인하세요.`;
 }
@@ -202,13 +201,6 @@ export default async function ProductDetailPage({
     // 그 외 실패(네트워크·서버 오류)는 클라이언트 재조회에 맡긴다.
     // generateMetadata 쪽에서 이미 같은 실패를 로그로 남긴다.
     breadcrumbJsonLd = null;
-  }
-
-  // 백엔드 삭제(HOST_CANCELLED)는 상세에서 404 로 떨어지지만, 목록 파서가 방어적으로
-  // 거르는 DELETED 상태가 200 으로 내려오는 경우까지 같은 방어선을 둔다.
-  // notFound() 는 예외를 던지므로 위 catch 에 삼켜지지 않게 try 밖에서 호출한다.
-  if (initialProduct && isBuncheolDeletedStatus(initialProduct.status)) {
-    notFound();
   }
 
   return (

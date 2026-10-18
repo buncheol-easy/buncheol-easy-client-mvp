@@ -27,7 +27,6 @@ import {
 import { isCardDeadlineOpen } from "@/components/ProductCard";
 import {
   isBuncheolCancelledStatus,
-  isBuncheolDeletedStatus,
   isBuncheolPaymentCollectingStatus,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
@@ -48,11 +47,6 @@ type FavoritesContentProps = {
 export const FAVORITES_SKIP_ENTER_KEY = "skip-favorites-enter-animation";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 const FAVORITES_VIEW_STATE_KEY = "favorites-view-state";
-
-// 취소(개최자 취소 HOST_CANCELLED 포함)·삭제된 분철은 찜 목록에서 숨긴다.
-function isCancelledOrDeletedProductStatus(status: string | undefined) {
-  return isBuncheolCancelledStatus(status) || isBuncheolDeletedStatus(status);
-}
 
 function takeShouldSkipFavoritesEnter() {
   if (typeof window === "undefined") {
@@ -226,7 +220,7 @@ export function FavoritesContent({
     const sourceProducts = apiFavoriteProducts ?? [];
 
     return sourceProducts.filter((product) => {
-      if (isCancelledOrDeletedProductStatus(product.status)) {
+      if (isBuncheolCancelledStatus(product.status)) {
         return false;
       }
 
@@ -379,7 +373,7 @@ export function FavoritesContent({
                       className={`h-10 w-full px-3 text-left text-[13px] font-semibold tracking-[-0.04em] ${
                         isActive
                           ? "bg-[#E4F6A5] text-black"
-                          : "text-black/55"
+                          : "text-black/60"
                       }`}
                       key={value}
                       onClick={() => {

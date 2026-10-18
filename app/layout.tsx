@@ -6,7 +6,13 @@ import { JsonLd } from "@/components/JsonLd";
 import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
 import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
-import { CONTACT_EMAIL, SITE_URL, X_PROFILE_URL } from "@/lib/site";
+import { ToastProvider } from "@/components/Toast";
+import {
+  CONTACT_EMAIL,
+  KAKAO_CHANNEL_URL,
+  SITE_URL,
+  X_PROFILE_URL,
+} from "@/lib/site";
 import { blackChromeViewport } from "@/lib/system-chrome";
 import { Suspense } from "react";
 import "./globals.css";
@@ -24,7 +30,7 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.webmanifest",
   title: {
-    default: "분철이지 | 최애 포카 분철 모집부터 입금·배송까지 한 번에",
+    default: "분철이지 | 최애 포카 분철 모집부터 배송까지 한 번에",
     template: "%s | 분철이지",
   },
   description: siteDescription,
@@ -32,7 +38,7 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "분철이지",
     locale: "ko_KR",
-    title: "분철이지 | 최애 포카 분철 모집부터 입금·배송까지 한 번에",
+    title: "분철이지 | 최애 포카 분철 모집부터 배송까지 한 번에",
     description: siteDescription,
     images: ["/brand/logo-black.png"],
   },
@@ -80,7 +86,7 @@ const organizationJsonLd = {
         areaServed: "KR",
         availableLanguage: ["Korean"],
       },
-      sameAs: ["https://pf.kakao.com/_LqxnGX", X_PROFILE_URL],
+      sameAs: [KAKAO_CHANNEL_URL, X_PROFILE_URL],
     },
     {
       "@type": "WebSite",
@@ -110,11 +116,13 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <SystemChromeColorSync />
         </Suspense>
-        <QueryProvider>{children}</QueryProvider>
-        {/* 장식 패널이지만 X 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
-            라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
-        <DesktopBrandPanel />
-        <TestAccountSwitcher />
+        <ToastProvider>
+          <QueryProvider>{children}</QueryProvider>
+          {/* 장식 패널이지만 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
+              라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
+          <DesktopBrandPanel />
+          <TestAccountSwitcher />
+        </ToastProvider>
         <JsonLd data={organizationJsonLd} />
       </body>
       {process.env.NEXT_PUBLIC_GA_ID && (

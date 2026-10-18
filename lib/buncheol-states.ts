@@ -1,8 +1,6 @@
-// 분철·참여·배송 상태의 단일 기준 모듈. 상태 리터럴 비교와 한국어 라벨이 화면별 로컬 함수에
-// 흩어져 문구가 어긋나던 문제(진행확정/진행 확정, 모집종료/모집 종료, HOST_CANCELLED 미처리)를
-// 여기로 모은다. C2C 오픈에서 추가되는 상태값(PAYMENT_SENT·PAYMENT_COLLECTING 등)은
-// 서버(docs/46)와 같은 이름의 판정 함수로만 선반영하고, 상태 유니온 타입·사용자 노출 라벨은
-// 실제 소비 화면이 생기는 단계에서 함께 도입한다(미사용 카피의 검증 불가 문제 방지).
+// 분철·참여·배송 상태의 단일 기준 모듈. 값은 서버 enum(BuncheolStatus·ParticipationStatus·
+// DeliveryStatus) 이름 그대로이고, 예외는 프론트 전용 PUBLIC_PREVIEW 와 상태 없는 목업(빈 값)뿐이다.
+// 화면마다 상태 리터럴을 비교하면 라벨이 어긋나므로 판정은 여기서만 한다.
 
 type DeliveryStatus = "SNAPSHOTTED" | "SHIPPING" | "DELIVERED" | "RECEIVED";
 
@@ -22,15 +20,6 @@ export function getFlowType(value: string | null | undefined): FlowType {
 // 분철(buncheol) 상태
 // ---------------------------------------------------------------------------
 
-// 진행 확정 계열. CONFIRMED 외 값들은 구 응답 호환용 동의어다.
-const confirmedBuncheolStatuses = new Set([
-  "CONFIRMED",
-  "PAYMENT_CONFIRMED",
-  "PAID",
-  "SETTLING",
-  "FINISHED",
-]);
-
 export function isBuncheolHostCancelledStatus(status: string | null | undefined) {
   return normalizeStatusValue(status) === "HOST_CANCELLED";
 }
@@ -40,18 +29,12 @@ export function isBuncheolCancelledStatus(status: string | null | undefined) {
   const normalizedStatus = normalizeStatusValue(status);
 
   return (
-    normalizedStatus === "CANCELLED" ||
-    normalizedStatus === "CANCELED" ||
-    normalizedStatus === "HOST_CANCELLED"
+    normalizedStatus === "CANCELLED" || normalizedStatus === "HOST_CANCELLED"
   );
 }
 
 export function isBuncheolConfirmedStatus(status: string | null | undefined) {
-  return confirmedBuncheolStatuses.has(normalizeStatusValue(status));
-}
-
-export function isBuncheolDeletedStatus(status: string | null | undefined) {
-  return normalizeStatusValue(status) === "DELETED";
+  return normalizeStatusValue(status) === "CONFIRMED";
 }
 
 // C2C 입금 수집 중 — 개최자 성사 확정 후 전원 입금확인 전 구간 (docs/46 §1.2).
@@ -189,30 +172,19 @@ export function isHostedBuncheolClosed({
 export function isParticipationAwaitingPaymentStatus(
   status: string | null | undefined,
 ) {
-  const normalizedStatus = normalizeStatusValue(status);
-
-  return (
-    normalizedStatus === "AWAITING_PAYMENT" ||
-    normalizedStatus === "PENDING_PAYMENT"
-  );
+  return normalizeStatusValue(status) === "AWAITING_PAYMENT";
 }
 
 export function isParticipationConfirmedStatus(
   status: string | null | undefined,
 ) {
-  const normalizedStatus = normalizeStatusValue(status);
-
-  return (
-    normalizedStatus === "CONFIRMED" || normalizedStatus === "PAYMENT_CONFIRMED"
-  );
+  return normalizeStatusValue(status) === "CONFIRMED";
 }
 
 export function isParticipationCancelledStatus(
   status: string | null | undefined,
 ) {
-  const normalizedStatus = normalizeStatusValue(status);
-
-  return normalizedStatus === "CANCELLED" || normalizedStatus === "CANCELED";
+  return normalizeStatusValue(status) === "CANCELLED";
 }
 
 // C2C 신청(무입금 슬롯 선점) 상태 (docs/46 §1.1). 입금 기한 없음, 계좌 비노출.
@@ -276,12 +248,12 @@ export function getDeliveryStatusLabel(status: string | null | undefined) {
 }
 
 /**
- * 참여 카운트의 단위. C2C 는 한 사람이 자리를 여러 개 잡을 수 있어 자리 ≠ 사람이고,
- * LEGACY 는 1인 1자리라 자리 = 사람이다.
+ * 참여 카운트 표기 「멤버 N명」. C2C 는 한 사람이 멤버를 여러 명 고를 수 있어 멤버 수 ≠ 사람 수고,
+ * LEGACY 는 1인 1멤버라 둘이 같다. 흐름과 상관없이 같은 표기를 쓴다.
  *
- * ⚠️ 이 함수가 바꾸는 것은 <b>표기뿐</b>이다. 숫자를 사람 수로 바꾸면 서버의 최소 진행 인원
- * 판정(자리 수 기준)과 화면이 갈린다.
+ * ⚠️ 숫자는 멤버(자리) 수 그대로 넘긴다. 사람 수로 바꾸면 서버의 최소 진행 판정(멤버 수 기준)과
+ * 화면이 갈린다. 조사가 붙는 문장은 이 함수 대신 템플릿에 「멤버 ${n}명이에요」처럼 직접 쓴다.
  */
-export function getCountUnit(flowType?: string | null) {
-  return getFlowType(flowType) === "C2C" ? "자리" : "명";
+export function formatMemberCount(count: number) {
+  return `멤버 ${count}명`;
 }

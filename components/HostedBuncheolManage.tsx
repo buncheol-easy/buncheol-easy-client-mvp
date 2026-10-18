@@ -9,9 +9,11 @@ import {
   ConfirmSheet,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
-import { Toast, useToast } from "@/components/Toast";
+import { HelpText } from "@/components/HelpText";
+import { useAppToast } from "@/components/Toast";
 import {
   addBuncheolMember,
+  ApiRequestError,
   confirmBuncheolRecruitment,
   finalizeBuncheolCollected,
   confirmBundlePayment,
@@ -44,7 +46,7 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
   isParticipationPaymentSentStatus,
-  getCountUnit,
+  formatMemberCount,
 } from "@/lib/buncheol-states";
 import { rankGroupSearchResults } from "@/lib/group-presenters";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
@@ -67,8 +69,9 @@ type DeliveryState = {
   trackingNumber: string;
 };
 
+// lib/auth-api.ts 의 같은 이름 함수와 규칙을 맞춘다 — 0원은 「0원」, 값을 모를 때(null·NaN·음수)만 "-".
 function formatWonAmount(value: number | null | undefined) {
-  if (!Number.isFinite(value) || !value || value <= 0) {
+  if (value == null || !Number.isFinite(value) || value < 0) {
     return "-";
   }
 
@@ -125,12 +128,13 @@ function formatKoreaDateTime(value: string | undefined) {
   return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
+// 금액을 하나도 모르면 0 이 아니라 null — 0 은 「0원」으로 그려져 실제 0원 자리와 구분되지 않는다.
 function getHighestBidAmount(option: BuncheolManagementOption) {
   return (
     option.currentHighestBid ??
     option.winner?.paymentAmount ??
     option.winner?.bidAmount ??
-    0
+    null
   );
 }
 
@@ -279,6 +283,11 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
 
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
+
+// 묶음 id 가 없으면 「입금 확인」도 「제외」도 서버에 보낼 수 없다. 되돌릴 수 없다고 묻는 시트를
+// 통과한 뒤 실패하지 않게, 두 버튼을 막고 이 문구를 미리 보여 준다.
+const MISSING_BUNDLE_MESSAGE =
+  "묶음 정보가 없어 이 참여를 처리할 수 없어요. 고객센터로 문의해 주세요.";
 
 // ⚠️ 인자를 optional 로 두지 않는다. undefined 를 받으면 호출부가 「막힌 자리 없음」을 넘겨도
 // default 문구가 뜬다. null 은 서버가 판정을 못 준 경우(구 응답·미연결 행)라 받아야 한다.
@@ -532,7 +541,7 @@ export function HostedBuncheolManage({
   const [loadMessage, setLoadMessage] = useState(
     "개최한 분철 정보를 불러오고 있어요.",
   );
-  const [toast, showToast] = useToast();
+  const showToast = useAppToast();
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(
     null,
   );
@@ -542,7 +551,7 @@ export function HostedBuncheolManage({
   const [deliveryStates, setDeliveryStates] = useState<
     Record<string, DeliveryState>
   >({});
-  // C2C 액션(성사 확정·부분 확정·입금확인·반려·운송장) 진행 중 식별자 — 중복 호출 방지.
+  // C2C 액션(성사 확정·부분 확정·입금확인·제외·운송장) 진행 중 식별자 — 중복 호출 방지.
   const [pendingC2CAction, setPendingC2CAction] = useState<string | null>(null);
   // 되돌리기 어려운 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
@@ -667,13 +676,11 @@ export function HostedBuncheolManage({
     refundTargetParticipants.length -
     sentButUnconfirmedCount;
   const minHeadcount = detail?.minHeadcount ?? 0;
-  // ⚠️ 여기만 「명」으로 남긴다. 분자(confirmedCount)는 C2C 에서 자리 수지만, 분모
-  // (minHeadcount)는 개최자가 「최소 진행 인원」으로 입력한 정책값이다. 분자만 「자리」로 바꾸면
-  // 「4자리 / 5명」이 되고, 분모까지 바꾸는 것은 그 입력 항목의 의미를 바꾸는 <b>정책 결정</b>이라
-  // 화면에서 임의로 정하지 않는다. 서버는 이 둘을 자리 수로 비교한다.
+  // 분모(minHeadcount)는 개최 폼의 「최소 진행 멤버 수」다. 서버는 분자·분모를 둘 다 멤버(자리)
+  // 수로 비교하므로 분자를 사람 수로 바꾸지 않는다.
   const confirmedProgressLabel = minHeadcount
-    ? `${confirmedCount}\uba85 / ${minHeadcount}\uba85`
-    : `${confirmedCount}\uba85`;
+    ? `${formatMemberCount(confirmedCount)} / 최소 ${minHeadcount}명`
+    : formatMemberCount(confirmedCount);
   const confirmedProgressPercent = minHeadcount
     ? Math.min(100, Math.round((confirmedCount / minHeadcount) * 100))
     : participantCount > 0
@@ -701,8 +708,7 @@ export function HostedBuncheolManage({
     ).length ?? 0;
   // ── C2C 파생값 (docs/46 §4.6 — 관리 응답은 활성 참여 전건을 내려준다) ──
   const isC2C = getFlowType(detail?.flowType) === "C2C";
-  // 아래 카운트들은 전부 자리 수다(멤버 슬롯 점유 건수). 규약은 getCountUnit 참조.
-  const countUnit = getCountUnit(detail?.flowType);
+  // 아래 카운트들은 전부 멤버(자리) 수다(멤버 슬롯 점유 건수). 표기는 formatMemberCount 참조.
   const activeC2CParticipants = (detail?.participants ?? []).filter(
     (participant) => !isParticipationCancelledStatus(participant.status),
   );
@@ -793,12 +799,12 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!deliveryId) {
-      showToast("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.", "error");
       return;
     }
 
     if (!trackingNumber) {
-      showToast("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.", "error");
       return;
     }
 
@@ -826,12 +832,13 @@ export function HostedBuncheolManage({
           trackingNumber,
         },
       }));
-      showToast("운송장 번호를 등록했어요.");
+      showToast("운송장 번호를 등록했어요.", "success");
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "운송장 번호를 등록하지 못했어요.",
+        "error",
       );
     } finally {
       setRegisteringTrackingId(null);
@@ -846,7 +853,7 @@ export function HostedBuncheolManage({
     }
 
     if (!participationId) {
-      showToast("입금 확인에 필요한 참여 ID가 없어요.");
+      showToast("입금 확인에 필요한 참여 ID가 없어요.", "error");
       return;
     }
 
@@ -865,12 +872,13 @@ export function HostedBuncheolManage({
       const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
       setDetail(nextDetail);
-      showToast("입금 확인이 완료됐어요.");
+      showToast("입금 확인이 완료됐어요.", "success");
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
+        "error",
       );
     } finally {
       setConfirmingPaymentId(null);
@@ -922,6 +930,7 @@ export function HostedBuncheolManage({
       setOpenChatUrlError("");
       showToast(
         normalizedUrl ? "오픈채팅 링크를 저장했어요." : "오픈채팅 링크를 지웠어요.",
+        "success",
       );
 
       try {
@@ -953,18 +962,18 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "성사 확정",
       description: isUnderMinHeadcount
-        // 자리 수를 「명」으로 재라벨링하지 않는다 — 문장을 쪼개 단위 혼용 자체를 없앤다.
-        ? `최소 진행 인원 ${minHeadcount}명을 아직 채우지 못했어요. 지금까지 신청은 ${applicantCount}${countUnit}예요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
-        : `신청자 ${applicantCount}${countUnit} 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
+        // 멤버 수와 신청자(사람)를 한 문장에 섞지 않는다 — 문장을 쪼개 단위 혼용 자체를 없앤다.
+        ? `최소 진행 멤버 수 ${minHeadcount}명을 아직 채우지 못했어요. 지금까지 신청된 멤버는 ${applicantCount}명이에요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
+        : `지금까지 신청된 멤버는 ${applicantCount}명이에요. 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
       onConfirm: () => {
         setConfirmSheetRequest(null);
-        void runConfirmRecruitment(applicantCount);
+        void runConfirmRecruitment();
       },
       title: "성사를 확정할까요?",
     });
   }
 
-  async function runConfirmRecruitment(applicantCount: number) {
+  async function runConfirmRecruitment() {
     if (pendingC2CAction) {
       return;
     }
@@ -975,21 +984,23 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
-      const result = await confirmBuncheolRecruitment(accessToken, id);
+      await confirmBuncheolRecruitment(accessToken, id);
 
       await reloadManagementDetail(accessToken);
       showToast(
-        `성사를 확정했어요. ${result.awaitingCount ?? applicantCount}${countUnit}에 입금 안내가 발송됐어요.`,
+        "성사를 확정했어요. 신청자 전원에게 입금 안내가 발송됐어요.",
+        "success",
       );
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "성사 확정을 처리하지 못했어요.",
+        "error",
       );
     } finally {
       setPendingC2CAction(null);
@@ -1010,7 +1021,7 @@ export function HostedBuncheolManage({
         setConfirmSheetRequest(null);
         void runFinalizeCollected();
       },
-      title: `입금한 ${c2cConfirmedCount}${countUnit}로 진행할까요?`,
+      title: `입금된 멤버 ${c2cConfirmedCount}명으로 진행할까요?`,
     });
   }
 
@@ -1025,18 +1036,19 @@ export function HostedBuncheolManage({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
       await finalizeBuncheolCollected(accessToken, id);
       await reloadManagementDetail(accessToken);
-      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.");
+      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.", "success");
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "진행 확정을 처리하지 못했어요.",
+        "error",
       );
     } finally {
       setPendingC2CAction(null);
@@ -1057,12 +1069,12 @@ export function HostedBuncheolManage({
     // 개최자가 통장에서 대조하는 값 그대로 — 입금자명과 묶음 총액. 이체가 한 번이므로 합계로 묻는다.
     const depositorName = getDepositorName(head);
     const total = bundle.slots.reduce((sum, slot) => sum + slot.amount, 0);
-    const memberNames = bundle.slots.map(getSlotMemberLabel).join(" · ");
+    const memberNames = bundle.slots.map(getSlotMemberLabel).join(", ");
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
-      // formatWonAmount 는 0 이하를 "-" 로 돌려줘 문장 안에서는 "- 을 받으셨나요" 가 된다.
-      // 0원 슬롯 조합에서 실제로 도달할 수 있어, 금액을 못 쓰면 절을 통째로 뺀다.
+      // 합계가 0원이면 「0원을 받으셨나요」가 돼 받을 돈이 있는 것처럼 읽힌다. 0원 슬롯 조합에서
+      // 실제로 도달할 수 있어, 받을 금액이 없으면 금액 절을 통째로 뺀다.
       description:
         total > 0
           ? `${depositorName}님의 ${memberNames} ${formatWonAmount(total)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
@@ -1073,7 +1085,7 @@ export function HostedBuncheolManage({
       },
       title:
         bundle.slots.length > 1
-          ? `자리 ${bundle.slots.length}개를 한 번에 확인할까요?`
+          ? `멤버 ${bundle.slots.length}명을 한 번에 확인할까요?`
           : "입금을 확인할까요?",
     });
   }
@@ -1088,39 +1100,49 @@ export function HostedBuncheolManage({
       return;
     }
 
+    if (!bundle.bundleId) {
+      showToast(MISSING_BUNDLE_MESSAGE, "error");
+      return;
+    }
+
     setPendingC2CAction(`confirm:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
-      if (bundle.bundleId) {
-        await confirmBundlePayment(
-          accessToken,
-          bundle.bundleId,
-          expectedSlotIds,
-        );
-      } else {
-        // 묶음이 없는 구 행 폴백 — 신규 참여는 전부 묶음을 갖는다.
-        await requestPaymentConfirmation(
-          accessToken,
-          bundle.slots[0].participationId,
-          { ignoreConflict: true },
-        );
-      }
+      await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
 
-      await reloadManagementDetail(accessToken);
-      showToast("입금 확인이 완료됐어요.");
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
+      showToast("입금 확인이 완료됐어요.", "success");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error
           ? error.message
           : "입금 확인을 처리하지 못했어요.",
+        "error",
       );
+
+      // 다른 탭에서 이미 확인·제외됐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
@@ -1134,7 +1156,7 @@ export function HostedBuncheolManage({
     }
 
     const depositorName = getDepositorName(bundle.slots[0]);
-    const memberNames = bundle.slots.map(getSlotMemberLabel).join(" · ");
+    const memberNames = bundle.slots.map(getSlotMemberLabel).join(", ");
 
     setConfirmSheetRequest({
       confirmLabel: "제외",
@@ -1145,7 +1167,7 @@ export function HostedBuncheolManage({
       },
       title:
         bundle.slots.length > 1
-          ? `자리 ${bundle.slots.length}개를 함께 뺄까요?`
+          ? `멤버 ${bundle.slots.length}명을 함께 뺄까요?`
           : "이 참여를 뺄까요?",
     });
   }
@@ -1156,27 +1178,45 @@ export function HostedBuncheolManage({
     }
 
     if (!bundle.bundleId) {
-      showToast("이 참여는 묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요.");
+      showToast(MISSING_BUNDLE_MESSAGE, "error");
       return;
     }
 
     setPendingC2CAction(`release:${bundle.key}`);
 
+    let accessToken: string | null = null;
+
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
       await releaseBundle(accessToken, bundle.bundleId);
-      await reloadManagementDetail(accessToken);
-      showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.");
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 제외가 실패로 보이지 않게.
+      showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.", "success");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : "참여를 빼지 못했어요.",
+        "error",
       );
+
+      // 그사이 입금이 확인됐거나 다른 탭에서 뺐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
     } finally {
       setPendingC2CAction(null);
     }
@@ -1226,7 +1266,7 @@ export function HostedBuncheolManage({
     const deliveryId = participant.delivery?.deliveryId;
 
     if (!deliveryId) {
-      showToast("운송장을 등록할 배송 ID가 없어요.");
+      showToast("운송장을 등록할 배송 ID가 없어요.", "error");
       return;
     }
 
@@ -1235,7 +1275,7 @@ export function HostedBuncheolManage({
     ).trim();
 
     if (!trackingNumber) {
-      showToast("운송장 번호를 입력해 주세요.");
+      showToast("운송장 번호를 입력해 주세요.", "error");
       return;
     }
 
@@ -1251,7 +1291,7 @@ export function HostedBuncheolManage({
       accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
@@ -1281,6 +1321,7 @@ export function HostedBuncheolManage({
         mode === "edit"
           ? "운송장 번호를 수정했어요."
           : "운송장 번호를 등록했어요.",
+        "success",
       );
 
       try {
@@ -1295,6 +1336,7 @@ export function HostedBuncheolManage({
           : mode === "edit"
             ? "운송장 번호를 수정하지 못했어요."
             : "운송장 번호를 등록하지 못했어요.",
+        "error",
       );
 
       // 그사이 배송 완료로 넘어갔으면 서버가 409 로 거절한다 — 다시 불러와 「수정」을 거둔다.
@@ -1332,7 +1374,7 @@ export function HostedBuncheolManage({
       title: `${option.memberName} 멤버를 뺄까요?`,
       warnings: lowersMinHeadcount
         ? [
-            `최소 진행 인원이 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
+            `최소 진행 멤버 수가 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
           ]
         : undefined,
     });
@@ -1351,14 +1393,14 @@ export function HostedBuncheolManage({
       accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.");
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
       await removeBuncheolMember(accessToken, id, option.buncheolMemberId);
-      // 홈·아티스트 카드의 남은 멤버가 60초 저장본으로 남지 않게 한다.
+      // 홈·아티스트 카드의 멤버 칩이 60초 저장본으로 남지 않게 한다.
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
-      showToast(`${option.memberName} 멤버를 뺐어요.`);
+      showToast(`${option.memberName} 멤버를 뺐어요.`, "success");
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1368,6 +1410,7 @@ export function HostedBuncheolManage({
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : "멤버를 빼지 못했어요.",
+        "error",
       );
 
       // 그사이 신청이 들어왔거나 다른 탭에서 뺐으면 서버가 거부한다 — 다시 불러와 지금 상태를 보여 준다.
@@ -1502,7 +1545,7 @@ export function HostedBuncheolManage({
       });
       setAddMemberSheet(null);
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
-      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`);
+      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`, "success");
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1510,11 +1553,29 @@ export function HostedBuncheolManage({
         showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
       }
     } catch (error: unknown) {
-      // 후보 목록이 낡았을 수 있어(다른 탭에서 넣음 등) 시트를 닫고 다시 불러온다.
+      // 403·404·409 는 서버 상태가 화면과 달라진 것이라 닫고 다시 불러오고, 그 밖은 고른 멤버·가격을 둔 채 시트 안에 이유를 보인다.
+      // 5xx·네트워크는 저장됐는데 응답만 끊겼을 수 있어 뒤에서 다시 불러오고, 5xx 본문엔 서버 문구가 없어 고정 안내를 쓴다.
+      if (!(error instanceof ApiRequestError) || error.status >= 500) {
+        setAddMemberError("멤버를 넣지 못했어요. 잠시 후 다시 시도해 주세요.");
+
+        if (accessToken) {
+          void reloadManagementDetail(accessToken).catch(() => {});
+        }
+
+        return;
+      }
+
+      if (![403, 404, 409].includes(error.status)) {
+        setAddMemberError(
+          error.status === 401
+            ? "로그인이 만료됐어요. 다시 로그인해 주세요."
+            : error.message,
+        );
+        return;
+      }
+
       setAddMemberSheet(null);
-      showToast(
-        error instanceof Error ? error.message : "멤버를 넣지 못했어요.",
-      );
+      showToast(error.message, "error");
 
       if (accessToken) {
         try {
@@ -1567,7 +1628,7 @@ export function HostedBuncheolManage({
           </header>
 
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
-            <p className="break-keep text-[15px] font-semibold leading-6 text-black/55">
+            <p className="break-keep text-[15px] font-semibold leading-6 text-black/60">
               {isLoadingDetail ? "분철 정보를 불러오는 중이에요." : loadMessage}
             </p>
             {isLoadingDetail ? null : (
@@ -1654,7 +1715,7 @@ export function HostedBuncheolManage({
                 <p className="text-[13px] font-semibold text-black/40">
                   운영 요약
                 </p>
-                <p className="mt-1 text-[14px] font-semibold text-black/55">
+                <p className="mt-1 text-[14px] font-semibold text-black/60">
                   입금 확인 후 운송장 등록까지 한 곳에서 처리해요.
                 </p>
               </div>
@@ -1668,7 +1729,7 @@ export function HostedBuncheolManage({
               </div>
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
-                  {"\ucd5c\uc18c \uc9c4\ud589 \uc778\uc6d0"}
+                  {"최소 진행 멤버 수"}
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
                   {minHeadcount ? `${minHeadcount}\uba85` : "-"}
@@ -1677,7 +1738,7 @@ export function HostedBuncheolManage({
               <div className="rounded-[0.85rem] border border-black/10 bg-white px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">{"\ucc38\uc5ec"}</p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${participantCount}${countUnit}`}
+                  {formatMemberCount(participantCount)}
                 </p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1685,7 +1746,9 @@ export function HostedBuncheolManage({
                   {"\uc785\uae08 \ub300\uae30"}
                 </p>
                 <p className="mt-1 text-[15px] font-semibold">
-                  {`${isC2C ? c2cAwaitingCount : awaitingPaymentCount}${countUnit}`}
+                  {formatMemberCount(
+                    isC2C ? c2cAwaitingCount : awaitingPaymentCount,
+                  )}
                 </p>
               </div>
               {isC2C ? (
@@ -1695,7 +1758,7 @@ export function HostedBuncheolManage({
                       {"\uc2e0\uccad"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cAppliedCount}${countUnit}`}
+                      {formatMemberCount(c2cAppliedCount)}
                     </p>
                   </div>
                   <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
@@ -1703,7 +1766,7 @@ export function HostedBuncheolManage({
                       {"\ubcf4\ub0c8\uc5b4\uc694"}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
-                      {`${c2cPaymentSentCount}${countUnit}`}
+                      {formatMemberCount(c2cPaymentSentCount)}
                     </p>
                   </div>
                 </>
@@ -1756,9 +1819,9 @@ export function HostedBuncheolManage({
             <p className="text-[15px] font-semibold tracking-[-0.04em]">
               오픈채팅
             </p>
-            <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+            <HelpText className="mt-1">
               참여자가 문의할 소통 창구예요. 분철 상세와 입금 안내 화면에 보여요.
-            </p>
+            </HelpText>
             {detail.openChatUrl ? (
               <div className="mt-3 flex items-center gap-2 rounded-[0.85rem] bg-[#f4f4f4] px-3 py-2.5">
                 <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-black/70">
@@ -1789,16 +1852,18 @@ export function HostedBuncheolManage({
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 성사 확정
               </p>
-              <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-                {`지금까지 신청 ${c2cAppliedCount}${countUnit}예요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
-              </p>
+              <HelpText className="mt-1">
+                {`지금까지 신청된 멤버는 ${c2cAppliedCount}명이에요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
+              </HelpText>
               {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
                   유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
-              <p className="mt-1.5 text-[13px] font-medium leading-5 text-black/50">
-                모집 기한이 지나고{" "}
-                <span className="font-semibold">2일(48시간)</span> 안에 확정하지
-                않으면 분철이 자동으로 취소돼요.
-              </p>
+              <HelpText className="mt-1.5">
+                <span className="block">
+                  모집 기한이 지나고{" "}
+                  <span className="font-semibold text-black/80">2일(48시간)</span>{" "}
+                  안에 확정하지 않으면 분철이 자동으로 취소돼요.
+                </span>
+              </HelpText>
               <button
                 className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
                 disabled={c2cAppliedCount === 0 || pendingC2CAction !== null}
@@ -1831,8 +1896,8 @@ export function HostedBuncheolManage({
               </div>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
                 {/* ⚠️ 한 줄로 붙인다. 값 뒤에서 줄을 바꾸면 다음 텍스트 노드의 <b>선두 개행+들여쓰기가
-                    통째로 버려져</b> 공백이 사라진다("1자리· 보냈어요"). 아래 「입금한{" "}」이 같은 이유다. */}
-                {`입금 확인 ${c2cConfirmedCount}${countUnit} · 입금 대기 ${c2cAwaitingCount}${countUnit} · 보냈어요 ${c2cPaymentSentCount}${countUnit}`}
+                    통째로 버려져</b> 공백이 사라진다("1명· 보냈어요"). 아래 진행 확정 보조 문장도 같은 이유다. */}
+                {`입금 확인 멤버 ${c2cConfirmedCount}명 · 입금 대기 ${c2cAwaitingCount}명 · 보냈어요 ${c2cPaymentSentCount}명`}
               </p>
               {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를
                   통과한다. 전원 입금이면 입금확인 경로에서 자동으로 CONFIRMED 가 되므로, 이 버튼이 실제로
@@ -1854,24 +1919,22 @@ export function HostedBuncheolManage({
                   >
                     {pendingC2CAction === "finalize-collected"
                       ? "확정하는 중"
-                      : `입금한 ${c2cConfirmedCount}${countUnit}로 진행 확정`}
+                      : `입금된 멤버 ${c2cConfirmedCount}명으로 진행 확정`}
                   </button>
-                  <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                    입금을 기다리는 참여가 더 없어요. 확정하면 입금한{" "}
-                    {c2cConfirmedCount}
-                    {countUnit}로 분철을 진행해요.
-                  </p>
+                  <HelpText className="mt-2">
+                    {`입금을 기다리는 참여가 더 없어요. 확정하면 입금된 멤버 ${c2cConfirmedCount}명으로 분철을 진행해요.`}
+                  </HelpText>
                 </>
               ) : c2cUnpaidActiveCount > 0 ? (
-                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                <HelpText className="mt-2">
                   입금을 확인하거나, 기한이 지난 미입금 참여를 직접 정리하면
-                  입금한 사람만으로 진행을 확정할 수 있어요.
-                </p>
+                  입금된 멤버만으로 진행을 확정할 수 있어요.
+                </HelpText>
               ) : (
-                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
-                  입금 확인된 참여가 아직 없어요. 최소 1명을 확인해야 진행을
-                  확정할 수 있어요.
-                </p>
+                <HelpText className="mt-2">
+                  입금 확인된 참여가 아직 없어요. 적어도 멤버 1명의 입금을
+                  확인해야 진행을 확정할 수 있어요.
+                </HelpText>
               )}
             </section>
           ) : null}
@@ -1881,10 +1944,10 @@ export function HostedBuncheolManage({
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 멤버 관리
               </p>
-              <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+              <HelpText className="mt-1">
                 다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
                 않아요.
-              </p>
+              </HelpText>
               <ul className="mt-3 divide-y divide-black/[0.06]">
                 {memberSlots.map((option) => {
                   const slotState = getMemberSlotState(option.saleStatus);
@@ -1912,9 +1975,9 @@ export function HostedBuncheolManage({
                           {formatMemberSlotPrice(option.price)}
                         </p>
                         {blockedReason ? (
-                          <p className="mt-0.5 text-[11px] font-medium leading-4 text-black/35">
+                          <HelpText className="mt-0.5" size="caption">
                             {blockedReason}
-                          </p>
+                          </HelpText>
                         ) : null}
                       </div>
                       <span
@@ -1928,7 +1991,7 @@ export function HostedBuncheolManage({
                       </span>
                       {slotState.kind === "empty" ? (
                         <button
-                          className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                          className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                           disabled={isLastOpenSlot || pendingC2CAction !== null}
                           onClick={() => requestRemoveMemberSlot(option)}
                           type="button"
@@ -1966,11 +2029,11 @@ export function HostedBuncheolManage({
                   ? `환불이 필요한 참여 ${refundTargetParticipants.length}건`
                   : "환불 확인이 필요한 참여"}
               </p>
-              <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
+              <HelpText className="mt-1">
                 {refundTargetParticipants.length > 0
                   ? "입금 확인된 취소 건이에요. 통장을 확인하고 아래 계좌로 환불해 주세요."
                   : "환불 계좌를 보여드릴 확정 건은 없어요. 아래 안내를 확인해 주세요."}
-              </p>
+              </HelpText>
               <div className="mt-3 space-y-2">
                 {refundTargetParticipants.map((participant) => (
                   <div
@@ -2015,17 +2078,17 @@ export function HostedBuncheolManage({
                 ))}
               </div>
               {sentButUnconfirmedCount > 0 ? (
-                <p className="mt-3 text-[12px] font-medium leading-5 text-black/55">
+                <HelpText className="mt-3">
                   입금 확인 전에 빠진 참여 {sentButUnconfirmedCount}건이 있어요.
-                  보냈다고 표시했지만 확인되지 않은 건이라 계좌를 보여드리지
-                  않아요 — 통장에 늦게 찍힌 이체가 있는지 확인해 주세요.
-                </p>
+                  보냈다고 표시했지만 확인되지 않아 계좌는 보여드리지 않아요.
+                  통장에 늦게 찍힌 이체가 있는지 확인해 주세요.
+                </HelpText>
               ) : null}
               {noTraceCancelledCount > 0 ? (
-                <p className="mt-2 text-[12px] font-medium leading-5 text-black/40">
+                <HelpText className="mt-2">
                   입금 전에 취소된 참여 {noTraceCancelledCount}건은 환불할 금액이
                   없어 여기 표시하지 않아요.
-                </p>
+                </HelpText>
               ) : null}
             </section>
           ) : null}
@@ -2035,13 +2098,13 @@ export function HostedBuncheolManage({
               <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
                 {isC2C ? "참여자 관리" : "멤버별 참여 관리"}
               </h2>
-              <p className="mt-1 text-[13px] font-medium text-black/40">
-                {/* 리스트 모수는 취소를 뺀 활성 참여 전건(신청됨·입금 대기 포함)이라
-                    "여기에 표시돼요"로 쓰면 안 된다 — 바뀌는 것은 존재가 아니라 상태다. */}
+              {/* 리스트 모수는 취소를 뺀 활성 참여 전건(신청됨·입금 대기 포함)이라
+                  "여기에 표시돼요"로 쓰면 안 된다 — 바뀌는 것은 존재가 아니라 상태다. */}
+              <HelpText className="mt-1">
                 {isC2C
-                  ? "참여자가 '보냈어요'를 누르면 상태가 '보냈어요'로 바뀌어요. 입금자명으로 통장 내역을 대조해 확인하고, 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."
+                  ? "참여자가 송금 후 '보냈어요'를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요. 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."
                   : "멤버마다 입금 확인 → 운송장 등록 순서로 처리해요."}
-              </p>
+              </HelpText>
             </div>
 
             <div className="space-y-3">
@@ -2090,12 +2153,12 @@ export function HostedBuncheolManage({
                   const blockedSlot = bundle.slots.find(
                     (slot) => slot.releasability !== "RELEASABLE",
                   );
-                  const canRelease = !blockedSlot && Boolean(bundle.bundleId);
+                  const hasBundleId = Boolean(bundle.bundleId);
+                  const canRelease = !blockedSlot && hasBundleId;
                   // 🔴 막힌 자리가 있을 때만 사유를 만든다 — 「막힌 자리 없음」과 「판정값 없음」이
                   // 둘 다 undefined 라, 그냥 넘기면 제외 가능한 묶음에도 default 문구가 붙는다.
-                  const releaseBlockedReason = !bundle.bundleId
-                    ? // 7. 시트를 통과한 뒤 실패하지 않게 미리 알린다.
-                      "묶음 정보가 없어 뺄 수 없어요. 고객센터로 문의해 주세요."
+                  const blockedReason = !hasBundleId
+                    ? MISSING_BUNDLE_MESSAGE
                     : blockedSlot
                       ? // 슬롯 필드는 optional 이라 undefined 가 올 수 있다. 「판정값 없음」은
                         // null 로 명시해 넘긴다 — 그게 default 문구가 나와야 하는 유일한 경우다.
@@ -2180,7 +2243,7 @@ export function HostedBuncheolManage({
                               같은 이름이 두 줄 뜬다. */}
                           {head.participantNickname !== depositorName &&
                           !isSyntheticParticipantName(head.participantNickname) ? (
-                            <p className="truncate text-[13px] font-semibold text-black/55">
+                            <p className="truncate text-[13px] font-semibold text-black/60">
                               <span className="mr-1.5 text-black/35">참여자</span>
                               {head.participantNickname}
                             </p>
@@ -2191,7 +2254,7 @@ export function HostedBuncheolManage({
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
                             {formatWonAmount(bundleTotal)}
                             {bundle.slots.length > 1
-                              ? ` · 자리 ${bundle.slots.length}개`
+                              ? ` · 멤버 ${bundle.slots.length}명`
                               : ""}
                             {bundleTimeInfo}
                           </p>
@@ -2228,7 +2291,7 @@ export function HostedBuncheolManage({
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {bundle.slots.map((slot) => (
                           <span
-                            className="rounded-full bg-[#f1f1f1] px-2 py-0.5 text-[11px] font-semibold text-black/55"
+                            className="rounded-full bg-[#f1f1f1] px-2 py-0.5 text-[11px] font-semibold text-black/60"
                             key={slot.participationId}
                           >
                             {getSlotMemberLabel(slot)}
@@ -2240,19 +2303,19 @@ export function HostedBuncheolManage({
                           버튼이 0개인 유령 줄이 남는다. 실제로 할 수 있는 것이 하나라도 있으면 연다. */}
                       {!isBundleConfirmed &&
                       (canRelease ||
-                        releaseBlockedReason ||
+                        blockedReason ||
                         confirmTargetIds.length > 0) ? (
                         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                           {/* 「제외」는 입금 기한이 지난 뒤에만 열린다 — 이체가 통장에 늦게 찍히는
                               일이 흔해, 기한 안에 뺄 수 있게 하면 정상 입금자를 빼는 사고가 난다
                               (docs/71 §8-1). 버튼을 감추지 않고 사유를 보여준다. */}
-                          {releaseBlockedReason ? (
-                            <p className="mr-auto text-[11px] font-medium leading-4 text-black/35">
-                              {releaseBlockedReason}
-                            </p>
+                          {blockedReason ? (
+                            <HelpText className="mr-auto" size="caption">
+                              {blockedReason}
+                            </HelpText>
                           ) : null}
                           <button
-                            className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                            className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                             disabled={!canRelease || pendingC2CAction !== null}
                             onClick={() => requestReleaseBundle(bundle)}
                             type="button"
@@ -2262,7 +2325,9 @@ export function HostedBuncheolManage({
                           {confirmTargetIds.length > 0 ? (
                             <button
                               className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-                              disabled={pendingC2CAction !== null}
+                              disabled={
+                                !hasBundleId || pendingC2CAction !== null
+                              }
                               onClick={() =>
                                 requestConfirmBundlePayment(
                                   bundle,
@@ -2323,7 +2388,7 @@ export function HostedBuncheolManage({
                                 </p>
                                 {hasTracking && !isEditingTracking ? (
                                   <div className="mt-1.5 flex items-center justify-between gap-2">
-                                    <p className="min-w-0 text-[13px] font-semibold text-black/55">
+                                    <p className="min-w-0 text-[13px] font-semibold text-black/60">
                                       운송장 {entry.delivery.trackingNumber}
                                       {getDeliveryStatusLabel(
                                         entry.delivery.status,
@@ -2333,7 +2398,7 @@ export function HostedBuncheolManage({
                                     </p>
                                     {canEditTracking ? (
                                       <button
-                                        className="h-8 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                        className="h-8 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                                         disabled={pendingC2CAction !== null}
                                         onClick={() => {
                                           setParticipantTrackingInputs(
@@ -2376,7 +2441,7 @@ export function HostedBuncheolManage({
                                     {isEditingTracking ? (
                                       <>
                                         <button
-                                          className="h-10 shrink-0 rounded-full border border-black/10 bg-white px-3.5 text-[13px] font-semibold text-black/55 disabled:border-black/[0.06] disabled:text-black/25"
+                                          className="h-10 shrink-0 rounded-full border border-black/10 bg-white px-3.5 text-[13px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                                           disabled={isRegistering}
                                           onClick={() => {
                                             setEditingTrackingOwnerId(null);
@@ -2611,7 +2676,7 @@ export function HostedBuncheolManage({
                                     입금 확인
                                   </p>
                                   <div className="mt-2 space-y-1">
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         참여자
                                       </span>
@@ -2630,19 +2695,19 @@ export function HostedBuncheolManage({
                                     </p>
                                     {/* 통장에 찍히는 건 예금주명이라, 닉네임(참여자)만으로는 대조가 안 된다 (docs/53 Q-18).
                                         C2C 참여자 목록과 같은 규칙(예금주 우선)을 여기서도 보여준다. */}
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         입금자명
                                       </span>
                                       {optionDepositorName ?? "-"}
                                     </p>
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         입금액
                                       </span>
                                       {formatWonAmount(paymentAmount)}
                                     </p>
-                                    <p className="text-[13px] font-semibold text-black/55">
+                                    <p className="text-[13px] font-semibold text-black/60">
                                       <span className="mr-2 text-black/35">
                                         {isPaymentConfirmed ? "확인" : "기한"}
                                       </span>
@@ -2681,7 +2746,7 @@ export function HostedBuncheolManage({
                               <p className="text-[11px] font-medium text-black/35">
                                 입금 확인
                               </p>
-                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
+                              <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/60">
                                 {option.winner
                                   ? isPaymentDuePassed
                                     ? "입금 기한이 지났어요."
@@ -2719,7 +2784,7 @@ export function HostedBuncheolManage({
                                     ) : null}
                                   </div>
                                 ) : (
-                                  <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/55">
+                                  <p className="mt-1 text-[14px] font-semibold tracking-[-0.04em] text-black/60">
                                     배송 정보가 아직 내려오지 않았어요.
                                   </p>
                                 )}
@@ -2801,10 +2866,10 @@ export function HostedBuncheolManage({
             <p className="text-[16px] font-semibold tracking-[-0.04em]">
               오픈채팅 링크
             </p>
-            <p className="mt-1 break-keep text-[13px] font-medium leading-5 text-black/50">
+            <HelpText className="mt-1">
               카카오 오픈채팅 주소를 붙여 넣어 주세요. 비우고 저장하면 링크가
               지워져요.
-            </p>
+            </HelpText>
             <input
               aria-invalid={openChatUrlError ? true : undefined}
               aria-label="오픈채팅 링크"
@@ -2827,7 +2892,7 @@ export function HostedBuncheolManage({
             ) : null}
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
-                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/60 disabled:text-black/25"
                 disabled={isSavingOpenChatUrl}
                 onClick={() => {
                   setOpenChatUrlDraft(null);
@@ -2900,9 +2965,9 @@ export function HostedBuncheolManage({
                   멤버 목록을 불러오는 중이에요.
                 </p>
               ) : addMemberSheet.loadFailed ? (
-                <p className="mt-2 break-keep text-[12px] font-medium leading-5 text-black/45">
+                <HelpText className="mt-2">
                   멤버 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
-                </p>
+                </HelpText>
               ) : addMemberSheet.closedCandidates.length +
                   addMemberSheet.groupCandidates.length ===
                 0 ? (
@@ -2943,7 +3008,7 @@ export function HostedBuncheolManage({
             ) : null}
             <div className="mt-4 grid shrink-0 grid-cols-2 gap-2">
               <button
-                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/55 disabled:text-black/25"
+                className="h-12 rounded-full bg-[#f4f4f4] text-[15px] font-semibold text-black/60 disabled:text-black/25"
                 disabled={pendingC2CAction === "add-member"}
                 onClick={closeAddMemberSheet}
                 type="button"
@@ -2970,11 +3035,6 @@ export function HostedBuncheolManage({
       <ConfirmSheet
         onCancel={() => setConfirmSheetRequest(null)}
         request={confirmSheetRequest}
-      />
-
-      <Toast
-        className="fixed inset-x-0 bottom-[calc(1.5rem+env(safe-area-inset-bottom))] z-50 px-6"
-        message={toast}
       />
     </main>
   );

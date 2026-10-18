@@ -16,6 +16,7 @@ import {
   type KakaoMarker,
   type KakaoMarkerImage,
 } from "@/lib/kakao-map";
+import { HelpText } from "@/components/HelpText";
 
 const SHEET_CLOSE_MS = 280;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -609,7 +610,7 @@ export function CvsStoreSearchSheet({
             </div>
 
             {limitedBrand ? (
-              <p className="mt-2.5 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 text-[12px] font-semibold text-black/55 ring-1 ring-[#E4F6A5]/60">
+              <p className="mt-2.5 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                 이 분철은 {limitedBrand} 지점으로만 받을 수 있어요.
               </p>
             ) : (
@@ -649,14 +650,15 @@ export function CvsStoreSearchSheet({
             </p>
           ) : debouncedKeyword.trim().length < 2 ? (
             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-8 text-center">
-              <p className="text-[14px] font-semibold text-black/55">
+              <p className="text-[14px] font-semibold text-black/60">
                 자주 가는 편의점을 찾아보세요
               </p>
-              <p className="mt-1 text-[12.5px] font-medium leading-5 text-black/40">
-                지점명이나 도로명 주소를 두 글자 이상 입력하면
-                <br />
-                지점 위치를 지도에서 보여드려요.
-              </p>
+              <HelpText align="center" className="mt-1">
+                <span className="block">
+                  지점명이나 도로명 주소를 두 글자 이상 입력하면
+                </span>
+                <span className="block">지점 위치를 지도에서 보여드려요.</span>
+              </HelpText>
             </div>
           ) : isLoading && stores.length === 0 ? (
             <p className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-6 text-center text-[13px] font-semibold text-black/40">
@@ -664,7 +666,7 @@ export function CvsStoreSearchSheet({
             </p>
           ) : stores.length === 0 ? (
             <div className="rounded-[0.85rem] bg-[#f7f7f7] px-4 py-6 text-center">
-              <p className="text-[14px] font-semibold text-black/55">
+              <p className="text-[14px] font-semibold text-black/60">
                 검색 결과가 없어요
               </p>
               <p className="mt-1 text-[12.5px] font-medium text-black/40">
@@ -698,7 +700,7 @@ export function CvsStoreSearchSheet({
                         className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                           isSelected
                             ? "bg-[#DDE7B8] text-black"
-                            : "bg-white text-black/55"
+                            : "bg-white text-black/60"
                         }`}
                       >
                         {store.brand}

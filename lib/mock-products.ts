@@ -8,7 +8,8 @@ export type ProductOption = {
   buncheolMemberId?: string;
   myBidAmount?: number;
   myParticipationId?: string;
-  myRank?: number;
+  // 내 활성 참여의 상태(상세 myParticipation). 멤버 saleStatus 는 C2C 「보냈어요」를 입금 대기로 접어 내린다.
+  myParticipationStatus?: string;
   participatedByMe?: boolean;
   purchasePaymentConfirmedAt?: string;
   purchasePaymentDueAt?: string;
@@ -65,6 +66,8 @@ export type ProductDetailItem = ProductCardItem & {
   isHostedByMe?: boolean;
   minHeadcount?: number | null;
   purchaseSource?: string;
+  // 상세 응답의 서버 시각(ISO). 예약 오픈 카운트다운을 서버 시계에 맞추는 기준이다.
+  serverTime?: string | null;
   shippingDeadline?: string;
   shippingMethods?: ShippingMethod[];
   status?: string;
