@@ -42,6 +42,8 @@ import { artistListingsQueryKey } from "@/lib/query-keys";
 type ArtistBrowseContentProps = {
   group: ApiGroupDetail;
   initialItems: ProductCardItem[];
+  // 서버 렌더 시각(ms). 서버가 그린 카드의 하이드레이션 첫 렌더를 HTML 과 맞춘다(ProductCard).
+  initialNowMs?: number;
 };
 
 // 서버 렌더 초기 목록과 같은 크기로 맞춰, 멤버 선택 전후 목록 길이 기준이 어긋나지 않게 한다.
@@ -172,6 +174,7 @@ function getVisibleMembers(
 export function ArtistBrowseContent({
   group,
   initialItems,
+  initialNowMs,
 }: ArtistBrowseContentProps) {
   const router = useRouter();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -555,6 +558,7 @@ export function ArtistBrowseContent({
           ) : items.length > 0 ? (
             /* 카드 형태는 홈 목록과 같은 wide 로 맞춘다. */
             <ProductGrid
+              initialNowMs={initialNowMs}
               items={items}
               keyPrefix={`artist-${group.id}`}
               variant="wide"

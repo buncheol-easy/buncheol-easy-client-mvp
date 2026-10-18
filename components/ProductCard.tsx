@@ -35,6 +35,7 @@ import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
+const subscribeNoop = () => () => {};
 // 홈 카드로 연 상세의 분철 id·기록 시각. 상세가 마운트 때 한 번 읽고 지운다(ProductDetail).
 export const PRODUCT_HOME_ENTRY_ID_KEY = "product-home-entry-id";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
@@ -76,6 +77,8 @@ export type ProductCardItem = {
 type ProductCardProps = {
   item: ProductCardItem;
   variant?: "grid" | "wide";
+  // 서버 렌더 시각(ms). 서버가 그린 카드를 하이드레이션할 때만 쓰고, 그 뒤에는 브라우저 시각으로 다시 계산한다.
+  initialNowMs?: number;
 };
 
 const kstOffsetHours = 9;
@@ -199,7 +202,7 @@ function getDeadlineBadge(deadline: string) {
   };
 }
 
-function getReadableDeadlineBadge(deadline: string) {
+function getReadableDeadlineBadge(deadline: string, nowMs: number) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
   if (Number.isNaN(deadlineDate.getTime())) {
@@ -209,7 +212,7 @@ function getReadableDeadlineBadge(deadline: string) {
     };
   }
 
-  const now = new Date();
+  const now = new Date(nowMs);
 
   if (deadlineDate.getTime() <= now.getTime()) {
     return {
@@ -245,24 +248,25 @@ function getReadableDeadlineBadge(deadline: string) {
   };
 }
 
-export function isCardDeadlineOpen(deadline: string) {
+export function isCardDeadlineOpen(deadline: string, nowMs = Date.now()) {
   const deadlineDate = parseKoreaDateTime(deadline);
 
   return Number.isNaN(deadlineDate.getTime())
     ? true
-    : deadlineDate.getTime() > Date.now();
+    : deadlineDate.getTime() > nowMs;
 }
 
-function isProductCardPurchasable(item: ProductCardItem) {
+function isProductCardPurchasable(item: ProductCardItem, nowMs: number) {
   return (
-    isBuncheolPurchasableStatus(item.status) && isCardDeadlineOpen(item.deadline)
+    isBuncheolPurchasableStatus(item.status) &&
+    isCardDeadlineOpen(item.deadline, nowMs)
   );
 }
 
 // 취소(개최자 취소 HOST_CANCELLED 포함)·진행 확정 계열 판정은 중앙 모듈 기준.
 // 그 외 비구매 상태(마감 지남 등)는 "모집 종료"로 접는다.
-function getProductCardBadge(item: ProductCardItem) {
-  if (!isProductCardPurchasable(item)) {
+function getProductCardBadge(item: ProductCardItem, nowMs: number) {
+  if (!isProductCardPurchasable(item, nowMs)) {
     return {
       label: isBuncheolCancelledStatus(item.status)
         ? "분철 취소"
@@ -280,28 +284,33 @@ function getProductCardBadge(item: ProductCardItem) {
   // 홈 카드 → 상세로 넘어갈 때 같은 상태를 다른 말로 부르고 있었다.
   return {
     label: "모집 중",
-    value: getReadableDeadlineBadge(item.deadline).value,
+    value: getReadableDeadlineBadge(item.deadline, nowMs).value,
   };
 }
 
 // 예약 오픈 전 모집 중인 운영진 분철이면 띠에 쓸 오픈 시각과 지금 시각(오늘·내일 표기용)을 돌려준다.
 // 지난 오픈 시각은 카드를 다시 그릴 때(목록을 다시 볼 때) 사라진다.
-function getCardOpening(item: ProductCardItem) {
+function getCardOpening(item: ProductCardItem, nowMs: number) {
   const opensAtMs = parseIsoTimeMs(item.opensAt);
-  const nowMs = Date.now();
 
   return opensAtMs !== null &&
     opensAtMs > nowMs &&
-    isProductCardPurchasable(item)
+    isProductCardPurchasable(item, nowMs)
     ? { nowMs, opensAtMs }
     : null;
+}
+
+// 하이드레이션 렌더는 서버가 HTML 을 그린 시각으로 계산해야 한다. 홈·아티스트는 ISR 이라 HTML 이 묵어 있어서,
+// 브라우저 시각으로 그리면 오픈 정각·KST 자정 전후에 띠·오늘/내일·D-n 이 서버 HTML 과 어긋나 하이드레이션이 깨진다.
+function getCardNowMs(isHydrated: boolean, initialNowMs: number | undefined) {
+  return isHydrated || initialNowMs === undefined ? Date.now() : initialNowMs;
 }
 
 function getAvailableMemberSummary(memberNames: string[]) {
   return memberNames.join(", ");
 }
 
-function isRecentlyUploaded(uploadedAt?: string) {
+function isRecentlyUploaded(uploadedAt: string | undefined, nowMs: number) {
   if (!uploadedAt) {
     return false;
   }
@@ -312,16 +321,19 @@ function isRecentlyUploaded(uploadedAt?: string) {
     return false;
   }
 
-  const now = new Date();
   const millisecondsPerDay = 24 * 60 * 60 * 1000;
   const elapsedDays = Math.floor(
-    (now.getTime() - uploadedDate.getTime()) / millisecondsPerDay,
+    (nowMs - uploadedDate.getTime()) / millisecondsPerDay,
   );
 
   return elapsedDays >= 0 && elapsedDays < newProductDays;
 }
 
-export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
+export function ProductCard({
+  item,
+  variant = "grid",
+  initialNowMs,
+}: ProductCardProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const authState = useSyncExternalStore(
@@ -329,14 +341,20 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     readAuthState,
     readAuthState,
   );
+  const isHydrated = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  );
+  const nowMs = getCardNowMs(isHydrated, initialNowMs);
   const [isLiked, setIsLiked] = useState(item.liked === true);
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const productId = item.productId ?? item.id;
   const targetTags = getTargetTags(item);
-  const deadlineBadge = getProductCardBadge(item);
-  const isPurchasable = isProductCardPurchasable(item);
+  const deadlineBadge = getProductCardBadge(item, nowMs);
+  const isPurchasable = isProductCardPurchasable(item, nowMs);
   // 오픈 전에는 사진 아래 띠가 상태 칩과 「D-n」을 대신한다.
-  const opening = getCardOpening(item);
+  const opening = getCardOpening(item, nowMs);
   // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
   // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
   const shouldDimCard =
@@ -360,7 +378,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     : "";
   // '신규'·'배송비 0원 이벤트'·'배송비 돌려받는 무료 분철'은 구매 유인 배지라 아직 참여할 수 있는 카드에만
   // 띄운다(마감·취소 카드에선 소음).
-  const isNewProduct = !shouldDimCard && isRecentlyUploaded(item.uploadedAt);
+  const isNewProduct = !shouldDimCard && isRecentlyUploaded(item.uploadedAt, nowMs);
   // 두 배지 모두 배송비 이야기라 한 카드에 하나만 띄운다. 배송비까지 0원이면 돌려받을 배송비가 없으므로
   // 「배송비 0원 이벤트」가 이긴다.
   const showPaybackBadge =

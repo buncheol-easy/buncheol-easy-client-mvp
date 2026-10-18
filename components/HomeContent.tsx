@@ -189,6 +189,8 @@ const homeUsageGuide = [
 
 type HomeContentProps = {
   skipEnterAnimation?: boolean;
+  // 서버 렌더 시각(ms). 서버가 그린 카드의 하이드레이션 첫 렌더를 HTML 과 맞춘다(ProductCard).
+  initialNowMs?: number;
 };
 
 function toHomeBanner(item: ApiBanner): HomeBanner {
@@ -411,7 +413,10 @@ function HomeListingsRetryNotice({
   );
 }
 
-export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
+export function HomeContent({
+  skipEnterAnimation = false,
+  initialNowMs,
+}: HomeContentProps) {
   useProfileCompletionGuard();
 
   const router = useRouter();
@@ -1312,7 +1317,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 </div>
             ) : (
                 <div className={shouldRevealListings ? "content-reveal" : ""}>
-                  <ProductGrid items={visibleListings} variant="wide"/>
+                  <ProductGrid
+                    initialNowMs={initialNowMs}
+                    items={visibleListings}
+                    variant="wide"
+                  />
                 </div>
             )}
             {hasNoListingsToShow ? null : (

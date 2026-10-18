@@ -79,13 +79,17 @@ export default async function Home() {
     );
   }
 
+  // HTML 을 만든 시각 — 카드(오픈 띠·D-n)의 하이드레이션 첫 렌더를 이 HTML 과 맞추는 기준이다(ProductCard).
+  // eslint-disable-next-line react-hooks/purity -- 렌더 시각 캡처가 목적
+  const initialNowMs = Date.now();
+
   return (
     <main className="system-chrome-black h-[100dvh] overflow-hidden bg-white text-[#111111]">
       <h1 className="sr-only">분철이지 — 최애 포카 분철 플랫폼</h1>
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col bg-white">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <HydrationBoundary state={dehydrate(queryClient)}>
-            <HomeContent />
+            <HomeContent initialNowMs={initialNowMs} />
           </HydrationBoundary>
         </div>
         <BottomNavigator />
