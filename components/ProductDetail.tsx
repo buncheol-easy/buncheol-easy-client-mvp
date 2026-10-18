@@ -2380,8 +2380,8 @@ export function ProductDetail({
       : remainingHeadcount === null
         ? "개최자가 정한 진행 기준을 확인하고 있어요."
         : remainingHeadcount > 0
-          ? `분철 진행 최소 인원까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요. 인원을 채우면 진행이 확정돼요.`
-          : "분철 진행 최소 인원을 채웠어요.";
+          ? `최소 진행 멤버 수까지 ${remainingHeadcount.toLocaleString("ko-KR")}명 남았어요. 다 채우면 진행이 확정돼요.`
+          : "최소 진행 멤버 수를 채웠어요.";
 
   function getBidUnavailableMessage() {
     if (isHostedProduct) {

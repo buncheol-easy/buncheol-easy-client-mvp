@@ -469,13 +469,13 @@ const legacyParticipationStatusGuide = [
     icon: CheckIcon,
     label: bidProgressStepLabels[1],
     description:
-      "관리자가 입금을 확인한 상태예요. 마감 때 최소 인원이 모이면 진행 확정으로 바뀌어요.",
+      "관리자가 입금을 확인한 상태예요. 마감 때 최소 진행 멤버 수를 채우면 진행 확정으로 바뀌어요.",
   },
   {
     icon: UsersRoundIcon,
     label: bidProgressStepLabels[2],
     description:
-      "최소 인원이 모여 분철 진행이 확정된 상태예요. 굿즈 준비 후 배송이 시작돼요.",
+      "최소 진행 멤버 수를 채워 분철 진행이 확정된 상태예요. 굿즈 준비 후 배송이 시작돼요.",
   },
   {
     icon: TruckIcon,
@@ -954,7 +954,7 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     : isBuncheolCancelledStatus(bid.buncheolStatus)
       ? isC2C
         ? "분철이 성사되지 않아 취소됐어요."
-        : "최소 인원이 모이지 않아 분철이 취소됐어요."
+        : "최소 진행 멤버 수를 채우지 못해 분철이 취소됐어요."
       : "취소된 분철이에요.";
 
   return {
@@ -4602,8 +4602,8 @@ export function BidHistoryContent({
               ) : (
                 <>
                   <HelpText className="px-1 pt-2">
-                    마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
-                    취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로
+                    마감 때 최소 진행 멤버 수를 못 채우거나 입금 기한이 지나면
+                    참여가 취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로
                     환불돼요.
                   </HelpText>
                   <HelpText className="px-1 pt-2">

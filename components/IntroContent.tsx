@@ -655,7 +655,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
                 />
               </div>
               <HelpText className="mt-2">
-                분철 진행 최소 인원까지 2명 남았어요. 인원을 채우면 진행이
+                최소 진행 멤버 수까지 2명 남았어요. 다 채우면 진행이
                 확정돼요.
               </HelpText>
             </div>
@@ -1240,7 +1240,7 @@ const introFlowSteps = [
     label: "입금 확인",
   },
   {
-    body: "최소 인원이 모이면 분철이 확정되고 굿즈 준비가 시작돼요.",
+    body: "최소 진행 멤버 수를 채우면 분철이 확정되고 굿즈 준비가 시작돼요.",
     label: "진행 확정",
   },
   {
@@ -1274,9 +1274,9 @@ const introPainPoints = [
 
 const introSafetyPoints = [
   {
-    body: "마감 때 최소 인원이 모자라면\n분철이 자동으로 취소돼요.\n참여자 전원에게 안내가 나가요.",
+    body: "마감 때 최소 진행 멤버 수를 못 채우면\n분철이 자동으로 취소돼요.\n참여자 전원에게 안내가 나가요.",
     icon: UsersRoundIcon,
-    title: "인원 미달이면 자동 취소",
+    title: "멤버가 덜 모이면 자동 취소",
   },
   {
     body: "입금 안내, 진행 확정, 운송장 등록까지\n단계마다 알림톡으로 알려드려요.",
