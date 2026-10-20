@@ -34,6 +34,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { sortScheduledOpenFirst } from "@/lib/buncheol-open-time";
 import { isBuncheolCancelledStatus } from "@/lib/buncheol-states";
 import { getInitials, getGroupTone } from "@/lib/group-presenters";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
@@ -231,9 +232,12 @@ export function ArtistBrowseContent({
   // 취소 계열(미성사·개최자 취소)은 아티스트 페이지에서 감춘다. 이 화면은 색인 대상 유입
   // 랜딩이라(sitemap 도 같은 기준으로 취소분을 제외한다) 취소된 분철만 남으면 "이 그룹은
   // 분철이 없다"는 인상만 준다. 마감된 진행확정 분철은 그룹이 활성이라는 신호라 남긴다.
-  const items: ProductCardItem[] = (
-    listingsQuery.data ?? (isMemberSelected ? [] : initialItems)
-  ).filter((item) => !isBuncheolCancelledStatus(item.status));
+  // 서버는 최신 등록순이라 회차를 미리 올려 둔 이벤트는 마지막 회차가 맨 위에 온다.
+  const items: ProductCardItem[] = sortScheduledOpenFirst(
+    (listingsQuery.data ?? (isMemberSelected ? [] : initialItems)).filter(
+      (item) => !isBuncheolCancelledStatus(item.status),
+    ),
+  );
   // 전체 탭에서도 보여줄 목록이 없으면(서버 렌더 조회 실패) 스켈레톤을 띄운다. 그냥 두면
   // 재조회가 끝나기 전에 "분철이 아직 없어요" 가 떴다가 목록이 뒤늦게 나타난다.
   const isLoading =
