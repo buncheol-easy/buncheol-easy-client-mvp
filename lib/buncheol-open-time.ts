@@ -1,5 +1,7 @@
 // 운영진 분철 예약 오픈 시각 표기. 오픈 전 참여를 막는 정본은 서버이고, 화면은 같은 시각을 보여 주기만 한다.
 
+import { isBuncheolPurchasableStatus } from "@/lib/buncheol-states";
+
 // 서버 렌더(UTC)와 브라우저가 같은 글자를 내도록 시간대를 한국으로 고정한다.
 const opensAtPartsFormatter = new Intl.DateTimeFormat("ko-KR", {
   day: "numeric",
@@ -20,6 +22,35 @@ export function parseIsoTimeMs(value: string | null | undefined) {
   const time = new Date(value).getTime();
 
   return Number.isNaN(time) ? null : time;
+}
+
+/**
+ * 모집 중인 예약 오픈 분철을 오픈이 가까운 순서로 앞에 두고, 나머지는 받은 순서 그대로 뒤에 둔다.
+ * 지금 시각이 아니라 상태로 가르므로 서버 렌더와 브라우저의 순서가 같다.
+ */
+export function sortScheduledOpenFirst<
+  T extends { opensAt?: string | null; status?: string },
+>(items: T[]): T[] {
+  const scheduled: { item: T; opensAtMs: number }[] = [];
+  const rest: T[] = [];
+
+  for (const item of items) {
+    const opensAtMs = parseIsoTimeMs(item.opensAt);
+
+    if (opensAtMs !== null && isBuncheolPurchasableStatus(item.status)) {
+      scheduled.push({ item, opensAtMs });
+    } else {
+      rest.push(item);
+    }
+  }
+
+  if (scheduled.length === 0) {
+    return items;
+  }
+
+  scheduled.sort((left, right) => left.opensAtMs - right.opensAtMs);
+
+  return [...scheduled.map(({ item }) => item), ...rest];
 }
 
 const dayMs = 86_400_000;
