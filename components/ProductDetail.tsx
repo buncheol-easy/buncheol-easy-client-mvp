@@ -38,7 +38,7 @@ import {
   type CvsStore,
   type RequestedShippingAddress,
 } from "@/lib/auth-api";
-import { trackEvent } from "@/lib/analytics";
+import { trackAdConversion, trackEvent } from "@/lib/analytics";
 import { PRODUCT_ARTIST_ENTRY_INDEX_KEY } from "@/lib/artist-browse";
 import {
   createLoginHref,
@@ -3409,6 +3409,11 @@ export function ProductDetail({
           );
         }
 
+        // 코드 참여는 운영진이 나눠 준 자리라 광고로 생긴 참여가 아니다.
+        if (!isCodeCheckout) {
+          trackAdConversion("join_buncheol", { buncheol_id: buncheolId });
+        }
+
         const firstParticipationId = resultParticipationIds[0] ?? "";
         // C2C 신청(무입금): 서버가 dueAt·계좌 없이 APPLIED 로 생성한다 (docs/46 §3-1).
         // 확정 후 추가 모집(E1, PAYMENT_COLLECTING)은 즉시입금 구간이라 dueAt 누락 응답이
@@ -3927,6 +3932,7 @@ export function ProductDetail({
     try {
       if (nextLiked) {
         await addBuncheolBookmark(accessToken, buncheolId);
+        trackAdConversion("add_to_wishlist", { buncheol_id: buncheolId });
       } else {
         await removeBuncheolBookmark(accessToken, buncheolId);
       }
