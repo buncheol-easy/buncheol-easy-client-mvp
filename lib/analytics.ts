@@ -1,10 +1,33 @@
+import { sendGAEvent } from "@next/third-parties/google";
 import posthog from "posthog-js";
 
 // ⚠️ PII 금지: 이벤트 속성에는 id·수량 등 비민감 값만 담는다.
 // 계좌번호·주소·전화번호·이름 등은 절대 넣지 않는다.
 
+declare global {
+  interface Window {
+    fbq?: (...args: unknown[]) => void;
+    ttq?: {
+      page: () => void;
+      track: (event: string, properties?: Record<string, unknown>) => void;
+    };
+  }
+}
+
 const isAnalyticsEnabled =
   typeof window !== "undefined" && Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY);
+
+type AdConversion = "sign_up" | "add_to_wishlist" | "join_buncheol";
+
+// 광고 플랫폼은 표준 이벤트 이름이어야 그 이벤트로 광고를 최적화할 수 있다.
+const adConversionEventNames: Record<
+  AdConversion,
+  { meta: string; tiktok: string }
+> = {
+  sign_up: { meta: "CompleteRegistration", tiktok: "CompleteRegistration" },
+  add_to_wishlist: { meta: "AddToWishlist", tiktok: "AddToWishlist" },
+  join_buncheol: { meta: "InitiateCheckout", tiktok: "InitiateCheckout" },
+};
 
 function decodeUserIdFromToken(token: string): string | null {
   const [, payload] = token.split(".");
@@ -67,4 +90,23 @@ export function trackEvent(
   }
 
   posthog.capture(event, properties);
+}
+
+/** 광고 성과 측정용 전환을 GA4·메타·틱톡에 함께 보낸다. 태그가 없는 곳은 건너뛴다. */
+export function trackAdConversion(
+  conversion: AdConversion,
+  properties?: Record<string, string | number>,
+) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const eventNames = adConversionEventNames[conversion];
+
+  if (process.env.NEXT_PUBLIC_GA_ID) {
+    sendGAEvent("event", conversion, properties ?? {});
+  }
+
+  window.fbq?.("track", eventNames.meta);
+  window.ttq?.track(eventNames.tiktok);
 }

@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProfileIcon } from "@/components/icons";
+import { trackAdConversion } from "@/lib/analytics";
 import {
   requestNicknameDuplicate,
   requestUserProfileStatus,
@@ -273,8 +274,15 @@ export function SignupProfileContent() {
         marketingAgreed: isMarketingAgreed,
       });
 
+      // 이미 로그인한 회원이 개최 자격 때문에 정보를 채우러 온 경우는 가입이 아니다.
+      const isNewSignup = !authState.isLoggedIn;
+
       // 가입이 끝난 시점에만 보류 상태를 로그인으로 승격한다.
       writeAuthTokens({ accessToken });
+
+      if (isNewSignup) {
+        trackAdConversion("sign_up");
+      }
 
       const returnHref = getSafeReturnHref(
         window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),

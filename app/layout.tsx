@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import { AdPixels } from "@/components/AdPixels";
 import { DesktopBrandPanel } from "@/components/DesktopBrandPanel";
 import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
 import { JsonLd } from "@/components/JsonLd";
@@ -124,6 +125,7 @@ export default function RootLayout({
           <TestAccountSwitcher />
         </ToastProvider>
         <JsonLd data={organizationJsonLd} />
+        <AdPixels />
       </body>
       {process.env.NEXT_PUBLIC_GA_ID && (
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID} />
