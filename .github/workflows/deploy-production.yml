@@ -101,10 +101,9 @@ jobs:
           else
             echo "::warning::PROD_NEXT_PUBLIC_META_PIXEL_ID 미등록 — 메타 광고 전환이 측정되지 않는다"
           fi
+          # 틱톡 픽셀을 켜기 전에 개인정보처리방침에 틱톡을 먼저 추가할 것
           if [ -n "$TIKTOK_PIXEL_ID" ]; then
             case "$TIKTOK_PIXEL_ID" in *[!A-Z0-9]*) fail "TIKTOK_PIXEL_ID 형식 이상 (영문 대문자와 숫자만)" ;; esac
-          else
-            echo "::warning::PROD_NEXT_PUBLIC_TIKTOK_PIXEL_ID 미등록 — 틱톡 광고 전환이 측정되지 않는다"
           fi
 
           echo "build-args 검증 통과"
