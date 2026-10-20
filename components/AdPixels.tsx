@@ -13,6 +13,7 @@ n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
 n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
 document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('set', 'autoConfig', false, ${JSON.stringify(pixelId)});
 fbq('init', ${JSON.stringify(pixelId)});
 fbq('track', 'PageView');
 `;
@@ -28,32 +29,37 @@ ttq.page();
 /** 메타·틱톡 픽셀. 픽셀 ID 가 등록된 빌드(prod)에서만 불러온다. */
 export function AdPixels() {
   const pathname = usePathname();
+  // 관리자 화면 주소(검색어 등)가 광고 회사로 넘어가지 않게 픽셀을 붙이지 않는다.
+  const isAdminPage = pathname === "/admin" || pathname.startsWith("/admin/");
   const previousPathnameRef = useRef<string | null>(null);
+  const hasSkippedFirstViewRef = useRef(false);
 
   useEffect(() => {
-    // 첫 화면의 페이지 조회는 기본 코드가 보낸다. 클라이언트 이동은 픽셀이 모르므로 여기서 보낸다.
-    if (previousPathnameRef.current === null) {
-      previousPathnameRef.current = pathname;
-      return;
-    }
-
-    if (previousPathnameRef.current === pathname) {
-      return;
-    }
-
+    const previousPathname = previousPathnameRef.current;
     previousPathnameRef.current = pathname;
+
+    if (isAdminPage || previousPathname === pathname) {
+      return;
+    }
+
+    // 관리자 화면이 아닌 첫 화면의 페이지 조회는 기본 코드가 보낸다. 클라이언트 이동은 픽셀이 모르므로 여기서 보낸다.
+    if (!hasSkippedFirstViewRef.current) {
+      hasSkippedFirstViewRef.current = true;
+      return;
+    }
+
     window.fbq?.("track", "PageView");
     window.ttq?.page();
-  }, [pathname]);
+  }, [isAdminPage, pathname]);
 
   return (
     <>
-      {metaPixelId ? (
+      {metaPixelId && !isAdminPage ? (
         <Script id="meta-pixel" strategy="afterInteractive">
           {metaPixelScript(metaPixelId)}
         </Script>
       ) : null}
-      {tiktokPixelId ? (
+      {tiktokPixelId && !isAdminPage ? (
         <Script id="tiktok-pixel" strategy="afterInteractive">
           {tiktokPixelScript(tiktokPixelId)}
         </Script>
