@@ -45,6 +45,11 @@ import {
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import {
+  HOST_CANCEL_FAILURE_MESSAGE,
+  getHostCancelCopy,
+  type HostCancelCopy,
+} from "@/lib/host-cancel-confirm";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
   getBuncheolStatusBadgeLabel,
@@ -119,6 +124,7 @@ import { AmountChangeBadge, RollingNumber } from "@/components/RollingNumber";
 import { ProductDetailBidBarSkeleton } from "@/components/ProductDetailSkeleton";
 import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useAppToast } from "@/components/Toast";
+import { ConfirmSheet, type ConfirmSheetRequest } from "@/components/ConfirmSheet";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
@@ -1500,6 +1506,7 @@ export function ProductDetail({
   const [isLiked, setIsLiked] = useState(product.liked === true);
   const [isBookmarkPending, setIsBookmarkPending] = useState(false);
   const [isDeletePending, setIsDeletePending] = useState(false);
+  const [deleteConfirmRequest, setDeleteConfirmRequest] = useState<ConfirmSheetRequest | null>(null);
   const [isBidSubmitPending, setIsBidSubmitPending] = useState(false);
   // 접수에 성공해 체크를 보여 주는 동안 다음에 열 단계를 들고 있는다.
   const [checkoutStepAfterSuccess, setCheckoutStepAfterSuccess] =
@@ -3955,24 +3962,54 @@ export function ProductDetail({
     }
   }
 
-  async function handleDeleteProduct() {
-    const accessToken = authState.accessToken;
-
-    if (!authState.isLoggedIn || !accessToken || isDeletePending) {
+  function requestDeleteProduct() {
+    if (isDeletePending) {
       return;
     }
 
-    if (!window.confirm("이 분철을 삭제할까요?")) {
+    const copy = getHostCancelCopy({
+      flowType: product.flowType,
+      status: productStatus,
+    });
+
+    setDeleteConfirmRequest({
+      confirmLabel: copy.actionLabel,
+      description: copy.description,
+      onConfirm: () => {
+        setDeleteConfirmRequest(null);
+        void runDeleteProduct(copy);
+      },
+      title: copy.title,
+      warnings: copy.warnings,
+    });
+  }
+
+  async function runDeleteProduct(copy: HostCancelCopy) {
+    if (!authState.isLoggedIn) {
+      showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
+      return;
+    }
+
+    if (isDeletePending) {
       return;
     }
 
     setIsDeletePending(true);
 
     try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
+        return;
+      }
+
       await deleteBuncheol(accessToken, buncheolId);
 
       // 삭제된 분철이 목록에 남지 않도록 목록 쿼리를 무효화한다.
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      // 토스트는 레이아웃의 ToastProvider 가 들고 있어 아래 화면 이동 뒤에도 남는다.
+      showToast(copy.successMessage, "success");
 
       if (initialReturnSource === "bids") {
         window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
@@ -3982,10 +4019,9 @@ export function ProductDetail({
 
       router.replace("/");
     } catch (error: unknown) {
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : "분철을 삭제하지 못했어요.",
+      showToast(
+        error instanceof Error ? error.message : HOST_CANCEL_FAILURE_MESSAGE,
+        "error",
       );
     } finally {
       setIsDeletePending(false);
@@ -4501,8 +4537,13 @@ export function ProductDetail({
               <button
                 type="button"
                 className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black disabled:text-black/25"
-                onClick={handleDeleteProduct}
-                aria-label="분철 삭제"
+                onClick={requestDeleteProduct}
+                aria-label={
+                  getHostCancelCopy({
+                    flowType: product.flowType,
+                    status: productStatus,
+                  }).iconLabel
+                }
                 disabled={isDeletePending}
               >
                 <TrashIcon />
@@ -6302,6 +6343,11 @@ export function ProductDetail({
           </div>
         ) : null}
       </div>
+      {/* 패널(.product-page-panel)에 transform 이 걸려 있어 안에 두면 fixed 기준이 패널이 된다 — 패널 밖에 둔다. */}
+      <ConfirmSheet
+        onCancel={() => setDeleteConfirmRequest(null)}
+        request={deleteConfirmRequest}
+      />
     </>
   );
 
