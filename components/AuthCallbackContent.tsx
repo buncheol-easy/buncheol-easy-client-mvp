@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { trackSignupCompleted } from "@/lib/analytics";
 import {
   authProfileSetupReturnHrefStorageKey,
   authReturnHrefStorageKey,
@@ -9,7 +10,7 @@ import {
 } from "@/lib/auth-store";
 import { requestUserProfileStatus } from "@/lib/auth-api";
 import { getSafeInternalHref } from "@/lib/auth-navigation";
-import { AUTH_TOKEN_PARAM } from "@/lib/auth-token-param";
+import { AUTH_SIGNUP_PARAM, AUTH_TOKEN_PARAM } from "@/lib/auth-token-param";
 import { authSignupProfileDraftStorageKey } from "@/lib/auth-store";
 
 type AuthCallbackContentProps = {
@@ -20,7 +21,7 @@ function getSafeReturnHref(value: string | null | undefined) {
   return getSafeInternalHref(value, "/profile");
 }
 
-function getHashToken(name: string) {
+function getHashParam(name: string) {
   const hashValue = window.location.hash.replace(/^#/, "");
   const hashParams = new URLSearchParams(hashValue);
 
@@ -53,7 +54,8 @@ export function AuthCallbackContent({
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    const accessToken = getHashToken(AUTH_TOKEN_PARAM);
+    const accessToken = getHashParam(AUTH_TOKEN_PARAM);
+    const isNewAccount = getHashParam(AUTH_SIGNUP_PARAM) === "1";
     stripTokenFromUrl();
     const storedReturnHref = window.sessionStorage.getItem(
       authReturnHrefStorageKey,
@@ -101,6 +103,12 @@ export function AuthCallbackContent({
         }
 
         writeAuthTokens({ accessToken });
+
+        // 추가정보 화면을 거치는 가입은 그 화면이 저장 성공 때 보낸다.
+        if (isNewAccount) {
+          trackSignupCompleted({ profile_form: false });
+        }
+
         window.sessionStorage.removeItem(authReturnHrefStorageKey);
         window.sessionStorage.removeItem(authProfileSetupReturnHrefStorageKey);
         router.replace(nextReturnHref);

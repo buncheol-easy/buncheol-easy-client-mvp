@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProfileIcon } from "@/components/icons";
-import { trackAdConversion } from "@/lib/analytics";
+import { trackSignupCompleted } from "@/lib/analytics";
 import {
   requestNicknameDuplicate,
   requestUserProfileStatus,
@@ -281,7 +281,7 @@ export function SignupProfileContent() {
       writeAuthTokens({ accessToken });
 
       if (isNewSignup) {
-        trackAdConversion("sign_up");
+        trackSignupCompleted({ profile_form: true });
       }
 
       const returnHref = getSafeReturnHref(
