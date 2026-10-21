@@ -2397,6 +2397,11 @@ export function ProductDetail({
       return "이미 참여한 분철이에요";
     }
 
+    // 확정 분철은 대부분 마감이 지났고 멤버도 전부 닫혀 있어 아래 두 사유보다 먼저 본다.
+    if (isConfirmedProduct) {
+      return "진행 확정된 분철이에요";
+    }
+
     if (isDeadlineBlocked) {
       return isC2CProduct ? "신청 기한이 지났어요" : "참여 기한이 지났어요";
     }
@@ -2405,10 +2410,6 @@ export function ProductDetail({
       return isC2CProduct
         ? "신청 가능한 멤버가 없어요"
         : "참여할 수 있는 멤버가 없어요";
-    }
-
-    if (isConfirmedProduct) {
-      return "진행 확정된 분철이에요";
     }
 
     return "지금은 참여할 수 없는 분철이에요";
