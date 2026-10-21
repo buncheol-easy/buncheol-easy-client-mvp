@@ -68,6 +68,13 @@ import {
   type HomeListingsData,
 } from "@/lib/home-listings";
 import {
+  getServerHomeListTab,
+  readHomeListTab,
+  subscribeHomeListTab,
+  writeHomeListTab,
+  type HomeListTab,
+} from "@/lib/home-list-tab";
+import {
   bannersQueryKey,
   homeListingsQueryKey,
 } from "@/lib/query-keys";
@@ -103,6 +110,10 @@ const FAVORITE_LIMIT_MESSAGE_DURATION_MS = 2400;
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
 const HOME_BANNERS_STALE_MS = 15 * 60 * 1000;
+const HOME_LIST_TABS: readonly { label: string; value: HomeListTab }[] = [
+  { label: "전체 분철", value: "all" },
+  { label: "최애 분철", value: "favorite" },
+];
 type HomeBanner = {
   href: string;
   imageAlt: string;
@@ -411,6 +422,116 @@ function HomeListingsRetryNotice({
   );
 }
 
+// 탭 줄 아래 회색 선이 최애 0개일 때의 구분선 자리를 대신하고, 그 위에 고른 탭의 밑줄이 얹힌다.
+function HomeListTabs({
+  onChange,
+  value,
+}: {
+  onChange: (value: HomeListTab) => void;
+  value: HomeListTab;
+}) {
+  const groupRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLSpanElement | null>(null);
+  const tabRefs = useRef(new Map<HomeListTab, HTMLButtonElement | null>());
+  const barValueRef = useRef<HomeListTab | null>(null);
+  const valueRef = useRef(value);
+
+  const moveBarTo = useCallback((tabValue: HomeListTab, animate: boolean) => {
+    const bar = barRef.current;
+    const tab = tabRefs.current.get(tabValue);
+
+    if (!bar || !tab) {
+      return;
+    }
+
+    if (!animate) {
+      bar.style.transitionProperty = "none";
+    }
+
+    bar.style.transform = `translateX(${tab.offsetLeft}px)`;
+    bar.style.width = `${tab.offsetWidth}px`;
+
+    if (!animate) {
+      // 제자리로 옮긴 위치를 먼저 확정한 뒤 전환을 되돌린다.
+      void bar.offsetWidth;
+      bar.style.transitionProperty = "";
+    }
+
+    barValueRef.current = tabValue;
+  }, []);
+
+  // 처음 그릴 때(상세에서 돌아온 마운트 포함)는 제자리에 두고, 보는 중에 값이 바뀌면
+  // (탭·빈 안내의 「전체 분철 보기」) 미끄러진다.
+  useLayoutEffect(() => {
+    valueRef.current = value;
+
+    if (barValueRef.current !== value) {
+      moveBarTo(value, barValueRef.current !== null);
+    }
+  }, [moveBarTo, value]);
+
+  // 글꼴이 늦게 도착해 글자 폭이 바뀌거나 화면 폭이 바뀌면 전환 없이 다시 맞춘다.
+  useEffect(() => {
+    const group = groupRef.current;
+
+    if (!group) {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      moveBarTo(valueRef.current, false);
+    });
+
+    observer.observe(group);
+    tabRefs.current.forEach((tab) => {
+      if (tab) {
+        observer.observe(tab);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [moveBarTo]);
+
+  return (
+    <div
+      aria-label="홈 분철 목록 보기"
+      className="relative mb-4 flex gap-5 border-b border-black/10"
+      ref={groupRef}
+      role="group"
+    >
+      {HOME_LIST_TABS.map((tab) => {
+        const isActive = tab.value === value;
+
+        return (
+          // 누르는 높이 44px는 지키되 글자는 줄 위끝 가까이 오도록 버튼을 위 빈칸으로 12px 올린다 —
+          // 줄 위끝은 최애 0개일 때 구분선 자리 그대로다.
+          <button
+            aria-pressed={isActive}
+            className={`-mt-3 inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-[0.5rem] text-[15px] font-bold tracking-[-0.04em] transition-colors duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black ${
+              isActive ? "text-black" : "text-black/45"
+            }`}
+            key={tab.value}
+            onClick={() => onChange(tab.value)}
+            ref={(element) => {
+              tabRefs.current.set(tab.value, element);
+            }}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-px left-0 h-[2.5px] w-0 rounded-[2px] bg-black transition-[transform,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[transform,width] motion-reduce:transition-none"
+        ref={barRef}
+      />
+    </div>
+  );
+}
+
 export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   useProfileCompletionGuard();
 
@@ -453,6 +574,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     subscribeAuthState,
     readAuthState,
     getInitialAuthState,
+  );
+  const homeListTab = useSyncExternalStore(
+    subscribeHomeListTab,
+    readHomeListTab,
+    getServerHomeListTab,
   );
   // /artists 와 같은 캐시를 본다 — 아티스트 화면을 다녀와도 레일이 스켈레톤으로 돌아가지 않고,
   // 최애 기준 목록 필터도 첫 렌더부터 제대로 걸린다(전체 목록이 그려졌다 갈리지 않는다).
@@ -580,6 +706,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, [apiGroups, pinnedRailSlots]);
   // 최애는 로그인 사용자에게만 존재하므로 비로그인에는 레일 자체를 노출하지 않는다.
   const isArtistRailVisible = FEATURES.favoriteArtists && authState.isLoggedIn;
+  // 탭은 최애가 있을 때만 보인다. 레일 길이로 판정해, 이 화면에서 마지막 최애를 해제해도 레일이
+  // 자리를 지키는 동안은 탭도 남긴다 — 탭 줄이 빠지면 목록이 통째로 위로 밀린다.
+  const isListTabVisible =
+    isArtistRailVisible && !isGroupLoading && railGroups.length > 0;
+  const isFavoriteTabActive = isListTabVisible && homeListTab === "favorite";
   // 레일에 남겨 둔 해제분은 빼고 "실제로 최애인" 것만 센다. 레일 길이로 판정하면 전부 해제해도
   // 목록이 계속 좁혀지고, 한도 검사도 해제분까지 세어 헐거워진다.
   const favoritedGroups = useMemo(
@@ -617,7 +748,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     );
     return () => window.clearTimeout(timer);
   }, [groupMessage]);
-  // 최애를 등록했으면 그 그룹 분철만, 아니면 전체를 보여준다.
   const favoriteGroupNames = useMemo(
     () =>
       new Set(
@@ -629,12 +759,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 정렬하면 마감된 두 묶음(진행 확정·미달 취소)이 섞인다.
   const visibleListings = useMemo(
     () =>
-      favoriteGroupNames.size > 0
+      isFavoriteTabActive
         ? listings.filter((item) =>
             favoriteGroupNames.has(normalizeGroupSearchText(item.era ?? "")),
           )
         : listings,
-    [favoriteGroupNames, listings],
+    [favoriteGroupNames, isFavoriteTabActive, listings],
   );
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const {
@@ -646,13 +776,19 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     isPlaceholderData: isListingsPlaceholderData,
   } = listingsQuery;
   // placeholder(이전 키 목록)·대체 목록을 보이는 동안 hasNextPage 는 아직 빈 새 키 기준이라 false 다.
-  // 그대로 믿으면 최애 사용자 새로고침마다 "최애 분철이 없어요"가 잠깐 뜨고, 실패 때는 그대로 남는다.
+  // 그대로 믿으면 「최애 분철」 탭에서 새로고침마다 "최애 분철이 없어요"가 잠깐 뜨고, 실패 때는 그대로 남는다.
   const isListingsExhausted =
     !isListingLoading && !hasNextListingsPage && !isListingsPlaceholderData;
   const isAwaitingFavoriteListings =
+    isFavoriteTabActive &&
     visibleListings.length === 0 &&
     favoriteGroupNames.size > 0 &&
     !isListingsExhausted;
+  // 최애를 모두 해제한 순간에는 더 받아도 걸릴 게 없으니 끝까지 기다리지 않고 바로 안내한다.
+  const isFavoriteListingsEmpty =
+    isFavoriteTabActive &&
+    visibleListings.length === 0 &&
+    (isListingsExhausted || favoriteGroupNames.size === 0);
   // 페이지가 들어온 직후에도 판정한다 — 최애만 걸러 보면 한 페이지로 화면이 안 차 스크롤할 거리가 없다.
   // isFetching 중엔 막는다: 백그라운드 재검증(전 페이지 재요청)과 겹치면 서로 덮어쓴다.
   const loadMoreListingsIfNearEnd = useCallback(() => {
@@ -1262,9 +1398,16 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
           <div
             className={
-              isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
+              isListTabVisible
+                ? undefined
+                : isArtistRailVisible
+                  ? "border-t border-black/10 pt-5"
+                  : "pt-2"
             }
           >
+            {isListTabVisible ? (
+              <HomeListTabs onChange={writeHomeListTab} value={homeListTab} />
+            ) : null}
             {isListingsFailed ? (
               <HomeListingsRetryNotice
                 isRetrying={isFetchingListings}
@@ -1286,11 +1429,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   variant="wide"
                 />
               </>
-            ) : visibleListings.length === 0 &&
-              favoriteGroupNames.size > 0 &&
-              isListingsExhausted ? (
-              /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
-                 내 최애 것만 없는 건지 구분해 알린다. */
+            ) : isFavoriteListingsEmpty ? (
+              /* 「최애 분철」 탭에서 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
+                 내 최애 것만 없는 건지 구분해 알리고, 전체로 돌아갈 길을 둔다. */
                 <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
                   <p className="text-[15px] font-semibold tracking-[-0.05em]">
                     최애 아티스트 그룹의 분철이 아직 없어요
@@ -1309,6 +1450,15 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   >
                     분철 직접 개최하기
                   </button>
+                  <div>
+                    <button
+                        className="mt-2.5 inline-flex h-10 items-center rounded-full border border-black/15 bg-white px-[18px] text-[14px] font-semibold tracking-[-0.04em] text-black"
+                        onClick={() => writeHomeListTab("all")}
+                        type="button"
+                    >
+                      전체 분철 보기
+                    </button>
+                  </div>
                 </div>
             ) : (
                 <div className={shouldRevealListings ? "content-reveal" : ""}>
@@ -1320,7 +1470,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 {/* 최애를 찾는 동안의 스켈레톤도 센티널 안에 둔다 — 위에 두면 센티널이 밀려 연쇄 로드가 멈춘다. */}
                 {isUsingFallbackListings ? (
                   /* 대체 목록은 로그인 키로 이어 받을 커서가 없다 — 로그인 목록부터 다시 받는다.
-                     최애로 걸러 한 장도 안 남으면 "더"가 사실과 달라 목록 실패 문구를 쓴다. */
+                     「최애 분철」 탭에서 걸러 한 장도 안 남으면 "더"가 사실과 달라 목록 실패 문구를 쓴다. */
                   <HomeListingsRetryNotice
                     isRetrying={isFetchingListings}
                     message={

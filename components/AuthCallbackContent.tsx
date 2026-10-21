@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { trackSignupCompleted } from "@/lib/analytics";
 import {
   authProfileSetupReturnHrefStorageKey,
   authReturnHrefStorageKey,
@@ -9,7 +11,7 @@ import {
 } from "@/lib/auth-store";
 import { requestUserProfileStatus } from "@/lib/auth-api";
 import { getSafeInternalHref } from "@/lib/auth-navigation";
-import { AUTH_TOKEN_PARAM } from "@/lib/auth-token-param";
+import { AUTH_SIGNUP_PARAM, AUTH_TOKEN_PARAM } from "@/lib/auth-token-param";
 import { authSignupProfileDraftStorageKey } from "@/lib/auth-store";
 
 type AuthCallbackContentProps = {
@@ -20,7 +22,7 @@ function getSafeReturnHref(value: string | null | undefined) {
   return getSafeInternalHref(value, "/profile");
 }
 
-function getHashToken(name: string) {
+function getHashParam(name: string) {
   const hashValue = window.location.hash.replace(/^#/, "");
   const hashParams = new URLSearchParams(hashValue);
 
@@ -53,7 +55,8 @@ export function AuthCallbackContent({
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    const accessToken = getHashToken(AUTH_TOKEN_PARAM);
+    const accessToken = getHashParam(AUTH_TOKEN_PARAM);
+    const isNewAccount = getHashParam(AUTH_SIGNUP_PARAM) === "1";
     stripTokenFromUrl();
     const storedReturnHref = window.sessionStorage.getItem(
       authReturnHrefStorageKey,
@@ -62,7 +65,7 @@ export function AuthCallbackContent({
 
     if (!accessToken) {
       const errorTimer = window.setTimeout(() => {
-        setErrorMessage("로그인 토큰을 확인하지 못했어요.");
+        setErrorMessage("로그인 정보를 확인하지 못했어요.");
       }, 0);
 
       return () => {
@@ -101,6 +104,12 @@ export function AuthCallbackContent({
         }
 
         writeAuthTokens({ accessToken });
+
+        // 추가정보 화면을 거치는 가입은 그 화면이 저장 성공 때 보낸다.
+        if (isNewAccount) {
+          trackSignupCompleted({ profile_form: false });
+        }
+
         window.sessionStorage.removeItem(authReturnHrefStorageKey);
         window.sessionStorage.removeItem(authProfileSetupReturnHrefStorageKey);
         router.replace(nextReturnHref);
@@ -129,9 +138,20 @@ export function AuthCallbackContent({
         <p className="text-[18px] font-semibold tracking-[-0.05em]">
           {errorMessage || "로그인 처리 중이에요."}
         </p>
-        <p className="mt-2 text-[13px] font-medium text-black/45">
-          잠시만 기다려 주세요.
-        </p>
+        {errorMessage ? (
+          // replace — 뒤로가기로 이 오류 화면에 다시 돌아오지 않게 한다.
+          <Link
+            className="mt-8 inline-flex h-12 items-center justify-center rounded-full bg-black px-8 text-[15px] font-semibold tracking-[-0.04em] text-white"
+            href="/"
+            replace
+          >
+            홈으로 가기
+          </Link>
+        ) : (
+          <p className="mt-2 text-[13px] font-medium text-black/45">
+            잠시만 기다려 주세요.
+          </p>
+        )}
       </div>
     </main>
   );

@@ -92,6 +92,12 @@ export function trackEvent(
   posthog.capture(event, properties);
 }
 
+/** 가입 완료를 PostHog 와 광고 전환에 함께 남긴다. 로그인 콜백과 추가정보 화면 중 가입이 끝난 한 곳에서만 부른다. */
+export function trackSignupCompleted(properties: { profile_form: boolean }) {
+  trackEvent("signup_completed", properties);
+  trackAdConversion("sign_up");
+}
+
 /** 광고 성과 측정용 전환을 GA4·메타·틱톡에 함께 보낸다. 태그가 없는 곳은 건너뛴다. */
 export function trackAdConversion(
   conversion: AdConversion,

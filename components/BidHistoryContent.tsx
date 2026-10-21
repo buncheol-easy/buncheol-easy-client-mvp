@@ -42,6 +42,11 @@ import { createLoginHref } from "@/lib/auth-navigation";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
+  HOST_CANCEL_FAILURE_MESSAGE,
+  getHostCancelCopy,
+  type HostCancelCopy,
+} from "@/lib/host-cancel-confirm";
+import {
   cancelParticipation,
   deleteBuncheol,
   getShippingMethodsFromOptions,
@@ -367,7 +372,8 @@ const c2cProgressStepLabels = [
   "배송 완료",
 ] as const;
 
-// 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
+// LEGACY 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
+// C2C 0원은 서버가 성사 확정 뒤 입금 대기로 보내므로 이 축이 아니라 C2C 6칸 축을 쓴다.
 const freeProgressStepLabels = [
   "참여 접수",
   "참여 확정",
@@ -423,9 +429,9 @@ const c2cParticipationStatusGuide = [
   },
 ] as const satisfies readonly StatusGuideItem[];
 
-// 0원 참여(코드 참여 포함) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
-// 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "24시간 안에 개최자 계좌로
-// 보내고 '보냈어요'를 눌러주세요" 가 뜬다.
+// LEGACY 0원 참여(코드 참여 포함) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
+// 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "10분 안에 꼭 입금" 안내가 뜬다.
+// C2C 0원은 서버가 성사 확정 뒤 입금 대기(개최자 입금 확인까지)로 보내므로 C2C 안내를 쓴다.
 const freeParticipationStatusGuide = [
   {
     icon: ClipboardListIcon,
@@ -443,13 +449,13 @@ const freeParticipationStatusGuide = [
     icon: UsersRoundIcon,
     label: freeProgressStepLabels[2],
     description:
-      "분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
+      "분철 진행이 확정된 상태예요. 굿즈 준비 후 배송이 시작돼요.",
   },
   {
     icon: TruckIcon,
     label: freeProgressStepLabels[3],
     description:
-      "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
+      "내가 지정한 배송지로 택배가 발송돼 운송장이 등록된 상태예요.",
   },
   {
     icon: PackageCheckIcon,
@@ -1094,9 +1100,9 @@ function getC2CBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   return -1;
 }
 
-// 0원 참여 전용 축. 라벨이 5칸이므로 인덱스도 반드시 5칸으로 뽑아야 한다 —
-// C2C 6칸 축을 물리면 한 칸씩 앞서 표시된다(코드 참여는 생성 즉시 CONFIRMED 라
-// 첫 화면부터 어긋나고, 배송 중인 건이 "배송 완료"로 보인다).
+// LEGACY 0원 참여 전용 축(C2C 0원은 라벨·인덱스 둘 다 C2C 6칸). 라벨이 5칸이므로
+// 인덱스도 반드시 5칸으로 뽑아야 한다 — C2C 6칸 축을 물리면 한 칸씩 앞서 표시된다(코드
+// 참여는 생성 즉시 CONFIRMED 라 첫 화면부터 어긋나고, 배송 중인 건이 "배송 완료"로 보인다).
 function getFreeBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   if (isBidRecordCancelled(bid) || isBidRecordPaymentExpired(bid, now)) {
     return -1;
@@ -1120,12 +1126,13 @@ function getFreeBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
 
 function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
   const isC2C = isC2CBidRecord(bid);
-  const labels = isFreeBidRecord(bid)
+  const isLegacyFree = isFreeBidRecord(bid) && !isC2C;
+  const labels = isLegacyFree
     ? freeProgressStepLabels
     : isC2C
       ? c2cProgressStepLabels
       : bidProgressStepLabels;
-  const currentStepIndex = isFreeBidRecord(bid)
+  const currentStepIndex = isLegacyFree
     ? getFreeBidRecordProgressStepIndex(bid, now)
     : isC2C
       ? getC2CBidRecordProgressStepIndex(bid, now)
@@ -1907,7 +1914,10 @@ export function BidHistoryContent({
     visibleBidRecords.length === 0 || visibleBidRecords.some(isC2CBidRecord);
   // 유상 참여가 하나라도 섞이면 입금 안내가 필요하므로, 전부 0원일 때만 무입금 안내로 간다.
   const isStatusGuideFree =
-    visibleBidRecords.length > 0 && visibleBidRecords.every(isFreeBidRecord);
+    visibleBidRecords.length > 0 &&
+    visibleBidRecords.every(
+      (bid) => isFreeBidRecord(bid) && !isC2CBidRecord(bid),
+    );
   const isHostingHelpSheet = mode === "hosted";
   // 운영진의 LEGACY 개최만 있는 계정에 "직접 환불" 을 보여주면 없는 의무를 만든다.
   const hasC2CHostedProduct = (apiHostedProducts ?? []).some(
@@ -2975,15 +2985,38 @@ export function BidHistoryContent({
     rememberBidHistoryViewState();
   }
 
-  async function handleDeleteHostedProduct(product: ProductDetailItem) {
-    const accessToken = authState.accessToken;
-    const buncheolId = product.buncheolId ?? product.id;
-
-    if (!authState.isLoggedIn || !accessToken || deletingHostedProductId) {
+  function requestDeleteHostedProduct(product: ProductDetailItem) {
+    if (deletingHostedProductId) {
       return;
     }
 
-    if (!window.confirm("이 분철을 삭제할까요?")) {
+    const copy = getHostCancelCopy(product);
+
+    setConfirmSheetRequest({
+      confirmLabel: copy.actionLabel,
+      description: copy.description,
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runDeleteHostedProduct(product, copy);
+      },
+      title: copy.title,
+      warnings: copy.warnings,
+    });
+  }
+
+  async function runDeleteHostedProduct(
+    product: ProductDetailItem,
+    copy: HostCancelCopy,
+  ) {
+    const accessToken = authState.accessToken;
+    const buncheolId = product.buncheolId ?? product.id;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
+      return;
+    }
+
+    if (deletingHostedProductId) {
       return;
     }
 
@@ -2993,6 +3026,7 @@ export function BidHistoryContent({
       const freshAccessToken = await getFreshAccessToken();
 
       if (!freshAccessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
@@ -3006,12 +3040,14 @@ export function BidHistoryContent({
           : current,
       );
       setHostedMessage("");
+      showToast(copy.successMessage, "success");
     } catch (error: unknown) {
-      setHostedMessage(
-        error instanceof Error
-          ? error.message
-          : "분철을 삭제하지 못했어요.",
-      );
+      const failureMessage =
+        error instanceof Error ? error.message : HOST_CANCEL_FAILURE_MESSAGE;
+
+      setHostedMessage(failureMessage);
+      // hostedMessage 는 목록 맨 위라 카드까지 스크롤한 상태에서는 보이지 않는다.
+      showToast(failureMessage, "error");
     } finally {
       setDeletingHostedProductId(null);
     }
@@ -4465,10 +4501,10 @@ export function BidHistoryContent({
                             deletingHostedProductId ===
                             (product.buncheolId ?? product.id)
                           }
-                          onClick={() => handleDeleteHostedProduct(product)}
+                          onClick={() => requestDeleteHostedProduct(product)}
                           type="button"
                         >
-                          삭제
+                          {getHostCancelCopy(product).actionLabel}
                         </button>
                       ) : null}
                     </div>
@@ -4601,11 +4637,17 @@ export function BidHistoryContent({
                 </>
               ) : (
                 <>
-                  <HelpText className="px-1 pt-2">
-                    마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
-                    취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로
-                    환불돼요.
-                  </HelpText>
+                  {isStatusGuideFree ? (
+                    <HelpText className="px-1 pt-2">
+                      마감 때 최소 진행 멤버 수를 채우지 못하면 분철이 취소돼요.
+                    </HelpText>
+                  ) : (
+                    <HelpText className="px-1 pt-2">
+                      마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면
+                      참여가 취소될 수 있어요. 이미 입금했다면 등록한 환불
+                      계좌로 환불돼요.
+                    </HelpText>
+                  )}
                   <HelpText className="px-1 pt-2">
                     위 순서는 분철이지가 직접 개최한 분철 기준이에요. 회원이
                     개최한 분철은 먼저 신청만 하고, 개최자가 성사를 확정하면
