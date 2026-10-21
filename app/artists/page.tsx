@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import {
   dehydrate,
@@ -11,6 +12,10 @@ import { allGroupsQueryKey } from "@/lib/query-keys";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
+
+export const metadata: Metadata = {
+  title: "아티스트",
+};
 
 // 그룹 마스터 목록이 초기 HTML 에 실리도록 재생성한다. 운영이 아이돌을 추가할 때만
 // 바뀌는 데이터라 홈(60초)보다 길게 잡는다.

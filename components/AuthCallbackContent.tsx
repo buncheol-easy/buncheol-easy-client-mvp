@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { trackSignupCompleted } from "@/lib/analytics";
 import {
@@ -64,7 +65,7 @@ export function AuthCallbackContent({
 
     if (!accessToken) {
       const errorTimer = window.setTimeout(() => {
-        setErrorMessage("로그인 토큰을 확인하지 못했어요.");
+        setErrorMessage("로그인 정보를 확인하지 못했어요.");
       }, 0);
 
       return () => {
@@ -137,9 +138,20 @@ export function AuthCallbackContent({
         <p className="text-[18px] font-semibold tracking-[-0.05em]">
           {errorMessage || "로그인 처리 중이에요."}
         </p>
-        <p className="mt-2 text-[13px] font-medium text-black/45">
-          잠시만 기다려 주세요.
-        </p>
+        {errorMessage ? (
+          // replace — 뒤로가기로 이 오류 화면에 다시 돌아오지 않게 한다.
+          <Link
+            className="mt-8 inline-flex h-12 items-center justify-center rounded-full bg-black px-8 text-[15px] font-semibold tracking-[-0.04em] text-white"
+            href="/"
+            replace
+          >
+            홈으로 가기
+          </Link>
+        ) : (
+          <p className="mt-2 text-[13px] font-medium text-black/45">
+            잠시만 기다려 주세요.
+          </p>
+        )}
       </div>
     </main>
   );
