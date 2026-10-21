@@ -367,7 +367,8 @@ const c2cProgressStepLabels = [
   "배송 완료",
 ] as const;
 
-// 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
+// LEGACY 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
+// C2C 0원은 서버가 성사 확정 뒤 입금 대기로 보내므로 이 축이 아니라 C2C 6칸 축을 쓴다.
 const freeProgressStepLabels = [
   "참여 접수",
   "참여 확정",
@@ -423,9 +424,9 @@ const c2cParticipationStatusGuide = [
   },
 ] as const satisfies readonly StatusGuideItem[];
 
-// 0원 참여(코드 참여 포함) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
-// 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "24시간 안에 개최자 계좌로
-// 보내고 '보냈어요'를 눌러주세요" 가 뜬다.
+// LEGACY 0원 참여(코드 참여 포함) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
+// 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "10분 안에 꼭 입금" 안내가 뜬다.
+// C2C 0원은 서버가 성사 확정 뒤 입금 대기(개최자 입금 확인까지)로 보내므로 C2C 안내를 쓴다.
 const freeParticipationStatusGuide = [
   {
     icon: ClipboardListIcon,
@@ -1094,9 +1095,9 @@ function getC2CBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   return -1;
 }
 
-// 0원 참여 전용 축. 라벨이 5칸이므로 인덱스도 반드시 5칸으로 뽑아야 한다 —
-// C2C 6칸 축을 물리면 한 칸씩 앞서 표시된다(코드 참여는 생성 즉시 CONFIRMED 라
-// 첫 화면부터 어긋나고, 배송 중인 건이 "배송 완료"로 보인다).
+// LEGACY 0원 참여 전용 축(C2C 0원은 라벨·인덱스 둘 다 C2C 6칸). 라벨이 5칸이므로
+// 인덱스도 반드시 5칸으로 뽑아야 한다 — C2C 6칸 축을 물리면 한 칸씩 앞서 표시된다(코드
+// 참여는 생성 즉시 CONFIRMED 라 첫 화면부터 어긋나고, 배송 중인 건이 "배송 완료"로 보인다).
 function getFreeBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
   if (isBidRecordCancelled(bid) || isBidRecordPaymentExpired(bid, now)) {
     return -1;
@@ -1120,12 +1121,13 @@ function getFreeBidRecordProgressStepIndex(bid: BidRecord, now: Date) {
 
 function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
   const isC2C = isC2CBidRecord(bid);
-  const labels = isFreeBidRecord(bid)
+  const isLegacyFree = isFreeBidRecord(bid) && !isC2C;
+  const labels = isLegacyFree
     ? freeProgressStepLabels
     : isC2C
       ? c2cProgressStepLabels
       : bidProgressStepLabels;
-  const currentStepIndex = isFreeBidRecord(bid)
+  const currentStepIndex = isLegacyFree
     ? getFreeBidRecordProgressStepIndex(bid, now)
     : isC2C
       ? getC2CBidRecordProgressStepIndex(bid, now)
@@ -1907,7 +1909,10 @@ export function BidHistoryContent({
     visibleBidRecords.length === 0 || visibleBidRecords.some(isC2CBidRecord);
   // 유상 참여가 하나라도 섞이면 입금 안내가 필요하므로, 전부 0원일 때만 무입금 안내로 간다.
   const isStatusGuideFree =
-    visibleBidRecords.length > 0 && visibleBidRecords.every(isFreeBidRecord);
+    visibleBidRecords.length > 0 &&
+    visibleBidRecords.every(
+      (bid) => isFreeBidRecord(bid) && !isC2CBidRecord(bid),
+    );
   const isHostingHelpSheet = mode === "hosted";
   // 운영진의 LEGACY 개최만 있는 계정에 "직접 환불" 을 보여주면 없는 의무를 만든다.
   const hasC2CHostedProduct = (apiHostedProducts ?? []).some(
