@@ -106,7 +106,7 @@ export function BoardDetailExperience({
         writeCachedNoticeInboxMessageDetail(detail);
         setPost(getBoardPostFromInboxMessage(detail));
         setMessage("");
-      } catch (error: unknown) {
+      } catch {
         if (!isActive) {
           return;
         }
@@ -114,13 +114,8 @@ export function BoardDetailExperience({
         const fallbackPost = getBoardPost(messageId);
 
         setPost(fallbackPost);
-        setMessage(
-          fallbackPost
-            ? ""
-            : error instanceof Error
-              ? error.message
-              : "소식 내용을 불러오지 못했어요.",
-        );
+        // 서버 오류 문구를 쓰지 않는다 — 남의 알림은 서버 원문, 숫자가 아닌 id는 영어 「Bad Request」가 된다.
+        setMessage(fallbackPost ? "" : "소식 내용을 확인할 수 없어요.");
       } finally {
         if (isActive) {
           setIsLoading(false);
