@@ -68,6 +68,13 @@ import {
   type HomeListingsData,
 } from "@/lib/home-listings";
 import {
+  getServerHomeListTab,
+  readHomeListTab,
+  subscribeHomeListTab,
+  writeHomeListTab,
+  type HomeListTab,
+} from "@/lib/home-list-tab";
+import {
   bannersQueryKey,
   homeListingsQueryKey,
 } from "@/lib/query-keys";
@@ -103,6 +110,10 @@ const FAVORITE_LIMIT_MESSAGE_DURATION_MS = 2400;
 // 내 행동(참여·업로드·삭제)은 invalidateQueries 로 즉시 무효화되므로 이 창과 무관하다.
 const HOME_LISTINGS_STALE_MS = 60 * 1000;
 const HOME_BANNERS_STALE_MS = 15 * 60 * 1000;
+const HOME_LIST_TABS: readonly { label: string; value: HomeListTab }[] = [
+  { label: "전체 분철", value: "all" },
+  { label: "최애 분철", value: "favorite" },
+];
 type HomeBanner = {
   href: string;
   imageAlt: string;
@@ -454,6 +465,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     readAuthState,
     getInitialAuthState,
   );
+  const homeListTab = useSyncExternalStore(
+    subscribeHomeListTab,
+    readHomeListTab,
+    getServerHomeListTab,
+  );
   // /artists 와 같은 캐시를 본다 — 아티스트 화면을 다녀와도 레일이 스켈레톤으로 돌아가지 않고,
   // 최애 기준 목록 필터도 첫 렌더부터 제대로 걸린다(전체 목록이 그려졌다 갈리지 않는다).
   const favoriteGroupsQuery = useFavoriteGroupsQuery(authState.isLoggedIn);
@@ -580,6 +596,11 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   }, [apiGroups, pinnedRailSlots]);
   // 최애는 로그인 사용자에게만 존재하므로 비로그인에는 레일 자체를 노출하지 않는다.
   const isArtistRailVisible = FEATURES.favoriteArtists && authState.isLoggedIn;
+  // 탭은 최애가 있을 때만 보인다. 레일 길이로 판정해, 이 화면에서 마지막 최애를 해제해도 레일이
+  // 자리를 지키는 동안은 탭도 남긴다 — 탭 줄이 빠지면 목록이 통째로 위로 밀린다.
+  const isListTabVisible =
+    isArtistRailVisible && !isGroupLoading && railGroups.length > 0;
+  const isFavoriteTabActive = isListTabVisible && homeListTab === "favorite";
   // 레일에 남겨 둔 해제분은 빼고 "실제로 최애인" 것만 센다. 레일 길이로 판정하면 전부 해제해도
   // 목록이 계속 좁혀지고, 한도 검사도 해제분까지 세어 헐거워진다.
   const favoritedGroups = useMemo(
@@ -617,7 +638,6 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     );
     return () => window.clearTimeout(timer);
   }, [groupMessage]);
-  // 최애를 등록했으면 그 그룹 분철만, 아니면 전체를 보여준다.
   const favoriteGroupNames = useMemo(
     () =>
       new Set(
@@ -629,12 +649,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 정렬하면 마감된 두 묶음(진행 확정·미달 취소)이 섞인다.
   const visibleListings = useMemo(
     () =>
-      favoriteGroupNames.size > 0
+      isFavoriteTabActive
         ? listings.filter((item) =>
             favoriteGroupNames.has(normalizeGroupSearchText(item.era ?? "")),
           )
         : listings,
-    [favoriteGroupNames, listings],
+    [favoriteGroupNames, isFavoriteTabActive, listings],
   );
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const {
@@ -646,13 +666,19 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     isPlaceholderData: isListingsPlaceholderData,
   } = listingsQuery;
   // placeholder(이전 키 목록)·대체 목록을 보이는 동안 hasNextPage 는 아직 빈 새 키 기준이라 false 다.
-  // 그대로 믿으면 최애 사용자 새로고침마다 "최애 분철이 없어요"가 잠깐 뜨고, 실패 때는 그대로 남는다.
+  // 그대로 믿으면 「최애 분철」 탭에서 새로고침마다 "최애 분철이 없어요"가 잠깐 뜨고, 실패 때는 그대로 남는다.
   const isListingsExhausted =
     !isListingLoading && !hasNextListingsPage && !isListingsPlaceholderData;
   const isAwaitingFavoriteListings =
+    isFavoriteTabActive &&
     visibleListings.length === 0 &&
     favoriteGroupNames.size > 0 &&
     !isListingsExhausted;
+  // 최애를 모두 해제한 순간에는 더 받아도 걸릴 게 없으니 끝까지 기다리지 않고 바로 안내한다.
+  const isFavoriteListingsEmpty =
+    isFavoriteTabActive &&
+    visibleListings.length === 0 &&
+    (isListingsExhausted || favoriteGroupNames.size === 0);
   // 페이지가 들어온 직후에도 판정한다 — 최애만 걸러 보면 한 페이지로 화면이 안 차 스크롤할 거리가 없다.
   // isFetching 중엔 막는다: 백그라운드 재검증(전 페이지 재요청)과 겹치면 서로 덮어쓴다.
   const loadMoreListingsIfNearEnd = useCallback(() => {
@@ -1265,6 +1291,37 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
             }
           >
+            {isListTabVisible ? (
+              <div
+                aria-label="홈 분철 목록 보기"
+                className="mb-4 flex gap-4"
+                role="group"
+              >
+                {HOME_LIST_TABS.map((tab) => {
+                  const isActive = tab.value === homeListTab;
+
+                  return (
+                    <button
+                      aria-pressed={isActive}
+                      className={`inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[0.5rem] text-[20px] font-extrabold tracking-[-0.05em] transition-colors duration-200 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black ${
+                        isActive ? "text-black" : "text-black/45"
+                      }`}
+                      key={tab.value}
+                      onClick={() => writeHomeListTab(tab.value)}
+                      type="button"
+                    >
+                      {isActive ? (
+                        <span
+                          aria-hidden="true"
+                          className="size-[7px] shrink-0 rounded-full bg-[#C3EC3C] shadow-[0_0_0_2px_#E9F8B8]"
+                        />
+                      ) : null}
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             {isListingsFailed ? (
               <HomeListingsRetryNotice
                 isRetrying={isFetchingListings}
@@ -1286,11 +1343,9 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   variant="wide"
                 />
               </>
-            ) : visibleListings.length === 0 &&
-              favoriteGroupNames.size > 0 &&
-              isListingsExhausted ? (
-              /* 최애만 보여주는 상태라 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
-                 내 최애 것만 없는 건지 구분해 알린다. */
+            ) : isFavoriteListingsEmpty ? (
+              /* 「최애 분철」 탭에서 목록이 비면 이유를 알 수 없다 — 전체가 없는 건지
+                 내 최애 것만 없는 건지 구분해 알리고, 전체로 돌아갈 길을 둔다. */
                 <div className="rounded-[1.1rem] bg-[#f7f7f7] px-5 py-9 text-center">
                   <p className="text-[15px] font-semibold tracking-[-0.05em]">
                     최애 아티스트 그룹의 분철이 아직 없어요
@@ -1309,6 +1364,15 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                   >
                     분철 직접 개최하기
                   </button>
+                  <div>
+                    <button
+                        className="mt-2.5 inline-flex h-10 items-center rounded-full border border-black/15 bg-white px-[18px] text-[14px] font-semibold tracking-[-0.04em] text-black"
+                        onClick={() => writeHomeListTab("all")}
+                        type="button"
+                    >
+                      전체 분철 보기
+                    </button>
+                  </div>
                 </div>
             ) : (
                 <div className={shouldRevealListings ? "content-reveal" : ""}>
@@ -1320,7 +1384,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                 {/* 최애를 찾는 동안의 스켈레톤도 센티널 안에 둔다 — 위에 두면 센티널이 밀려 연쇄 로드가 멈춘다. */}
                 {isUsingFallbackListings ? (
                   /* 대체 목록은 로그인 키로 이어 받을 커서가 없다 — 로그인 목록부터 다시 받는다.
-                     최애로 걸러 한 장도 안 남으면 "더"가 사실과 달라 목록 실패 문구를 쓴다. */
+                     「최애 분철」 탭에서 걸러 한 장도 안 남으면 "더"가 사실과 달라 목록 실패 문구를 쓴다. */
                   <HomeListingsRetryNotice
                     isRetrying={isFetchingListings}
                     message={
