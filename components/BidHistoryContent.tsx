@@ -42,6 +42,11 @@ import { createLoginHref } from "@/lib/auth-navigation";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
+  HOST_CANCEL_FAILURE_MESSAGE,
+  getHostCancelCopy,
+  type HostCancelCopy,
+} from "@/lib/host-cancel-confirm";
+import {
   cancelParticipation,
   deleteBuncheol,
   getShippingMethodsFromOptions,
@@ -2980,15 +2985,38 @@ export function BidHistoryContent({
     rememberBidHistoryViewState();
   }
 
-  async function handleDeleteHostedProduct(product: ProductDetailItem) {
-    const accessToken = authState.accessToken;
-    const buncheolId = product.buncheolId ?? product.id;
-
-    if (!authState.isLoggedIn || !accessToken || deletingHostedProductId) {
+  function requestDeleteHostedProduct(product: ProductDetailItem) {
+    if (deletingHostedProductId) {
       return;
     }
 
-    if (!window.confirm("이 분철을 삭제할까요?")) {
+    const copy = getHostCancelCopy(product);
+
+    setConfirmSheetRequest({
+      confirmLabel: copy.actionLabel,
+      description: copy.description,
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runDeleteHostedProduct(product, copy);
+      },
+      title: copy.title,
+      warnings: copy.warnings,
+    });
+  }
+
+  async function runDeleteHostedProduct(
+    product: ProductDetailItem,
+    copy: HostCancelCopy,
+  ) {
+    const accessToken = authState.accessToken;
+    const buncheolId = product.buncheolId ?? product.id;
+
+    if (!authState.isLoggedIn || !accessToken) {
+      showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
+      return;
+    }
+
+    if (deletingHostedProductId) {
       return;
     }
 
@@ -2998,6 +3026,7 @@ export function BidHistoryContent({
       const freshAccessToken = await getFreshAccessToken();
 
       if (!freshAccessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
@@ -3011,12 +3040,14 @@ export function BidHistoryContent({
           : current,
       );
       setHostedMessage("");
+      showToast(copy.successMessage, "success");
     } catch (error: unknown) {
-      setHostedMessage(
-        error instanceof Error
-          ? error.message
-          : "분철을 삭제하지 못했어요.",
-      );
+      const failureMessage =
+        error instanceof Error ? error.message : HOST_CANCEL_FAILURE_MESSAGE;
+
+      setHostedMessage(failureMessage);
+      // hostedMessage 는 목록 맨 위라 카드까지 스크롤한 상태에서는 보이지 않는다.
+      showToast(failureMessage, "error");
     } finally {
       setDeletingHostedProductId(null);
     }
@@ -4470,10 +4501,10 @@ export function BidHistoryContent({
                             deletingHostedProductId ===
                             (product.buncheolId ?? product.id)
                           }
-                          onClick={() => handleDeleteHostedProduct(product)}
+                          onClick={() => requestDeleteHostedProduct(product)}
                           type="button"
                         >
-                          삭제
+                          {getHostCancelCopy(product).actionLabel}
                         </button>
                       ) : null}
                     </div>
