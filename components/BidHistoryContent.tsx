@@ -443,13 +443,13 @@ const freeParticipationStatusGuide = [
     icon: UsersRoundIcon,
     label: freeProgressStepLabels[2],
     description:
-      "분철 진행이 확정된 상태예요. 개최자가 굿즈를 준비해 배송을 시작해요.",
+      "분철 진행이 확정된 상태예요. 굿즈 준비 후 배송이 시작돼요.",
   },
   {
     icon: TruckIcon,
     label: freeProgressStepLabels[3],
     description:
-      "개최자가 내가 지정한 배송지로 택배를 보냈고, 운송장이 등록된 상태예요.",
+      "내가 지정한 배송지로 택배가 발송돼 운송장이 등록된 상태예요.",
   },
   {
     icon: PackageCheckIcon,
@@ -4601,11 +4601,17 @@ export function BidHistoryContent({
                 </>
               ) : (
                 <>
-                  <HelpText className="px-1 pt-2">
-                    마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면 참여가
-                    취소될 수 있어요. 이미 입금했다면 등록한 환불 계좌로
-                    환불돼요.
-                  </HelpText>
+                  {isStatusGuideFree ? (
+                    <HelpText className="px-1 pt-2">
+                      마감 때 최소 진행 멤버 수를 채우지 못하면 분철이 취소돼요.
+                    </HelpText>
+                  ) : (
+                    <HelpText className="px-1 pt-2">
+                      마감 때 최소 인원이 모이지 않거나 입금 기한이 지나면
+                      참여가 취소될 수 있어요. 이미 입금했다면 등록한 환불
+                      계좌로 환불돼요.
+                    </HelpText>
+                  )}
                   <HelpText className="px-1 pt-2">
                     위 순서는 분철이지가 직접 개최한 분철 기준이에요. 회원이
                     개최한 분철은 먼저 신청만 하고, 개최자가 성사를 확정하면
