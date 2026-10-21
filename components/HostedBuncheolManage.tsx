@@ -717,6 +717,8 @@ export function HostedBuncheolManage({
   const c2cAppliedCount = activeC2CParticipants.filter((participant) =>
     isParticipationAppliedStatus(participant.status),
   ).length;
+  const isUnderMinHeadcount =
+    minHeadcount > 0 && c2cAppliedCount < minHeadcount;
   const c2cAwaitingCount = activeC2CParticipants.filter((participant) =>
     isParticipationAwaitingPaymentStatus(participant.status),
   ).length;
@@ -956,8 +958,6 @@ export function HostedBuncheolManage({
 
     // 확정으로 전이되는 대상은 APPLIED 뿐 — 화면 모수도 동일 기준으로 통일한다.
     const applicantCount = c2cAppliedCount;
-    const isUnderMinHeadcount =
-      minHeadcount > 0 && applicantCount < minHeadcount;
 
     setConfirmSheetRequest({
       confirmLabel: "성사 확정",
@@ -1855,15 +1855,23 @@ export function HostedBuncheolManage({
               <HelpText className="mt-1">
                 {`지금까지 신청된 멤버는 ${c2cAppliedCount}명이에요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
               </HelpText>
-              {/* 서버의 마감+48시간 자동 취소(BuncheolAutoCloseService.C2C_CONFIRM_GRACE)는 이 문구가
-                  유일한 안내다 — 어디에도 없으면 분철이 조용히 취소되고 개최자는 이유를 모른다. */}
-              <HelpText className="mt-1.5">
-                <span className="block">
-                  모집 기한이 지나고{" "}
-                  <span className="font-semibold text-black/80">2일(48시간)</span>{" "}
-                  안에 확정하지 않으면 분철이 자동으로 취소돼요.
-                </span>
-              </HelpText>
+              {/* 서버 자동 취소(BuncheolAutoCloseService)는 미달이면 마감 즉시, 최소를 채웠을 때만 마감+48시간
+                  (C2C_CONFIRM_GRACE)이다. 개최자에게는 이 문구가 유일한 안내라 미달 여부로 문장을 고른다. */}
+              {isUnderMinHeadcount ? (
+                <HelpText className="mt-1.5">
+                  {c2cAppliedCount === 0
+                    ? "마감 때 신청된 멤버가 최소 진행 멤버 수보다 적으면 자동으로 취소돼요."
+                    : "마감 때 신청된 멤버가 최소 진행 멤버 수보다 적으면 자동으로 취소돼요. 미달이어도 진행하려면 마감 전에 성사 확정해 주세요."}
+                </HelpText>
+              ) : (
+                <HelpText className="mt-1.5">
+                  <span className="block">
+                    모집 기한이 지나고{" "}
+                    <span className="font-semibold text-black/80">2일(48시간)</span>{" "}
+                    안에 확정하지 않으면 분철이 자동으로 취소돼요.
+                  </span>
+                </HelpText>
+              )}
               <button
                 className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
                 disabled={c2cAppliedCount === 0 || pendingC2CAction !== null}
@@ -2108,7 +2116,15 @@ export function HostedBuncheolManage({
             </div>
 
             <div className="space-y-3">
-              {detail.options.length === 0 ? (
+              {/* 개최자 취소는 공개 상세가 404라 멤버 목록이 비고, 회원 분철 자동 취소는 활성 참여가 0이라
+                  묶음이 빈다 — 둘 다 일시 오류나 「아직 신청한…」이 아니다. */}
+              {isBuncheolCancelledStatus(detail.status) &&
+              (detail.options.length === 0 ||
+                (isC2C && c2cBundles.length === 0)) ? (
+                <p className="rounded-[1rem] bg-[#f7f7f7] px-4 py-5 text-center text-[13px] font-semibold text-black/40">
+                  취소된 분철이라 관리할 참여자가 없어요.
+                </p>
+              ) : detail.options.length === 0 ? (
                 <p className="rounded-[1rem] bg-[#f7f7f7] px-4 py-5 text-center text-[13px] font-semibold text-black/40">
                   옵션 정보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.
                 </p>
