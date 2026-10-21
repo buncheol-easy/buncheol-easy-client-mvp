@@ -291,7 +291,7 @@ export function ArtistRail({
       >
         <div className="relative">
           <button
-            className="motion-card w-[65px] text-left"
+            className="motion-card block w-[65px] text-left"
             onClick={() => onItemClick?.(item)}
             type="button"
           >
@@ -332,11 +332,11 @@ export function ArtistRail({
           ) : null}
         </div>
         <button
-          className="w-[65px] text-left"
+          className="block w-[65px] text-left"
           onClick={() => onItemClick?.(item)}
           type="button"
         >
-          <p className="mt-2 text-[13px] font-medium tracking-[-0.03em]">
+          <p className="mt-2 text-[13px] font-medium leading-[1.15] tracking-[-0.03em]">
             {item.name}
           </p>
           {item.group ? (
@@ -398,8 +398,12 @@ export function ArtistRail({
         </>
       ) : null}
 
+      {/* 가로 스크롤바는 rail-scroll 이 늘 숨겨 아래 16px는 빈칸일 뿐이다. 앞 항목이 있는 줄(홈)에서
+          남겨 두면 최애가 생기는 순간 줄이 그만큼 길어져, 앞 항목 없는 검색 화면에만 둔다. */}
       <div
-        className="motion-carousel flex min-w-0 flex-1 gap-4 overflow-x-auto pb-4 rail-scroll"
+        className={`motion-carousel flex min-w-0 flex-1 gap-4 overflow-x-auto rail-scroll ${
+          leadingItem ? "" : "pb-4"
+        }`}
         ref={scrollContainerRef}
       >
         {scrollItems.map(renderItem)}

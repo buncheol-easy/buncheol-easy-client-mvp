@@ -422,6 +422,116 @@ function HomeListingsRetryNotice({
   );
 }
 
+// 탭 줄 아래 회색 선이 최애 0개일 때의 구분선 자리를 대신하고, 그 위에 고른 탭의 밑줄이 얹힌다.
+function HomeListTabs({
+  onChange,
+  value,
+}: {
+  onChange: (value: HomeListTab) => void;
+  value: HomeListTab;
+}) {
+  const groupRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLSpanElement | null>(null);
+  const tabRefs = useRef(new Map<HomeListTab, HTMLButtonElement | null>());
+  const barValueRef = useRef<HomeListTab | null>(null);
+  const valueRef = useRef(value);
+
+  const moveBarTo = useCallback((tabValue: HomeListTab, animate: boolean) => {
+    const bar = barRef.current;
+    const tab = tabRefs.current.get(tabValue);
+
+    if (!bar || !tab) {
+      return;
+    }
+
+    if (!animate) {
+      bar.style.transitionProperty = "none";
+    }
+
+    bar.style.transform = `translateX(${tab.offsetLeft}px)`;
+    bar.style.width = `${tab.offsetWidth}px`;
+
+    if (!animate) {
+      // 제자리로 옮긴 위치를 먼저 확정한 뒤 전환을 되돌린다.
+      void bar.offsetWidth;
+      bar.style.transitionProperty = "";
+    }
+
+    barValueRef.current = tabValue;
+  }, []);
+
+  // 처음 그릴 때(상세에서 돌아온 마운트 포함)는 제자리에 두고, 보는 중에 값이 바뀌면
+  // (탭·빈 안내의 「전체 분철 보기」) 미끄러진다.
+  useLayoutEffect(() => {
+    valueRef.current = value;
+
+    if (barValueRef.current !== value) {
+      moveBarTo(value, barValueRef.current !== null);
+    }
+  }, [moveBarTo, value]);
+
+  // 글꼴이 늦게 도착해 글자 폭이 바뀌거나 화면 폭이 바뀌면 전환 없이 다시 맞춘다.
+  useEffect(() => {
+    const group = groupRef.current;
+
+    if (!group) {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      moveBarTo(valueRef.current, false);
+    });
+
+    observer.observe(group);
+    tabRefs.current.forEach((tab) => {
+      if (tab) {
+        observer.observe(tab);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [moveBarTo]);
+
+  return (
+    <div
+      aria-label="홈 분철 목록 보기"
+      className="relative mb-4 flex gap-5 border-b border-black/10"
+      ref={groupRef}
+      role="group"
+    >
+      {HOME_LIST_TABS.map((tab) => {
+        const isActive = tab.value === value;
+
+        return (
+          // 누르는 높이 44px는 지키되 글자는 줄 위끝 가까이 오도록 버튼을 위 빈칸으로 12px 올린다 —
+          // 줄 위끝은 최애 0개일 때 구분선 자리 그대로다.
+          <button
+            aria-pressed={isActive}
+            className={`-mt-3 inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-[0.5rem] text-[15px] font-bold tracking-[-0.04em] transition-colors duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black ${
+              isActive ? "text-black" : "text-black/45"
+            }`}
+            key={tab.value}
+            onClick={() => onChange(tab.value)}
+            ref={(element) => {
+              tabRefs.current.set(tab.value, element);
+            }}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-px left-0 h-[2.5px] w-0 rounded-[2px] bg-black transition-[transform,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[transform,width] motion-reduce:transition-none"
+        ref={barRef}
+      />
+    </div>
+  );
+}
+
 export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   useProfileCompletionGuard();
 
@@ -1288,39 +1398,15 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
           <div
             className={
-              isArtistRailVisible ? "border-t border-black/10 pt-5" : "pt-2"
+              isListTabVisible
+                ? undefined
+                : isArtistRailVisible
+                  ? "border-t border-black/10 pt-5"
+                  : "pt-2"
             }
           >
             {isListTabVisible ? (
-              <div
-                aria-label="홈 분철 목록 보기"
-                className="mb-4 flex gap-4"
-                role="group"
-              >
-                {HOME_LIST_TABS.map((tab) => {
-                  const isActive = tab.value === homeListTab;
-
-                  return (
-                    <button
-                      aria-pressed={isActive}
-                      className={`inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[0.5rem] text-[20px] font-extrabold tracking-[-0.05em] transition-colors duration-200 motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black ${
-                        isActive ? "text-black" : "text-black/45"
-                      }`}
-                      key={tab.value}
-                      onClick={() => writeHomeListTab(tab.value)}
-                      type="button"
-                    >
-                      {isActive ? (
-                        <span
-                          aria-hidden="true"
-                          className="size-[7px] shrink-0 rounded-full bg-[#C3EC3C] shadow-[0_0_0_2px_#E9F8B8]"
-                        />
-                      ) : null}
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <HomeListTabs onChange={writeHomeListTab} value={homeListTab} />
             ) : null}
             {isListingsFailed ? (
               <HomeListingsRetryNotice
