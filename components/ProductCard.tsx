@@ -22,6 +22,7 @@ import {
   createLoginHref,
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
+import { trackAdConversion } from "@/lib/analytics";
 import { readAuthState, subscribeAuthState } from "@/lib/auth-store";
 import {
   isBuncheolCancelledStatus,
@@ -479,6 +480,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     try {
       if (nextLiked) {
         await addBuncheolBookmark(accessToken, productId);
+        trackAdConversion("add_to_wishlist", { buncheol_id: productId });
       } else {
         await removeBuncheolBookmark(accessToken, productId);
       }
