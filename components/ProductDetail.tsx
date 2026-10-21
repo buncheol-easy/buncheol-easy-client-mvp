@@ -2340,8 +2340,16 @@ export function ProductDetail({
   // 최소 진행 인원은 LEGACY 마감 판정(입금확인 인원 ≥ minHeadcount)에만 쓰인다. C2C 는 인원이 차도
   // 자동 확정되지 않고 개최자가 성사 확정을 눌러야 진행되므로(docs/46 §4.1), 최소 인원 기준 진행 바와
   // "인원을 채우면 진행이 확정돼요" 문구를 그대로 쓰면 거짓 안내가 된다. C2C 는 전체 슬롯 대비 신청 현황으로 보여준다.
+  // 개최자가 뺀 자리는 신청을 받는 동안에만 CLOSED 로 가려낼 수 있다. 마감 뒤엔 서버가 빈 자리를 전부 CLOSED 로
+  // 내려 구분이 안 되므로 그때는 전체 자리 수를 쓴다.
+  const participationSlotCount =
+    isPurchasableStatus && !isDeadlineBlocked
+      ? auctionOptions.filter(
+          (option) => option.saleStatus?.toUpperCase() !== "CLOSED",
+        ).length
+      : auctionOptions.length;
   const participationDenominator = isC2CProduct
-    ? auctionOptions.length || null
+    ? participationSlotCount || null
     : minHeadcount;
   const participationTargetCount =
     participationDenominator ?? auctionOptions.length;
