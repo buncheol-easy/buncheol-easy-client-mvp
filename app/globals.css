@@ -418,10 +418,21 @@ body.is-pwa-standalone {
     height: 100dvh;
     min-height: 100dvh;
     overflow: hidden;
-    /* 포카 바인더 칸 무늬. 5×4 칸 묶음을 반복해 화면 크기와 상관없이 빈 곳 없이 채운다. */
+    /* 포카가 꽂힌 바인더 무늬. 사진이 들어 있어 파일로 두고, 이 규칙이 맞는 데스크톱에서만 내려받는다. */
     background:
       radial-gradient(ellipse 520px 620px at 50% 57%, rgba(215, 255, 95, 0.12), transparent 70%),
-      url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='570'%20height='648'%3E%3Crect%20x='11.5'%20y='11.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='125.5'%20y='11.5'%20width='91'%20height='139'%20rx='12'%20fill='%23d7ff5f'%20fill-opacity='.1'%20stroke='%23d7ff5f'%20stroke-opacity='.26'/%3E%3Cpath%20transform='translate(161.0%2071.0)%20scale(.84)'%20d='M12%201.5c.55%205.3%205.2%209.95%2010.5%2010.5-5.3.55-9.95%205.2-10.5%2010.5-.55-5.3-5.2-9.95-10.5-10.5C6.8%2011.45%2011.45%206.8%2012%201.5z'%20fill='%23d7ff5f'%20fill-opacity='.5'/%3E%3Crect%20x='239.5'%20y='11.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='353.5'%20y='11.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='467.5'%20y='11.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='11.5'%20y='173.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='125.5'%20y='173.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='239.5'%20y='173.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='353.5'%20y='173.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='467.5'%20y='173.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='11.5'%20y='335.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='125.5'%20y='335.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='239.5'%20y='335.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='353.5'%20y='335.5'%20width='91'%20height='139'%20rx='12'%20fill='%23d7ff5f'%20fill-opacity='.1'%20stroke='%23d7ff5f'%20stroke-opacity='.26'/%3E%3Cpath%20transform='translate(389.0%20395.0)%20scale(.84)'%20d='M12%201.5c.55%205.3%205.2%209.95%2010.5%2010.5-5.3.55-9.95%205.2-10.5%2010.5-.55-5.3-5.2-9.95-10.5-10.5C6.8%2011.45%2011.45%206.8%2012%201.5z'%20fill='%23d7ff5f'%20fill-opacity='.5'/%3E%3Crect%20x='467.5'%20y='335.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='11.5'%20y='497.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='125.5'%20y='497.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='239.5'%20y='497.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='353.5'%20y='497.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3Crect%20x='467.5'%20y='497.5'%20width='91'%20height='139'%20rx='12'%20fill='%23ffffff'%20fill-opacity='.022'%20stroke='%23ffffff'%20stroke-opacity='.07'/%3E%3C/svg%3E") center top / 570px 648px repeat,
+      linear-gradient(
+        90deg,
+        rgba(13, 13, 13, 0) calc(50% - 595px),
+        rgba(13, 13, 13, 0.23) calc(50% - 465px),
+        rgba(13, 13, 13, 0.6) calc(50% - 335px),
+        rgba(13, 13, 13, 0.92) calc(50% - 215px),
+        rgba(13, 13, 13, 0.92) calc(50% + 215px),
+        rgba(13, 13, 13, 0.6) calc(50% + 335px),
+        rgba(13, 13, 13, 0.23) calc(50% + 465px),
+        rgba(13, 13, 13, 0) calc(50% + 595px)
+      ),
+      url("/desktop-binder.svg") center / 100% 100% no-repeat,
       #0d0d0d;
     color: #111111;
   }
