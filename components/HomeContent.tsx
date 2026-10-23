@@ -93,6 +93,8 @@ export const HOME_SKIP_ENTER_KEY = "skip-home-enter-animation";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const HOME_BANNER_SLIDE_KEY = "home-banner-slide";
 const HOME_BANNER_STOPPED_KEY = "home-banner-stopped";
+// 기기 설정이라 로그아웃 정리(lib/user-session.ts)에 넣지 않는다.
+const HOME_HAS_FAVORITES_KEY = "buncheol-home-has-favorites";
 const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
@@ -326,6 +328,22 @@ function readStoredBannerSlide(): StoredBannerSlide | null {
   }
 }
 
+function readRememberedHasFavorites() {
+  try {
+    return window.localStorage.getItem(HOME_HAS_FAVORITES_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function rememberHasFavorites(hasFavorites: boolean) {
+  try {
+    window.localStorage.setItem(HOME_HAS_FAVORITES_KEY, String(hasFavorites));
+  } catch {
+    // 저장이 막히면 다음에 열 때 최애 0개 모양 자리표시로 그린다.
+  }
+}
+
 async function loadHomeListingsPage(loggedIn: boolean, cursor: string | null) {
   let accessToken: string | null = null;
 
@@ -384,14 +402,31 @@ function HomeArtistRailSkeleton() {
         <div className="mx-auto mt-2 h-3.5 w-[52px] skeleton-surface rounded-full bg-black/8" />
       </div>
       <div className="my-2 w-px self-stretch bg-black/8" />
-      <div className="flex min-w-0 flex-1 gap-4 overflow-hidden pb-4">
+      <div className="flex min-w-0 flex-1 gap-4 overflow-hidden">
         {Array.from({ length: 4 }).map((_, index) => (
           <div className="min-w-[65px]" key={`home-artist-skeleton-${index}`}>
             <div className="h-[65px] w-[65px] skeleton-surface rounded-[1.1rem] bg-black/8" />
-            <div className="mt-2 h-4 w-[52px] skeleton-surface rounded-full bg-black/8" />
+            <div className="mt-2 h-3.5 w-[52px] skeleton-surface rounded-full bg-black/8" />
           </div>
         ))}
       </div>
+    </SkeletonGroup>
+  );
+}
+
+// 진짜 탭이 아니다(누를 수 없고 밑줄 없음) — 진짜 탭이 새로 그려져야 첫 밑줄이 미끄러지지 않는다.
+// 높이는 HomeListTabs 와 같은 상자(-mt-3 h-11 + 아래 선)로 맞춘다.
+function HomeListTabsSkeleton() {
+  return (
+    <SkeletonGroup
+      aria-hidden="true"
+      className="relative mb-4 flex gap-5 border-b border-black/10"
+    >
+      {HOME_LIST_TABS.map((tab) => (
+        <div className="-mt-3 flex h-11 shrink-0 items-center" key={tab.value}>
+          <div className="h-3.5 w-[60px] skeleton-surface rounded-full bg-black/8" />
+        </div>
+      ))}
     </SkeletonGroup>
   );
 }
@@ -710,6 +745,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
   // 자리를 지키는 동안은 탭도 남긴다 — 탭 줄이 빠지면 목록이 통째로 위로 밀린다.
   const isListTabVisible =
     isArtistRailVisible && !isGroupLoading && railGroups.length > 0;
+  // 최애 목록이 오기 전에는 이 기기에서 지난번에 최애가 있었는지로 탭 줄 자리를 미리 잡는다.
+  // 서버 렌더·하이드레이션 때는 로그인 전 상태라 isGroupLoading 이 false 다 — 저장소를 읽지 않는다.
+  const isListTabSkeletonVisible =
+    isGroupLoading && readRememberedHasFavorites();
   const isFavoriteTabActive = isListTabVisible && homeListTab === "favorite";
   // 레일에 남겨 둔 해제분은 빼고 "실제로 최애인" 것만 센다. 레일 길이로 판정하면 전부 해제해도
   // 목록이 계속 좁혀지고, 한도 검사도 해제분까지 세어 헐거워진다.
@@ -736,6 +775,12 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
       clearAuthState();
     }
   }, [isFavoriteGroupsUnauthorized]);
+  // 조회가 실패하면 data 가 그대로라 기억도 그대로 둔다. 하트로 바꾼 것은 캐시를 거쳐 여기로 온다.
+  useEffect(() => {
+    if (authState.isLoggedIn && apiGroups !== undefined) {
+      rememberHasFavorites(apiGroups.length > 0);
+    }
+  }, [apiGroups, authState.isLoggedIn]);
   const favoritedGroupCount = favoritedGroups.length;
   // 한도 안내만 스스로 사라진다. 조회·변경 실패 문구는 사용자가 상황을 인지해야 하므로 남긴다.
   useEffect(() => {
@@ -1398,7 +1443,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
 
           <div
             className={
-              isListTabVisible
+              isListTabVisible || isListTabSkeletonVisible
                 ? undefined
                 : isArtistRailVisible
                   ? "border-t border-black/10 pt-5"
@@ -1407,6 +1452,8 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
           >
             {isListTabVisible ? (
               <HomeListTabs onChange={writeHomeListTab} value={homeListTab} />
+            ) : isListTabSkeletonVisible ? (
+              <HomeListTabsSkeleton />
             ) : null}
             {isListingsFailed ? (
               <HomeListingsRetryNotice
