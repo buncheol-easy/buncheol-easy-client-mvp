@@ -20,6 +20,7 @@ import {
   subscribeAuthState,
 } from "@/lib/auth-store";
 import { FEATURES } from "@/lib/feature-flags";
+import { getHistoryIndex } from "@/lib/history-index";
 import {
   isValidPhoneNumber,
   PHONE_NUMBER_HINT,
@@ -35,12 +36,6 @@ type ProfileAccountContentProps = {
 
 export const PROFILE_ACCOUNT_LOGIN_RETURN_KEY =
   "profile-account-login-return";
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 function getEmptyProfileForm() {
   return {

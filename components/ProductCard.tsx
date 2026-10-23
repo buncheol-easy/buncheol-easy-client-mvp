@@ -31,13 +31,15 @@ import {
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
 import { parseIsoTimeMs } from "@/lib/buncheol-open-time";
-import { getHistoryIndex } from "@/lib/history-index";
+import {
+  getHistoryIndex,
+  rememberNextHistoryIndex,
+} from "@/lib/history-index";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
-// 홈 카드로 연 상세의 분철 id·기록 시각. 상세가 마운트 때 한 번 읽고 지운다(ProductDetail).
-export const PRODUCT_HOME_ENTRY_ID_KEY = "product-home-entry-id";
+export const PRODUCT_HOME_ENTRY_INDEX_KEY = "product-home-entry-index";
 const HOME_SCROLL_TOP_KEY = "home-scroll-top";
 const FAVORITES_SCROLL_TOP_KEY = "favorites-scroll-top";
 const SEARCH_RESULT_SCROLL_TOP_KEY_PREFIX = "search-result-scroll-top";
@@ -385,34 +387,6 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     );
   }
 
-  function rememberFavoritesProductEntry() {
-    const historyIndex = getHistoryIndex();
-
-    if (historyIndex === null) {
-      window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
-      String(historyIndex + 1),
-    );
-  }
-
-  function rememberArtistProductEntry() {
-    const historyIndex = getHistoryIndex();
-
-    if (historyIndex === null) {
-      window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
-      String(historyIndex + 1),
-    );
-  }
-
   // 스크롤과 멤버 필터는 한 쌍이다. 스크롤만 저장하면 복귀 시 "전체" 목록 위에 멤버 목록의
   // 오프셋이 얹혀, 있지도 않은 위치로 튄다. 히스토리 인덱스까지 같이 저장해야 복원 쪽이
   // "돌아온 마운트" 와 "새로 연 마운트" 를 가릴 수 있다.
@@ -420,8 +394,6 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     scrollContainer: HTMLElement,
     groupId: string,
   ) {
-    const historyIndex = getHistoryIndex();
-
     window.sessionStorage.setItem(
       getArtistScrollTopKey(groupId),
       String(scrollContainer.scrollTop),
@@ -432,7 +404,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     );
     window.sessionStorage.setItem(
       getArtistRestoreIndexKey(groupId),
-      historyIndex === null ? "" : String(historyIndex),
+      String(getHistoryIndex()),
     );
   }
 
@@ -520,10 +492,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     if (pathname === "/") {
       event.preventDefault();
       rememberProductListScrollPosition(event, HOME_SCROLL_TOP_KEY);
-      window.sessionStorage.setItem(
-        PRODUCT_HOME_ENTRY_ID_KEY,
-        JSON.stringify({ id: productId, at: Date.now() }),
-      );
+      rememberNextHistoryIndex(PRODUCT_HOME_ENTRY_INDEX_KEY);
       router.push(`/products/${productId}?from=home`);
       return;
     }
@@ -544,7 +513,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
       if (scrollContainer && isGroupIdShape(groupId)) {
         event.preventDefault();
         rememberArtistListState(scrollContainer, groupId);
-        rememberArtistProductEntry();
+        rememberNextHistoryIndex(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
         router.push(
           `/products/${productId}?from=artist&groupId=${encodeURIComponent(groupId)}`,
         );
@@ -555,7 +524,7 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     if (pathname === "/favorites" && isPlainPrimaryClick(event)) {
       event.preventDefault();
       rememberProductListScrollPosition(event, FAVORITES_SCROLL_TOP_KEY);
-      rememberFavoritesProductEntry();
+      rememberNextHistoryIndex(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
       router.push(`/products/${productId}?from=favorites`);
     }
   }

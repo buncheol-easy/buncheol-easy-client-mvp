@@ -135,7 +135,7 @@ import {
   FavoritesContent,
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
-import { PRODUCT_HOME_ENTRY_ID_KEY } from "@/components/ProductCard";
+import { PRODUCT_HOME_ENTRY_INDEX_KEY } from "@/components/ProductCard";
 import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -291,9 +291,6 @@ const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
 const PRODUCT_HOME_ENTRY_STATE_KEY = "__buncheolProductFromHome";
-// 카드를 눌렀는데 상세가 못 그려지면(로딩 중 뒤로가기·조회 실패) 값이 남는다. 오래된 값으로 표시를
-// 붙이면 ‹ 가 홈이 아닌 칸(외부 사이트일 수 있음)으로 back() 하므로 클릭 직후 값만 인정한다.
-const PRODUCT_HOME_ENTRY_MAX_AGE_MS = 10_000;
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
@@ -471,7 +468,6 @@ function getCheckoutReturnOptionsFromState(
 }
 
 type ProductHistoryState = {
-  idx?: unknown;
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_ARTIST_ENTRY_STATE_KEY]?: unknown;
@@ -529,22 +525,21 @@ function hasHomeEntryState() {
   return getHistoryState()?.[PRODUCT_HOME_ENTRY_STATE_KEY] === true;
 }
 
-function readFreshHomeEntryId(rawValue: string | null) {
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const { at, id } = JSON.parse(rawValue) as { at?: unknown; id?: unknown };
-    const ageMs = Date.now() - Number(at);
-
-    return typeof id === "string" &&
-      ageMs >= 0 &&
-      ageMs <= PRODUCT_HOME_ENTRY_MAX_AGE_MS
-      ? id
-      : null;
-  } catch {
-    return null;
+// 상세를 연 목록 칸이 바로 뒤에 있는지. 있으면 ‹·삭제 뒤 이동 모두 back() 으로 그 칸에 돌아간다.
+function hasReturnListEntryState(
+  returnSource: ProductDetailProps["initialReturnSource"],
+) {
+  switch (returnSource) {
+    case "home":
+      return hasHomeEntryState();
+    case "bids":
+      return hasBidHistoryEntryState();
+    case "favorites":
+      return hasFavoritesEntryState();
+    case "artist":
+      return hasArtistEntryState();
+    default:
+      return false;
   }
 }
 
@@ -3755,87 +3750,32 @@ export function ProductDetail({
     onExitingChange?.(isExiting);
   }, [isExiting, onExitingChange]);
 
+  // 목록 카드가 적어 둔 "다음 칸 번호"가 지금 칸 번호와 같을 때만 — 즉 바로 앞 칸이 그 목록일 때만 —
+  // 이 칸에 표시를 남긴다. 공유 링크로 들어왔거나 그려지기 전에 이미 돌아갔으면 번호가 어긋난다.
   useEffect(() => {
-    const historyIndex = getHistoryIndex();
-    const expectedBidHistoryEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
-    );
-    const expectedFavoritesEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
-    );
-    const expectedArtistEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
-    );
-    window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
-    window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
-    window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
+    const historyIndex = String(getHistoryIndex());
+    const entryIndexKeys = [
+      ["home", PRODUCT_HOME_ENTRY_INDEX_KEY, PRODUCT_HOME_ENTRY_STATE_KEY],
+      ["bids", PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY, PRODUCT_BID_HISTORY_ENTRY_STATE_KEY],
+      ["favorites", PRODUCT_FAVORITES_ENTRY_INDEX_KEY, PRODUCT_FAVORITES_ENTRY_STATE_KEY],
+      ["artist", PRODUCT_ARTIST_ENTRY_INDEX_KEY, PRODUCT_ARTIST_ENTRY_STATE_KEY],
+    ] as const;
 
-    if (
-      initialReturnSource === "bids" &&
-      historyIndex !== null &&
-      expectedBidHistoryEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
+    for (const [returnSource, indexKey, stateKey] of entryIndexKeys) {
+      const expectedEntryIndex = window.sessionStorage.getItem(indexKey);
+      window.sessionStorage.removeItem(indexKey);
 
-    if (
-      initialReturnSource === "favorites" &&
-      historyIndex !== null &&
-      expectedFavoritesEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_FAVORITES_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
-
-    if (
-      initialReturnSource === "artist" &&
-      historyIndex !== null &&
-      expectedArtistEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_ARTIST_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
+      if (
+        initialReturnSource === returnSource &&
+        expectedEntryIndex === historyIndex
+      ) {
+        window.history.replaceState(
+          { ...(getHistoryState() ?? {}), [stateKey]: true },
+          "",
+        );
+      }
     }
   }, [initialReturnSource]);
-
-  // Next 기록엔 idx 가 없어 getHistoryIndex() 로는 판정할 수 없다. 카드가 남긴 일회용 id 로 판정하고,
-  // 표시가 없으면 replace("/") 로 떨어진다. 그려지기 전에 이미 홈으로 돌아갔으면 홈 칸에 붙이지 않는다.
-  useEffect(() => {
-    const homeEntryId = readFreshHomeEntryId(
-      window.sessionStorage.getItem(PRODUCT_HOME_ENTRY_ID_KEY),
-    );
-    window.sessionStorage.removeItem(PRODUCT_HOME_ENTRY_ID_KEY);
-
-    if (
-      initialReturnSource === "home" &&
-      homeEntryId === buncheolId &&
-      window.location.pathname ===
-        `/products/${encodeURIComponent(buncheolId)}`
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_HOME_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
-  }, [buncheolId, initialReturnSource]);
 
   useEffect(() => {
     if (!isExiting) {
@@ -4013,11 +3953,15 @@ export function ProductDetail({
 
       if (initialReturnSource === "bids") {
         window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
-        router.replace("/profile/bids");
+      }
+
+      // ‹ 와 같은 규칙 — 목록에서 열었으면 그 칸으로 돌아가 기록에 목록이 한 칸 더 쌓이지 않게 한다.
+      if (hasReturnListEntryState(initialReturnSource)) {
+        router.back();
         return;
       }
 
-      router.replace("/");
+      router.replace(initialReturnSource === "bids" ? "/profile/bids" : "/");
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : HOST_CANCEL_FAILURE_MESSAGE,

@@ -4,17 +4,12 @@ import { useRouter } from "next/navigation";
 import { BackIcon, CheckIcon, KakaoIcon, ProfileIcon } from "@/components/icons";
 import { getKakaoAuthorizationUrl } from "@/lib/auth-api";
 import { authReturnHrefStorageKey } from "@/lib/auth-store";
+import { getHistoryIndex } from "@/lib/history-index";
 
 type LoginContentProps = {
   onBack?: () => void;
   returnHref?: string;
 };
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function LoginContent({
   onBack,
