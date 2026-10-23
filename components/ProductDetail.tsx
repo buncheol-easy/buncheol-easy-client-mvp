@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useId,
   useLayoutEffect,
   useMemo,
@@ -294,6 +295,9 @@ const PRODUCT_HOME_ENTRY_STATE_KEY = "__buncheolProductFromHome";
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
+// 로그인하러 나가기 직전에만 남기는 일회용 값. 멤버를 고를 때마다 쓰는 draft 로 판정하면
+// 고르기만 하고 닫은 사람에게도 시트가 저절로 열린다.
+const CHECKOUT_LOGIN_RETURN_STATE_KEY = "buncheol-checkout-login-return-state";
 // 서버 상한(@Size(max = 20))과 같은 값. 화면은 안내용이고 최종 판정은 서버다.
 const maxSelectableMemberCount = 20;
 
@@ -1315,6 +1319,9 @@ export function ProductDetail({
     null,
   );
   const shouldApplyCheckoutRestoreRef = useRef(false);
+  const didReadCheckoutLoginReturnRef = useRef(false);
+  const [checkoutLoginReturnState, setCheckoutLoginReturnState] =
+    useState<CheckoutAddressReturnState | null>(null);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const memberListRef = useRef<HTMLDivElement | null>(null);
@@ -2485,6 +2492,22 @@ export function ProductDetail({
     );
   }
 
+  function rememberCheckoutLoginReturnState() {
+    const returnOptions =
+      getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
+
+    window.sessionStorage.setItem(
+      CHECKOUT_LOGIN_RETURN_STATE_KEY,
+      JSON.stringify({
+        createdAt: Date.now(),
+        optionIds: returnOptions.map((option) => option.id),
+        options: returnOptions,
+        productId: buncheolId,
+        reopenAddressSheet: false,
+      } satisfies CheckoutAddressReturnState),
+    );
+  }
+
   // NOTE: 아래 URL 쿼리(checkoutStep/addressSheet/checkoutOption/checkoutAddress) 복원
   // 분기의 생산자(마이페이지·배송지 관리 왕복)는 이 PR 에서 제거됐다. 과거 공유된 링크
   // 호환용으로 한시 유지하며, 후속 정리 대상이다.
@@ -2835,6 +2858,58 @@ export function ProductDetail({
     myBids,
     product.isApiProduct,
   ]);
+
+  // 로그인하러 나갔다 돌아온 경우. 로그인 상태·내 참여 조회가 끝난 뒤 한 번만 읽고 지운다 —
+  // 로그인하지 않고 돌아왔거나 다른 분철·30분 지난 값이면 열지 않고 버린다.
+  useEffect(() => {
+    if (isViewerStateLoading || didReadCheckoutLoginReturnRef.current) {
+      return;
+    }
+
+    didReadCheckoutLoginReturnRef.current = true;
+
+    const loginReturnState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_LOGIN_RETURN_STATE_KEY),
+      buncheolId,
+    );
+    window.sessionStorage.removeItem(CHECKOUT_LOGIN_RETURN_STATE_KEY);
+
+    if (
+      !loginReturnState ||
+      !authState.isLoggedIn ||
+      Date.now() - loginReturnState.createdAt > checkoutDraftMaxAgeMs
+    ) {
+      return;
+    }
+
+    // 여는 것은 다음 렌더로 미룬다. 같은 커밋의 리셋 effect 가 넣은 새 자리 상태로 마감·참여 여부를 봐야 한다.
+    setCheckoutLoginReturnState(loginReturnState);
+  }, [authState.isLoggedIn, buncheolId, isViewerStateLoading]);
+
+  const openCheckoutFromLoginReturn = useEffectEvent(
+    (loginReturnState: CheckoutAddressReturnState) => {
+      if (isSheetOpen || hasMyActiveParticipation || !canBidProduct) {
+        return;
+      }
+
+      // 고른 멤버가 그사이 전부 마감됐으면 열지 않는다. 일부만 마감이면 남은 멤버만 체크된다.
+      if (
+        !restoreCheckoutSelectionFromReturnOptions(
+          getCheckoutReturnOptionsFromState(loginReturnState),
+        )
+      ) {
+        return;
+      }
+
+      openSheet();
+    },
+  );
+
+  useEffect(() => {
+    if (checkoutLoginReturnState) {
+      openCheckoutFromLoginReturn(checkoutLoginReturnState);
+    }
+  }, [checkoutLoginReturnState]);
 
   // 상세 재조회 세대 번호. 겹치거나 늦게 도착한 응답이 최신 상태를 덮어쓰지 않게 한다.
   const detailRefreshRequestIdRef = useRef(0);
@@ -3211,6 +3286,7 @@ export function ProductDetail({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        rememberCheckoutLoginReturnState();
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
         router.push(
           createLoginHref({
@@ -3323,6 +3399,7 @@ export function ProductDetail({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        rememberCheckoutLoginReturnState();
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
         router.push(
           createLoginHref({
