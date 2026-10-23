@@ -66,9 +66,12 @@ function StackedToast({
 
   useLayoutEffect(() => {
     if (ref.current) {
+      // offset* 는 정수로 반올림돼 글자보다 좁게 고정되면 끝 낱말이 아랫줄로 떨어진다 — 소수 크기를 올림한다.
+      // getBoundingClientRect 는 등장 애니메이션 scale(0.94) 이 걸린 크기라 쓰면 안 된다.
+      const style = window.getComputedStyle(ref.current);
       onMeasure(entry.id, {
-        height: ref.current.offsetHeight,
-        width: ref.current.offsetWidth,
+        height: Math.ceil(parseFloat(style.height)),
+        width: Math.ceil(parseFloat(style.width)),
       });
     }
   }, [entry.id, onMeasure]);
