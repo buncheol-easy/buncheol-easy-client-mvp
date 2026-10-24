@@ -55,6 +55,7 @@ import {
   toArtistRailItem,
   toMemberRailItem,
 } from "@/lib/group-presenters";
+import { getHistoryIndex } from "@/lib/history-index";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 import { chromeBlack } from "@/lib/system-chrome";
 
@@ -78,12 +79,6 @@ const SCROLL_REVEAL_THRESHOLD = 8;
 const SCROLL_HIDE_START = 24;
 const SCROLL_EDGE_GUARD = 16;
 const MEMBER_SEARCH_GROUP_LOOKUP_LIMIT = 8;
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 function readSearchQueryStack() {
   const rawStack = sessionStorage.getItem(SEARCH_QUERY_STACK_KEY);

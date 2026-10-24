@@ -6,14 +6,9 @@ import { ArtistExploreContent } from "@/components/ArtistExploreContent";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { SwipeUnderlay } from "@/components/SwipeUnderlay";
+import { getHistoryIndex } from "@/lib/history-index";
 
 const ARTIST_EXPLORE_PANEL_TRANSITION_MS = 240;
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function ArtistExploreExperience() {
   const router = useRouter();
