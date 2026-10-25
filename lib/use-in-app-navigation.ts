@@ -12,7 +12,7 @@ import { getHistoryIndex } from "@/lib/history-index";
  * 로그인 패널이 그 위로 밀려 들어왔다 — 사용자는 마이페이지를 먼저 보게 된다.
  * 화면 한 벌을 더 마운트하는 비용도 그대로 든다.
  *
- * history.state.idx 는 클라이언트에서만 읽을 수 있어 SSR 스냅샷은 항상 false 다.
+ * 기록 칸 번호(lib/history-index)는 클라이언트에서만 읽을 수 있어 SSR 스냅샷은 항상 false 다.
  * 하이드레이션 전(=false)에는 언더레이를 붙이지 않는다 — 진입 애니메이션 동안 실제로
  * 보이는 건 왼쪽 몇 px 뿐이라 한 프레임 늦게 붙어도 티가 나지 않는다.
  */

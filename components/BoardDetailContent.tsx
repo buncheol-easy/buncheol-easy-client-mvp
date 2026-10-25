@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BackIcon, BidIcon } from "@/components/icons";
 import type { BoardCategory, BoardPost } from "@/lib/board-posts";
+import { getHistoryIndex } from "@/lib/history-index";
 
 const categoryLabels: Record<BoardCategory, string> = {
   alert: "알림",
@@ -27,12 +28,6 @@ function renderBoldSegments(paragraph: string) {
       segment
     ),
   );
-}
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
 type BoardDetailContentProps = {

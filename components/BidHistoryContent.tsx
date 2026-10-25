@@ -85,7 +85,7 @@ import {
   formatMemberCount,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
-import { getHistoryIndex } from "@/lib/history-index";
+import { rememberNextHistoryIndex } from "@/lib/history-index";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import {
   formatPaybackDeadlineNotice,
@@ -130,6 +130,8 @@ const paymentDeadlineMinutes = 10;
 // C2C 입금 창 — 성사 확정 후 24시간 (docs/46 §7.1-3). 카운트다운 상한 보정에 쓴다.
 const c2cPaymentWindowMs = 24 * 60 * 60_000;
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
+export const MANAGE_BID_HISTORY_ENTRY_INDEX_KEY =
+  "manage-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
 const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
 export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
@@ -2956,18 +2958,7 @@ export function BidHistoryContent({
 
     rememberScrollPosition();
     rememberBidHistoryViewState();
-
-    const historyIndex = getHistoryIndex();
-
-    if (historyIndex === null) {
-      window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
-      String(historyIndex + 1),
-    );
+    rememberNextHistoryIndex(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
   }
 
   function rememberBidHistoryManageEntry(event: MouseEvent<HTMLAnchorElement>) {
@@ -2983,6 +2974,7 @@ export function BidHistoryContent({
 
     rememberScrollPosition();
     rememberBidHistoryViewState();
+    rememberNextHistoryIndex(MANAGE_BID_HISTORY_ENTRY_INDEX_KEY);
   }
 
   function requestDeleteHostedProduct(product: ProductDetailItem) {

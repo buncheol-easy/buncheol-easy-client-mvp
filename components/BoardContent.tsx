@@ -28,6 +28,7 @@ import {
   type BoardCategory,
   type BoardPost,
 } from "@/lib/board-posts";
+import { getHistoryIndex } from "@/lib/history-index";
 
 type BoardFilter = BoardCategory | "all";
 
@@ -48,12 +49,6 @@ function getCategoryTone(category: BoardCategory) {
   return category === "notice"
     ? "bg-black text-white"
     : "bg-[#f2f2f2] text-black/60";
-}
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
 }
 
 function getInboxTypeFromFilter(category: BoardFilter) {

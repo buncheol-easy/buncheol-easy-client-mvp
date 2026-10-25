@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { BusinessFooter } from "@/components/BusinessFooter";
 import { BackIcon } from "@/components/icons";
+import { getHistoryIndex } from "@/lib/history-index";
 
 type PolicySection = {
   items: string[];
@@ -15,12 +16,6 @@ type PolicyPageContentProps = {
   sections: PolicySection[];
   title: string;
 };
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function PolicyPageContent({
   description,
