@@ -53,7 +53,7 @@ export function AddressManagementExperience({
     const isProductReturn =
       typeof returnHref === "string" && returnHref.startsWith("/products/");
     const skipEnterKey =
-      returnHref === "/profile/bids"
+      returnHref === "/profile/participations"
         ? BID_HISTORY_SKIP_ENTER_KEY
         : PROFILE_SKIP_ENTER_KEY;
 
@@ -86,7 +86,7 @@ export function AddressManagementExperience({
     );
   }
 
-  const isBidsReturn = returnHref === "/profile/bids";
+  const isBidsReturn = returnHref === "/profile/participations";
 
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">

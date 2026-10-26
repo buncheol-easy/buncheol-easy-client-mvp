@@ -1850,7 +1850,7 @@ export function BidHistoryContent({
 
     const frame = window.requestAnimationFrame(() => {
       router.replace(
-        createLoginHref({ cancelTo: "/", returnTo: "/profile/bids" }),
+        createLoginHref({ cancelTo: "/", returnTo: "/profile/participations" }),
       );
     });
 
@@ -3927,8 +3927,8 @@ export function BidHistoryContent({
                 <EmptyState
                   action={{
                     href: createLoginHref({
-                      cancelTo: "/profile/bids",
-                      returnTo: "/profile/bids",
+                      cancelTo: "/profile/participations",
+                      returnTo: "/profile/participations",
                     }),
                     label: "카카오로 시작하기",
                   }}
@@ -4376,8 +4376,8 @@ export function BidHistoryContent({
                   <EmptyState
                     action={{
                       href: createLoginHref({
-                        cancelTo: "/profile/bids",
-                        returnTo: "/profile/bids",
+                        cancelTo: "/profile/participations",
+                        returnTo: "/profile/participations",
                       }),
                       label: "카카오로 시작하기",
                     }}

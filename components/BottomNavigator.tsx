@@ -39,7 +39,7 @@ type NavItem = {
  */
 const navItems: NavItem[] = [
   { href: "/", key: "Home", label: "홈" },
-  { authRequired: true, href: "/profile/bids", key: "Bids", label: "참여 내역" },
+  { authRequired: true, href: "/profile/participations", key: "Bids", label: "참여 내역" },
   {
     authRequired: true,
     emphasized: true,

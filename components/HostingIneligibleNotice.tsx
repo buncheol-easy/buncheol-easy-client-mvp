@@ -190,8 +190,8 @@ function getNoticeCopy(
             "관리되지 않는 분철이 쌓이면 참여자가 기다리기만 하게 돼서 개수를 제한하고 있어요.",
         },
       ],
-      // /profile/bids 는 "참여한 분철" 탭으로 열리고 탭을 지정할 쿼리가 없어, 라벨을 화면 그대로 맞춘다.
-      primaryAction: { label: "참여와 개최 기록 보기", href: "/profile/bids" },
+      // /profile/participations 는 "참여한 분철" 탭으로 열리고 탭을 지정할 쿼리가 없어, 라벨을 화면 그대로 맞춘다.
+      primaryAction: { label: "참여와 개최 기록 보기", href: "/profile/participations" },
     };
   }
 

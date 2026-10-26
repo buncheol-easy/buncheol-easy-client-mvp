@@ -3837,7 +3837,7 @@ export function ProductDetail({
         return;
       }
 
-      router.replace("/profile/bids");
+      router.replace("/profile/participations");
       return;
     }
 
@@ -4102,7 +4102,7 @@ export function ProductDetail({
         return;
       }
 
-      router.replace(initialReturnSource === "bids" ? "/profile/bids" : "/");
+      router.replace(initialReturnSource === "bids" ? "/profile/participations" : "/");
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : HOST_CANCEL_FAILURE_MESSAGE,
@@ -4548,7 +4548,7 @@ export function ProductDetail({
 
   function openBidHistory() {
     window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
-    router.push("/profile/bids");
+    router.push("/profile/participations");
   }
 
   // 상단 칩을 누르면 그 멤버 행으로 내려가 잠깐 표시해, 목록에서 어디인지 바로 보이게 한다.

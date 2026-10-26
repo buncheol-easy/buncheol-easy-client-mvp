@@ -1634,7 +1634,7 @@ export function HostedBuncheolManage({
             {isLoadingDetail ? null : (
               <Link
                 className="mt-5 flex h-12 w-full max-w-[240px] items-center justify-center rounded-full bg-[#CFE86B] text-[14px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
-                href="/profile/bids"
+                href="/profile/participations"
               >
                 내 분철로 돌아가기
               </Link>

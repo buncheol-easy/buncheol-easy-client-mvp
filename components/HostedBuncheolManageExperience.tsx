@@ -76,7 +76,7 @@ export function HostedBuncheolManageExperience({
       return;
     }
 
-    router.replace("/profile/bids");
+    router.replace("/profile/participations");
   }
 
   function handleBack() {

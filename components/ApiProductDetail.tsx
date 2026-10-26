@@ -441,7 +441,7 @@ export function ApiProductDetail({
           {isNotFoundError ? (
             <Link
               className="mt-3 inline-flex items-center justify-center rounded-full px-4 py-2 text-[13px] font-semibold tracking-[-0.04em] text-black/45"
-              href="/profile/bids"
+              href="/profile/participations"
             >
               참여 내역에서 확인하기
             </Link>
