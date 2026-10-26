@@ -104,7 +104,7 @@ export function ConfirmSheet({
         aria-modal="true"
         // 상세·경고가 붙으면 400px 안팎이 된다 — 가로 모드·인앱 웹뷰 상하단 바·폰트 확대가 겹치면
         // 위로 넘쳐 제목과 금액이 잘린다. 버튼은 스크롤 밖에 고정해 항상 닿게 둔다.
-        className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100%-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+        className={`bid-sheet-panel relative mx-auto flex max-h-[calc(100%-2.5rem)] w-full max-w-[430px] flex-col overflow-hidden rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 [--bid-sheet-padding-bottom:1.5rem] shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
           isEntered ? "bid-sheet-panel-active" : ""
         }`}
         role="dialog"
