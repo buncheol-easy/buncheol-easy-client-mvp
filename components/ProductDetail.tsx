@@ -71,7 +71,10 @@ import {
   parseIsoTimeMs,
 } from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
-import { PRODUCT_WIDE_IMAGE_SIZES } from "@/lib/optimizable-image";
+import {
+  PRODUCT_WIDE_IMAGE_SIZES,
+  PRODUCT_ZOOM_IMAGE_SIZES,
+} from "@/lib/optimizable-image";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
 import {
@@ -6350,7 +6353,7 @@ export function ProductDetail({
                       alt={`${product.title} 이미지 ${imageIndex + 1}`}
                       className="object-contain"
                       draggable={false}
-                      sizes="100vw"
+                      sizes={PRODUCT_ZOOM_IMAGE_SIZES}
                       src={imageUrl}
                     />
                   </div>

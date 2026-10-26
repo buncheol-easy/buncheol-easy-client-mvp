@@ -13,6 +13,8 @@ export const PRODUCT_WIDE_IMAGE_SIZES =
   "(min-width: 462px) 398px, calc(100vw - 2rem)";
 export const PRODUCT_GRID_IMAGE_SIZES =
   "(min-width: 462px) 191px, calc(50vw - 1.5rem)";
+// 상세 확대 화면은 fixed 지만 transform 이 걸린 상세 패널(max-w 430px) 안에 있어 뷰포트가 아니라 패널 폭으로 그려진다.
+export const PRODUCT_ZOOM_IMAGE_SIZES = "(min-width: 430px) 430px, 100vw";
 
 function isSvgPath(pathname: string) {
   return pathname.toLowerCase().endsWith(".svg");
