@@ -663,6 +663,23 @@ function hideTakenOptionBeforeOpen(option: ProductOption): ProductOption {
   };
 }
 
+// 오픈 직후 잠깐은 오픈 전에 이미 팔린 자리(코드 참여 등)를 「다른 사람이 입금 중」으로 보인다. 정각에 바로
+// 「매진」이 뜨지 않게 하려는 운영 결정이다. 서버 값은 그대로 두고, 기한은 누가 보든 오픈 시각 + 입금 시간이다.
+const takenShownAsPayingMs = 3 * 60 * 1000;
+
+function showTakenOptionAsPaying(
+  option: ProductOption,
+  opensAtMs: number,
+): ProductOption {
+  return {
+    ...option,
+    purchasePaymentConfirmedAt: undefined,
+    purchasePaymentDueAt: new Date(opensAtMs + paymentWindowMs).toISOString(),
+    purchasePaymentStatus: undefined,
+    saleStatus: "AWAITING_PAYMENT",
+  };
+}
+
 // 오픈 시각이 지나면 서버가 「오픈 전」으로 내려 둔 빈 자리를 시계만으로 연다. 정각 몰림에 조회를 더하지 않으려고
 // 정각에는 서버에 다시 묻지 않는다 — 그사이 팔린 자리는 참여 시트를 열 때와 참여 409 뒤 재조회로 맞춰진다.
 function openNotOpenOption(option: ProductOption): ProductOption {
@@ -1583,17 +1600,31 @@ export function ProductDetail({
   const isCancelledProduct = isBuncheolCancelledStatus(productStatus);
   // 띠와 같이 모집 중일 때만 가린다(오픈 전에 취소된 분철은 실제 참여 현황을 보인다).
   // 개최자는 오픈 전에도 실제 자리 상태를 본다(관리 화면과 같은 정보).
-  const shouldHideTakenSlots =
-    isBeforeOpen &&
+  const canMaskTakenSlots =
     isBuncheolPurchasableStatus(productStatus) &&
     !isCancelledProduct &&
     product.isHostedByMe !== true &&
     isHostedByMeFromApi !== true;
+  const shouldHideTakenSlots = isBeforeOpen && canMaskTakenSlots;
+  const shouldShowTakenAsPaying =
+    canMaskTakenSlots &&
+    hasOpened &&
+    opensAtMs !== null &&
+    serverNowMs < opensAtMs + takenShownAsPayingMs;
   const auctionOptions = useMemo(() => {
     if (hasOpened) {
-      return serverAuctionOptions.some(isNotOpenOption)
+      const openedOptions = serverAuctionOptions.some(isNotOpenOption)
         ? serverAuctionOptions.map(openNotOpenOption)
         : serverAuctionOptions;
+
+      return shouldShowTakenAsPaying && opensAtMs !== null
+        ? openedOptions.map((option) =>
+            isTakenByOthers(option, myBids[option.id]) &&
+            isConfirmedOptionPurchase(option)
+              ? showTakenOptionAsPaying(option, opensAtMs)
+              : option,
+          )
+        : openedOptions;
     }
 
     if (shouldHideTakenSlots) {
@@ -1605,7 +1636,14 @@ export function ProductDetail({
     }
 
     return serverAuctionOptions;
-  }, [hasOpened, myBids, serverAuctionOptions, shouldHideTakenSlots]);
+  }, [
+    hasOpened,
+    myBids,
+    opensAtMs,
+    serverAuctionOptions,
+    shouldHideTakenSlots,
+    shouldShowTakenAsPaying,
+  ]);
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
