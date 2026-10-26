@@ -156,12 +156,12 @@ function getHostedBuncheolStatusKind({
     return "recruiting";
   }
 
-  // 마감 지난 모집(C2C 48시간 유예 포함)과 알 수 없는 상태.
+  // 마감 지난 모집(스케줄러가 입금 단계·취소로 넘기기 전 잠깐)과 알 수 없는 상태.
   return "recruitingClosed";
 }
 
 // 공용 getBuncheolStatusBadgeLabel 을 이 용도로 바꾸거나 deadline 인자를 붙이지 마라 — 공용 쪽은
-// 마감을 모르므로 C2C 48시간 유예 구간이 「모집 중」으로 돌아간다(docs/98 §5-C).
+// 마감을 모르므로 마감이 지난 모집 중이 「모집 중」으로 돌아간다(docs/98 §5-C).
 export function getHostedBuncheolStatusBadge(
   input: HostedBuncheolStatusInput & { isDeadlinePassed: boolean },
 ) {

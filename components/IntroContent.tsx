@@ -752,7 +752,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
 
       <div className="absolute inset-x-0 bottom-0 z-20 bg-white px-5 pb-5 pt-3 shadow-[0_-12px_34px_rgba(0,0,0,0.08)]">
         <HelpText align="center" className="mb-2" size="caption">
-          신청만 하면 끝! 입금은 분철이 확정된 뒤에 해요.
+          신청만 하면 끝! 입금은 모집이 끝난 뒤에 해요.
         </HelpText>
         <div className="flex h-14 items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]">
           신청하기
@@ -1100,13 +1100,12 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
               기한 8월 14일 17시
             </span>
           </div>
-          {/* 부분 확정 버튼은 미입금이 0일 때만 뜬다(HostedBuncheolManage). 목업이 그 조건을
-              어기면 "미입금이 남아도 누를 수 있는 버튼"으로 잘못 배우게 되므로 집계를 맞춘다. */}
+          {/* 전원 입금(ALL_PAID)이라 버튼이 켜진 모습이다. 라벨은 HostedBuncheolManage 의 진행 확정 버튼과 같게 둔다. */}
           <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
             입금 확인 멤버 6명 · 입금 대기 0명 · 보냈어요 0명
           </p>
           <div className="intro-confirm-pulse mt-3 flex h-12 items-center justify-center rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F]">
-            입금된 멤버 6명으로 진행 확정
+            진행 확정하기
           </div>
         </section>
 
@@ -1117,7 +1116,7 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
             </h2>
             {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다. */}
             <HelpText className="mt-1">
-              {"참여자가 송금 후 '보냈어요'를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요. 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."}
+              {"참여자가 송금 후 「보냈어요」를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요."}
             </HelpText>
           </div>
 
@@ -1215,9 +1214,9 @@ const featureSlides: readonly FeatureSlide[] = [
     title: "남은 자리가 한눈에",
   },
   {
-    body: "성사가 확정되면 계좌와 입금 기한이 안내돼요.\n송금 뒤 '보냈어요'만 누르면 끝.",
+    body: "모집이 끝나면 계좌와 입금 기한이 안내돼요.\n송금 뒤 「보냈어요」만 누르면 끝.",
     chips: ["24시간 기한"],
-    title: "입금은 확정된 뒤에",
+    title: "입금은 모집이 끝난 뒤에",
   },
   {
     body: "신청 현황과 입금 확인은 물론,\n참여자들이 고른 배송지도 한 화면에 모여요.",
@@ -1232,7 +1231,7 @@ const introFlowSteps = [
     label: "신청",
   },
   {
-    body: "개최자가 성사를 확정하면 계좌와 24시간 입금 기한이 안내돼요.",
+    body: "모집이 끝나면 계좌와 24시간 입금 기한이 안내돼요.",
     label: "입금 대기",
   },
   {
@@ -1240,7 +1239,7 @@ const introFlowSteps = [
     label: "입금 확인",
   },
   {
-    body: "최소 인원이 모이면 분철이 확정되고 굿즈 준비가 시작돼요.",
+    body: "입금이 확인되면 개최자가 진행을 확정하고 굿즈 준비를 시작해요.",
     label: "진행 확정",
   },
   {
@@ -1258,7 +1257,7 @@ const introPainPoints = [
     items: [
       { after: "명단에서 버튼으로 한 번에", before: "입금 확인 DM 한 명씩" },
       { after: "배송지가 한 화면에 모여요", before: "주소 하나씩 받아 적기" },
-      { after: "인원 미달이면 자동으로 취소하고 안내", before: "성사 여부 수동 공지" },
+      { after: "모이면 입금 안내, 미달이면 취소 안내까지 자동", before: "성사 여부 수동 공지" },
     ],
     role: "개최자",
   },

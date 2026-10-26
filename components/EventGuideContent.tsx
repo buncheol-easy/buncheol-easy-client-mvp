@@ -24,11 +24,15 @@ const keyPoints = [
     highlight: "최소 진행 멤버 수는",
     title: " 줄여 두기",
   },
-  { body: "넘기면 자동 취소돼요.", highlight: "마감 뒤 48시간", title: " 안에 성사 확정" },
   {
-    body: "입금 안 한 자리는 '제외'하고 진행 확정해요.",
+    body: "모두 입금하면 바로 확정할 수 있어요. 입금 안 한 자리는 확정할 때 빠져요.",
     highlight: "입금 기한 24시간",
-    title: " 뒤엔 직접 정리",
+    title: " 뒤엔 직접 진행 확정",
+  },
+  {
+    body: "그 뒤엔 혼자 취소할 수 없어요. 진행이 어려우면 운영진에게 알려 주세요.",
+    highlight: "입금이 시작되면",
+    title: " 운영진과 함께",
   },
 ] as const;
 
@@ -201,17 +205,17 @@ export function EventGuideContent() {
                     <div className="flex items-center gap-3">
                       <StepBadge>{2}</StepBadge>
                       <p className="text-[17px] font-semibold tracking-[-0.035em]">
-                        모이면 성사 확정
+                        입금 확인하고 진행 확정
                       </p>
                     </div>
                     <div
                       aria-hidden="true"
                       className="mt-4 rounded-full bg-[#0A0B0D] py-3 text-center text-[14px] font-semibold text-white"
                     >
-                      성사 확정하기
+                      진행 확정하기
                     </div>
                     <p className="mt-3 text-[13px] font-medium text-[#868C95]">
-                      계좌와 입금 안내는 알림톡이 보내요.
+                      계좌와 입금 안내는 모이면 알림톡이 자동으로 보내요.
                     </p>
                   </div>
                 </Reveal>
