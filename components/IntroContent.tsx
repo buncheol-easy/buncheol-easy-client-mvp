@@ -1114,9 +1114,9 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
             <h2 className="text-[19px] font-semibold tracking-[-0.05em]">
               참여자 관리
             </h2>
-            {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다. */}
+            {/* 문구는 components/HostedBuncheolManage.tsx 의 참여자 관리 안내와 같은 문장을 쓴다(따옴표는 이 파일 표기). */}
             <HelpText className="mt-1">
-              {"참여자가 송금 후 「보냈어요」를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요."}
+              {"참여자가 송금 후 '보냈어요'를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요."}
             </HelpText>
           </div>
 
@@ -1171,30 +1171,12 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
                         </span>
                       </div>
 
+                      {/* 입금 수집 중 그림이라 운송장 칸이 없다 — 운송장은 진행 확정 뒤에만 열린다. */}
                       {state === "sent" ? (
-                        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-                          <div className="intro-confirm-pulse flex h-10 items-center justify-center rounded-full bg-black text-[13px] font-semibold text-[#D7FF5F]">
-                            입금 확인
-                          </div>
-                          <div className="flex h-10 items-center justify-center rounded-full border border-black/10 px-4 text-[13px] font-semibold text-black/50">
-                            반려
-                          </div>
+                        <div className="intro-confirm-pulse mt-3 flex h-10 items-center justify-center rounded-full bg-black text-[13px] font-semibold text-[#D7FF5F]">
+                          입금 확인
                         </div>
-                      ) : (
-                        <div className="mt-3">
-                          <p className="text-[11px] font-medium text-black/35">
-                            운송장 번호
-                          </p>
-                          <div className="mt-1.5 rounded-[0.7rem] border border-black/10 px-3 py-2.5 text-[13px] font-semibold text-black/70">
-                            <span className="intro-waybill-typing inline-block overflow-hidden whitespace-nowrap">
-                              CJ 5839 2047 1182
-                            </span>
-                          </div>
-                          <div className="intro-ship-complete-button mt-2 flex h-10 items-center justify-center rounded-full text-[13px] font-semibold tracking-[-0.04em]">
-                            운송장 등록
-                          </div>
-                        </div>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -1214,7 +1196,7 @@ const featureSlides: readonly FeatureSlide[] = [
     title: "남은 자리가 한눈에",
   },
   {
-    body: "모집이 끝나면 계좌와 입금 기한이 안내돼요.\n송금 뒤 「보냈어요」만 누르면 끝.",
+    body: "모집이 끝나면 계좌와 입금 기한이 안내돼요.\n송금 뒤 '보냈어요'만 누르면 끝.",
     chips: ["24시간 기한"],
     title: "입금은 모집이 끝난 뒤에",
   },
