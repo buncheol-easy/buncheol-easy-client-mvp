@@ -1,15 +1,11 @@
-import {
-  getFlowType,
-  isBuncheolCancelledStatus,
-  isBuncheolPaymentCollectingStatus,
-} from "@/lib/buncheol-states";
+import { isBuncheolCancelledStatus } from "@/lib/buncheol-states";
 
 // 개최자 분철 취소(DELETE /v1/buncheols/{id}) 문구 — 개최 목록 카드와 상세 휴지통이 같이 쓴다.
 // 이미 취소된(인원 미달) 분철은 서버가 목록에서 숨기기만 하고 참여자 알림을 다시 보내지 않아
-// 「취소」가 아니라 「삭제」로 묻는다.
+// 「취소」가 아니라 「삭제」로 묻는다. 입금 단계가 시작된 회원 개최 분철은 개최자가 지울 수 없어
+// (서버 BCH-126, 운영진 파기) 이 창이 뜨지 않는다.
 
 type HostCancelTarget = {
-  flowType?: string | null;
   status?: string | null;
 };
 
@@ -27,10 +23,7 @@ export type HostCancelCopy = {
 export const HOST_CANCEL_FAILURE_MESSAGE =
   "분철을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.";
 
-export function getHostCancelCopy({
-  flowType,
-  status,
-}: HostCancelTarget): HostCancelCopy {
+export function getHostCancelCopy({ status }: HostCancelTarget): HostCancelCopy {
   if (isBuncheolCancelledStatus(status)) {
     return {
       actionLabel: "삭제",
@@ -42,12 +35,6 @@ export function getHostCancelCopy({
     };
   }
 
-  // C2C 는 참여자가 개최자 계좌로 직접 보내므로 돌려주는 것도 개최자 몫이다(LEGACY 는 운영진 환불).
-  const refundWarning =
-    getFlowType(flowType) === "C2C" && isBuncheolPaymentCollectingStatus(status)
-      ? ["이미 돈을 보낸 참여자가 있다면 직접 돌려줘야 해요."]
-      : [];
-
   return {
     actionLabel: "분철 취소",
     description:
@@ -55,9 +42,6 @@ export function getHostCancelCopy({
     iconLabel: "분철 취소",
     successMessage: "분철을 취소했어요.",
     title: "분철을 취소할까요?",
-    warnings: [
-      ...refundWarning,
-      "취소한 분철은 목록에서 사라지고 되돌릴 수 없어요.",
-    ],
+    warnings: ["취소한 분철은 목록에서 사라지고 되돌릴 수 없어요."],
   };
 }

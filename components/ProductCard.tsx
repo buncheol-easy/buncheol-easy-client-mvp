@@ -276,7 +276,7 @@ function getProductCardBadge(item: ProductCardItem) {
         ? "분철 취소"
         : isBuncheolConfirmedStatus(item.status)
           ? "진행 확정"
-          : // C2C 입금 수집 구간 — 끝난 분철이 아니라 진행 중(추가 신청은 상세에서 가능).
+          : // C2C 입금 수집 구간 — 끝난 분철이 아니라 입금을 받으며 진행 중인 분철이다.
             isBuncheolPaymentCollectingStatus(item.status)
             ? "입금 진행"
             : "모집 종료",
@@ -345,8 +345,8 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
   const isPurchasable = isProductCardPurchasable(item);
   // 오픈 전에는 사진 아래 띠가 상태 칩과 「D-n」을 대신한다.
   const opening = getCardOpening(item);
-  // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중 — 상세에서 추가 신청이
-  // 열려 있으므로 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
+  // C2C 입금 수집 중(PAYMENT_COLLECTING)은 종료가 아니라 진행 중인 분철이라
+  // 마감 카드처럼 흐리지 않는다(배지는 "입금 진행" 유지).
   const shouldDimCard =
     !isPurchasable && !isBuncheolPaymentCollectingStatus(item.status);
   // 서버가 availableMemberNames 를 내려준 경우에만 자리 상태를 그린다(null = 데이터 없음 → 대상 멤버 태그).

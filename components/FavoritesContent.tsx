@@ -224,7 +224,7 @@ export function FavoritesContent({
         return false;
       }
 
-      // PAYMENT_COLLECTING 은 마감시각이 지나도 추가 신청이 가능하므로 남긴다.
+      // PAYMENT_COLLECTING 은 마감시각이 지나도 진행 중인 분철이라 남긴다.
       return !(
         hideClosed &&
         !isBuncheolPaymentCollectingStatus(product.status) &&
