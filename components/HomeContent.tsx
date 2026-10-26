@@ -86,6 +86,7 @@ import {
   normalizeGroupSearchText,
   toArtistRailItem,
 } from "@/lib/group-presenters";
+import { isOptimizableImageSrc } from "@/lib/optimizable-image";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
@@ -130,27 +131,6 @@ type HomeBanner = {
 // 이전 값은 1120px 미만에서 뷰포트 폭을 그대로 요청해, 폰 가로·태블릿에서 실제 폭의
 // 2배가 넘는 후보를 받았다 (첫 배너는 priority 라 LCP 대역폭에 그대로 얹힌다).
 const HOME_BANNER_IMAGE_SIZES = "(min-width: 462px) 398px, calc(100vw - 2rem)";
-
-// next.config.ts images.remotePatterns 와 같은 목록. API 가 이 밖의 호스트를
-// 내려주면 next/image 로더가 throw(개발)하거나 400(프로덕션)이 나므로,
-// 미등록 호스트는 최적화를 끄고 원본을 그대로 그린다.
-const OPTIMIZED_BANNER_HOSTS = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
-
-function isOptimizableBannerSrc(src: string) {
-  if (src.startsWith("/")) {
-    return true;
-  }
-
-  try {
-    return OPTIMIZED_BANNER_HOSTS.has(new URL(src).hostname);
-  } catch {
-    return false;
-  }
-}
 
 const HOME_BANNERS: HomeBanner[] = [
   {
@@ -1353,7 +1333,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                     loading={index === 0 ? "eager" : "lazy"}
                     sizes={HOME_BANNER_IMAGE_SIZES}
                     src={banner.imageSrc}
-                    unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
+                    unoptimized={!isOptimizableImageSrc(banner.imageSrc)}
                   />
                   <Image
                     alt={banner.imageAlt}
@@ -1363,7 +1343,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                     priority={index === 0}
                     sizes={HOME_BANNER_IMAGE_SIZES}
                     src={banner.imageSrc}
-                    unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
+                    unoptimized={!isOptimizableImageSrc(banner.imageSrc)}
                   />
                 </span>
               </Link>

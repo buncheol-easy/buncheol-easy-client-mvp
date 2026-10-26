@@ -23,6 +23,7 @@ import { getHistoryIndex } from "@/lib/history-index";
 import type { ProductCardItem } from "@/components/ProductCard";
 import { ProductGrid } from "@/components/ProductGrid";
 import { ProductGridSkeleton } from "@/components/ProductGridSkeleton";
+import { ProductPhoto } from "@/components/ProductPhoto";
 import {
   requestBuncheols,
   toProductCardItem,
@@ -120,16 +121,18 @@ function MemberFace({
   }
 
   return (
-    /* eslint-disable-next-line @next/next/no-img-element */
-    <img
-      alt={name}
-      /* 원본이 4:5 세로컷이고 얼굴이 상단 55% 안에 있어, 정중앙에서 자르면 이마·턱이 날아간다. */
-      className="h-full w-full object-cover [object-position:50%_16%]"
-      decoding="async"
-      loading="lazy"
-      onError={() => setDidImageFail(true)}
-      src={imageUrl}
-    />
+    <span className="relative block h-full w-full">
+      <ProductPhoto
+        alt={name}
+        /* 원본이 4:5 세로컷이고 얼굴이 상단 55% 안에 있어, 정중앙에서 자르면 이마·턱이 날아간다. */
+        className="object-cover [object-position:50%_16%]"
+        decoding="async"
+        loading="lazy"
+        onError={() => setDidImageFail(true)}
+        sizes="60px"
+        src={imageUrl}
+      />
+    </span>
   );
 }
 

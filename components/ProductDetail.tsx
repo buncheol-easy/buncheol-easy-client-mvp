@@ -72,6 +72,10 @@ import {
   parseIsoTimeMs,
 } from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
+import {
+  PRODUCT_WIDE_IMAGE_SIZES,
+  PRODUCT_ZOOM_IMAGE_SIZES,
+} from "@/lib/optimizable-image";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
 import {
@@ -139,6 +143,7 @@ import {
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { PRODUCT_HOME_ENTRY_INDEX_KEY } from "@/components/ProductCard";
+import { ProductPhoto } from "@/components/ProductPhoto";
 import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -4689,16 +4694,16 @@ export function ProductDetail({
                     >
                       {productImages.map((imageUrl, imageIndex) => (
                         <div
-                          className="h-full w-full shrink-0 overflow-hidden"
+                          className="relative h-full w-full shrink-0 overflow-hidden"
                           key={imageUrl}
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
+                          <ProductPhoto
                             alt=""
-                            className="h-full w-full object-cover"
+                            className="object-cover"
                             draggable={false}
                             fetchPriority={imageIndex === 0 ? "high" : "auto"}
                             loading={imageIndex === 0 ? "eager" : "lazy"}
+                            sizes={PRODUCT_WIDE_IMAGE_SIZES}
                             src={imageUrl}
                           />
                         </div>
@@ -6388,14 +6393,15 @@ export function ProductDetail({
               >
                 {productImages.map((imageUrl, imageIndex) => (
                   <div
-                    className="flex h-full w-full shrink-0 items-center justify-center"
+                    className="relative h-full w-full shrink-0"
                     key={imageUrl}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <ProductPhoto
                       alt={`${product.title} 이미지 ${imageIndex + 1}`}
-                      className="max-h-full w-full object-contain"
+                      className="object-contain"
                       draggable={false}
+                      loading="eager"
+                      sizes={PRODUCT_ZOOM_IMAGE_SIZES}
                       src={imageUrl}
                     />
                   </div>
