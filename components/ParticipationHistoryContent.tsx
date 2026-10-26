@@ -407,7 +407,7 @@ const c2cParticipationStatusGuide = [
     icon: BanknoteIcon,
     label: c2cProgressStepLabels[1],
     description:
-      "모집이 끝나 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 「보냈어요」를 꼭 눌러 주세요. 기한이 지나면 개최자가 입금이 확인된 참여자로만 진행할 수 있고, 이때 입금이 확인되지 않은 참여는 취소돼요.",
+      "모집이 끝나 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러 주세요. 기한이 지나면 개최자가 입금이 확인된 참여자로만 진행할 수 있고, 이때 입금이 확인되지 않은 참여는 취소돼요.",
   },
   {
     icon: CheckIcon,
@@ -4724,7 +4724,7 @@ export function ParticipationHistoryContent({
                   <HelpText className="px-1 pt-2">
                     위 순서는 분철이지가 직접 개최한 분철 기준이에요. 회원이
                     개최한 분철은 먼저 신청만 하고, 모집이 끝나면 24시간 안에
-                    입금해요. 송금한 뒤에는 「보냈어요」를 눌러 주세요.
+                    입금해요. 송금한 뒤에는 &lsquo;보냈어요&rsquo;를 눌러 주세요.
                   </HelpText>
                 </>
               )}
