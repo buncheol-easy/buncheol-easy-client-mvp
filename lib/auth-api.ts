@@ -49,6 +49,8 @@ export const HOST_CANNOT_PARTICIPATE_CODE = "BCH-066";
 export const PROFILE_INCOMPLETE_CODE = "USR-018";
 // 예약 오픈 전 운영진 분철에 코드 없이 참여. 화면은 오픈 전 버튼을 꺼 두므로 시계가 어긋났을 때만 온다.
 export const BUNCHEOL_NOT_OPEN_YET_CODE = "BCH-128";
+// 고른 자리를 다른 사람이 먼저 잡음(선착순에서 짐). 정각 오픈에 가장 많이 받는 실패다.
+export const PARTICIPATION_ALREADY_EXISTS_CODE = "BCH-070";
 
 export type UserProfileStatus = {
   isProfileComplete: boolean;

@@ -20,6 +20,7 @@ import {
   ApiRequestError,
   BUNCHEOL_NOT_OPEN_YET_CODE,
   HOST_CANNOT_PARTICIPATE_CODE,
+  PARTICIPATION_ALREADY_EXISTS_CODE,
   PROFILE_INCOMPLETE_CODE,
   USER_BANK_ACCOUNT_NOT_REGISTERED_CODE,
   addBuncheolBookmark,
@@ -121,6 +122,7 @@ import {
   aboveDetailOpensAtBandClassName,
 } from "@/components/OpensAtBand";
 import { CopyButton } from "@/components/CopyButton";
+import { DepositorNameGuide } from "@/components/DepositorNameGuide";
 import { AmountChangeBadge, RollingNumber } from "@/components/RollingNumber";
 import { ProductDetailBidBarSkeleton } from "@/components/ProductDetailSkeleton";
 import { SkeletonGroup } from "@/components/SkeletonGroup";
@@ -901,6 +903,18 @@ function getOptionPaymentTimer(
     option.purchasePaymentDueAt,
     now,
     isC2C ? c2cPaymentWindowMs : paymentWindowMs,
+  );
+}
+
+function SheetErrorMessage({ message }: { message: string }) {
+  return (
+    <p
+      className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
+      key={message}
+      role="alert"
+    >
+      {message}
+    </p>
   );
 }
 
@@ -3201,6 +3215,7 @@ export function ProductDetail({
       return;
     }
 
+    setCheckoutError("");
     setBidAmounts((current) => {
       let nextAmounts: Record<string, string>;
 
@@ -3703,6 +3718,10 @@ export function ProductDetail({
         } else if (errorCode === BUNCHEOL_NOT_OPEN_YET_CODE) {
           // 아래 재조회가 오픈 시각과 자리 상태를 서버 값으로 다시 맞춘다.
           setCheckoutError("아직 열리지 않은 분철이에요.");
+        } else if (errorCode === PARTICIPATION_ALREADY_EXISTS_CODE) {
+          // 아래 재조회가 놓친 멤버를 선택에서 빼므로, 확인 단계에 남으면 꺼진 버튼만 보인다.
+          setCheckoutStep("options");
+          setCheckoutError("앗, 이미 선택된 멤버예요. 남은 멤버를 골라 주세요.");
         } else if (didDeadlinePass) {
           setCheckoutError("참여 기한이 지났어요.");
         } else if (isProfileIncomplete) {
@@ -5386,6 +5405,10 @@ export function ProductDetail({
                     </span>
                   </div>
 
+                  {checkoutError ? (
+                    <SheetErrorMessage message={checkoutError} />
+                  ) : null}
+
                   <button
                     type="button"
                     className="cta-ready-pop mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
@@ -5622,13 +5645,7 @@ export function ProductDetail({
 
                   {/* 스크롤 영역 밖, 버튼 바로 위에 둔다 — 안에 두면 내용이 길 때 스크롤해야 보인다. */}
                   {checkoutError ? (
-                    <p
-                      className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
-                      key={checkoutError}
-                      role="alert"
-                    >
-                      {checkoutError}
-                    </p>
+                    <SheetErrorMessage message={checkoutError} />
                   ) : null}
 
                   <div
@@ -5748,6 +5765,57 @@ export function ProductDetail({
                             ? "기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요."
                             : "마감 전까지 입금하지 않으면 자동 취소돼요."}
                         </HelpText>
+                        {checkoutRefundAccount?.holder ? (
+                          <DepositorNameGuide
+                            holder={checkoutRefundAccount.holder}
+                            isC2C={isC2CProduct}
+                          />
+                        ) : null}
+                      </div>
+
+                      <div className="rounded-[0.95rem] border border-black/10 px-4 py-4">
+                        <p className="text-[12px] font-semibold leading-[1.4] text-black/40">
+                          입금 계좌
+                        </p>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-[16px] font-semibold leading-[1.35] tracking-[-0.02em] tabular-nums">
+                              {checkoutPaymentSummary.hostBankAccount
+                                ? `${checkoutPaymentSummary.hostBankAccount.bank} ${checkoutPaymentSummary.hostBankAccount.account}`.trim()
+                                : "계좌 정보 확인 중"}
+                            </p>
+                            <p className="mt-1 text-[12.5px] font-medium leading-[1.45] text-black/45">
+                              {checkoutPaymentSummary.hostBankAccount?.holder
+                                ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
+                                : "참여 내역에서 다시 확인해 주세요."}
+                            </p>
+                          </div>
+                          <CopyButton
+                            disabled={!checkoutPaymentSummary.hostBankAccount}
+                            label="계좌 복사"
+                            onCopyFailed={() =>
+                              showToast("계좌번호 복사에 실패했어요.", "error")
+                            }
+                            value={
+                              checkoutPaymentSummary.hostBankAccount?.account ??
+                              ""
+                            }
+                          />
+                        </div>
+                        {/* 중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 이 안내
+                            문장에 흡수했다. 약관 제9조(app/terms)와 /broker-notice 가
+                            "분철 상세 화면 및 참여·입금 화면에 표시된다"고 공표하고 있어
+                            입금 화면에서 고지를 없앨 수 없다. 사용자 지적(docs/56 H-06)의
+                            실체는 반복되는 문단 수이므로 블록만 줄인다. */}
+                        {isC2CProduct ? (
+                          <HelpText className="mt-3.5 border-t border-black/[0.06] pt-3.5">
+                            {"송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."}
+                            <span className="block font-semibold text-black/75">
+                              분철이지는 통신판매중개자이며, 대금은 개최자
+                              계좌로 직접 입금돼요.
+                            </span>
+                          </HelpText>
+                        ) : null}
                       </div>
 
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
@@ -5776,66 +5844,6 @@ export function ProductDetail({
                             </div>
                           ))}
                         </div>
-                      </div>
-
-                      <div className="relative rounded-[0.95rem] border border-black/10 px-4 py-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[12px] font-semibold text-black/40">입금 계좌</p>
-                            <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                              {checkoutPaymentSummary.hostBankAccount
-                                ? `${checkoutPaymentSummary.hostBankAccount.bank} ${checkoutPaymentSummary.hostBankAccount.account}`.trim()
-                                : "계좌 정보 확인 중"}
-                            </p>
-                            <p className="mt-1 text-[12px] font-medium text-black/40">
-                              {checkoutPaymentSummary.hostBankAccount?.holder
-                                ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
-                                : "참여 내역에서 다시 확인해 주세요."}
-                            </p>
-                          </div>
-                          <CopyButton
-                            disabled={!checkoutPaymentSummary.hostBankAccount}
-                            label="계좌 복사"
-                            onCopyFailed={() =>
-                              showToast("계좌번호 복사에 실패했어요.", "error")
-                            }
-                            value={
-                              checkoutPaymentSummary.hostBankAccount?.account ??
-                              ""
-                            }
-                          />
-                        </div>
-                        {checkoutRefundAccount?.holder ? (
-                          <>
-                            <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                              입금자명{" "}
-                              <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
-                                {checkoutRefundAccount.holder}
-                              </span>
-                            </p>
-                            <HelpText className="mt-1.5">
-                              {isC2CProduct
-                                ? "이 이름으로 보내야 개최자가 입금을 확인할 수 있어요."
-                                : "이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로 보내면 확인이 늦어질 수 있어요."}
-                            </HelpText>
-                          </>
-                        ) : null}
-                        {/* 중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 이 안내
-                            문장에 흡수했다. 약관 제9조(app/terms)와 /broker-notice 가
-                            "분철 상세 화면 및 참여·입금 화면에 표시된다"고 공표하고 있어
-                            입금 화면에서 고지를 없앨 수 없다. 사용자 지적(docs/56 H-06)의
-                            실체는 반복되는 문단 수이므로 블록만 줄인다. */}
-                        <HelpText className="mt-3">
-                          {isC2CProduct
-                            ? "송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."
-                            : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}
-                          {isC2CProduct ? (
-                            <span className="block font-semibold text-black/75">
-                              분철이지는 통신판매중개자이며, 대금은 개최자
-                              계좌로 직접 입금돼요.
-                            </span>
-                          ) : null}
-                        </HelpText>
                       </div>
 
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
@@ -5874,6 +5882,9 @@ export function ProductDetail({
                         ) : null}
                       </div>
 
+                      <HelpText className="px-1">
+                        입금이 확인되면 카카오 알림톡으로 알려 드려요.
+                      </HelpText>
                     </div>
 
                     <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
@@ -6297,9 +6308,7 @@ export function ProductDetail({
               </div>
 
               {refundAccountError ? (
-                <p className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
-                  {refundAccountError}
-                </p>
+                <SheetErrorMessage message={refundAccountError} />
               ) : null}
 
               <button
