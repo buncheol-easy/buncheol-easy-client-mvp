@@ -1823,6 +1823,10 @@ export function HostedBuncheolManage({
               <HelpText className={isUnderMinHeadcount ? "mt-1.5" : "mt-1"}>
                 자리가 모두 차거나, 최소 진행 멤버 수를 채운 채 마감되면 입금 단계가 자동으로 시작돼요. 신청자 전원에게 입금 계좌와 24시간 기한이 알림톡으로 가요.
               </HelpText>
+              {/* 개최자가 최소 인원을 채웠는지 가늠하는 숫자라 남긴다(카드 마지막 줄). */}
+              <HelpText className="mt-1.5">
+                {`지금까지 신청된 멤버는 ${c2cAppliedCount}명이에요.`}
+              </HelpText>
             </section>
           ) : null}
 
