@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { LoginExperience } from "@/components/LoginExperience";
 import {
   getOptionalSafeInternalHref,
+  getSafeBookmarkId,
   getSafeInternalHref,
 } from "@/lib/auth-navigation";
 import { whiteChromeViewport } from "@/lib/system-chrome";
@@ -15,17 +16,19 @@ export const metadata: Metadata = {
 
 type LoginPageProps = {
   searchParams: Promise<{
+    bookmarkId?: string | string[];
     cancelTo?: string | string[];
     returnTo?: string | string[];
   }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const { cancelTo, returnTo } = await searchParams;
+  const { bookmarkId, cancelTo, returnTo } = await searchParams;
 
   return (
     <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-white text-[#111111]">
       <LoginExperience
+        bookmarkId={getSafeBookmarkId(bookmarkId)}
         cancelHref={getOptionalSafeInternalHref(cancelTo)}
         returnHref={getSafeInternalHref(returnTo, "/profile")}
       />

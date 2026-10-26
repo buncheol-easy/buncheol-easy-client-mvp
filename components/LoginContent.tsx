@@ -4,14 +4,20 @@ import { useRouter } from "next/navigation";
 import { BackIcon, CheckIcon, KakaoIcon, ProfileIcon } from "@/components/icons";
 import { getKakaoAuthorizationUrl } from "@/lib/auth-api";
 import { authReturnHrefStorageKey } from "@/lib/auth-store";
+import {
+  clearBookmarkLoginReturnState,
+  rememberBookmarkLoginReturnState,
+} from "@/lib/bookmark-login-return";
 import { getHistoryIndex } from "@/lib/history-index";
 
 type LoginContentProps = {
+  bookmarkId?: string;
   onBack?: () => void;
   returnHref?: string;
 };
 
 export function LoginContent({
+  bookmarkId,
   onBack,
   returnHref = "/profile",
 }: LoginContentProps) {
@@ -35,6 +41,14 @@ export function LoginContent({
 
   function handleKakaoLogin() {
     window.sessionStorage.setItem(authReturnHrefStorageKey, returnHref);
+
+    // 하트로 연 로그인이 아니면 지운다. 카카오에서 되돌아와 그만둔 앞 시도의 값이 이 로그인에 붙으면 안 된다.
+    if (bookmarkId) {
+      rememberBookmarkLoginReturnState(bookmarkId, returnHref);
+    } else {
+      clearBookmarkLoginReturnState();
+    }
+
     window.location.href = getKakaoAuthorizationUrl();
   }
 

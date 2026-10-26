@@ -1,7 +1,8 @@
 import { trackAdConversion } from "@/lib/analytics";
 import { addBuncheolBookmark } from "@/lib/auth-api";
 
-// 비로그인으로 하트를 눌러 로그인하러 나가기 직전에만 남기는 일회용 값. 로그인을 마친 곳에서 한 번만 읽고 지운다.
+// 하트로 연 로그인 화면에서 카카오 버튼을 누를 때만 남기는 일회용 값(로그인 화면에서 취소하면 남지 않는다).
+// 로그인을 마친 곳에서 한 번만 읽고 지운다.
 const BOOKMARK_LOGIN_RETURN_STATE_KEY = "buncheol-bookmark-login-return-state";
 const BOOKMARK_LOGIN_RETURN_MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -25,12 +26,15 @@ export function rememberBookmarkLoginReturnState(
   );
 }
 
-// 하트를 누른 화면으로 돌아가는 로그인이 아니면(취소 뒤 다른 곳에서 로그인 등) 버린다.
+export function clearBookmarkLoginReturnState() {
+  window.sessionStorage.removeItem(BOOKMARK_LOGIN_RETURN_STATE_KEY);
+}
+
 function takeBookmarkLoginReturnId(returnHref: string) {
   const rawValue = window.sessionStorage.getItem(
     BOOKMARK_LOGIN_RETURN_STATE_KEY,
   );
-  window.sessionStorage.removeItem(BOOKMARK_LOGIN_RETURN_STATE_KEY);
+  clearBookmarkLoginReturnState();
 
   if (!rawValue) {
     return null;

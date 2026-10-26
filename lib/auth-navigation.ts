@@ -1,4 +1,6 @@
 type LoginHrefOptions = {
+  // 비로그인으로 하트를 누른 분철. 로그인을 마치면 이 분철을 찜한다(lib/bookmark-login-return).
+  bookmarkId?: string;
   cancelTo?: string;
   returnTo: string;
 };
@@ -44,11 +46,28 @@ export function getOptionalSafeInternalHref(value: unknown) {
   return isSafeInternalHref(candidate) ? candidate : undefined;
 }
 
-export function createLoginHref({ cancelTo, returnTo }: LoginHrefOptions) {
+// 로그인 주소는 누구나 만들어 보낼 수 있고 이 값은 찜 요청 경로에 들어간다. 숫자 id 만 받는다.
+export function getSafeBookmarkId(value: unknown) {
+  const candidate = getFirstValue(value);
+
+  return typeof candidate === "string" && /^\d+$/.test(candidate)
+    ? candidate
+    : undefined;
+}
+
+export function createLoginHref({
+  bookmarkId,
+  cancelTo,
+  returnTo,
+}: LoginHrefOptions) {
   const searchParams = new URLSearchParams({ returnTo });
 
   if (cancelTo) {
     searchParams.set("cancelTo", cancelTo);
+  }
+
+  if (bookmarkId) {
+    searchParams.set("bookmarkId", bookmarkId);
   }
 
   return `/login?${searchParams.toString()}`;

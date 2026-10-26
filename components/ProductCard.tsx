@@ -31,7 +31,6 @@ import {
   isBuncheolPurchasableStatus,
 } from "@/lib/buncheol-states";
 import { parseIsoTimeMs } from "@/lib/buncheol-open-time";
-import { rememberBookmarkLoginReturnState } from "@/lib/bookmark-login-return";
 import {
   getHistoryIndex,
   rememberNextHistoryIndex,
@@ -439,9 +438,9 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     if (!authState.isLoggedIn || !accessToken) {
       const returnHref = getCurrentBrowserHref();
 
-      rememberBookmarkLoginReturnState(productId, returnHref);
       router.push(
         createLoginHref({
+          bookmarkId: productId,
           cancelTo: returnHref,
           returnTo: returnHref,
         }),

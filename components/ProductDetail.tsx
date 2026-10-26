@@ -128,7 +128,6 @@ import { useAppToast } from "@/components/Toast";
 import { ConfirmSheet, type ConfirmSheetRequest } from "@/components/ConfirmSheet";
 import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
-import { rememberBookmarkLoginReturnState } from "@/lib/bookmark-login-return";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
@@ -3984,9 +3983,9 @@ export function ProductDetail({
     const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
 
     if (!authState.isLoggedIn || !accessToken) {
-      rememberBookmarkLoginReturnState(buncheolId, returnHref);
       router.push(
         createLoginHref({
+          bookmarkId: buncheolId,
           cancelTo: getCurrentBrowserHref(),
           returnTo: returnHref,
         }),
