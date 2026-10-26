@@ -42,3 +42,60 @@ export function isOptimizableImageSrc(src: string) {
     !isSvgPath(url.pathname)
   );
 }
+
+const GROUP_IMAGE_RELAY_PATHNAME = "/api/group-image";
+const GROUP_IMAGE_PATH_PREFIX = "/idol-groups/";
+const RELAY_PARSE_BASE = "http://relay.invalid";
+
+// 멤버 사진은 auth-api 가 `/api/group-image?url=<S3>` 중계 주소로 바꿔 준다. 쿼리가 url 하나뿐인 그 주소만 풀어 준다.
+function unwrapGroupImageRelaySrc(src: string) {
+  if (!src.startsWith("/") || src.startsWith("//")) {
+    return null;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(src, RELAY_PARSE_BASE);
+  } catch {
+    return null;
+  }
+
+  const queryKeys = [...url.searchParams.keys()];
+
+  if (
+    url.origin !== RELAY_PARSE_BASE ||
+    url.pathname !== GROUP_IMAGE_RELAY_PATHNAME ||
+    url.hash !== "" ||
+    queryKeys.length !== 1 ||
+    queryKeys[0] !== "url"
+  ) {
+    return null;
+  }
+
+  return url.searchParams.get("url");
+}
+
+function isGroupImageSrc(src: string) {
+  try {
+    return new URL(src).pathname.startsWith(GROUP_IMAGE_PATH_PREFIX);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * next/image 로 변환해 받을 주소. null 이면 받은 주소를 원본 그대로 그린다.
+ * 중계를 건너뛰어도 #259 의 보호는 유지된다 — 변환기는 그림이 아니거나 svg 인 응답을 400 으로 거절한다.
+ */
+export function getOptimizedImageSrc(src: string) {
+  const relayedSrc = unwrapGroupImageRelaySrc(src);
+
+  if (relayedSrc !== null) {
+    return isGroupImageSrc(relayedSrc) && isOptimizableImageSrc(relayedSrc)
+      ? relayedSrc
+      : null;
+  }
+
+  return isOptimizableImageSrc(src) ? src : null;
+}

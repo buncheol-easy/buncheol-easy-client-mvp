@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { type ComponentProps, useState } from "react";
-import { isOptimizableImageSrc } from "@/lib/optimizable-image";
+import { getOptimizedImageSrc } from "@/lib/optimizable-image";
 
 type ProductPhotoProps = Omit<
   ComponentProps<typeof Image>,
@@ -29,8 +29,8 @@ export function ProductPhoto({
   const [failedOptimizedSrc, setFailedOptimizedSrc] = useState<string | null>(
     null,
   );
-  const shouldOptimize =
-    failedOptimizedSrc !== src && isOptimizableImageSrc(src);
+  const optimizedSrc =
+    failedOptimizedSrc === src ? null : getOptimizedImageSrc(src);
 
   return (
     <Image
@@ -38,7 +38,8 @@ export function ProductPhoto({
       alt={alt}
       fill
       onError={() => {
-        if (shouldOptimize) {
+        // 실패하면 받은 주소(중계 주소면 중계 주소)로 되돌린다. 풀어 낸 S3 주소로 직접 가지 않는다.
+        if (optimizedSrc !== null) {
           setFailedOptimizedSrc(src);
           return;
         }
@@ -46,8 +47,8 @@ export function ProductPhoto({
         onError?.();
       }}
       sizes={sizes}
-      src={src}
-      unoptimized={!shouldOptimize}
+      src={optimizedSrc ?? src}
+      unoptimized={optimizedSrc === null}
     />
   );
 }
