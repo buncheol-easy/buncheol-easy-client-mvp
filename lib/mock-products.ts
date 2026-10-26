@@ -1,5 +1,6 @@
 import type { ConvenienceStoreType } from "@/lib/mock-delivery-addresses";
 import type { ProductCardItem } from "@/components/ProductCard";
+import type { ConfirmCheck } from "@/lib/buncheol-states";
 
 export type ProductOption = {
   id: string;
@@ -39,6 +40,8 @@ export type ProductDetailItem = ProductCardItem & {
   hostCancellability?: string | null;
   // 분철이 끝났는지(서버 판정) — 개최 목록에서만 채운다. 없으면(구 응답·다른 경로) null/undefined.
   hostEnded?: boolean | null;
+  // 진행 확정 버튼 판정(서버 confirmCheck) — 개최 목록에서만 채운다.
+  hostConfirmCheck?: ConfirmCheck | null;
   courier: string;
   description: string;
   deadline: string;
