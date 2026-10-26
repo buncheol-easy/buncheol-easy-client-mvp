@@ -14,6 +14,11 @@ const EVENT_TWEET_URL_BY_BUNCHEOL: Record<string, string> = {
   "13": "https://x.com/BuncheolEasy/status/2082331830251094422",
   "14": "https://x.com/BuncheolEasy/status/2082332418229559496",
   "15": "https://x.com/BuncheolEasy/status/2082332607271022921",
+  "34": "https://x.com/BuncheolEasy/status/2113875076802326528",
+  "35": "https://x.com/BuncheolEasy/status/2113875076802326528",
+  "36": "https://x.com/BuncheolEasy/status/2113875076802326528",
+  "37": "https://x.com/BuncheolEasy/status/2113875076802326528",
+  "38": "https://x.com/BuncheolEasy/status/2113875076802326528",
 };
 
 export type ShippingFeePaybackStatus =
@@ -31,7 +36,7 @@ export const PAYBACK_RETRY_CTA_LABEL = "후기 다시 제출하기";
 export const PAYBACK_EDIT_CTA_LABEL = "후기 링크 수정";
 
 // 참여 내역 카드의 이벤트 블록 라벨·상태 안내 문장.
-export const PAYBACK_EVENT_BLOCK_LABEL = "오픈 기념 무료 이벤트";
+export const PAYBACK_EVENT_BLOCK_LABEL = "무료 분철 이벤트";
 export const PAYBACK_STATUS_LABELS: Partial<
   Record<ShippingFeePaybackStatus, string>
 > = {
@@ -75,7 +80,7 @@ export function isValidTweetUrl(url: string) {
 // 프리필은 검수 필수 요소(해시태그)만 채운다. 본문 문구를 미리 넣지 않는 이유:
 // 지워야 하는 안내 문구는 안 지운 채 게시되는 사고가 나고, 완성형 문구는 후기가 전부
 // 복붙처럼 보인다. 자유 후기는 유저 몫으로 두고 최종 확인은 운영진 검수로 한다.
-const REVIEW_TWEET_HASHTAGS = "#분철이지 #오픈이벤트 #무료분철후기";
+const REVIEW_TWEET_HASHTAGS = "#분철이지 #무료분철후기";
 
 // X 트윗 작성창을 여는 intent URL. url 파라미터의 이벤트 트윗은 게시 시 인용 트윗으로 렌더링된다.
 export function buildReviewTweetIntentUrl(buncheolId: string) {

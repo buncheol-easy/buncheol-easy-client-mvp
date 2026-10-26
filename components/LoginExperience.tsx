@@ -17,6 +17,7 @@ import {
   readAuthState,
   subscribeAuthState,
 } from "@/lib/auth-store";
+import { getHistoryIndex } from "@/lib/history-index";
 import { useIsInAppNavigation } from "@/lib/use-in-app-navigation";
 
 const LOGIN_PANEL_TRANSITION_MS = 240;
@@ -25,12 +26,6 @@ type LoginExperienceProps = {
   cancelHref?: string;
   returnHref: string;
 };
-
-function getHistoryIndex() {
-  const historyState = window.history.state as { idx?: unknown } | null;
-
-  return typeof historyState?.idx === "number" ? historyState.idx : null;
-}
 
 export function LoginExperience({
   cancelHref,
@@ -45,9 +40,11 @@ export function LoginExperience({
   const exitTimerRef = useRef<number | null>(null);
   const [isEntered, setIsEntered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  // 딥링크·새로고침으로 곧장 들어온 경우에는 뒤로 갈 화면이 없다 — 언더레이(마이페이지)를
-  // 깔지 않는다. 깔면 방문한 적 없는 화면이 먼저 그려진다.
+  // 언더레이(마이페이지)는 마이페이지에서 들어왔을 때만 깐다. 딥링크·새로고침이나 다른 화면(상세 등)에서
+  // 왔을 때 깔면 방문하지 않은 화면이 로그인 패널 밑으로 비친다.
   const isInAppNavigation = useIsInAppNavigation();
+  const shouldShowProfileUnderlay =
+    isInAppNavigation && cancelHref === "/profile";
 
   useEffect(() => {
     const enterFrame = window.requestAnimationFrame(() => {
@@ -147,7 +144,7 @@ export function LoginExperience({
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
       <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-        {isInAppNavigation ? (
+        {shouldShowProfileUnderlay ? (
           <>
             <ProfileContent skipEnterAnimation />
             <BottomNavigator activeLabel="Profile" />

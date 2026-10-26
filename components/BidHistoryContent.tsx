@@ -85,7 +85,7 @@ import {
   formatMemberCount,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
-import { getHistoryIndex } from "@/lib/history-index";
+import { rememberNextHistoryIndex } from "@/lib/history-index";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
 import {
   formatPaybackDeadlineNotice,
@@ -118,6 +118,7 @@ import {
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { CopyButton } from "@/components/CopyButton";
+import { DepositorNameGuide } from "@/components/DepositorNameGuide";
 import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useAppToast } from "@/components/Toast";
 
@@ -130,6 +131,8 @@ const paymentDeadlineMinutes = 10;
 // C2C 입금 창 — 성사 확정 후 24시간 (docs/46 §7.1-3). 카운트다운 상한 보정에 쓴다.
 const c2cPaymentWindowMs = 24 * 60 * 60_000;
 const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
+export const MANAGE_BID_HISTORY_ENTRY_INDEX_KEY =
+  "manage-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
 const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
 export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
@@ -2956,18 +2959,7 @@ export function BidHistoryContent({
 
     rememberScrollPosition();
     rememberBidHistoryViewState();
-
-    const historyIndex = getHistoryIndex();
-
-    if (historyIndex === null) {
-      window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(
-      PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
-      String(historyIndex + 1),
-    );
+    rememberNextHistoryIndex(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
   }
 
   function rememberBidHistoryManageEntry(event: MouseEvent<HTMLAnchorElement>) {
@@ -2983,6 +2975,7 @@ export function BidHistoryContent({
 
     rememberScrollPosition();
     rememberBidHistoryViewState();
+    rememberNextHistoryIndex(MANAGE_BID_HISTORY_ENTRY_INDEX_KEY);
   }
 
   function requestDeleteHostedProduct(product: ProductDetailItem) {
@@ -4764,19 +4757,25 @@ export function BidHistoryContent({
                   ? "기한 안에 아래 계좌로 입금해 주세요."
                   : selectedPaymentStatusDescription}
               </HelpText>
+              {isSelectedPaymentReady && selectedPaymentBid.refundHolder ? (
+                <DepositorNameGuide
+                  holder={selectedPaymentBid.refundHolder}
+                  isC2C={isSelectedPaymentC2C}
+                />
+              ) : null}
             </div>
             <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
+              <p className="text-[12px] font-semibold leading-[1.4] text-black/40">
+                개최자 계좌
+              </p>
+              <div className="mt-2 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-black/40">
-                    개최자 계좌
-                  </p>
-                  <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
+                  <p className="truncate text-[16px] font-semibold leading-[1.35] tracking-[-0.02em] tabular-nums">
                     {selectedPaymentBankAccount
                       ? `${selectedPaymentBankAccount.bank} ${selectedPaymentBankAccount.account}`.trim()
                       : "계좌 정보 확인 중"}
                   </p>
-                  <p className="mt-1 text-[12px] font-medium text-black/40">
+                  <p className="mt-1 text-[12.5px] font-medium leading-[1.45] text-black/45">
                     {selectedPaymentBankAccount?.holder
                       ? `예금주 ${selectedPaymentBankAccount.holder}`
                       : "개최자가 등록한 계좌로 입금해 주세요."}
@@ -4793,23 +4792,15 @@ export function BidHistoryContent({
                   variant="dark"
                 />
               </div>
-              {selectedPaymentBid.refundHolder ? (
-                // 입금자명은 LEGACY 자동 입금확인(페이액션)의 매칭 키이고, C2C 에서는 개최자가 통장에서
-                // 찾는 유일한 단서다. 주문 직후 "입금 안내" 시트에만 있어서 나중에 이 시트로 계좌를 다시
-                // 확인한 사용자는 안내 없이 송금하게 됐다 (docs/53 Q-17). 문구는 상세 체크아웃과 동일하게 맞춘다.
-                <>
-                  <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                    입금자명{" "}
-                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
-                      {selectedPaymentBid.refundHolder}
-                    </span>
-                  </p>
-                  <HelpText className="mt-1.5">
-                    {isSelectedPaymentC2C
-                      ? "이 이름으로 보내야 개최자가 입금을 확인할 수 있어요."
-                      : "이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로 보내면 확인이 늦어질 수 있어요."}
-                  </HelpText>
-                </>
+              {/* 입금할 차례에는 위 마감 카드가 입금자명을 크게 안내한다(C2C 는 기한이 지나도 입금할 차례다). 보냈어요
+                  뒤에는 다시 보낼 일이 없으니 대조용으로 이름만 남긴다 (docs/53 Q-17). */}
+              {!isSelectedPaymentReady && selectedPaymentBid.refundHolder ? (
+                <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                  입금자명{" "}
+                  <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
+                    {selectedPaymentBid.refundHolder}
+                  </span>
+                </p>
               ) : null}
               {/*
                 중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 안내 문장에 흡수했다 (docs/56 H-06).
@@ -4817,11 +4808,11 @@ export function BidHistoryContent({
                 화면에 표시된다"고 공표하고 있고, 신청(APPLIED) 후 알림톡을 받고 오는 경로에서는
                 사용자가 개최자 계좌를 보는 화면이 이 시트뿐이다.
               */}
-              <HelpText className="mt-3">
-                {isSelectedPaymentC2C
-                  ? `송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. ${BROKER_NOTICE}`
-                  : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요."}
-              </HelpText>
+              {isSelectedPaymentC2C ? (
+                <HelpText className="mt-3.5 border-t border-black/[0.06] pt-3.5">
+                  {`송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. ${BROKER_NOTICE}`}
+                </HelpText>
+              ) : null}
               {selectedPaymentOpenChatHref ? (
                 <a
                   className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/60 underline underline-offset-2"
@@ -4833,6 +4824,11 @@ export function BidHistoryContent({
                 </a>
               ) : null}
             </div>
+            {isSelectedPaymentReady ? (
+              <HelpText className="mt-3 px-1">
+                입금이 확인되면 카카오 알림톡으로 알려 드려요.
+              </HelpText>
+            ) : null}
 
             <div className="mt-3 rounded-[0.85rem] border border-[#DDE7B8] bg-[#F7FAEE] px-3 py-2.5">
               <div className="flex items-center justify-between gap-3">

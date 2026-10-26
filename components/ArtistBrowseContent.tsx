@@ -325,8 +325,8 @@ export function ArtistBrowseContent({
     };
   }, [didRestoreSelectedMember, group.id, isLoading, items.length]);
 
-  // Next 기록엔 idx 가 없어 getHistoryIndex() 로는 목록에서 왔는지 알 수 없다. 목록 카드가 남긴 일회용
-  // id 로 판정해 이 기록 칸에 표시를 남긴다. 그려지기 전에 이미 목록으로 돌아갔으면 목록 칸에 붙이지 않는다.
+  // 목록 카드가 남긴 일회용 id 로 판정해 이 기록 칸에 "아티스트 목록에서 왔다" 표시를 남긴다.
+  // 그려지기 전에 이미 목록으로 돌아갔으면 목록 칸에 붙이지 않는다.
   useEffect(() => {
     const listEntryGroupId = readFreshArtistListEntryGroupId(
       window.sessionStorage.getItem(ARTIST_LIST_ENTRY_GROUP_KEY),

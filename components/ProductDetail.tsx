@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useId,
   useLayoutEffect,
   useMemo,
@@ -19,6 +20,7 @@ import {
   ApiRequestError,
   BUNCHEOL_NOT_OPEN_YET_CODE,
   HOST_CANNOT_PARTICIPATE_CODE,
+  PARTICIPATION_ALREADY_EXISTS_CODE,
   PROFILE_INCOMPLETE_CODE,
   USER_BANK_ACCOUNT_NOT_REGISTERED_CODE,
   addBuncheolBookmark,
@@ -120,6 +122,7 @@ import {
   aboveDetailOpensAtBandClassName,
 } from "@/components/OpensAtBand";
 import { CopyButton } from "@/components/CopyButton";
+import { DepositorNameGuide } from "@/components/DepositorNameGuide";
 import { AmountChangeBadge, RollingNumber } from "@/components/RollingNumber";
 import { ProductDetailBidBarSkeleton } from "@/components/ProductDetailSkeleton";
 import { SkeletonGroup } from "@/components/SkeletonGroup";
@@ -135,7 +138,7 @@ import {
   FavoritesContent,
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
-import { PRODUCT_HOME_ENTRY_ID_KEY } from "@/components/ProductCard";
+import { PRODUCT_HOME_ENTRY_INDEX_KEY } from "@/components/ProductCard";
 import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -291,12 +294,12 @@ const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
 const PRODUCT_HOME_ENTRY_STATE_KEY = "__buncheolProductFromHome";
-// 카드를 눌렀는데 상세가 못 그려지면(로딩 중 뒤로가기·조회 실패) 값이 남는다. 오래된 값으로 표시를
-// 붙이면 ‹ 가 홈이 아닌 칸(외부 사이트일 수 있음)으로 back() 하므로 클릭 직후 값만 인정한다.
-const PRODUCT_HOME_ENTRY_MAX_AGE_MS = 10_000;
 const CHECKOUT_ADDRESS_RETURN_STATE_KEY =
   "buncheol-checkout-address-return-state";
 const CHECKOUT_DRAFT_STATE_KEY = "buncheol-checkout-draft-state";
+// 로그인하러 나가기 직전에만 남기는 일회용 값. 멤버를 고를 때마다 쓰는 draft 로 판정하면
+// 고르기만 하고 닫은 사람에게도 시트가 저절로 열린다.
+const CHECKOUT_LOGIN_RETURN_STATE_KEY = "buncheol-checkout-login-return-state";
 // 서버 상한(@Size(max = 20))과 같은 값. 화면은 안내용이고 최종 판정은 서버다.
 const maxSelectableMemberCount = 20;
 
@@ -471,7 +474,6 @@ function getCheckoutReturnOptionsFromState(
 }
 
 type ProductHistoryState = {
-  idx?: unknown;
   [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_ARTIST_ENTRY_STATE_KEY]?: unknown;
@@ -529,22 +531,21 @@ function hasHomeEntryState() {
   return getHistoryState()?.[PRODUCT_HOME_ENTRY_STATE_KEY] === true;
 }
 
-function readFreshHomeEntryId(rawValue: string | null) {
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const { at, id } = JSON.parse(rawValue) as { at?: unknown; id?: unknown };
-    const ageMs = Date.now() - Number(at);
-
-    return typeof id === "string" &&
-      ageMs >= 0 &&
-      ageMs <= PRODUCT_HOME_ENTRY_MAX_AGE_MS
-      ? id
-      : null;
-  } catch {
-    return null;
+// 상세를 연 목록 칸이 바로 뒤에 있는지. 있으면 ‹·삭제 뒤 이동 모두 back() 으로 그 칸에 돌아간다.
+function hasReturnListEntryState(
+  returnSource: ProductDetailProps["initialReturnSource"],
+) {
+  switch (returnSource) {
+    case "home":
+      return hasHomeEntryState();
+    case "bids":
+      return hasBidHistoryEntryState();
+    case "favorites":
+      return hasFavoritesEntryState();
+    case "artist":
+      return hasArtistEntryState();
+    default:
+      return false;
   }
 }
 
@@ -661,6 +662,23 @@ function hideTakenOptionBeforeOpen(option: ProductOption): ProductOption {
     purchasePaymentDueAt: undefined,
     purchasePaymentStatus: undefined,
     saleStatus: "NOT_OPEN",
+  };
+}
+
+// 오픈 직후 잠깐은 오픈 전에 이미 팔린 자리(코드 참여 등)를 「다른 사람이 입금 중」으로 보인다. 정각에 바로
+// 「매진」이 뜨지 않게 하려는 운영 결정이다. 서버 값은 그대로 두고, 기한은 누가 보든 오픈 시각 + 입금 시간이다.
+const takenShownAsPayingMs = 3 * 60 * 1000;
+
+function showTakenOptionAsPaying(
+  option: ProductOption,
+  opensAtMs: number,
+): ProductOption {
+  return {
+    ...option,
+    purchasePaymentConfirmedAt: undefined,
+    purchasePaymentDueAt: new Date(opensAtMs + paymentWindowMs).toISOString(),
+    purchasePaymentStatus: undefined,
+    saleStatus: "AWAITING_PAYMENT",
   };
 }
 
@@ -885,6 +903,18 @@ function getOptionPaymentTimer(
     option.purchasePaymentDueAt,
     now,
     isC2C ? c2cPaymentWindowMs : paymentWindowMs,
+  );
+}
+
+function SheetErrorMessage({ message }: { message: string }) {
+  return (
+    <p
+      className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
+      key={message}
+      role="alert"
+    >
+      {message}
+    </p>
   );
 }
 
@@ -1320,6 +1350,9 @@ export function ProductDetail({
     null,
   );
   const shouldApplyCheckoutRestoreRef = useRef(false);
+  const didReadCheckoutLoginReturnRef = useRef(false);
+  const [checkoutLoginReturnState, setCheckoutLoginReturnState] =
+    useState<CheckoutAddressReturnState | null>(null);
   const sheetEnterAnimationFrameRef = useRef<number | null>(null);
   const sheetCloseFallbackTimerRef = useRef<number | null>(null);
   const memberListRef = useRef<HTMLDivElement | null>(null);
@@ -1581,17 +1614,31 @@ export function ProductDetail({
   const isCancelledProduct = isBuncheolCancelledStatus(productStatus);
   // 띠와 같이 모집 중일 때만 가린다(오픈 전에 취소된 분철은 실제 참여 현황을 보인다).
   // 개최자는 오픈 전에도 실제 자리 상태를 본다(관리 화면과 같은 정보).
-  const shouldHideTakenSlots =
-    isBeforeOpen &&
+  const canMaskTakenSlots =
     isBuncheolPurchasableStatus(productStatus) &&
     !isCancelledProduct &&
     product.isHostedByMe !== true &&
     isHostedByMeFromApi !== true;
+  const shouldHideTakenSlots = isBeforeOpen && canMaskTakenSlots;
+  const shouldShowTakenAsPaying =
+    canMaskTakenSlots &&
+    hasOpened &&
+    opensAtMs !== null &&
+    serverNowMs < opensAtMs + takenShownAsPayingMs;
   const auctionOptions = useMemo(() => {
     if (hasOpened) {
-      return serverAuctionOptions.some(isNotOpenOption)
+      const openedOptions = serverAuctionOptions.some(isNotOpenOption)
         ? serverAuctionOptions.map(openNotOpenOption)
         : serverAuctionOptions;
+
+      return shouldShowTakenAsPaying && opensAtMs !== null
+        ? openedOptions.map((option) =>
+            isTakenByOthers(option, myBids[option.id]) &&
+            isConfirmedOptionPurchase(option)
+              ? showTakenOptionAsPaying(option, opensAtMs)
+              : option,
+          )
+        : openedOptions;
     }
 
     if (shouldHideTakenSlots) {
@@ -1603,7 +1650,14 @@ export function ProductDetail({
     }
 
     return serverAuctionOptions;
-  }, [hasOpened, myBids, serverAuctionOptions, shouldHideTakenSlots]);
+  }, [
+    hasOpened,
+    myBids,
+    opensAtMs,
+    serverAuctionOptions,
+    shouldHideTakenSlots,
+    shouldShowTakenAsPaying,
+  ]);
 
   const selectedCheckoutItems = useMemo<CheckoutDraftItem[]>(() => {
     return auctionOptions
@@ -2490,6 +2544,22 @@ export function ProductDetail({
     );
   }
 
+  function rememberCheckoutLoginReturnState() {
+    const returnOptions =
+      getCheckoutReturnOptionsFromItems(selectedCheckoutItems);
+
+    window.sessionStorage.setItem(
+      CHECKOUT_LOGIN_RETURN_STATE_KEY,
+      JSON.stringify({
+        createdAt: Date.now(),
+        optionIds: returnOptions.map((option) => option.id),
+        options: returnOptions,
+        productId: buncheolId,
+        reopenAddressSheet: false,
+      } satisfies CheckoutAddressReturnState),
+    );
+  }
+
   // NOTE: 아래 URL 쿼리(checkoutStep/addressSheet/checkoutOption/checkoutAddress) 복원
   // 분기의 생산자(마이페이지·배송지 관리 왕복)는 이 PR 에서 제거됐다. 과거 공유된 링크
   // 호환용으로 한시 유지하며, 후속 정리 대상이다.
@@ -2841,6 +2911,58 @@ export function ProductDetail({
     product.isApiProduct,
   ]);
 
+  // 로그인하러 나갔다 돌아온 경우. 로그인 상태·내 참여 조회가 끝난 뒤 한 번만 읽고 지운다 —
+  // 로그인하지 않고 돌아왔거나 다른 분철·30분 지난 값이면 열지 않고 버린다.
+  useEffect(() => {
+    if (isViewerStateLoading || didReadCheckoutLoginReturnRef.current) {
+      return;
+    }
+
+    didReadCheckoutLoginReturnRef.current = true;
+
+    const loginReturnState = parseCheckoutAddressReturnState(
+      window.sessionStorage.getItem(CHECKOUT_LOGIN_RETURN_STATE_KEY),
+      buncheolId,
+    );
+    window.sessionStorage.removeItem(CHECKOUT_LOGIN_RETURN_STATE_KEY);
+
+    if (
+      !loginReturnState ||
+      !authState.isLoggedIn ||
+      Date.now() - loginReturnState.createdAt > checkoutDraftMaxAgeMs
+    ) {
+      return;
+    }
+
+    // 여는 것은 다음 렌더로 미룬다. 같은 커밋의 리셋 effect 가 넣은 새 자리 상태로 마감·참여 여부를 봐야 한다.
+    setCheckoutLoginReturnState(loginReturnState);
+  }, [authState.isLoggedIn, buncheolId, isViewerStateLoading]);
+
+  const openCheckoutFromLoginReturn = useEffectEvent(
+    (loginReturnState: CheckoutAddressReturnState) => {
+      if (isSheetOpen || hasMyActiveParticipation || !canBidProduct) {
+        return;
+      }
+
+      // 고른 멤버가 그사이 전부 마감됐으면 열지 않는다. 일부만 마감이면 남은 멤버만 체크된다.
+      if (
+        !restoreCheckoutSelectionFromReturnOptions(
+          getCheckoutReturnOptionsFromState(loginReturnState),
+        )
+      ) {
+        return;
+      }
+
+      openSheet();
+    },
+  );
+
+  useEffect(() => {
+    if (checkoutLoginReturnState) {
+      openCheckoutFromLoginReturn(checkoutLoginReturnState);
+    }
+  }, [checkoutLoginReturnState]);
+
   // 상세 재조회 세대 번호. 겹치거나 늦게 도착한 응답이 최신 상태를 덮어쓰지 않게 한다.
   const detailRefreshRequestIdRef = useRef(0);
 
@@ -3093,6 +3215,7 @@ export function ProductDetail({
       return;
     }
 
+    setCheckoutError("");
     setBidAmounts((current) => {
       let nextAmounts: Record<string, string>;
 
@@ -3216,6 +3339,7 @@ export function ProductDetail({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        rememberCheckoutLoginReturnState();
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
         router.push(
           createLoginHref({
@@ -3328,6 +3452,7 @@ export function ProductDetail({
       const accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
+        rememberCheckoutLoginReturnState();
         const returnHref = `/products/${encodeURIComponent(buncheolId)}`;
         router.push(
           createLoginHref({
@@ -3593,6 +3718,10 @@ export function ProductDetail({
         } else if (errorCode === BUNCHEOL_NOT_OPEN_YET_CODE) {
           // 아래 재조회가 오픈 시각과 자리 상태를 서버 값으로 다시 맞춘다.
           setCheckoutError("아직 열리지 않은 분철이에요.");
+        } else if (errorCode === PARTICIPATION_ALREADY_EXISTS_CODE) {
+          // 아래 재조회가 놓친 멤버를 선택에서 빼므로, 확인 단계에 남으면 꺼진 버튼만 보인다.
+          setCheckoutStep("options");
+          setCheckoutError("앗, 이미 선택된 멤버예요. 남은 멤버를 골라 주세요.");
         } else if (didDeadlinePass) {
           setCheckoutError("참여 기한이 지났어요.");
         } else if (isProfileIncomplete) {
@@ -3755,87 +3884,32 @@ export function ProductDetail({
     onExitingChange?.(isExiting);
   }, [isExiting, onExitingChange]);
 
+  // 목록 카드가 적어 둔 "다음 칸 번호"가 지금 칸 번호와 같을 때만 — 즉 바로 앞 칸이 그 목록일 때만 —
+  // 이 칸에 표시를 남긴다. 공유 링크로 들어왔거나 그려지기 전에 이미 돌아갔으면 번호가 어긋난다.
   useEffect(() => {
-    const historyIndex = getHistoryIndex();
-    const expectedBidHistoryEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY,
-    );
-    const expectedFavoritesEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_FAVORITES_ENTRY_INDEX_KEY,
-    );
-    const expectedArtistEntryIndex = window.sessionStorage.getItem(
-      PRODUCT_ARTIST_ENTRY_INDEX_KEY,
-    );
-    window.sessionStorage.removeItem(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
-    window.sessionStorage.removeItem(PRODUCT_FAVORITES_ENTRY_INDEX_KEY);
-    window.sessionStorage.removeItem(PRODUCT_ARTIST_ENTRY_INDEX_KEY);
+    const historyIndex = String(getHistoryIndex());
+    const entryIndexKeys = [
+      ["home", PRODUCT_HOME_ENTRY_INDEX_KEY, PRODUCT_HOME_ENTRY_STATE_KEY],
+      ["bids", PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY, PRODUCT_BID_HISTORY_ENTRY_STATE_KEY],
+      ["favorites", PRODUCT_FAVORITES_ENTRY_INDEX_KEY, PRODUCT_FAVORITES_ENTRY_STATE_KEY],
+      ["artist", PRODUCT_ARTIST_ENTRY_INDEX_KEY, PRODUCT_ARTIST_ENTRY_STATE_KEY],
+    ] as const;
 
-    if (
-      initialReturnSource === "bids" &&
-      historyIndex !== null &&
-      expectedBidHistoryEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
+    for (const [returnSource, indexKey, stateKey] of entryIndexKeys) {
+      const expectedEntryIndex = window.sessionStorage.getItem(indexKey);
+      window.sessionStorage.removeItem(indexKey);
 
-    if (
-      initialReturnSource === "favorites" &&
-      historyIndex !== null &&
-      expectedFavoritesEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_FAVORITES_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
-
-    if (
-      initialReturnSource === "artist" &&
-      historyIndex !== null &&
-      expectedArtistEntryIndex === String(historyIndex)
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_ARTIST_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
+      if (
+        initialReturnSource === returnSource &&
+        expectedEntryIndex === historyIndex
+      ) {
+        window.history.replaceState(
+          { ...(getHistoryState() ?? {}), [stateKey]: true },
+          "",
+        );
+      }
     }
   }, [initialReturnSource]);
-
-  // Next 기록엔 idx 가 없어 getHistoryIndex() 로는 판정할 수 없다. 카드가 남긴 일회용 id 로 판정하고,
-  // 표시가 없으면 replace("/") 로 떨어진다. 그려지기 전에 이미 홈으로 돌아갔으면 홈 칸에 붙이지 않는다.
-  useEffect(() => {
-    const homeEntryId = readFreshHomeEntryId(
-      window.sessionStorage.getItem(PRODUCT_HOME_ENTRY_ID_KEY),
-    );
-    window.sessionStorage.removeItem(PRODUCT_HOME_ENTRY_ID_KEY);
-
-    if (
-      initialReturnSource === "home" &&
-      homeEntryId === buncheolId &&
-      window.location.pathname ===
-        `/products/${encodeURIComponent(buncheolId)}`
-    ) {
-      window.history.replaceState(
-        {
-          ...(getHistoryState() ?? {}),
-          [PRODUCT_HOME_ENTRY_STATE_KEY]: true,
-        },
-        "",
-      );
-    }
-  }, [buncheolId, initialReturnSource]);
 
   useEffect(() => {
     if (!isExiting) {
@@ -4013,11 +4087,15 @@ export function ProductDetail({
 
       if (initialReturnSource === "bids") {
         window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
-        router.replace("/profile/bids");
+      }
+
+      // ‹ 와 같은 규칙 — 목록에서 열었으면 그 칸으로 돌아가 기록에 목록이 한 칸 더 쌓이지 않게 한다.
+      if (hasReturnListEntryState(initialReturnSource)) {
+        router.back();
         return;
       }
 
-      router.replace("/");
+      router.replace(initialReturnSource === "bids" ? "/profile/bids" : "/");
     } catch (error: unknown) {
       showToast(
         error instanceof Error ? error.message : HOST_CANCEL_FAILURE_MESSAGE,
@@ -5327,6 +5405,10 @@ export function ProductDetail({
                     </span>
                   </div>
 
+                  {checkoutError ? (
+                    <SheetErrorMessage message={checkoutError} />
+                  ) : null}
+
                   <button
                     type="button"
                     className="cta-ready-pop mt-4 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white"
@@ -5563,13 +5645,7 @@ export function ProductDetail({
 
                   {/* 스크롤 영역 밖, 버튼 바로 위에 둔다 — 안에 두면 내용이 길 때 스크롤해야 보인다. */}
                   {checkoutError ? (
-                    <p
-                      className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]"
-                      key={checkoutError}
-                      role="alert"
-                    >
-                      {checkoutError}
-                    </p>
+                    <SheetErrorMessage message={checkoutError} />
                   ) : null}
 
                   <div
@@ -5689,6 +5765,57 @@ export function ProductDetail({
                             ? "기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요."
                             : "마감 전까지 입금하지 않으면 자동 취소돼요."}
                         </HelpText>
+                        {checkoutRefundAccount?.holder ? (
+                          <DepositorNameGuide
+                            holder={checkoutRefundAccount.holder}
+                            isC2C={isC2CProduct}
+                          />
+                        ) : null}
+                      </div>
+
+                      <div className="rounded-[0.95rem] border border-black/10 px-4 py-4">
+                        <p className="text-[12px] font-semibold leading-[1.4] text-black/40">
+                          입금 계좌
+                        </p>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-[16px] font-semibold leading-[1.35] tracking-[-0.02em] tabular-nums">
+                              {checkoutPaymentSummary.hostBankAccount
+                                ? `${checkoutPaymentSummary.hostBankAccount.bank} ${checkoutPaymentSummary.hostBankAccount.account}`.trim()
+                                : "계좌 정보 확인 중"}
+                            </p>
+                            <p className="mt-1 text-[12.5px] font-medium leading-[1.45] text-black/45">
+                              {checkoutPaymentSummary.hostBankAccount?.holder
+                                ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
+                                : "참여 내역에서 다시 확인해 주세요."}
+                            </p>
+                          </div>
+                          <CopyButton
+                            disabled={!checkoutPaymentSummary.hostBankAccount}
+                            label="계좌 복사"
+                            onCopyFailed={() =>
+                              showToast("계좌번호 복사에 실패했어요.", "error")
+                            }
+                            value={
+                              checkoutPaymentSummary.hostBankAccount?.account ??
+                              ""
+                            }
+                          />
+                        </div>
+                        {/* 중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 이 안내
+                            문장에 흡수했다. 약관 제9조(app/terms)와 /broker-notice 가
+                            "분철 상세 화면 및 참여·입금 화면에 표시된다"고 공표하고 있어
+                            입금 화면에서 고지를 없앨 수 없다. 사용자 지적(docs/56 H-06)의
+                            실체는 반복되는 문단 수이므로 블록만 줄인다. */}
+                        {isC2CProduct ? (
+                          <HelpText className="mt-3.5 border-t border-black/[0.06] pt-3.5">
+                            {"송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."}
+                            <span className="block font-semibold text-black/75">
+                              분철이지는 통신판매중개자이며, 대금은 개최자
+                              계좌로 직접 입금돼요.
+                            </span>
+                          </HelpText>
+                        ) : null}
                       </div>
 
                       <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
@@ -5717,66 +5844,6 @@ export function ProductDetail({
                             </div>
                           ))}
                         </div>
-                      </div>
-
-                      <div className="relative rounded-[0.95rem] border border-black/10 px-4 py-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[12px] font-semibold text-black/40">입금 계좌</p>
-                            <p className="mt-1 truncate text-[15px] font-semibold tracking-[-0.04em]">
-                              {checkoutPaymentSummary.hostBankAccount
-                                ? `${checkoutPaymentSummary.hostBankAccount.bank} ${checkoutPaymentSummary.hostBankAccount.account}`.trim()
-                                : "계좌 정보 확인 중"}
-                            </p>
-                            <p className="mt-1 text-[12px] font-medium text-black/40">
-                              {checkoutPaymentSummary.hostBankAccount?.holder
-                                ? `예금주 ${checkoutPaymentSummary.hostBankAccount.holder}`
-                                : "참여 내역에서 다시 확인해 주세요."}
-                            </p>
-                          </div>
-                          <CopyButton
-                            disabled={!checkoutPaymentSummary.hostBankAccount}
-                            label="계좌 복사"
-                            onCopyFailed={() =>
-                              showToast("계좌번호 복사에 실패했어요.", "error")
-                            }
-                            value={
-                              checkoutPaymentSummary.hostBankAccount?.account ??
-                              ""
-                            }
-                          />
-                        </div>
-                        {checkoutRefundAccount?.holder ? (
-                          <>
-                            <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                              입금자명{" "}
-                              <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
-                                {checkoutRefundAccount.holder}
-                              </span>
-                            </p>
-                            <HelpText className="mt-1.5">
-                              {isC2CProduct
-                                ? "이 이름으로 보내야 개최자가 입금을 확인할 수 있어요."
-                                : "이 이름으로 보내야 자동으로 확인돼요. 다른 이름으로 보내면 확인이 늦어질 수 있어요."}
-                            </HelpText>
-                          </>
-                        ) : null}
-                        {/* 중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 이 안내
-                            문장에 흡수했다. 약관 제9조(app/terms)와 /broker-notice 가
-                            "분철 상세 화면 및 참여·입금 화면에 표시된다"고 공표하고 있어
-                            입금 화면에서 고지를 없앨 수 없다. 사용자 지적(docs/56 H-06)의
-                            실체는 반복되는 문단 수이므로 블록만 줄인다. */}
-                        <HelpText className="mt-3">
-                          {isC2CProduct
-                            ? "송금 후 참여 내역에서 '보냈어요'를 꼭 눌러주세요. 개최자가 입금을 확인하면 참여가 확정돼요."
-                            : "송금 후 관리자가 입금을 확인하면 참여가 확정돼요. 진행 상황은 참여 내역에서 확인할 수 있어요."}
-                          {isC2CProduct ? (
-                            <span className="block font-semibold text-black/75">
-                              분철이지는 통신판매중개자이며, 대금은 개최자
-                              계좌로 직접 입금돼요.
-                            </span>
-                          ) : null}
-                        </HelpText>
                       </div>
 
                       <div className="rounded-[0.95rem] bg-black px-4 py-4 text-white ring-1 ring-[#AAB67C]/35">
@@ -5815,6 +5882,9 @@ export function ProductDetail({
                         ) : null}
                       </div>
 
+                      <HelpText className="px-1">
+                        입금이 확인되면 카카오 알림톡으로 알려 드려요.
+                      </HelpText>
                     </div>
 
                     <div className="mt-4 grid grid-cols-[0.52fr_0.48fr] gap-2">
@@ -6238,9 +6308,7 @@ export function ProductDetail({
               </div>
 
               {refundAccountError ? (
-                <p className="error-shake mt-3 rounded-[0.85rem] bg-[#fff2f2] px-4 py-3 text-[12px] font-semibold leading-5 text-[#c03131]">
-                  {refundAccountError}
-                </p>
+                <SheetErrorMessage message={refundAccountError} />
               ) : null}
 
               <button
