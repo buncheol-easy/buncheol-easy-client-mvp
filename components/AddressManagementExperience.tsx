@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AddressManagementContent } from "@/components/AddressManagementContent";
 import {
-  BID_HISTORY_SKIP_ENTER_KEY,
-  BidHistoryContent,
-} from "@/components/BidHistoryContent";
+  PARTICIPATION_HISTORY_SKIP_ENTER_KEY,
+  ParticipationHistoryContent,
+} from "@/components/ParticipationHistoryContent";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   PROFILE_SKIP_ENTER_KEY,
@@ -54,7 +54,7 @@ export function AddressManagementExperience({
       typeof returnHref === "string" && returnHref.startsWith("/products/");
     const skipEnterKey =
       returnHref === "/profile/participations"
-        ? BID_HISTORY_SKIP_ENTER_KEY
+        ? PARTICIPATION_HISTORY_SKIP_ENTER_KEY
         : PROFILE_SKIP_ENTER_KEY;
 
     if (isProductReturn) {
@@ -86,15 +86,15 @@ export function AddressManagementExperience({
     );
   }
 
-  const isBidsReturn = returnHref === "/profile/participations";
+  const isParticipationsReturn = returnHref === "/profile/participations";
 
   return (
     <div className="relative mx-auto h-full w-full max-w-[430px] overflow-hidden bg-white">
       <SwipeUnderlay isEntered={isEntered} isExiting={isExiting}>
-        {isBidsReturn ? (
+        {isParticipationsReturn ? (
           <>
-            <BidHistoryContent skipEnterAnimation />
-            <BottomNavigator activeLabel="Bids" />
+            <ParticipationHistoryContent skipEnterAnimation />
+            <BottomNavigator activeLabel="Participations" />
           </>
         ) : (
           <>

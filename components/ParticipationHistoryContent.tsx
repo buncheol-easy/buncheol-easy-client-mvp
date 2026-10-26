@@ -130,12 +130,12 @@ const kstOffsetHours = 9;
 const paymentDeadlineMinutes = 10;
 // C2C 입금 창 — 성사 확정 후 24시간 (docs/46 §7.1-3). 카운트다운 상한 보정에 쓴다.
 const c2cPaymentWindowMs = 24 * 60 * 60_000;
-const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
-export const MANAGE_BID_HISTORY_ENTRY_INDEX_KEY =
-  "manage-bid-history-entry-index";
-const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
-const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
-export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
+const PRODUCT_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY = "product-participation-history-entry-index";
+export const MANAGE_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY =
+  "manage-participation-history-entry-index";
+const PARTICIPATION_HISTORY_SCROLL_TOP_KEY = "participation-history-scroll-top";
+const PARTICIPATION_HISTORY_VIEW_STATE_KEY = "participation-history-view-state";
+export const PARTICIPATION_HISTORY_OPEN_PAYMENT_ID_KEY = "participation-history-open-payment-id";
 // 묶음 id 가 없으면 「보냈어요」를 서버에 보낼 수 없다. 버튼을 막고 이 문구를 미리 보여 준다.
 const MARK_SENT_MISSING_BUNDLE_MESSAGE =
   "묶음 정보가 없어 「입금 보냈어요」를 누를 수 없어요. 고객센터로 문의해 주세요.";
@@ -341,13 +341,13 @@ function formatPaymentCountdown(
 
   return `${seconds}초 남았어요`;
 }
-type BidHistoryMode = "joined" | "hosted";
-type BidHistoryFilter = "all" | "payment" | "confirmed";
+type ParticipationHistoryMode = "joined" | "hosted";
+type ParticipationHistoryFilter = "all" | "payment" | "confirmed";
 type HostedHistoryFilter = "all" | "active" | "closed";
-type BidHistoryViewState = {
-  filter?: BidHistoryFilter;
+type ParticipationHistoryViewState = {
+  filter?: ParticipationHistoryFilter;
   hostedFilter?: HostedHistoryFilter;
-  mode?: BidHistoryMode;
+  mode?: ParticipationHistoryMode;
 };
 
 // "진행 확정"은 내 입금·배송 축이 아니라 분철 축(마감 때 최소 인원 충족) 단계지만,
@@ -538,33 +538,33 @@ const hostingStatusGuide = [
   },
 ] as const satisfies readonly StatusGuideItem[];
 
-const bidHistoryModes: BidHistoryMode[] = ["joined", "hosted"];
-const bidHistoryFilters: BidHistoryFilter[] = ["all", "payment", "confirmed"];
+const participationHistoryModes: ParticipationHistoryMode[] = ["joined", "hosted"];
+const participationHistoryFilters: ParticipationHistoryFilter[] = ["all", "payment", "confirmed"];
 const hostedHistoryFilters: HostedHistoryFilter[] = [
   "all",
   "active",
   "closed",
 ];
 
-function isBidHistoryMode(value: unknown): value is BidHistoryMode {
-  return bidHistoryModes.includes(value as BidHistoryMode);
+function isParticipationHistoryMode(value: unknown): value is ParticipationHistoryMode {
+  return participationHistoryModes.includes(value as ParticipationHistoryMode);
 }
 
-function isBidHistoryFilter(value: unknown): value is BidHistoryFilter {
-  return bidHistoryFilters.includes(value as BidHistoryFilter);
+function isParticipationHistoryFilter(value: unknown): value is ParticipationHistoryFilter {
+  return participationHistoryFilters.includes(value as ParticipationHistoryFilter);
 }
 
 function isHostedHistoryFilter(value: unknown): value is HostedHistoryFilter {
   return hostedHistoryFilters.includes(value as HostedHistoryFilter);
 }
 
-function readStoredBidHistoryViewState(keepStoredState: boolean) {
+function readStoredParticipationHistoryViewState(keepStoredState: boolean) {
   if (typeof window === "undefined") {
     return {};
   }
 
   const rawViewState = window.sessionStorage.getItem(
-    BID_HISTORY_VIEW_STATE_KEY,
+    PARTICIPATION_HISTORY_VIEW_STATE_KEY,
   );
 
   if (!rawViewState) {
@@ -572,20 +572,20 @@ function readStoredBidHistoryViewState(keepStoredState: boolean) {
   }
 
   if (!keepStoredState) {
-    window.sessionStorage.removeItem(BID_HISTORY_VIEW_STATE_KEY);
+    window.sessionStorage.removeItem(PARTICIPATION_HISTORY_VIEW_STATE_KEY);
   }
 
   try {
-    const viewState = JSON.parse(rawViewState) as BidHistoryViewState;
+    const viewState = JSON.parse(rawViewState) as ParticipationHistoryViewState;
 
     return {
-      filter: isBidHistoryFilter(viewState.filter)
+      filter: isParticipationHistoryFilter(viewState.filter)
         ? viewState.filter
         : undefined,
       hostedFilter: isHostedHistoryFilter(viewState.hostedFilter)
         ? viewState.hostedFilter
         : undefined,
-      mode: isBidHistoryMode(viewState.mode) ? viewState.mode : undefined,
+      mode: isParticipationHistoryMode(viewState.mode) ? viewState.mode : undefined,
     };
   } catch {
     return {};
@@ -1734,26 +1734,26 @@ function getHostedProductFromBuncheol(
   };
 }
 
-type BidHistoryContentProps = {
+type ParticipationHistoryContentProps = {
   restoreStoredViewState?: boolean;
   skipEnterAnimation?: boolean;
 };
 
-export const BID_HISTORY_SKIP_ENTER_KEY = "skip-bid-history-enter-animation";
+export const PARTICIPATION_HISTORY_SKIP_ENTER_KEY = "skip-participation-history-enter-animation";
 
-function takeShouldSkipBidHistoryEnter() {
+function takeShouldSkipParticipationHistoryEnter() {
   if (typeof window === "undefined") {
     return false;
   }
 
   const shouldSkip =
-    window.sessionStorage.getItem(BID_HISTORY_SKIP_ENTER_KEY) === "true";
-  window.sessionStorage.removeItem(BID_HISTORY_SKIP_ENTER_KEY);
+    window.sessionStorage.getItem(PARTICIPATION_HISTORY_SKIP_ENTER_KEY) === "true";
+  window.sessionStorage.removeItem(PARTICIPATION_HISTORY_SKIP_ENTER_KEY);
 
   return shouldSkip;
 }
 
-function BidHistoryListSkeleton({ count = 2 }: { count?: number }) {
+function ParticipationHistoryListSkeleton({ count = 2 }: { count?: number }) {
   return (
     <SkeletonGroup
       aria-label="참여 내역을 불러오는 중"
@@ -1763,7 +1763,7 @@ function BidHistoryListSkeleton({ count = 2 }: { count?: number }) {
       {Array.from({ length: count }).map((_, index) => (
         <div
           className="rounded-[1rem] border border-black/10 px-4 py-4"
-          key={`bid-history-skeleton-${index}`}
+          key={`participation-history-skeleton-${index}`}
         >
           <div className="flex items-start gap-3">
             <div className="h-14 w-14 shrink-0 skeleton-surface rounded-[0.85rem] bg-black/8" />
@@ -1785,14 +1785,14 @@ function BidHistoryListSkeleton({ count = 2 }: { count?: number }) {
   );
 }
 
-export function BidHistoryContent({
+export function ParticipationHistoryContent({
   restoreStoredViewState = true,
   skipEnterAnimation = false,
-}: BidHistoryContentProps) {
+}: ParticipationHistoryContentProps) {
   const router = useRouter();
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [shouldSkipEnterAnimation] = useState(
-    () => skipEnterAnimation || takeShouldSkipBidHistoryEnter(),
+    () => skipEnterAnimation || takeShouldSkipParticipationHistoryEnter(),
   );
   const [now, setNow] = useState(() => new Date());
   const [selectedPaymentBidId, setSelectedPaymentBidId] = useState<
@@ -1860,14 +1860,14 @@ export function BidHistoryContent({
   }, [authState.isLoggedIn, router]);
 
   const { addresses: deliveryAddresses, defaultAddressIds } = storedAddressState;
-  const [mode, setMode] = useState<BidHistoryMode>("joined");
+  const [mode, setMode] = useState<ParticipationHistoryMode>("joined");
   // 참여↔개최 탭이 스크롤 컨테이너를 공유하므로 탭별 위치를 따로 기억한다.
-  const tabScrollTopRef = useRef<Record<BidHistoryMode, number>>({
+  const tabScrollTopRef = useRef<Record<ParticipationHistoryMode, number>>({
     hosted: 0,
     joined: 0,
   });
-  const pendingTabScrollModeRef = useRef<BidHistoryMode | null>(null);
-  const [filter, setFilter] = useState<BidHistoryFilter>("all");
+  const pendingTabScrollModeRef = useRef<ParticipationHistoryMode | null>(null);
+  const [filter, setFilter] = useState<ParticipationHistoryFilter>("all");
   const [hostedFilter, setHostedFilter] =
     useState<HostedHistoryFilter>("all");
   const [apiBidRecords, setApiBidRecords] = useState<BidRecord[] | null>(null);
@@ -2115,7 +2115,7 @@ export function BidHistoryContent({
       return;
     }
 
-    const storedViewState = readStoredBidHistoryViewState(skipEnterAnimation);
+    const storedViewState = readStoredParticipationHistoryViewState(skipEnterAnimation);
 
     if (storedViewState.mode) {
       setMode(storedViewState.mode);
@@ -2177,14 +2177,14 @@ export function BidHistoryContent({
         setHistoryMessage("");
 
         const pendingPaymentId = window.sessionStorage.getItem(
-          BID_HISTORY_OPEN_PAYMENT_ID_KEY,
+          PARTICIPATION_HISTORY_OPEN_PAYMENT_ID_KEY,
         );
         const pendingPaymentRecord = pendingPaymentId
           ? baseBidRecords.find((bid) => bid.id === pendingPaymentId)
           : null;
 
         if (pendingPaymentRecord) {
-          window.sessionStorage.removeItem(BID_HISTORY_OPEN_PAYMENT_ID_KEY);
+          window.sessionStorage.removeItem(PARTICIPATION_HISTORY_OPEN_PAYMENT_ID_KEY);
           setMode("joined");
           setFilter("payment");
           setSelectedPaymentBidId(pendingPaymentRecord.id);
@@ -2882,7 +2882,7 @@ export function BidHistoryContent({
     }, 280);
   }
 
-  function changeMode(nextMode: BidHistoryMode) {
+  function changeMode(nextMode: ParticipationHistoryMode) {
     if (nextMode === mode) {
       return;
     }
@@ -2903,14 +2903,14 @@ export function BidHistoryContent({
     }
 
     window.sessionStorage.setItem(
-      BID_HISTORY_SCROLL_TOP_KEY,
+      PARTICIPATION_HISTORY_SCROLL_TOP_KEY,
       String(scrollContainerRef.current.scrollTop),
     );
   }
 
-  function rememberBidHistoryViewState() {
+  function rememberParticipationHistoryViewState() {
     window.sessionStorage.setItem(
-      BID_HISTORY_VIEW_STATE_KEY,
+      PARTICIPATION_HISTORY_VIEW_STATE_KEY,
       JSON.stringify({ filter, hostedFilter, mode }),
     );
   }
@@ -2946,7 +2946,7 @@ export function BidHistoryContent({
     );
   }
 
-  function rememberBidHistoryProductEntry(event: MouseEvent<HTMLAnchorElement>) {
+  function rememberParticipationHistoryProductEntry(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
       event.metaKey ||
@@ -2958,11 +2958,11 @@ export function BidHistoryContent({
     }
 
     rememberScrollPosition();
-    rememberBidHistoryViewState();
-    rememberNextHistoryIndex(PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY);
+    rememberParticipationHistoryViewState();
+    rememberNextHistoryIndex(PRODUCT_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY);
   }
 
-  function rememberBidHistoryManageEntry(event: MouseEvent<HTMLAnchorElement>) {
+  function rememberParticipationHistoryManageEntry(event: MouseEvent<HTMLAnchorElement>) {
     if (
       event.button !== 0 ||
       event.metaKey ||
@@ -2974,8 +2974,8 @@ export function BidHistoryContent({
     }
 
     rememberScrollPosition();
-    rememberBidHistoryViewState();
-    rememberNextHistoryIndex(MANAGE_BID_HISTORY_ENTRY_INDEX_KEY);
+    rememberParticipationHistoryViewState();
+    rememberNextHistoryIndex(MANAGE_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY);
   }
 
   function requestDeleteHostedProduct(product: ProductDetailItem) {
@@ -3141,7 +3141,7 @@ export function BidHistoryContent({
               aria-label={`${head.title} 상세 보기`}
               className={`relative h-14 w-14 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${head.tone}`}
               href={`/products/${head.productId}?from=bids`}
-              onClick={rememberBidHistoryProductEntry}
+              onClick={rememberParticipationHistoryProductEntry}
             >
               {head.imageUrl ? (
                 <ProductPhoto
@@ -3174,7 +3174,7 @@ export function BidHistoryContent({
             <Link
               className="block min-w-0"
               href={`/products/${head.productId}?from=bids`}
-              onClick={rememberBidHistoryProductEntry}
+              onClick={rememberParticipationHistoryProductEntry}
             >
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {head.title}
@@ -3773,7 +3773,7 @@ export function BidHistoryContent({
       }
 
       const storedScrollTop = window.sessionStorage.getItem(
-        BID_HISTORY_SCROLL_TOP_KEY,
+        PARTICIPATION_HISTORY_SCROLL_TOP_KEY,
       );
 
       if (!storedScrollTop) {
@@ -3783,7 +3783,7 @@ export function BidHistoryContent({
       scrollContainerRef.current.scrollTop = Number(storedScrollTop);
 
       if (!skipEnterAnimation) {
-        window.sessionStorage.removeItem(BID_HISTORY_SCROLL_TOP_KEY);
+        window.sessionStorage.removeItem(PARTICIPATION_HISTORY_SCROLL_TOP_KEY);
       }
     });
 
@@ -3805,12 +3805,12 @@ export function BidHistoryContent({
         shouldSkipEnterAnimation ? "" : "tab-content-enter"
       }`}
     >
-      <header className="bid-history-header shrink-0 px-4 py-3">
+      <header className="participation-history-header shrink-0 px-4 py-3">
         {/* 제목은 탭과 무관하게 고정한다 — 탭을 누를 때마다 h1 이 "참여 내역 ↔ 개최 기록"으로
             바뀌면 같은 페이지 안에서 화면 정체성이 흔들리고, 브라우저 탭 제목과도 어긋난다.
             둘의 구분은 바로 아래 탭이 이미 하고 있다. */}
-        <div className="bid-history-header__copy flex h-10 flex-col justify-center">
-          <h1 className="bid-history-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
+        <div className="participation-history-header__copy flex h-10 flex-col justify-center">
+          <h1 className="participation-history-header__title text-[22px] font-semibold leading-none tracking-[-0.06em]">
             내 분철
           </h1>
         </div>
@@ -3896,7 +3896,7 @@ export function BidHistoryContent({
               </button>
             ) : null}
             {isBidRecordsLoading ? (
-              <BidHistoryListSkeleton />
+              <ParticipationHistoryListSkeleton />
             ) : bundles.length === 0 ? (
               authState.isLoggedIn ? (
                 filter !== "all" && hasAnyBidRecords ? (
@@ -4019,7 +4019,7 @@ export function BidHistoryContent({
                         aria-label={`${bid.title} 상세 보기`}
                         className={`relative h-14 w-14 overflow-hidden rounded-[0.85rem] bg-gradient-to-br ${bid.tone}`}
                         href={`/products/${bid.productId}?from=bids`}
-                        onClick={rememberBidHistoryProductEntry}
+                        onClick={rememberParticipationHistoryProductEntry}
                       >
                         {bid.imageUrl ? (
                           <ProductPhoto
@@ -4055,7 +4055,7 @@ export function BidHistoryContent({
                       <Link
                         className="block min-w-0"
                         href={`/products/${bid.productId}?from=bids`}
-                        onClick={rememberBidHistoryProductEntry}
+                        onClick={rememberParticipationHistoryProductEntry}
                       >
                         <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                           {bid.title}
@@ -4345,7 +4345,7 @@ export function BidHistoryContent({
                 </div>
               ) : null}
               {isHostedProductsLoading ? (
-                <BidHistoryListSkeleton />
+                <ParticipationHistoryListSkeleton />
               ) : hostedRecords.length === 0 ? (
                 authState.isLoggedIn ? (
                   hostedFilter !== "all" && hasAnyHostedRecords ? (
@@ -4418,7 +4418,7 @@ export function BidHistoryContent({
                     <Link
                       className="block"
                       href={`/products/${product.id}?from=bids&hosted=true`}
-                      onClick={rememberBidHistoryProductEntry}
+                      onClick={rememberParticipationHistoryProductEntry}
                     >
                     <div className="flex items-start gap-3">
                       <div
@@ -4476,7 +4476,7 @@ export function BidHistoryContent({
                       <Link
                         className="inline-flex h-9 min-w-[88px] items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold text-[#D7FF5F] shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
                         href={`/products/${product.buncheolId ?? product.id}/manage`}
-                        onClick={rememberBidHistoryManageEntry}
+                        onClick={rememberParticipationHistoryManageEntry}
                       >
                         관리하기
                       </Link>

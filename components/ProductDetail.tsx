@@ -132,7 +132,7 @@ import { ProductDetailBidBarSkeleton } from "@/components/ProductDetailSkeleton"
 import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useAppToast } from "@/components/Toast";
 import { ConfirmSheet, type ConfirmSheetRequest } from "@/components/ConfirmSheet";
-import { BID_HISTORY_SKIP_ENTER_KEY, BidHistoryContent } from "@/components/BidHistoryContent";
+import { PARTICIPATION_HISTORY_SKIP_ENTER_KEY, ParticipationHistoryContent } from "@/components/ParticipationHistoryContent";
 import { useQueryClient } from "@tanstack/react-query";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { buncheolsQueryKey } from "@/lib/query-keys";
@@ -263,8 +263,8 @@ export function ProductReturnUnderlay({
           isEntered={isEntered}
           isExiting={isExiting}
         >
-          <BidHistoryContent skipEnterAnimation />
-          <BottomNavigator activeLabel="Bids" />
+          <ParticipationHistoryContent skipEnterAnimation />
+          <BottomNavigator activeLabel="Participations" />
         </SwipeUnderlay>
       ) : null}
 
@@ -293,8 +293,8 @@ export function ProductReturnUnderlay({
   );
 }
 
-const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
-const PRODUCT_BID_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromBidHistory";
+const PRODUCT_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY = "product-participation-history-entry-index";
+const PRODUCT_PARTICIPATION_HISTORY_ENTRY_STATE_KEY = "__buncheolProductFromParticipationHistory";
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
 const PRODUCT_FAVORITES_ENTRY_STATE_KEY = "__buncheolProductFromFavorites";
 const PRODUCT_ARTIST_ENTRY_STATE_KEY = "__buncheolProductFromArtist";
@@ -479,7 +479,7 @@ function getCheckoutReturnOptionsFromState(
 }
 
 type ProductHistoryState = {
-  [PRODUCT_BID_HISTORY_ENTRY_STATE_KEY]?: unknown;
+  [PRODUCT_PARTICIPATION_HISTORY_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_FAVORITES_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_ARTIST_ENTRY_STATE_KEY]?: unknown;
   [PRODUCT_HOME_ENTRY_STATE_KEY]?: unknown;
@@ -520,8 +520,8 @@ function getHistoryState() {
   return window.history.state as ProductHistoryState | null;
 }
 
-function hasBidHistoryEntryState() {
-  return getHistoryState()?.[PRODUCT_BID_HISTORY_ENTRY_STATE_KEY] === true;
+function hasParticipationHistoryEntryState() {
+  return getHistoryState()?.[PRODUCT_PARTICIPATION_HISTORY_ENTRY_STATE_KEY] === true;
 }
 
 function hasFavoritesEntryState() {
@@ -544,7 +544,7 @@ function hasReturnListEntryState(
     case "home":
       return hasHomeEntryState();
     case "bids":
-      return hasBidHistoryEntryState();
+      return hasParticipationHistoryEntryState();
     case "favorites":
       return hasFavoritesEntryState();
     case "artist":
@@ -3832,7 +3832,7 @@ export function ProductDetail({
     }
 
     if (initialReturnSource === "bids") {
-      if (hasBidHistoryEntryState()) {
+      if (hasParticipationHistoryEntryState()) {
         router.back();
         return;
       }
@@ -3897,7 +3897,7 @@ export function ProductDetail({
     const historyIndex = String(getHistoryIndex());
     const entryIndexKeys = [
       ["home", PRODUCT_HOME_ENTRY_INDEX_KEY, PRODUCT_HOME_ENTRY_STATE_KEY],
-      ["bids", PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY, PRODUCT_BID_HISTORY_ENTRY_STATE_KEY],
+      ["bids", PRODUCT_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY, PRODUCT_PARTICIPATION_HISTORY_ENTRY_STATE_KEY],
       ["favorites", PRODUCT_FAVORITES_ENTRY_INDEX_KEY, PRODUCT_FAVORITES_ENTRY_STATE_KEY],
       ["artist", PRODUCT_ARTIST_ENTRY_INDEX_KEY, PRODUCT_ARTIST_ENTRY_STATE_KEY],
     ] as const;
@@ -3980,9 +3980,9 @@ export function ProductDetail({
     }
 
     if (initialReturnSource === "bids") {
-      window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
+      window.sessionStorage.setItem(PARTICIPATION_HISTORY_SKIP_ENTER_KEY, "true");
     } else {
-      window.sessionStorage.removeItem(BID_HISTORY_SKIP_ENTER_KEY);
+      window.sessionStorage.removeItem(PARTICIPATION_HISTORY_SKIP_ENTER_KEY);
     }
 
     if (initialReturnSource === "favorites") {
@@ -4093,7 +4093,7 @@ export function ProductDetail({
       showToast(copy.successMessage, "success");
 
       if (initialReturnSource === "bids") {
-        window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
+        window.sessionStorage.setItem(PARTICIPATION_HISTORY_SKIP_ENTER_KEY, "true");
       }
 
       // ‹ 와 같은 규칙 — 목록에서 열었으면 그 칸으로 돌아가 기록에 목록이 한 칸 더 쌓이지 않게 한다.
@@ -4546,8 +4546,8 @@ export function ProductDetail({
     }
   }
 
-  function openBidHistory() {
-    window.sessionStorage.setItem(BID_HISTORY_SKIP_ENTER_KEY, "true");
+  function openParticipationHistory() {
+    window.sessionStorage.setItem(PARTICIPATION_HISTORY_SKIP_ENTER_KEY, "true");
     router.push("/profile/participations");
   }
 
@@ -5026,7 +5026,7 @@ export function ProductDetail({
                                     : `${blockChipLabel}, 내 참여 내역 보기`
                                 }
                                 className={`relative mt-1 inline-flex max-w-full items-center gap-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2 ${memberStatusChipBaseClassName}`}
-                                onClick={openBidHistory}
+                                onClick={openParticipationHistory}
                               >
                                 {/* 텍스트 › 는 칩 글자보다 작게 보여 눌러도 되는지 안 읽혔다(docs/56 H-04).
                                     라벨은 계속 말줄임하고, 화살표만 아이콘으로 키워 고정한다. */}
@@ -5904,7 +5904,7 @@ export function ProductDetail({
                       </button>
                       <button
                         className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
-                        onClick={openBidHistory}
+                        onClick={openParticipationHistory}
                         type="button"
                       >
                         참여 내역 보기
@@ -5998,7 +5998,7 @@ export function ProductDetail({
                     </button>
                     <button
                       className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
-                      onClick={openBidHistory}
+                      onClick={openParticipationHistory}
                       type="button"
                     >
                       참여 내역 보기
@@ -6066,7 +6066,7 @@ export function ProductDetail({
                     </button>
                     <button
                       className="h-14 rounded-full bg-[#f3f3f3] text-[15px] font-semibold tracking-[-0.04em] text-black/60"
-                      onClick={openBidHistory}
+                      onClick={openParticipationHistory}
                       type="button"
                     >
                       참여 내역 보기

@@ -762,7 +762,7 @@ const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress
   );
 });
 
-// 참여 진행 바 — C2C 6단계 (components/BidHistoryContent.tsx 의 c2cProgressStepLabels 와 동일 문자열).
+// 참여 진행 바 — C2C 6단계 (components/ParticipationHistoryContent.tsx 의 c2cProgressStepLabels 와 동일 문자열).
 const introProgressSteps = [
   "신청",
   "입금 대기",
@@ -772,7 +772,7 @@ const introProgressSteps = [
   "배송 완료",
 ] as const;
 
-// 참여 내역 + 결제 정보 시트 — components/BidHistoryContent.tsx 의 카드·시트 구성을 따른다.
+// 참여 내역 + 결제 정보 시트 — components/ParticipationHistoryContent.tsx 의 카드·시트 구성을 따른다.
 const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const shouldLoadPaymentImages = useDeferredMockupImages(frameRef);

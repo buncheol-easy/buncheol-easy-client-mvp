@@ -21,7 +21,6 @@ import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
  * key 는 활성 탭 판별용 식별자(호출부가 넘기는 값), label 은 화면·스크린리더에 쓰는 한글이다.
  * 예전에는 label 하나가 두 역할을 겸해서, 설치형 PWA 처럼 라벨이 켜지는 환경에서
  * "Home / Upload / 참여 / Favorites / Profile" 처럼 영어가 그대로 노출됐다.
- * key 는 "Bids" 같은 과거 경매 용어가 남아 있지만 화면에는 나오지 않는 내부 값이다.
  */
 type NavItem = {
   authRequired?: boolean;
@@ -39,7 +38,7 @@ type NavItem = {
  */
 const navItems: NavItem[] = [
   { href: "/", key: "Home", label: "홈" },
-  { authRequired: true, href: "/profile/participations", key: "Bids", label: "참여 내역" },
+  { authRequired: true, href: "/profile/participations", key: "Participations", label: "참여 내역" },
   {
     authRequired: true,
     emphasized: true,
@@ -165,7 +164,7 @@ export function BottomNavigator({ activeLabel = "Home" }: BottomNavigatorProps) 
                   /* 알약 안에서는 키우지 않는다 — 채워진 36px 면을 글리프가 다 먹으면
                      알약이 아니라 뭉개진 사각형으로 보인다. */
                   <PlusIcon />
-                ) : item.key === "Bids" ? (
+                ) : item.key === "Participations" ? (
                   <BidIcon className={navIconClassName} />
                 ) : item.key === "Favorites" ? (
                   <HeartIcon className={navIconClassName} />
