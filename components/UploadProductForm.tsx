@@ -61,6 +61,7 @@ import type { IdolGroup } from "@/lib/mock-idol-directory";
 import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { HelpText } from "@/components/HelpText";
+import { PromiseCheck } from "@/components/PromiseCheck";
 
 type PhotoPreview = {
   file?: File;
@@ -776,6 +777,9 @@ export function UploadProductForm({
   const isStaffOpensAtShown = isStaffHost === true && !isEditMode;
   // 확인 전에 제출하면 운영진도 회원 API 로 나가 오픈 시각 없이 바로 열린 분철이 된다. 실패도 회원으로 보지 않는다.
   const isStaffHostUnknown = !isEditMode && isStaffHost === null;
+  // 개최 약속 체크는 회원 개최 등록에만 띄운다. 운영진 개최(운영진 API)와 수정에는 없다.
+  const isHostPromiseRequired = !isEditMode && isStaffHost === false;
+  const [isHostPromiseChecked, setIsHostPromiseChecked] = useState(false);
   const [description, setDescription] = useState("");
   const [openChatUrl, setOpenChatUrl] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -2150,7 +2154,7 @@ export function UploadProductForm({
   }
 
   function handleSubmit() {
-    if (isStaffHostUnknown) {
+    if (isStaffHostUnknown || (isHostPromiseRequired && !isHostPromiseChecked)) {
       return;
     }
 
@@ -3795,9 +3799,24 @@ export function UploadProductForm({
               )}
             </div>
 
+            {isHostPromiseRequired ? (
+              <PromiseCheck
+                checked={isHostPromiseChecked}
+                className="mt-8"
+                disabled={isSubmitPending}
+                message="분철을 진행하지 못하게 되었을 때는 운영진과 꼭 소통해 주세요."
+                onCheckedChange={setIsHostPromiseChecked}
+              />
+            ) : null}
             <button
-              className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60"
-              disabled={isSubmitPending || isStaffHostUnknown}
+              className={`${
+                isHostPromiseRequired ? "mt-4" : "mt-8"
+              } h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60`}
+              disabled={
+                isSubmitPending ||
+                isStaffHostUnknown ||
+                (isHostPromiseRequired && !isHostPromiseChecked)
+              }
               onClick={handleSubmit}
               type="button"
             >
