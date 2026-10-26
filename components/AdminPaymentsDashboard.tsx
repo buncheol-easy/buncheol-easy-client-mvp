@@ -38,6 +38,7 @@ import {
   writeAdminAccessToken,
 } from "@/lib/admin-auth-store";
 import { FEATURES } from "@/lib/feature-flags";
+import { AdminBuncheolCancelSection } from "@/components/AdminBuncheolCancelSection";
 import { AdminParticipationCodeSection } from "@/components/AdminParticipationCodeSection";
 import { AdminShippingFeePaybackSection } from "@/components/AdminShippingFeePaybackSection";
 
@@ -989,7 +990,7 @@ export function AdminPaymentsDashboard() {
   const [records, setRecords] = useState<AdminPaymentRecord[]>([]);
   const [summary, setSummary] = useState<AdminPaymentSummary | null>(null);
   const [dashboardMode, setDashboardMode] = useState<
-    "payments" | "payback" | "codes"
+    "payments" | "payback" | "codes" | "cancel"
   >("payments");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -1452,6 +1453,7 @@ export function AdminPaymentsDashboard() {
                 ? ([{ key: "payback", label: "배송비 돌려받기" }] as const)
                 : []),
               { key: "codes", label: "서포터즈 참여코드 발급" },
+              { key: "cancel", label: "분철 파기" },
             ] as const
           ).map((tab) => (
             <button
@@ -1472,6 +1474,10 @@ export function AdminPaymentsDashboard() {
 
         {dashboardMode === "codes" ? (
           <AdminParticipationCodeSection
+            onSessionExpired={handleSessionExpired}
+          />
+        ) : dashboardMode === "cancel" ? (
+          <AdminBuncheolCancelSection
             onSessionExpired={handleSessionExpired}
           />
         ) : dashboardMode === "payback" && FEATURES.shippingFeePayback ? (
