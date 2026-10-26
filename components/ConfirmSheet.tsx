@@ -6,6 +6,8 @@ import { HelpText } from "@/components/HelpText";
 export type ConfirmSheetDetail = {
   label: string;
   value: string;
+  // 라벨 옆 강조 칩. 같은 목록 안에서 먼저 봐야 할 줄(예: 「보냈어요」를 누른 참여자)을 가린다.
+  badge?: string;
 };
 
 export type ConfirmSheetRequest = {
@@ -14,6 +16,8 @@ export type ConfirmSheetRequest = {
   description?: string;
   // 라벨-값 목록. 되돌릴 수 없는 액션 직전에 "무엇을 확정하는지" 를 다시 보여주는 자리다.
   details?: ConfirmSheetDetail[];
+  // 목록 위 작은 제목(예: 「빠지는 멤버」). 없으면 목록만 그린다.
+  detailsTitle?: string;
   onConfirm: () => void;
   title: string;
   // 강조 경고. 마지막 줄만 굵게 — 되돌릴 수 없다는 사실이 목록에 묻히면 안 된다.
@@ -120,15 +124,29 @@ export function ConfirmSheet({
         {request.description ? (
           <HelpText className="mt-2">{request.description}</HelpText>
         ) : null}
+        {request.details?.length && request.detailsTitle ? (
+          <p className="mt-4 text-[12px] font-semibold text-black/45">
+            {request.detailsTitle}
+          </p>
+        ) : null}
         {request.details?.length ? (
-          <dl className="mt-4 space-y-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5">
+          <dl
+            className={`${
+              request.detailsTitle ? "mt-1.5" : "mt-4"
+            } space-y-2 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3.5`}
+          >
             {request.details.map((detail, index) => (
               <div
                 className="flex items-baseline justify-between gap-3"
                 key={`${detail.label}-${index}`}
               >
-                <dt className="shrink-0 text-[12px] font-medium text-black/40">
+                <dt className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-black/40">
                   {detail.label}
+                  {detail.badge ? (
+                    <span className="rounded-full bg-[#D7FF5F] px-2 py-0.5 text-[11px] font-semibold text-black">
+                      {detail.badge}
+                    </span>
+                  ) : null}
                 </dt>
                 <dd className="min-w-0 break-words text-right text-[13px] font-semibold tracking-[-0.03em]">
                   {detail.value}

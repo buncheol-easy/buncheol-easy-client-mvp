@@ -10,15 +10,15 @@ import {
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { HelpText } from "@/components/HelpText";
+import { StaffContactLink } from "@/components/StaffContactLink";
 import { useAppToast } from "@/components/Toast";
 import {
   addBuncheolMember,
   ApiRequestError,
-  confirmBuncheolRecruitment,
-  finalizeBuncheolCollected,
+  BUNCHEOL_CONFIRM_LIST_CHANGED_CODE,
+  confirmBuncheol,
   confirmBundlePayment,
   isSyntheticParticipantName,
-  releaseBundle,
   removeBuncheolMember,
   requestBuncheolDetail,
   requestBuncheolManagement,
@@ -32,14 +32,17 @@ import {
   type BuncheolManagementOption,
   type BuncheolManagementParticipant,
   type BuncheolManagementWinner,
+  type ConfirmCancelParticipation,
 } from "@/lib/auth-api";
 import {
   getDeliveryStatusLabel as getCentralDeliveryStatusLabel,
   getFlowType,
   getHostedBuncheolStatusBadge,
   isBuncheolCancelledStatus,
+  isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
+  isConfirmCheckReady,
   isDeliveryShippingStatus,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
@@ -247,7 +250,7 @@ export type ManagementBundle = {
   slots: BuncheolManagementParticipant[];
 };
 
-// 활성 참여를 묶음으로 접는다. 묶음 = 이체 1회 · 택배 1개이고, 「제외」·입금확인이 그 단위로 돈다.
+// 활성 참여를 묶음으로 접는다. 묶음 = 이체 1회 · 택배 1개이고, 「보냈어요」·입금확인이 그 단위로 돈다.
 // 묶음이 없는 구 행은 자기 자신이 한 묶음이다.
 function getParticipantBundles(
   participants: BuncheolManagementParticipant[],
@@ -275,8 +278,6 @@ function getParticipantBundles(
   return order.map((key) => byKey.get(key)!);
 }
 
-// 「제외」가 왜 안 되는지. 버튼만 흐려 두면 개최자가 이유를 못 찾는다.
-// 판정은 서버 값(releasability)을 그대로 읽는다 — 화면이 재판정하면 서버 가드와 갈린다.
 // 파서 최종 폴백이 리터럴 "멤버" 라, 그대로 찍으면 칩에 "멤버" 가 뜬다.
 function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   const name = slot.memberName?.trim();
@@ -284,32 +285,10 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
 
-// 묶음 id 가 없으면 「입금 확인」도 「제외」도 서버에 보낼 수 없다. 되돌릴 수 없다고 묻는 시트를
-// 통과한 뒤 실패하지 않게, 두 버튼을 막고 이 문구를 미리 보여 준다.
+// 묶음 id 가 없으면 「입금 확인」을 서버에 보낼 수 없다. 되돌릴 수 없다고 묻는 시트를
+// 통과한 뒤 실패하지 않게, 버튼을 막고 이 문구를 미리 보여 준다.
 const MISSING_BUNDLE_MESSAGE =
   "묶음 정보가 없어 이 참여를 처리할 수 없어요. 고객센터로 문의해 주세요.";
-
-// ⚠️ 인자를 optional 로 두지 않는다. undefined 를 받으면 호출부가 「막힌 자리 없음」을 넘겨도
-// default 문구가 뜬다. null 은 서버가 판정을 못 준 경우(구 응답·미연결 행)라 받아야 한다.
-function getReleaseBlockedReason(releasability: string | null) {
-  switch (releasability) {
-    case "RECRUITING":
-      return "모집 중에는 뺄 수 없어요.";
-    case "BEFORE_DUE":
-      return "입금 기한이 지나야 뺄 수 있어요.";
-    case "HAS_CONFIRMED":
-      return "입금 확인된 자리가 있어 뺄 수 없어요.";
-    case "ALREADY_CLOSED":
-      return "이미 정리된 참여예요.";
-    // 호출부가 막힌 자리가 있을 때만 부르므로 지금은 도달하지 않는다. 방어용으로 남긴다 —
-    // 다른 호출부가 생겼을 때 RELEASABLE 이 default 문구로 떨어지면 이 PR 의 버그가 재발한다.
-    case "RELEASABLE":
-      return null;
-    // 판정이 없는 구 응답 — 버튼은 흐려 두되 사유를 단정하지 않는다.
-    default:
-      return "지금은 뺄 수 없어요.";
-  }
-}
 
 function getParticipantsByOptionId(
   participants: BuncheolManagementParticipant[],
@@ -405,14 +384,10 @@ function getManagementOptionsFromDetail(
 }
 
 // 서버 Buncheol.acceptsNewParticipation 과 같은 술어 — 자리 빼기·넣기는 이 구간에서만 통한다(아니면 BCH-060).
-// 유예(마감 지난 모집 중)에는 서버가 빈 자리를 전부 CLOSED 로 내려 개최자가 닫은 자리와 구분할 수 없다.
+// 마감이 지난 모집 중(스케줄러가 넘기기 전)에는 서버가 빈 자리를 전부 CLOSED 로 내려 개최자가 닫은 자리와 구분할 수 없다.
 function isAcceptingNewParticipation(detail: BuncheolManagementDetail) {
   if (getFlowType(detail.flowType) !== "C2C") {
     return false;
-  }
-
-  if (isBuncheolPaymentCollectingStatus(detail.status)) {
-    return true;
   }
 
   return (
@@ -551,7 +526,7 @@ export function HostedBuncheolManage({
   const [deliveryStates, setDeliveryStates] = useState<
     Record<string, DeliveryState>
   >({});
-  // C2C 액션(성사 확정·부분 확정·입금확인·제외·운송장) 진행 중 식별자 — 중복 호출 방지.
+  // C2C 액션(진행 확정·입금확인·운송장·자리 편집) 진행 중 식별자 — 중복 호출 방지.
   const [pendingC2CAction, setPendingC2CAction] = useState<string | null>(null);
   // 되돌리기 어려운 액션의 확인 요청 — 인앱 브라우저 confirm 억제 대응 (ConfirmSheet).
   const [confirmSheetRequest, setConfirmSheetRequest] =
@@ -664,10 +639,9 @@ export function HostedBuncheolManage({
   const refundTargetParticipants = cancelledParticipants.filter((participant) =>
     Boolean(participant.confirmedAt),
   );
-  // 🔴 「보냈어요」만 하고 확인 전에 빠진 건을 <b>따로 센다</b>. 이걸 「금액 없음」에 섞으면
-  // 개최자가 "환불할 금액이 없어요" 를 읽는데 실제로는 통장에 돈이 있을 수 있다 —
-  // 「제외」가 기한 뒤에만 열리는 이유가 "이체가 통장에 늦게 찍히는 일이 흔해서" 다.
-  // 계좌를 못 보여주는 것과 존재 자체를 부정하는 것은 다르다.
+  // 🔴 「보냈어요」만 하고 확인 전에 빠진 건(진행 확정 때 빠진 사람 등)을 <b>따로 센다</b>. 이걸 「금액 없음」에
+  // 섞으면 개최자가 "환불할 금액이 없어요" 를 읽는데 실제로는 통장에 돈이 있을 수 있다 — 이체가 통장에
+  // 늦게 찍히는 일이 흔하다. 계좌를 못 보여주는 것과 존재 자체를 부정하는 것은 다르다.
   const sentButUnconfirmedCount = cancelledParticipants.filter(
     (participant) => !participant.confirmedAt && participant.paymentSentAt,
   ).length;
@@ -730,20 +704,19 @@ export function HostedBuncheolManage({
       isParticipationConfirmedStatus(participant.status) ||
       Boolean(participant.confirmedAt),
   ).length;
-  // 부분 확정은 미입금 활성 참여(입금 대기·보냈어요)가 0일 때만 가능하다 (docs/46 §4.7-E1).
-  const c2cUnpaidActiveCount = c2cAwaitingCount + c2cPaymentSentCount;
-  // 서버 CAS(confirmIfAllCollected)와 같은 조건 — 이때만 부분 확정 버튼을 노출한다 (docs/56 H-12).
-  const canFinalizeCollected =
-    c2cUnpaidActiveCount === 0 && c2cConfirmedCount > 0;
+  // 진행 확정 버튼은 서버 판정만 본다. 옛 서버라 값이 없으면 꺼 둔다.
+  const canConfirmBuncheol = isConfirmCheckReady(detail?.confirmCheck);
+  // 회원 개최 배송은 진행 확정 때 생기고 운송장도 그 뒤에만 받는다(서버 DLV-009). 옛 서버가 입금 확인 때
+  // 만들어 둔 배송이 입금 수집 중 분철에 남아 있어도 운송장 칸을 열지 않는다.
+  const isC2CShippingOpen = isBuncheolConfirmedStatus(detail?.status);
   // 🔴 배송 집계는 <b>배송 단위</b>다. 참여 단위로 세면 한 묶음의 두 슬롯이 같은 배송을 물고 있을 때
   // 목록에는 운송장 입력칸이 1개인데 "운송장 대기 2건" 으로 뜬다. deliveryId 로 중복을 제거한다.
-  // 배송 스냅샷은 입금확인 시점에 생긴다(서버 DeliverySnapshotCreator). 방어적으로 확인된 건만 센다.
   const c2cDeliveries = new Map<
     string,
     { confirmed: boolean; trackingNumber?: string | null }
   >();
 
-  for (const participant of activeC2CParticipants) {
+  for (const participant of isC2CShippingOpen ? activeC2CParticipants : []) {
     const deliveryId = participant.delivery?.deliveryId;
 
     if (!deliveryId) {
@@ -892,6 +865,8 @@ export function HostedBuncheolManage({
     const nextDetail = await requestHostedBuncheolManagement(accessToken, id);
 
     setDetail(nextDetail);
+
+    return nextDetail;
   }
 
   function openOpenChatUrlSheet() {
@@ -949,100 +924,114 @@ export function HostedBuncheolManage({
     }
   }
 
-  // C2C 성사 확정 — 신청 전원을 입금 대기(24h)로 일괄 전이 + 입금 안내 알림톡 발송.
-  // 정원 미달은 개최자 재량 확정 허용, 미달 경고 후 재확인만 (docs/46 §7.1-2).
-  function requestConfirmRecruitment() {
-    if (!detail || pendingC2CAction) {
-      return;
-    }
+  // 진행 확정 시트. 빠질 참여는 지금 화면이 가진 관리 응답에서 고르고, 요청 본문도 시트에 보여 준
+  // 그 목록을 그대로 보낸다. 서버가 상태까지 대조해 그 사이 바뀌었으면 409(BCH-127)로 거절한다.
+  function openConfirmBuncheolSheet(targetDetail: BuncheolManagementDetail) {
+    const activeParticipants = targetDetail.participants.filter(
+      (participant) => !isParticipationCancelledStatus(participant.status),
+    );
+    const leavingParticipants = activeParticipants.filter(
+      (participant) =>
+        isParticipationAwaitingPaymentStatus(participant.status) ||
+        isParticipationPaymentSentStatus(participant.status),
+    );
+    const cancelParticipations: ConfirmCancelParticipation[] =
+      leavingParticipants.map((participant) => ({
+        participationId: participant.participationId,
+        status: isParticipationPaymentSentStatus(participant.status)
+          ? "PAYMENT_SENT"
+          : "AWAITING_PAYMENT",
+      }));
+    const leavingBundles = getParticipantBundles(leavingParticipants);
+    const hasSentBundle = leavingBundles.some((bundle) =>
+      bundle.slots.some((slot) => isParticipationPaymentSentStatus(slot.status)),
+    );
+    const staysCount = activeParticipants.length - leavingParticipants.length;
+    const onConfirm = () => {
+      setConfirmSheetRequest(null);
+      void runConfirmBuncheol(cancelParticipations);
+    };
 
-    // 확정으로 전이되는 대상은 APPLIED 뿐 — 화면 모수도 동일 기준으로 통일한다.
-    const applicantCount = c2cAppliedCount;
-
-    setConfirmSheetRequest({
-      confirmLabel: "성사 확정",
-      description: isUnderMinHeadcount
-        // 멤버 수와 신청자(사람)를 한 문장에 섞지 않는다 — 문장을 쪼개 단위 혼용 자체를 없앤다.
-        ? `최소 진행 멤버 수 ${minHeadcount}명을 아직 채우지 못했어요. 지금까지 신청된 멤버는 ${applicantCount}명이에요. 미달인 채로 확정하면 신청자 전원에게 입금 안내 알림톡이 발송돼요.`
-        : `지금까지 신청된 멤버는 ${applicantCount}명이에요. 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`,
-      onConfirm: () => {
-        setConfirmSheetRequest(null);
-        void runConfirmRecruitment();
-      },
-      title: "성사를 확정할까요?",
-    });
-  }
-
-  async function runConfirmRecruitment() {
-    if (pendingC2CAction) {
-      return;
-    }
-
-    setPendingC2CAction("confirm-recruitment");
-
-    try {
-      const accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
-        return;
-      }
-
-      await confirmBuncheolRecruitment(accessToken, id);
-
-      await reloadManagementDetail(accessToken);
-      showToast(
-        "성사를 확정했어요. 신청자 전원에게 입금 안내가 발송됐어요.",
-        "success",
-      );
-    } catch (error: unknown) {
-      showToast(
-        error instanceof Error
-          ? error.message
-          : "성사 확정을 처리하지 못했어요.",
-        "error",
-      );
-    } finally {
-      setPendingC2CAction(null);
-    }
-  }
-
-  // C2C 입금 수집 종료(부분 확정) — 입금 확인된 참여만으로 진행 확정 (docs/46 §7.1-6).
-  function requestFinalizeCollected() {
-    if (!detail || pendingC2CAction) {
+    if (leavingBundles.length === 0) {
+      setConfirmSheetRequest({
+        confirmLabel: "진행 확정",
+        description: `입금이 확인된 멤버 ${staysCount}명으로 진행해요. 확정하면 참여자에게 진행 확정 알림톡이 가고, 운송장을 넣을 수 있어요.`,
+        onConfirm,
+        title: "분철 진행을 확정할까요?",
+        warnings: ["확정한 뒤에는 되돌릴 수 없어요."],
+      });
       return;
     }
 
     setConfirmSheetRequest({
       confirmLabel: "진행 확정",
-      description:
-        "입금이 확인된 참여만으로 분철을 진행해요. 확정 후에는 참여를 더 받을 수 없어요.",
-      onConfirm: () => {
-        setConfirmSheetRequest(null);
-        void runFinalizeCollected();
-      },
-      title: `입금된 멤버 ${c2cConfirmedCount}명으로 진행할까요?`,
+      description: `아래 멤버 ${leavingParticipants.length}명은 입금이 확인되지 않아 빠지고, 참여자에게 취소 알림톡이 가요.`,
+      details: leavingBundles.map((bundle) => {
+        const head = bundle.slots[0];
+        const total = bundle.slots.reduce((sum, slot) => sum + slot.amount, 0);
+
+        return {
+          badge: bundle.slots.some((slot) =>
+            isParticipationPaymentSentStatus(slot.status),
+          )
+            ? "보냈어요"
+            : undefined,
+          label: isSyntheticParticipantName(head.participantNickname)
+            ? getDepositorName(head)
+            : head.participantNickname,
+          value: `${bundle.slots.map(getSlotMemberLabel).join(", ")} · ${formatWonAmount(total)}`,
+        };
+      }),
+      detailsTitle: "빠지는 멤버",
+      onConfirm,
+      title: `입금된 멤버 ${staysCount}명으로 진행할까요?`,
+      warnings: [
+        ...(hasSentBundle
+          ? [
+              "「보냈어요」를 누른 참여자가 있어요. 통장에 입금이 들어왔다면 진행 확정 전에 「입금 확인」을 먼저 눌러 주세요.",
+            ]
+          : []),
+        "빠진 자리는 다시 모집하지 않아요. 확정한 뒤에는 되돌릴 수 없어요.",
+      ],
     });
   }
 
-  async function runFinalizeCollected() {
+  function requestConfirmBuncheol() {
+    if (!detail || pendingC2CAction || !canConfirmBuncheol) {
+      return;
+    }
+
+    openConfirmBuncheolSheet(detail);
+  }
+
+  async function runConfirmBuncheol(
+    cancelParticipations: ConfirmCancelParticipation[],
+  ) {
     if (pendingC2CAction) {
       return;
     }
 
-    setPendingC2CAction("finalize-collected");
+    setPendingC2CAction("confirm-buncheol");
+
+    let accessToken: string | null = null;
 
     try {
-      const accessToken = await getFreshAccessToken();
+      accessToken = await getFreshAccessToken();
 
       if (!accessToken) {
         showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
         return;
       }
 
-      await finalizeBuncheolCollected(accessToken, id);
-      await reloadManagementDetail(accessToken);
+      await confirmBuncheol(accessToken, id, cancelParticipations);
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확정이 실패로 보이지 않게.
       showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.", "success");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
     } catch (error: unknown) {
       showToast(
         error instanceof Error
@@ -1050,13 +1039,32 @@ export function HostedBuncheolManage({
           : "진행 확정을 처리하지 못했어요.",
         "error",
       );
+
+      if (!accessToken) {
+        return;
+      }
+
+      try {
+        const nextDetail = await reloadManagementDetail(accessToken);
+
+        // 목록이 바뀐 것뿐이면 새 목록으로 시트를 다시 띄워 바로 다시 확인하게 한다.
+        if (
+          error instanceof ApiRequestError &&
+          error.code === BUNCHEOL_CONFIRM_LIST_CHANGED_CODE &&
+          isConfirmCheckReady(nextDetail.confirmCheck)
+        ) {
+          openConfirmBuncheolSheet(nextDetail);
+        }
+      } catch {
+        // 실패 토스트가 이미 떠 있다.
+      }
     } finally {
       setPendingC2CAction(null);
     }
   }
 
-  // C2C 묶음 입금확인. 되돌릴 수 없고(참여가 CONFIRMED 로 확정되며 알림톡이 나간다) 전원 확인 시
-  // 분철까지 진행확정으로 넘어가므로 확인 시트를 태운다.
+  // C2C 묶음 입금확인. 되돌릴 수 없어(참여가 CONFIRMED 로 확정되며 알림톡이 나간다) 확인 시트를 태운다.
+  // 전원이 확인돼도 분철은 저절로 진행 확정되지 않는다 — 개최자가 진행 확정을 눌러야 한다.
   function requestConfirmBundlePayment(
     bundle: ManagementBundle,
     expectedSlotIds: string[],
@@ -1091,7 +1099,7 @@ export function HostedBuncheolManage({
   }
 
   // 묶음 입금확인 — all-or-nothing (docs/70 §5). 슬롯마다 확인하면 묶음 안 상태가 갈려
-  // 「제외」가 HAS_CONFIRMED 로 영구히 막히는 묶음이 남는다.
+  // 진행 확정 때 한 묶음의 일부 자리만 빠진다.
   async function runConfirmBundlePayment(
     bundle: ManagementBundle,
     expectedSlotIds: string[],
@@ -1135,81 +1143,7 @@ export function HostedBuncheolManage({
         "error",
       );
 
-      // 다른 탭에서 이미 확인·제외됐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
-      if (accessToken) {
-        try {
-          await reloadManagementDetail(accessToken);
-        } catch {
-          // 실패 토스트가 이미 떠 있다.
-        }
-      }
-    } finally {
-      setPendingC2CAction(null);
-    }
-  }
-
-  // 묶음 「제외」 — 입금 기한이 지난 미입금 참여를 개최자가 정리한다 (docs/71 §1·§8-1).
-  // C2C 는 자동 취소가 없어 이것이 유일한 출구다. 참여자는 기한 후 스스로 빠질 수 없다.
-  function requestReleaseBundle(bundle: ManagementBundle) {
-    if (pendingC2CAction) {
-      return;
-    }
-
-    const depositorName = getDepositorName(bundle.slots[0]);
-    const memberNames = bundle.slots.map(getSlotMemberLabel).join(", ");
-
-    setConfirmSheetRequest({
-      confirmLabel: "제외",
-      description: `${depositorName}님의 ${memberNames} 자리를 뺄까요? 참여자에게 취소 안내가 나가고, 그 자리는 다시 신청받을 수 있어요. 되돌릴 수 없어요.`,
-      onConfirm: () => {
-        setConfirmSheetRequest(null);
-        void runReleaseBundle(bundle);
-      },
-      title:
-        bundle.slots.length > 1
-          ? `멤버 ${bundle.slots.length}명을 함께 뺄까요?`
-          : "이 참여를 뺄까요?",
-    });
-  }
-
-  async function runReleaseBundle(bundle: ManagementBundle) {
-    if (pendingC2CAction) {
-      return;
-    }
-
-    if (!bundle.bundleId) {
-      showToast(MISSING_BUNDLE_MESSAGE, "error");
-      return;
-    }
-
-    setPendingC2CAction(`release:${bundle.key}`);
-
-    let accessToken: string | null = null;
-
-    try {
-      accessToken = await getFreshAccessToken();
-
-      if (!accessToken) {
-        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
-        return;
-      }
-
-      await releaseBundle(accessToken, bundle.bundleId);
-      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 제외가 실패로 보이지 않게.
-      showToast("참여를 뺐어요. 그 자리는 다시 신청받을 수 있어요.", "success");
-
-      try {
-        await reloadManagementDetail(accessToken);
-      } catch {
-        // 성공 알림을 그대로 둔다.
-      }
-    } catch (error: unknown) {
-      showToast(
-        error instanceof Error ? error.message : "참여를 빼지 못했어요.",
-        "error",
-      );
-
-      // 그사이 입금이 확인됐거나 다른 탭에서 뺐으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
+      // 다른 탭에서 이미 확인했거나 진행 확정했으면 서버가 거절한다 — 다시 불러와 지금 상태를 보여 준다.
       if (accessToken) {
         try {
           await reloadManagementDetail(accessToken);
@@ -1352,16 +1286,36 @@ export function HostedBuncheolManage({
     }
   }
 
-  // 서버는 모집 중에만 최소 인원을 남은 열린 자리 수로 낮춘다. 입금 수집 중엔 그대로고, 다시 넣어도 올리지 않는다.
+  // 서버는 빼는 순간 최소 인원을 남은 열린 자리 수로 낮추고(다시 넣어도 올리지 않는다), 남은 열린 자리가
+  // 모두 신청됐으면 같은 요청 안에서 입금 단계를 시작한다. 경고는 그 결과를 미리 알리는 것뿐이고,
+  // 실제로 시작됐는지는 빼고 난 관리 응답의 상태로 본다.
   function requestRemoveMemberSlot(option: BuncheolManagementOption) {
     if (!detail || pendingC2CAction) {
       return;
     }
 
     const nextOpenSlotCount = openMemberSlotCount - 1;
-    const lowersMinHeadcount =
-      isBuncheolRecruitingStatus(detail.status) &&
-      nextOpenSlotCount < minHeadcount;
+    const lowersMinHeadcount = nextOpenSlotCount < minHeadcount;
+    const nextMinHeadcount = Math.min(minHeadcount, nextOpenSlotCount);
+    const occupiedSlotCount = memberSlots.filter(
+      (slot) => getMemberSlotState(slot.saleStatus).kind === "occupied",
+    ).length;
+    const startsPayment =
+      occupiedSlotCount > 0 &&
+      occupiedSlotCount === nextOpenSlotCount &&
+      occupiedSlotCount >= nextMinHeadcount;
+    const warnings = [
+      ...(startsPayment
+        ? [
+            "이 멤버를 빼면 정원이 다 차서 바로 입금 단계가 시작돼요. 참여자에게 계좌가 안내돼요.",
+          ]
+        : []),
+      ...(lowersMinHeadcount
+        ? [
+            `최소 진행 멤버 수가 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
+          ]
+        : []),
+    ];
 
     setConfirmSheetRequest({
       confirmLabel: "빼기",
@@ -1372,11 +1326,7 @@ export function HostedBuncheolManage({
         void runRemoveMemberSlot(option);
       },
       title: `${option.memberName} 멤버를 뺄까요?`,
-      warnings: lowersMinHeadcount
-        ? [
-            `최소 진행 멤버 수가 ${minHeadcount}명에서 ${nextOpenSlotCount}명으로 줄어요. 다시 넣어도 늘지 않아요.`,
-          ]
-        : undefined,
+      warnings: warnings.length > 0 ? warnings : undefined,
     });
   }
 
@@ -1400,11 +1350,23 @@ export function HostedBuncheolManage({
       await removeBuncheolMember(accessToken, id, option.buncheolMemberId);
       // 홈·아티스트 카드의 멤버 칩이 60초 저장본으로 남지 않게 한다.
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
-      showToast(`${option.memberName} 멤버를 뺐어요.`, "success");
+
+      let nextDetail: BuncheolManagementDetail | null = null;
 
       try {
-        await reloadManagementDetail(accessToken);
+        nextDetail = await reloadManagementDetail(accessToken);
       } catch {
+        nextDetail = null;
+      }
+
+      showToast(
+        nextDetail && isBuncheolPaymentCollectingStatus(nextDetail.status)
+          ? `${option.memberName} 멤버를 뺐어요. 자리가 모두 차서 입금 단계가 시작됐어요.`
+          : `${option.memberName} 멤버를 뺐어요.`,
+        "success",
+      );
+
+      if (!nextDetail) {
         showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
       }
     } catch (error: unknown) {
@@ -1801,7 +1763,7 @@ export function HostedBuncheolManage({
 
           {/*
             오픈채팅 링크는 전체 수정(모집중 전용)과 달리 상태와 무관하게 여기서 고친다 —
-            링크가 가장 필요한 구간이 입금·문의가 몰리는 성사 확정 이후이기 때문이다.
+            링크가 가장 필요한 구간이 입금·문의가 몰리는 입금 단계 이후이기 때문이다.
             비어 있을 때 등록을 유도할 자리가 필요해 검정 카드 안이 아니라 독립 카드로 뒀다.
 
             C2C 전용이다 — 링크를 실제로 보여주는 세 화면(분철 상세·참여 내역·입금 안내 시트)이
@@ -1850,43 +1812,17 @@ export function HostedBuncheolManage({
           {isC2C && isBuncheolRecruitingStatus(detail.status) ? (
             <section className="mt-4 rounded-[1.05rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                성사 확정
+                모집이 끝나면
               </p>
-              <HelpText className="mt-1">
-                {`지금까지 신청된 멤버는 ${c2cAppliedCount}명이에요. 확정하면 신청자 전원에게 입금 계좌와 24시간 기한이 담긴 알림톡이 발송돼요.`}
-              </HelpText>
-              {/* 서버 자동 취소(BuncheolAutoCloseService)는 미달이면 마감 즉시, 최소를 채웠을 때만 마감+48시간
-                  (C2C_CONFIRM_GRACE)이다. 개최자에게는 이 문구가 유일한 안내라 미달 여부로 문장을 고른다. */}
+              {/* 미달이면 마감 때 서버가 자동으로 취소한다(BuncheolAutoCloseService). 개최자에게는 이 문구가 유일한 안내다. */}
               {isUnderMinHeadcount ? (
-                <HelpText className="mt-1.5">
-                  {c2cAppliedCount === 0
-                    ? "마감 때 신청된 멤버가 최소 진행 멤버 수보다 적으면 자동으로 취소돼요."
-                    : "마감 때 신청된 멤버가 최소 진행 멤버 수보다 적으면 자동으로 취소돼요. 미달이어도 진행하려면 마감 전에 성사 확정해 주세요."}
+                <HelpText className="mt-1">
+                  마감 때 신청된 멤버가 최소 진행 멤버 수보다 적으면 자동으로 취소돼요.
                 </HelpText>
-              ) : (
-                <HelpText className="mt-1.5">
-                  <span className="block">
-                    모집 기한이 지나고{" "}
-                    <span className="font-semibold text-black/80">2일(48시간)</span>{" "}
-                    안에 확정하지 않으면 분철이 자동으로 취소돼요.
-                  </span>
-                </HelpText>
-              )}
-              <button
-                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
-                disabled={c2cAppliedCount === 0 || pendingC2CAction !== null}
-                onClick={requestConfirmRecruitment}
-                type="button"
-              >
-                {pendingC2CAction === "confirm-recruitment"
-                  ? "확정하는 중"
-                  : "성사 확정하기"}
-              </button>
-              {c2cAppliedCount === 0 ? (
-                <p className="mt-2 text-[12px] font-medium text-black/40">
-                  신청자가 생기면 확정할 수 있어요.
-                </p>
               ) : null}
+              <HelpText className={isUnderMinHeadcount ? "mt-1.5" : "mt-1"}>
+                자리가 모두 차거나, 최소 진행 멤버 수를 채운 채 마감되면 입금 단계가 자동으로 시작돼요. 신청자 전원에게 입금 계좌와 24시간 기한이 알림톡으로 가요.
+              </HelpText>
             </section>
           ) : null}
 
@@ -1904,46 +1840,47 @@ export function HostedBuncheolManage({
               </div>
               <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
                 {/* ⚠️ 한 줄로 붙인다. 값 뒤에서 줄을 바꾸면 다음 텍스트 노드의 <b>선두 개행+들여쓰기가
-                    통째로 버려져</b> 공백이 사라진다("1명· 보냈어요"). 아래 진행 확정 보조 문장도 같은 이유다. */}
+                    통째로 버려져</b> 공백이 사라진다("1명· 보냈어요"). */}
                 {`입금 확인 멤버 ${c2cConfirmedCount}명 · 입금 대기 ${c2cAwaitingCount}명 · 보냈어요 ${c2cPaymentSentCount}명`}
               </p>
-              {/* 부분 확정은 미입금 활성 참여가 0이고 확정이 1건 이상일 때만 서버 CAS(confirmIfAllCollected)를
-                  통과한다. 전원 입금이면 입금확인 경로에서 자동으로 CONFIRMED 가 되므로, 이 버튼이 실제로
-                  필요한 것은 "입금 안 한 참여가 취소·제외로 정리된" 경우뿐이다. C2C 는 자동 만료가
-                  없어 개최자가 직접 정리해야 이 조건이 성립한다. 누를 수 없는 동안에도
-                  계속 보여서 개최자가 용도를 되묻게 됐으므로(docs/56 H-12) 조건이 맞을 때만 노출한다.
-                  위 성사 확정 섹션이 disabled 유지인 것과 정책이 다른 이유: 성사 확정은 "신청자가 생기면
-                  누르게 될 버튼"이라 자리를 예고하는 값이 있지만, 부분 확정은 정상 진행(전원 입금 → 자동
-                  확정)에서는 끝까지 쓸 일이 없는 예외 경로라 평소에는 존재 자체가 질문거리가 된다. */}
-              {canFinalizeCollected ? (
-                <>
-                  {/* 라벨은 "빼고"처럼 제외를 단정하지 않는다 — 최소 인원 미달 등으로 자동 CAS 가 돌지
-                      않아 전원 입금 상태에서 이 버튼을 보게 되는 경우도 있다. 확인 시트 제목과 같은 문장. */}
-                  <button
-                    className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
-                    disabled={pendingC2CAction !== null}
-                    onClick={requestFinalizeCollected}
-                    type="button"
-                  >
-                    {pendingC2CAction === "finalize-collected"
-                      ? "확정하는 중"
-                      : `입금된 멤버 ${c2cConfirmedCount}명으로 진행 확정`}
-                  </button>
-                  <HelpText className="mt-2">
-                    {`입금을 기다리는 참여가 더 없어요. 확정하면 입금된 멤버 ${c2cConfirmedCount}명으로 분철을 진행해요.`}
-                  </HelpText>
-                </>
-              ) : c2cUnpaidActiveCount > 0 ? (
+              <button
+                className="mt-3 h-12 w-full rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F] disabled:bg-black/15 disabled:text-black/35"
+                disabled={!canConfirmBuncheol || pendingC2CAction !== null}
+                onClick={requestConfirmBuncheol}
+                type="button"
+              >
+                {pendingC2CAction === "confirm-buncheol"
+                  ? "확정하는 중"
+                  : detail.confirmCheck === "DUE_PASSED"
+                    ? `입금된 멤버 ${c2cConfirmedCount}명으로 진행 확정`
+                    : "진행 확정하기"}
+              </button>
+              {detail.confirmCheck === "ALL_PAID" ? (
                 <HelpText className="mt-2">
-                  입금을 확인하거나, 기한이 지난 미입금 참여를 직접 정리하면
-                  입금된 멤버만으로 진행을 확정할 수 있어요.
+                  모든 참여자의 입금이 확인됐어요
+                </HelpText>
+              ) : detail.confirmCheck === "DUE_PASSED" ? (
+                <HelpText className="mt-2">
+                  입금 기한이 지났어요. 확인된 참여자로 진행하거나 운영진에게 알려 주세요
                 </HelpText>
               ) : (
-                <HelpText className="mt-2">
-                  입금 확인된 참여가 아직 없어요. 적어도 멤버 1명의 입금을
-                  확인해야 진행을 확정할 수 있어요.
-                </HelpText>
+                <>
+                  <HelpText className="mt-2">
+                    참여자 전원의 입금이 확인되면 분철 진행 확정을 할 수 있어요. 입금 기한이 지나면 입금 확인이 된 참여자들로만 분철을 진행하거나, 분철을 파기할 수 있어요. *이 경우 운영진에게 문의 필요
+                  </HelpText>
+                  {/* NO_CONFIRMED 는 기한 전후를 가리지 않아, 기한이 지났는지는 표시용으로만 입금 기한을 본다. */}
+                  {detail.confirmCheck === "NO_CONFIRMED" &&
+                  isPastDateTime(detail.paymentDueAt ?? undefined) ? (
+                    <HelpText className="mt-1.5">
+                      입금이 확인된 참여자가 없어 진행 확정을 할 수 없어요. 아래 「운영진에게 알리기」로 알려 주세요.
+                    </HelpText>
+                  ) : null}
+                </>
               )}
+              <StaffContactLink
+                className="mt-3 border-t border-black/[0.06] pt-3"
+                description="진행이 어렵다면 운영진에게 알려 주세요. 입금한 참여자와 환불 계획을 함께 확인한 뒤 운영진이 분철을 파기해요."
+              />
             </section>
           ) : null}
 
@@ -2026,7 +1963,7 @@ export function HostedBuncheolManage({
           {/* 입금 확인된 취소 참여는 활성 목록에서 빠져 환불 계좌에 닿을 길이 없어진다. C2C 전용이다 —
               LEGACY 는 환불 주체가 플랫폼이라 개최자에게 계좌를 보여주면 없는 의무를 만든다.
               ⚠️ 노출 조건: 보여줄 게 있을 때만 — 환불 대상 또는 「보냈어요」 미확인 건.
-              cancelledParticipants 전체로 열면 흔한 경우(신청 취소·제외뿐)에 「0건」 헤더와
+              cancelledParticipants 전체로 열면 흔한 경우(신청 취소뿐)에 「0건」 헤더와
               "아래 계좌로 환불해 주세요" 만 있는 빈 껍데기가 뜬다. refundTargetParticipants 로만
               좁히면 취소분이 전부 「보냈어요만」일 때 섹션째 사라져 안내조차 안 나온다. */}
           {isC2C &&
@@ -2110,7 +2047,7 @@ export function HostedBuncheolManage({
                   "여기에 표시돼요"로 쓰면 안 된다 — 바뀌는 것은 존재가 아니라 상태다. */}
               <HelpText className="mt-1">
                 {isC2C
-                  ? "참여자가 송금 후 '보냈어요'를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요. 입금 기한이 지난 참여는 '제외'로 정리할 수 있어요."
+                  ? "참여자가 송금 후 「보냈어요」를 누르면 상태가 바뀌어요. 입금자명으로 통장 내역과 맞춰 확인해 주세요."
                   : "멤버마다 입금 확인 → 운송장 등록 순서로 처리해요."}
               </HelpText>
             </div>
@@ -2133,7 +2070,7 @@ export function HostedBuncheolManage({
                   아직 신청한 참여자가 없어요.
                 </p>
               ) : isC2C ? (
-                // 🔴 C2C 는 <b>묶음</b> 단위로 보여준다 — 「제외」·입금확인이 묶음 API 하나뿐이라,
+                // 🔴 C2C 는 <b>묶음</b> 단위로 보여준다 — 입금확인이 묶음 API 하나뿐이라,
                 // 멤버 자리 줄에 버튼을 달면 "한 줄을 눌렀는데 그 사람 자리가 전부 빠지는" 화면이 된다.
                 // 대신 자리 축(누가 남았나)이 흐려지므로 줄 안에 멤버명을 칩으로 나열한다 (docs/84 §3-5).
                 c2cBundles.map((bundle) => {
@@ -2164,26 +2101,9 @@ export function HostedBuncheolManage({
                           isParticipationPaymentSentStatus(slot.status),
                     )
                     .map((slot) => slot.participationId);
-                  // 슬롯마다 내려오는 값이라 전부 같아야 정상이지만, 갈리는 순간 "버튼은 열렸는데
-                  // 409" 가 된다 — 전원이 RELEASABLE 일 때만 연다. 사유는 막힌 슬롯의 것을 쓴다.
-                  const blockedSlot = bundle.slots.find(
-                    (slot) => slot.releasability !== "RELEASABLE",
-                  );
                   const hasBundleId = Boolean(bundle.bundleId);
-                  const canRelease = !blockedSlot && hasBundleId;
-                  // 🔴 막힌 자리가 있을 때만 사유를 만든다 — 「막힌 자리 없음」과 「판정값 없음」이
-                  // 둘 다 undefined 라, 그냥 넘기면 제외 가능한 묶음에도 default 문구가 붙는다.
-                  const blockedReason = !hasBundleId
-                    ? MISSING_BUNDLE_MESSAGE
-                    : blockedSlot
-                      ? // 슬롯 필드는 optional 이라 undefined 가 올 수 있다. 「판정값 없음」은
-                        // null 로 명시해 넘긴다 — 그게 default 문구가 나와야 하는 유일한 경우다.
-                        getReleaseBlockedReason(blockedSlot.releasability ?? null)
-                      : null;
                   const isBundleConfirming =
                     pendingC2CAction === `confirm:${bundle.key}`;
-                  const isBundleReleasing =
-                    pendingC2CAction === `release:${bundle.key}`;
                   const bundleTotal = bundle.slots.reduce(
                     (sum, slot) => sum + slot.amount,
                     0,
@@ -2207,13 +2127,10 @@ export function HostedBuncheolManage({
                     ownerId: string;
                   }[] = [];
 
-                  for (const slot of bundle.slots) {
-                    // 배송 스냅샷은 입금확인 시점에 생긴다(서버 DeliverySnapshotCreator).
-                    // 🔴 이 isSlotConfirmed 필터가 아래 운송장 입력칸의 게이트를 대신한다 — 분철 확정
-                    // 게이트(#183)를 뗀 뒤 「입금확인된 자리만 운송장을 받는다」는 규칙은 여기 한 곳이
-                    // 지킨다. 이 조건을 완화하면 미확인 자리에 입력칸이 열린다.
-                    // 판정은 묶음 전체가 아니라 배송을 문 슬롯 기준 — 전체로 보면 부분 확정 묶음에서
-                    // 이미 확정된 자리의 운송장 입력칸까지 사라진다.
+                  for (const slot of isC2CShippingOpen ? bundle.slots : []) {
+                    // 🔴 운송장 입력칸의 게이트는 둘이다 — 분철 진행 확정(isC2CShippingOpen, 서버 DLV-009)과
+                    // 입금확인된 자리(isSlotConfirmed). 진행 확정 때 빠진 자리는 취소로 활성 목록에서 빠지지만,
+                    // 옛 데이터에서 자리마다 상태가 갈린 묶음이 있어 자리 기준 필터를 남긴다.
                     const isSlotConfirmed =
                       isParticipationConfirmedStatus(slot.status) ||
                       Boolean(slot.confirmedAt);
@@ -2315,29 +2232,15 @@ export function HostedBuncheolManage({
                         ))}
                       </div>
 
-                      {/* 상태 화이트리스트로 게이트하면 모르는 status(제외 직후 서버가 새 값을 주는 등)에서
-                          버튼이 0개인 유령 줄이 남는다. 실제로 할 수 있는 것이 하나라도 있으면 연다. */}
-                      {!isBundleConfirmed &&
-                      (canRelease ||
-                        blockedReason ||
-                        confirmTargetIds.length > 0) ? (
+                      {/* 상태 화이트리스트로 게이트하면 모르는 status 에서 버튼이 0개인 유령 줄이 남는다.
+                          서버가 입금확인 대상으로 내려 준 자리가 있을 때만 연다. */}
+                      {!isBundleConfirmed && confirmTargetIds.length > 0 ? (
                         <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                          {/* 「제외」는 입금 기한이 지난 뒤에만 열린다 — 이체가 통장에 늦게 찍히는
-                              일이 흔해, 기한 안에 뺄 수 있게 하면 정상 입금자를 빼는 사고가 난다
-                              (docs/71 §8-1). 버튼을 감추지 않고 사유를 보여준다. */}
-                          {blockedReason ? (
+                          {hasBundleId ? null : (
                             <HelpText className="mr-auto" size="caption">
-                              {blockedReason}
+                              {MISSING_BUNDLE_MESSAGE}
                             </HelpText>
-                          ) : null}
-                          <button
-                            className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
-                            disabled={!canRelease || pendingC2CAction !== null}
-                            onClick={() => requestReleaseBundle(bundle)}
-                            type="button"
-                          >
-                            {isBundleReleasing ? "빼는 중" : "제외"}
-                          </button>
+                          )}
                           {confirmTargetIds.length > 0 ? (
                             <button
                               className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
@@ -2361,8 +2264,6 @@ export function HostedBuncheolManage({
                       {bundleDeliveries.length > 0 ? (
                         <div className="mt-3 space-y-3 border-t border-black/[0.06] pt-3">
                           {bundleDeliveries.map((entry) => {
-                            // 분철 확정 게이트 없음 — 입금확인 판정은 위 isSlotConfirmed
-                            // 필터가 대신한다(#183). 서버도 같은 축(자리 CONFIRMED)만 본다.
                             const hasTracking = Boolean(
                               entry.delivery.trackingNumber,
                             );

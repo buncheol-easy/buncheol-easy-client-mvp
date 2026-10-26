@@ -37,11 +37,32 @@ export function isBuncheolConfirmedStatus(status: string | null | undefined) {
   return normalizeStatusValue(status) === "CONFIRMED";
 }
 
-// C2C 입금 수집 중 — 개최자 성사 확정 후 전원 입금확인 전 구간 (docs/46 §1.2).
+// C2C 입금 수집 중 — 입금 단계가 저절로 시작된 뒤 개최자가 진행 확정하기 전 구간.
 export function isBuncheolPaymentCollectingStatus(
   status: string | null | undefined,
 ) {
   return normalizeStatusValue(status) === "PAYMENT_COLLECTING";
+}
+
+// 진행 확정 버튼 판정. 서버(관리 응답·개최 목록)가 같은 판정으로 내려 주는 값이라 화면은 다시 계산하지 않는다.
+// 입금 수집 중이 아니거나 옛 서버라 값이 없으면 null.
+export type ConfirmCheck = "ALL_PAID" | "DUE_PASSED" | "BEFORE_DUE" | "NO_CONFIRMED";
+
+const CONFIRM_CHECKS: readonly ConfirmCheck[] = [
+  "ALL_PAID",
+  "DUE_PASSED",
+  "BEFORE_DUE",
+  "NO_CONFIRMED",
+];
+
+export function toConfirmCheck(value: string | null | undefined): ConfirmCheck | null {
+  const normalizedValue = normalizeStatusValue(value);
+
+  return CONFIRM_CHECKS.find((check) => check === normalizedValue) ?? null;
+}
+
+export function isConfirmCheckReady(check: ConfirmCheck | null | undefined) {
+  return check === "ALL_PAID" || check === "DUE_PASSED";
 }
 
 // 상태 필드가 없는 구 응답·목업은 모집중으로 취급한다.

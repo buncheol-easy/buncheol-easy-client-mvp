@@ -13,6 +13,8 @@ import { FEATURES } from "@/lib/feature-flags";
 import {
   getBuncheolStatusBadgeLabel,
   isParticipationCancelledStatus,
+  toConfirmCheck,
+  type ConfirmCheck,
 } from "@/lib/buncheol-states";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
 
@@ -187,7 +189,7 @@ export type UpdateBuncheolRequest = {
 export type ParticipateBuncheolRequest = {
   buncheolMemberId: number;
   // 자리를 여러 개 한 번에 잡을 때. 서버는 배열이 있으면 배열을 쓰고 단수는 무시한다.
-  // C2C 모집중 전용 — 성사 확정 뒤 추가 모집에 보내면 409(BCH-060)다.
+  // C2C 모집중 전용 — 입금 단계가 시작된 뒤 보내면 409(BCH-060)다.
   buncheolMemberIds?: number[];
   shippingAddressId: number;
   participationCode?: string | null;
@@ -430,12 +432,8 @@ export type BuncheolManagementParticipant = {
   paymentSentAt?: string | null;
   refundAccount?: BankAccountInfo | null;
   status: string;
-  // 소속 묶음 = 이체 1회 · 택배 1개. 「제외」·입금확인이 이 단위로 돈다.
+  // 소속 묶음 = 이체 1회 · 택배 1개. 「보냈어요」·입금확인이 이 단위로 돈다.
   bundleId?: string | null;
-  // 🔴 판정은 서버가 값으로 내려준다. 화면이 상태로 재판정하면 서버 가드와 갈려
-  // "버튼은 있는데 눌러도 409" 가 생긴다 (docs/82 §4-3).
-  // RELEASABLE | RECRUITING | BEFORE_DUE | HAS_CONFIRMED | ALREADY_CLOSED
-  releasability?: string | null;
   // 이 슬롯이 묶음 입금확인의 대상인가. confirm 요청의 expectedSlotIds 는 이 값이 true 인
   // 슬롯만 담아야 한다 — 아니면 409(BCH-115)가 영구히 난다.
   confirmTarget?: boolean | null;
@@ -460,6 +458,8 @@ export type BuncheolManagementDetail = {
   // 취소된 참여(환불 계좌 확인용). participants 와 분리해 받는다 —
   // 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
   cancelledParticipants: BuncheolManagementParticipant[];
+  // 진행 확정 버튼 판정(서버 ConfirmCheck). ALL_PAID·DUE_PASSED 일 때만 버튼을 켠다. 옛 서버면 null.
+  confirmCheck: ConfirmCheck | null;
   confirmedCount?: number;
   deadline: string;
   // 개최 목록(MyHostedBuncheol.ended)과 같은 서버 판정. 구 응답이면 null.
@@ -475,7 +475,7 @@ export type BuncheolManagementDetail = {
   optionCount: number;
   options: BuncheolManagementOption[];
   participants: BuncheolManagementParticipant[];
-  // C2C 일괄 입금 기한 — 성사 확정 시 산정 (docs/46 §4.1).
+  // C2C 일괄 입금 기한 — 입금 단계가 시작될 때 산정된다.
   paymentDueAt?: string | null;
   purchaseSite?: string;
   status: BuncheolStatus;
@@ -499,8 +499,8 @@ export type ShippingFeePaybackInfo = {
 
 export type MyParticipation = {
   bidAmount: number;
-  // 소속 묶음 = 이체 1회 · 택배 1개의 단위. 「보냈어요」·입금확인·「제외」가 전부 이 단위로 돈다.
-  // 같은 분철에서 자리를 여러 개 잡으면 한 묶음이고, 성사 확정 뒤 추가로 잡으면 별개 묶음이다.
+  // 소속 묶음 = 이체 1회 · 택배 1개의 단위. 「보냈어요」·입금확인이 이 단위로 돈다.
+  // 같은 분철에서 자리를 여러 개 잡으면 한 묶음이다.
   bundleId?: string | null;
   buncheolDeadline: string;
   buncheolId: string;
@@ -510,9 +510,13 @@ export type MyParticipation = {
   buncheolTitle: string;
   cancelReason?: string | null;
   // 서버가 취소 API 게이트와 같은 판정으로 내려주는 취소 가능 여부·사유 (docs/56 S-1).
-  // CANCELLABLE | BLOCKED_BY_STATUS | FLOW_NOT_SUPPORTED | BLOCKED_BY_HOST_CONFIRM.
+  // CANCELLABLE | BLOCKED_BY_STATUS | FLOW_NOT_SUPPORTED. 자발 취소는 신청(APPLIED)에서만 된다.
   // 필드가 없는 구 응답이면 null — 화면은 취소 버튼을 남기는 쪽으로 폴백한다.
   cancellability?: string | null;
+  // 그 분철의 입금 확인 자리 수·살아 있는 자리 수(입금 현황 "N자리 중 M자리 입금 확인").
+  // 입금 수집 중 분철만 값이 오고, 아니거나 옛 서버면 null.
+  confirmedSlotCount?: number | null;
+  activeSlotCount?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
   thumbnailUrl?: string;
@@ -548,9 +552,11 @@ export type MyParticipation = {
 export type MyHostedBuncheol = BuncheolSummary & {
   activeParticipationCount: number;
   // 서버가 취소 API 게이트·CAS 와 같은 판정으로 내려주는 개최자 취소 가능 여부·사유 (docs/56 S-2).
-  // CANCELLABLE | BLOCKED_BY_STATUS | BLOCKED_BY_CONFIRMED_PAYMENT.
+  // CANCELLABLE | BLOCKED_BY_STATUS | NEEDS_STAFF(입금 수집 중 — 운영진과 함께 접는다).
   // 필드가 없는 구 응답이면 null — 화면은 삭제 버튼을 남기는 쪽으로 폴백한다.
   cancellability?: string | null;
+  // 관리 응답과 같은 서버 판정. ALL_PAID·DUE_PASSED 면 카드에 「진행 확정해 주세요」를 띄운다.
+  confirmCheck: ConfirmCheck | null;
   createdAt: string;
   // 서버 판정 — 진행확정이고 확정 참여 전원의 택배가 편의점에 도착했으면 true. 진행확정이 아니면 늘 false.
   // 필드가 없는 구 응답이면 null — 개최 목록 탭은 기존 규칙으로 폴백한다.
@@ -710,6 +716,24 @@ async function parseErrorMessage(response: Response) {
       getFirstNonEmptyString(response.statusText) || DEFAULT_ERROR_MESSAGE
     );
   }
+}
+
+// 서버 오류 코드(BCH-xxx)로 갈라야 하는 요청용. 메시지 규칙은 parseErrorMessage 와 같다.
+async function readApiRequestError(response: Response) {
+  const parsedBody: unknown = await readJsonBody(response);
+  const errorBody = isRecord(parsedBody) ? parsedBody : null;
+  const errorMessage =
+    getFirstNonEmptyString(
+      errorBody?.message,
+      errorBody?.detail,
+      errorBody?.title,
+      response.statusText,
+    ) || DEFAULT_ERROR_MESSAGE;
+  const errorCode = errorBody
+    ? getOptionalStringValue(errorBody, ["code"])
+    : undefined;
+
+  return new ApiRequestError(errorMessage, response.status, errorCode);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -3673,7 +3697,6 @@ function getBuncheolManagementParticipantFromRecord(
     paymentSentAt: getOptionalStringValue(record, ["paymentSentAt"]) ?? null,
     refundAccount,
     bundleId: getOptionalStringValue(record, ["bundleId"]) ?? null,
-    releasability: getOptionalStringValue(record, ["releasability"]) ?? null,
     confirmTarget: getOptionalBooleanValue(record, ["confirmTarget"]) ?? null,
     status:
       getOptionalStringValue(record, [
@@ -3923,6 +3946,8 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
 
   return {
     cancelledParticipants,
+    // 새 필드라 별칭 없이 한 키만 읽는다.
+    confirmCheck: toConfirmCheck(getOptionalStringValue(data, ["confirmCheck"])),
     confirmedCount: getNumberValue(data, ["confirmedCount"]) ?? undefined,
     deadline:
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||
@@ -4737,6 +4762,10 @@ export async function requestMyParticipations(accessToken: string) {
           getOptionalStringValue(record, ["cancelReason"]) ?? null,
         cancellability:
           getOptionalStringValue(record, ["cancellability"]) ?? null,
+        confirmedSlotCount:
+          getOptionalNumberValue(record, ["confirmedSlotCount"]) ?? null,
+        activeSlotCount:
+          getOptionalNumberValue(record, ["activeSlotCount"]) ?? null,
         deliveryId:
           getOptionalStringValueFromRecords(
             lookupRecords,
@@ -4947,6 +4976,9 @@ export async function requestMyHostedBuncheols(accessToken: string) {
           0,
         cancellability:
           getOptionalStringValue(record, ["cancellability"]) ?? null,
+        confirmCheck: toConfirmCheck(
+          getOptionalStringValue(record, ["confirmCheck"]),
+        ),
         createdAt: summary.createdAt ?? "",
         ended: getOptionalBooleanValue(record, ["ended"]) ?? null,
         memberSlotCount:
@@ -5116,54 +5148,39 @@ export async function requestPaymentConfirmation(
   }
 }
 
-// C2C 개최자 성사 확정 — 신청(APPLIED) 전원을 일괄 입금 기한(24h)과 함께 입금 대기로
-// 전이하고 입금 안내 알림톡이 발송된다 (docs/46 §4.1). 정원 미달 재량·조기 확정 허용.
-export async function confirmBuncheolRecruitment(
+// 진행 확정에서 빠질 참여. 관리 응답 participants 가운데 입금 대기·보냈어요인 것을 확인 시트에 보여 준
+// 그대로 담는다. 서버는 상태까지 집합으로 대조해 다르면 409(BCH-127)로 거절한다.
+export type ConfirmCancelParticipation = {
+  participationId: string;
+  status: "AWAITING_PAYMENT" | "PAYMENT_SENT";
+};
+
+// 서버 BUNCHEOL_CONFIRM_LIST_CHANGED — 시트를 연 사이 누가 「보냈어요」를 눌렀거나 입금이 확인됐다.
+export const BUNCHEOL_CONFIRM_LIST_CHANGED_CODE = "BCH-127";
+
+// C2C 진행 확정. 모두 입금 확인됐으면 빈 목록을 보낸다. 본문 없이 보내면 서버가 400 으로 거절한다.
+export async function confirmBuncheol(
   accessToken: string,
   buncheolId: string,
+  cancelParticipations: ConfirmCancelParticipation[],
 ) {
   const response = await fetch(
     `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/confirm`,
     {
+      body: JSON.stringify({
+        cancelParticipations: cancelParticipations.map((participation) => ({
+          participationId: Number(participation.participationId),
+          status: participation.status,
+        })),
+      }),
       credentials: "include",
-      headers: getAuthHeaders(accessToken),
+      headers: getJsonHeaders(accessToken),
       method: "POST",
     },
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
-
-  const data = getNestedData(await readJsonBody(response));
-
-  return {
-    awaitingCount: isRecord(data)
-      ? getOptionalNumberValue(data, ["awaitingCount"]) ?? null
-      : null,
-    paymentDueAt: isRecord(data)
-      ? getOptionalStringValue(data, ["paymentDueAt"]) ?? null
-      : null,
-  };
-}
-
-// C2C 입금 수집 종료(부분 확정) — 기한 경과로 미입금 슬롯이 정리된 뒤 확정 참여만으로
-// 진행을 확정한다. 미입금 활성 참여가 남아 있으면 서버가 거부한다 (docs/46 §7.1-6).
-export async function finalizeBuncheolCollected(
-  accessToken: string,
-  buncheolId: string,
-) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/finalize-collected`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw await readApiRequestError(response);
   }
 }
 
@@ -5187,8 +5204,8 @@ export async function requestBundlePaymentSent(
   }
 }
 
-// C2C 참여자 자발 취소. 허용 여부는 서버가 내려주는 cancellability 를 따른다 — 「보냈어요」·입금확인
-// 이후는 BCH-086(문의 안내), 성사 확정을 거친 입금 대기는 BCH-092(개최자 연락)로 거부된다.
+// C2C 참여자 자발 취소. 허용 여부는 서버가 내려주는 cancellability 를 따른다 — 신청(APPLIED)에서만 되고
+// 입금 단계가 시작된 뒤에는 BCH-086 으로 거부된다.
 export async function cancelParticipation(
   accessToken: string,
   participationId: string,
@@ -6721,6 +6738,26 @@ export async function requestAdminPaymentConfirmation(
   return getAdminBulkResult(body);
 }
 
+// 운영진 파기. 회원 개최 입금 수집 중 분철만 되고(아니면 409 BCH-050), 입금 확인된 참여까지 전원 취소된다.
+export async function cancelBuncheolByStaff(
+  accessToken: string,
+  buncheolId: string,
+) {
+  const response = await fetchWithTimeout(
+    `${getVersionedApiBaseUrl()}/admin/buncheols/${encodeURIComponent(buncheolId)}/cancel`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+    "파기 요청이 지연되고 있어요. 잠시 후 다시 시도해 주세요.",
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
+  }
+}
+
 export type AdminImpersonationToken = {
   targetUserId: string;
   accessToken: string;
@@ -6810,23 +6847,6 @@ export async function requestAdminReceiptConfirmation(
   }>(response);
 
   return getAdminBulkResult(body);
-}
-
-// 묶음 「제외」 — 입금 기한이 지난 뒤에만 열린다. 서버가 기한·상태를 재검증하므로 화면 판정과
-// 갈리면 409 로 돌아온다 (BCH-111 모집중 · BCH-112 기한 전 · BCH-113 확정 슬롯 있음).
-export async function releaseBundle(accessToken: string, bundleId: string) {
-  const response = await fetch(
-    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/release`,
-    {
-      credentials: "include",
-      headers: getAuthHeaders(accessToken),
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
 }
 
 // C2C 개최자의 빈 자리 빼기. 기록 없는 자리는 지우고 취소 기록만 남은 자리는 닫는다(이미 닫혔으면 204).
