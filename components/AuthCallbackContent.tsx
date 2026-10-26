@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth-store";
 import { requestUserProfileStatus } from "@/lib/auth-api";
 import { getSafeInternalHref } from "@/lib/auth-navigation";
+import { addBookmarkFromLoginReturn } from "@/lib/bookmark-login-return";
 import { AUTH_SIGNUP_PARAM, AUTH_TOKEN_PARAM } from "@/lib/auth-token-param";
 import { authSignupProfileDraftStorageKey } from "@/lib/auth-store";
 
@@ -88,7 +89,7 @@ export function AuthCallbackContent({
     }
 
     requestUserProfileStatus(accessToken)
-      .then(({ isProfileComplete }) => {
+      .then(async ({ isProfileComplete }) => {
         if (!isActive) {
           return;
         }
@@ -108,6 +109,12 @@ export function AuthCallbackContent({
         // 추가정보 화면을 거치는 가입은 그 화면이 저장 성공 때 보낸다.
         if (isNewAccount) {
           trackSignupCompleted({ profile_form: false });
+        }
+
+        await addBookmarkFromLoginReturn(accessToken, nextReturnHref);
+
+        if (!isActive) {
+          return;
         }
 
         window.sessionStorage.removeItem(authReturnHrefStorageKey);

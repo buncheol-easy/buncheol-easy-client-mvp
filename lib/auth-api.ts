@@ -5041,6 +5041,9 @@ export async function addBuncheolBookmark(
   if (!response.ok && response.status !== 409) {
     throw new Error(await parseErrorMessage(response));
   }
+
+  // 409 는 이미 찜한 분철이다. 새로 찜했을 때만 true.
+  return response.status !== 409;
 }
 
 export async function removeBuncheolBookmark(

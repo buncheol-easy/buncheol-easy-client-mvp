@@ -23,6 +23,7 @@ import {
   subscribeAuthState,
   writeAuthTokens,
 } from "@/lib/auth-store";
+import { addBookmarkFromLoginReturn } from "@/lib/bookmark-login-return";
 import {
   isValidPhoneNumber,
   PHONE_NUMBER_HINT,
@@ -178,7 +179,7 @@ export function SignupProfileContent() {
         }
 
         return requestUserProfileStatus(accessToken).then(
-          ({ isProfileComplete }) => {
+          async ({ isProfileComplete }) => {
             if (!isActive || !isProfileComplete) {
               return;
             }
@@ -191,6 +192,12 @@ export function SignupProfileContent() {
 
             // 이미 가입을 마친 유저 — 보류 상태를 로그인으로 승격하고 되돌려보낸다.
             writeAuthTokens({ accessToken });
+            await addBookmarkFromLoginReturn(accessToken, returnHref);
+
+            if (!isActive) {
+              return;
+            }
+
             window.sessionStorage.removeItem(
               authProfileSetupReturnHrefStorageKey,
             );
@@ -288,6 +295,7 @@ export function SignupProfileContent() {
         window.sessionStorage.getItem(authProfileSetupReturnHrefStorageKey),
       );
 
+      await addBookmarkFromLoginReturn(accessToken, returnHref);
       window.sessionStorage.removeItem(authProfileSetupReturnHrefStorageKey);
       clearSignupProfileDraft();
       router.replace(returnHref);
