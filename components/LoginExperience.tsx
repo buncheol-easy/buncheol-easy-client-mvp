@@ -23,13 +23,11 @@ import { useIsInAppNavigation } from "@/lib/use-in-app-navigation";
 const LOGIN_PANEL_TRANSITION_MS = 240;
 
 type LoginExperienceProps = {
-  bookmarkId?: string;
   cancelHref?: string;
   returnHref: string;
 };
 
 export function LoginExperience({
-  bookmarkId,
   cancelHref,
   returnHref,
 }: LoginExperienceProps) {
@@ -159,11 +157,7 @@ export function LoginExperience({
           isEntered && !isExiting ? "product-page-active" : ""
         } ${isExiting ? "product-page-exit" : ""}`}
       >
-        <LoginContent
-          bookmarkId={bookmarkId}
-          onBack={handleBack}
-          returnHref={returnHref}
-        />
+        <LoginContent onBack={handleBack} returnHref={returnHref} />
       </div>
     </div>
   );

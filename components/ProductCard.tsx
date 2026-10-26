@@ -436,13 +436,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
     const accessToken = authState.accessToken;
 
     if (!authState.isLoggedIn || !accessToken) {
-      const returnHref = getCurrentBrowserHref();
+      const currentHref = getCurrentBrowserHref();
 
       router.push(
         createLoginHref({
-          bookmarkId: productId,
-          cancelTo: returnHref,
-          returnTo: returnHref,
+          cancelTo: currentHref,
+          returnTo: currentHref,
         }),
       );
       return;

@@ -3985,7 +3985,6 @@ export function ProductDetail({
     if (!authState.isLoggedIn || !accessToken) {
       router.push(
         createLoginHref({
-          bookmarkId: buncheolId,
           cancelTo: getCurrentBrowserHref(),
           returnTo: returnHref,
         }),
