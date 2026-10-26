@@ -1776,7 +1776,9 @@ body.is-pwa-standalone .bottom-navigator {
   padding-top: 0.75rem;
 }
 
-body.is-browser-tab:has(.system-chrome-bottom-black) .bottom-navigator {
+/* 앱 안 브라우저(틱톡·광고 웹뷰 등)는 브라우저 모드여도 아래 가림 영역(env)을 넘기고, body::after 띠가 그만큼 덮는다.
+   기본 여백(py-2)에 더하므로 값이 0인 일반 브라우저에서는 그대로다. */
+body.is-browser-tab .bottom-navigator {
   padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
 }
 
@@ -1890,6 +1892,16 @@ body.is-address-sheet-open.is-virtual-keyboard-open > main::after {
 body.is-pwa-standalone .product-detail-bid-bar,
 body.is-pwa-standalone .bid-sheet-panel {
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+}
+
+/* 브라우저 모드도 기본 여백(pb-5)에 가림 영역을 더한다. 기본 여백이 다른 시트는 --bid-sheet-padding-bottom 으로
+   넘긴다 — 1.25rem 으로 덮으면 가림 영역이 0인 브라우저에서도 여백이 줄어든다. */
+body.is-browser-tab .product-detail-bid-bar {
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+}
+
+body.is-browser-tab .bid-sheet-panel {
+  padding-bottom: calc(var(--bid-sheet-padding-bottom, 1.25rem) + env(safe-area-inset-bottom));
 }
 
 .idol-selection-enter {
