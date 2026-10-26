@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { AuthCallbackContent } from "@/components/AuthCallbackContent";
 import { getOptionalSafeInternalHref } from "@/lib/auth-navigation";
+import {
+  AUTH_ERROR_PARAM,
+  parseAuthLoginErrorReason,
+} from "@/lib/auth-token-param";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -14,6 +18,7 @@ type LoginCallbackPageProps = {
   // (OAuth2LoginSuccessHandler 실측). 쿼리 입구를 열어 두면 요청 라인·프록시 로그·
   // Referer 에 토큰이 실리는 경로가 생긴다.
   searchParams: Promise<{
+    [AUTH_ERROR_PARAM]?: string | string[];
     returnTo?: string | string[];
   }>;
 };
@@ -25,10 +30,11 @@ function getFirstSearchParam(value: string | string[] | undefined) {
 export default async function LoginCallbackPage({
   searchParams,
 }: LoginCallbackPageProps) {
-  const { returnTo } = await searchParams;
+  const { [AUTH_ERROR_PARAM]: errorParam, returnTo } = await searchParams;
 
   return (
     <AuthCallbackContent
+      errorReason={parseAuthLoginErrorReason(getFirstSearchParam(errorParam))}
       returnHref={getOptionalSafeInternalHref(getFirstSearchParam(returnTo))}
     />
   );

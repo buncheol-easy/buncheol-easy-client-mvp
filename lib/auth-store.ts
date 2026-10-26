@@ -4,6 +4,9 @@ const authStoreKey = "buncheol-auth-state";
 const authStoreEvent = "buncheol-auth-state-change";
 const refreshTokenCookieNames = ["refreshToken", "refresh_token"];
 export const authReturnHrefStorageKey = "buncheol-auth-return-href";
+// 카카오 버튼을 누른 로그인 화면 주소(returnTo·cancelTo 포함). 카카오에서 취소하고 돌아오면 콜백이 이 주소로
+// 되돌린다 — cancelTo 는 로그인 화면 주소에만 있어서 카카오를 거치면 사라진다.
+export const authLoginHrefStorageKey = "buncheol-auth-login-href";
 export const authProfileSetupReturnHrefStorageKey =
   "buncheol-auth-profile-setup-return-href";
 export const authSignupProfileDraftStorageKey =
