@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -38,6 +37,7 @@ import {
 } from "@/lib/auth-store";
 import { EmptyState } from "@/components/EmptyState";
 import { FloatingHelpButton } from "@/components/FloatingHelpButton";
+import { ProductPhoto } from "@/components/ProductPhoto";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
@@ -3143,17 +3143,15 @@ export function BidHistoryContent({
               onClick={rememberBidHistoryProductEntry}
             >
               {head.imageUrl ? (
-                <Image
+                <ProductPhoto
                   alt=""
                   className={`h-full w-full object-cover${
                     buncheolChip.tone === "cancelled"
                       ? " scale-110 blur-[2px]"
                       : ""
                   }`}
-                  fill
                   sizes="56px"
                   src={head.imageUrl}
-                  unoptimized
                 />
               ) : null}
             </Link>
@@ -4023,7 +4021,7 @@ export function BidHistoryContent({
                         onClick={rememberBidHistoryProductEntry}
                       >
                         {bid.imageUrl ? (
-                          <Image
+                          <ProductPhoto
                             alt=""
                             // 취소 분철은 색은 유지한 채 라이트 블러로만 비활성 처리. 56px 썸네일이라
                             // 식별 가능한 2px 만 흐리고, scale-110 으로 블러 가장자리 번짐을 프레임 밖으로 밀어낸다.
@@ -4032,10 +4030,8 @@ export function BidHistoryContent({
                                 ? " scale-110 blur-[2px]"
                                 : ""
                             }`}
-                            fill
                             sizes="56px"
                             src={bid.imageUrl}
-                            unoptimized
                           />
                         ) : null}
                       </Link>
@@ -4428,13 +4424,11 @@ export function BidHistoryContent({
                         className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-[0.9rem] bg-gradient-to-br ${product.tone}`}
                       >
                         {product.imageUrl ? (
-                          <Image
+                          <ProductPhoto
                             alt=""
                             className="h-full w-full object-cover"
-                            fill
                             sizes="80px"
                             src={product.imageUrl}
-                            unoptimized
                           />
                         ) : null}
                       </div>

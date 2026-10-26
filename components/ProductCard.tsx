@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { HeartIcon } from "@/components/icons";
 import { type MemberChip, MemberChips } from "@/components/MemberChips";
 import { OpensAtBand } from "@/components/OpensAtBand";
+import { ProductPhoto } from "@/components/ProductPhoto";
 import {
   getArtistRestoreIndexKey,
   getArtistScrollTopKey,
@@ -36,6 +37,10 @@ import {
   rememberNextHistoryIndex,
 } from "@/lib/history-index";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
+import {
+  PRODUCT_GRID_IMAGE_SIZES,
+  PRODUCT_WIDE_IMAGE_SIZES,
+} from "@/lib/optimizable-image";
 import { writePublicBuncheolCard } from "@/lib/public-buncheol-card-store";
 
 const PRODUCT_FAVORITES_ENTRY_INDEX_KEY = "product-favorites-entry-index";
@@ -542,13 +547,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
           className={`relative aspect-[1.72/1] overflow-hidden bg-gradient-to-br ${item.tone}`}
         >
           {item.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.imageUrl}
+            <ProductPhoto
               alt={item.title}
-              className="absolute inset-0 h-full w-full object-cover"
+              className="object-cover"
               draggable={false}
-              loading="lazy"
+              sizes={PRODUCT_WIDE_IMAGE_SIZES}
+              src={item.imageUrl}
             />
           ) : (
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
@@ -651,13 +655,12 @@ export function ProductCard({ item, variant = "grid" }: ProductCardProps) {
         className={`relative aspect-square overflow-hidden rounded-[1.2rem] bg-gradient-to-br shadow-[0_12px_28px_rgba(0,0,0,0.08)] ${item.tone}`}
       >
         {item.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={item.imageUrl}
+          <ProductPhoto
             alt={item.title}
-            className="absolute inset-0 h-full w-full object-cover"
+            className="object-cover"
             draggable={false}
-            loading="lazy"
+            sizes={PRODUCT_GRID_IMAGE_SIZES}
+            src={item.imageUrl}
           />
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_65%_22%,rgba(255,255,255,0.5),transparent_22%)]" />
