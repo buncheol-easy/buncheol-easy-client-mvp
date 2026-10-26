@@ -4757,7 +4757,7 @@ export function BidHistoryContent({
                   ? "기한 안에 아래 계좌로 입금해 주세요."
                   : selectedPaymentStatusDescription}
               </HelpText>
-              {isSelectedPaymentCountingDown && selectedPaymentBid.refundHolder ? (
+              {isSelectedPaymentReady && selectedPaymentBid.refundHolder ? (
                 <DepositorNameGuide
                   holder={selectedPaymentBid.refundHolder}
                   isC2C={isSelectedPaymentC2C}
@@ -4792,9 +4792,9 @@ export function BidHistoryContent({
                   variant="dark"
                 />
               </div>
-              {/* 입금 기한 안에는 위 마감 카드가 입금자명을 크게 안내한다. 기한이 지난 뒤(보냈어요·기한 경과)에는
-                  다시 보낼 일이 없으니 대조용으로 이름만 남긴다 (docs/53 Q-17). */}
-              {!isSelectedPaymentCountingDown && selectedPaymentBid.refundHolder ? (
+              {/* 입금할 차례에는 위 마감 카드가 입금자명을 크게 안내한다(C2C 는 기한이 지나도 입금할 차례다). 보냈어요
+                  뒤에는 다시 보낼 일이 없으니 대조용으로 이름만 남긴다 (docs/53 Q-17). */}
+              {!isSelectedPaymentReady && selectedPaymentBid.refundHolder ? (
                 <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
                   입금자명{" "}
                   <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
@@ -4824,7 +4824,7 @@ export function BidHistoryContent({
                 </a>
               ) : null}
             </div>
-            {isSelectedPaymentCountingDown ? (
+            {isSelectedPaymentReady ? (
               <HelpText className="mt-3 px-1">
                 입금이 확인되면 카카오 알림톡으로 알려 드려요.
               </HelpText>
