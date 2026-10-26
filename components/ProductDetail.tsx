@@ -6353,6 +6353,7 @@ export function ProductDetail({
                       alt={`${product.title} 이미지 ${imageIndex + 1}`}
                       className="object-contain"
                       draggable={false}
+                      loading="eager"
                       sizes={PRODUCT_ZOOM_IMAGE_SIZES}
                       src={imageUrl}
                     />
