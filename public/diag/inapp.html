@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 앱(app/layout.tsx · lib/system-chrome.ts)과 같은 viewport — viewport-fit=cover 가 없으면 iOS 가 안전 영역 값을 0으로 준다. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>앱 안 브라우저 진단</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #fff; color: #111; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 15px;
+    line-height: 1.35;
+  }
+  .page { padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 150px; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  h2 { font-size: 14px; margin: 12px 0 4px; color: #555; }
+  .verdict { font-size: 20px; font-weight: 700; }
+  .ua { font-family: ui-monospace, Menlo, monospace; font-size: 11px; word-break: break-all; color: #333; margin: 2px 0 0; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 2px 4px; border-bottom: 1px solid #eee; vertical-align: top; }
+  td:first-child { color: #555; font-size: 12px; width: 42%; }
+  td:last-child { font-weight: 700; font-size: 16px; font-family: ui-monospace, Menlo, monospace; }
+  .warn { color: #b00020; font-size: 13px; margin: 4px 0; }
+  button {
+    font-size: 15px; font-weight: 700; padding: 9px 12px; margin: 4px 6px 0 0;
+    border: 0; border-radius: 10px; background: #111; color: #d7ff5f;
+  }
+  .links a { display: inline-block; margin: 4px 10px 0 0; font-size: 14px; }
+  .only { font-size: 22px; font-weight: 700; padding: 40px 16px; text-align: center; }
+  /* 아래 눈금자 — 화면 맨 아래부터 10px 칸. 캡처에서 보이는 가장 작은 번호 = 아래가 가려진 높이. */
+  .ruler { position: fixed; left: 0; right: 0; bottom: 0; height: 120px; display: flex; flex-direction: column-reverse; pointer-events: none; z-index: 10; }
+  .ruler div { height: 10px; font-size: 9px; line-height: 10px; font-weight: 700; color: #000; display: flex; justify-content: space-between; padding: 0 6px; font-family: ui-monospace, Menlo, monospace; }
+  .ruler div:nth-child(odd) { background: #ff5c5c; }
+  .ruler div:nth-child(even) { background: #ffd23f; }
+  .probe { position: fixed; left: -10px; top: 0; width: 1px; visibility: hidden; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="root" class="page"></div>
+<script>
+(function () {
+  "use strict";
+
+  var ALLOWED_HOSTS = ["staging.buncheoleasy.com", "localhost", "127.0.0.1"];
+  var root = document.getElementById("root");
+
+  if (ALLOWED_HOSTS.indexOf(location.hostname) === -1) {
+    root.className = "only";
+    root.textContent = "staging 전용";
+    return;
+  }
+
+  var MARK_KEY = "diag-inapp-mark";
+  var COOKIE_PERSIST = "diag_inapp_mark";
+  var COOKIE_SESSION = "diag_inapp_session_mark";
+  var IDB_NAME = "diag-inapp";
+  var IDB_STORE = "marks";
+  var AUTH_KEY = "buncheol-auth-state";
+  var openedAt = new Date();
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (key) {
+        if (key === "text") node.textContent = attrs[key];
+        else if (key === "onclick") node.addEventListener("click", attrs[key]);
+        else node.setAttribute(key, attrs[key]);
+      });
+    }
+    (children || []).forEach(function (child) { node.appendChild(child); });
+    return node;
+  }
+
+  function row(label, id) {
+    return el("tr", null, [el("td", { text: label }), el("td", { id: id, text: "…" })]);
+  }
+
+  function setText(id, value) {
+    var node = document.getElementById(id);
+    if (node) node.textContent = value;
+  }
+
+  function fmtTime(date) {
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    return (date.getMonth() + 1) + "/" + date.getDate() + " " + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+  }
+
+  function fmtMark(raw) {
+    if (!raw) return "없음";
+    var time = Number(raw);
+    return isFinite(time) && time > 0 ? "남음 (" + fmtTime(new Date(time)) + ")" : "남음 (형식 다름)";
+  }
+
+  function errText(error) {
+    return error ? String(error.name || "Error") + ": " + String(error.message || "") : "알 수 없음";
+  }
+
+  // ── 1) 어떤 브라우저인지 ─────────────────────────────
+  var ua = navigator.userAgent || "";
+  var browserVerdict =
+    /trill_|musical_ly|Bytedance/i.test(ua) ? "틱톡 앱" :
+    /open_news/i.test(ua) ? "open_news 웹뷰" :
+    /Instagram/i.test(ua) ? "인스타 앱" :
+    /KAKAOTALK/i.test(ua) ? "카톡 앱" :
+    "기타";
+
+  function displayMode() {
+    var modes = ["fullscreen", "standalone", "minimal-ui", "browser"];
+    for (var i = 0; i < modes.length; i += 1) {
+      if (window.matchMedia("(display-mode: " + modes[i] + ")").matches) return modes[i];
+    }
+    return "판정 안 됨";
+  }
+
+  // 앱의 DisplayModeClassSync 와 같은 판정 — 설치형이면 body 가 is-pwa-standalone 이 된다.
+  function appMode() {
+    var standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: fullscreen)").matches ||
+      navigator.standalone === true;
+    return standalone ? "설치형 (is-pwa-standalone)" : "브라우저 (is-browser-tab)";
+  }
+
+  // ── 2) 높이 ──────────────────────────────────────────
+  function probeHeight(cssHeight) {
+    var probe = el("div", { "class": "probe" });
+    probe.style.height = cssHeight;
+    document.body.appendChild(probe);
+    var height = probe.getBoundingClientRect().height;
+    probe.remove();
+    return Math.round(height * 10) / 10;
+  }
+
+  function unitHeight(unit) {
+    return window.CSS && CSS.supports && CSS.supports("height", "100" + unit) ? String(probeHeight("100" + unit)) : "미지원";
+  }
+
+  function measure() {
+    var vv = window.visualViewport ? String(Math.round(window.visualViewport.height * 10) / 10) : "없음";
+    setText("v-mode", displayMode() + " · " + String(navigator.standalone));
+    setText("v-appmode", appMode());
+    setText("v-heights", window.innerHeight + " · " + vv + " · " + document.documentElement.clientHeight);
+    setText("v-screen", screen.height + " (폭 " + screen.width + " · DPR " + window.devicePixelRatio + ")");
+    setText("v-units", unitHeight("svh") + " · " + unitHeight("dvh") + " · " + unitHeight("lvh"));
+    setText("v-safe", probeHeight("env(safe-area-inset-top, 0px)") + " · " + probeHeight("env(safe-area-inset-bottom, 0px)"));
+    setText("v-measured", fmtTime(new Date()));
+  }
+
+  // ── 4) 저장소 ────────────────────────────────────────
+  function readCookie(name) {
+    var parts = document.cookie ? document.cookie.split("; ") : [];
+    for (var i = 0; i < parts.length; i += 1) {
+      var eq = parts[i].indexOf("=");
+      if (parts[i].slice(0, eq) === name) return decodeURIComponent(parts[i].slice(eq + 1));
+    }
+    return null;
+  }
+
+  function openIdb() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) {
+        reject(new Error("indexedDB 없음"));
+        return;
+      }
+      var request = indexedDB.open(IDB_NAME, 1);
+      request.onupgradeneeded = function () { request.result.createObjectStore(IDB_STORE); };
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+
+  function idbGet() {
+    return openIdb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var request = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(MARK_KEY);
+        request.onsuccess = function () { db.close(); resolve(request.result || null); };
+        request.onerror = function () { db.close(); reject(request.error); };
+      });
+    });
+  }
+
+  function idbPut(value) {
+    return openIdb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(value, MARK_KEY);
+        tx.oncomplete = function () { db.close(); resolve(); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+      });
+    });
+  }
+
+  function readStorage() {
+    try {
+      var testKey = "diag-inapp-write-test";
+      localStorage.setItem(testKey, "1");
+      localStorage.removeItem(testKey);
+      setText("s-writable", "가능");
+    } catch (error) {
+      setText("s-writable", "불가 — " + errText(error));
+    }
+
+    try { setText("s-local", fmtMark(localStorage.getItem(MARK_KEY))); } catch (error) { setText("s-local", "읽기 실패 — " + errText(error)); }
+    try { setText("s-session", fmtMark(sessionStorage.getItem(MARK_KEY))); } catch (error) { setText("s-session", "읽기 실패 — " + errText(error)); }
+    setText("s-cookie", fmtMark(readCookie(COOKIE_PERSIST)));
+    setText("s-cookie-session", fmtMark(readCookie(COOKIE_SESSION)));
+    idbGet().then(
+      function (value) { setText("s-idb", fmtMark(value)); },
+      function (error) { setText("s-idb", "읽기 실패 — " + errText(error)); }
+    );
+
+    // 토큰 값은 읽어도 화면·콘솔에 남기지 않는다 — 있음/없음과 로그인 여부만.
+    try {
+      var raw = localStorage.getItem(AUTH_KEY);
+      if (!raw) {
+        setText("s-auth", "없음");
+      } else {
+        var loggedIn = false;
+        try {
+          var parsed = JSON.parse(raw);
+          loggedIn = parsed && (parsed.isLoggedIn === true || (typeof parsed.isLoggedIn !== "boolean" && typeof parsed.accessToken === "string" && parsed.accessToken.length > 0));
+        } catch (parseError) {
+          loggedIn = false;
+        }
+        setText("s-auth", "있음 · 로그인 " + String(Boolean(loggedIn)));
+      }
+    } catch (error) {
+      setText("s-auth", "읽기 실패 — " + errText(error));
+    }
+  }
+
+  function writeMarks() {
+    var now = String(Date.now());
+    var secure = location.protocol === "https:" ? "; Secure" : "";
+    var failures = [];
+    try { localStorage.setItem(MARK_KEY, now); } catch (error) { failures.push("localStorage " + errText(error)); }
+    try { sessionStorage.setItem(MARK_KEY, now); } catch (error) { failures.push("sessionStorage " + errText(error)); }
+    document.cookie = COOKIE_PERSIST + "=" + now + "; Max-Age=1209600; Path=/; SameSite=Lax" + secure;
+    document.cookie = COOKIE_SESSION + "=" + now + "; Path=/; SameSite=Lax" + secure;
+    setText("s-write-result", "기록 중…");
+    idbPut(now).then(
+      function () { return null; },
+      function (error) { failures.push("IndexedDB " + errText(error)); }
+    ).then(function () {
+      setText("s-write-result", failures.length ? "일부 실패 — " + failures.join(" / ") : "기록함 " + fmtTime(new Date(Number(now))));
+      readStorage();
+    });
+  }
+
+  // ── 5) 로그인 쿠키 확인 ──────────────────────────────
+  // 앱의 requestTokenReissue 와 같은 호출. 응답 본문(토큰)은 읽지 않고 상태 코드만 쓴다.
+  function checkRefreshCookie() {
+    setText("c-result", "확인 중…");
+    fetch("/api/backend/v1/auth/reissue-token", { credentials: "include", method: "POST" }).then(
+      function (response) {
+        if (response.body && typeof response.body.cancel === "function") {
+          response.body.cancel().catch(function () { return null; });
+        }
+        var meaning =
+          response.status === 200 ? "살아 있음" :
+          response.status === 400 ? "쿠키 없음" :
+          response.status === 401 ? "있지만 무효(만료·다른 곳 로그인)" :
+          "그 외";
+        setText("c-result", response.status + " — " + meaning + " (" + fmtTime(new Date()) + ")");
+      },
+      function () {
+        setText("c-result", "요청 실패(네트워크)");
+      }
+    );
+  }
+
+  // ── 화면 ─────────────────────────────────────────────
+  root.appendChild(el("h1", { text: "앱 안 브라우저 진단 · 연 시각 " + fmtTime(openedAt) }));
+
+  root.appendChild(el("h2", { text: "1. 어떤 브라우저" }));
+  root.appendChild(el("div", { "class": "verdict", text: browserVerdict }));
+  root.appendChild(el("p", { "class": "ua", text: ua }));
+  root.appendChild(el("table", null, [
+    row("display-mode · navigator.standalone", "v-mode"),
+    row("우리 앱 판정", "v-appmode")
+  ]));
+
+  root.appendChild(el("h2", { text: "2. 높이 (px)" }));
+  root.appendChild(el("table", null, [
+    row("안전 영역 위 · 아래 (env)", "v-safe"),
+    row("innerHeight · visualViewport · clientHeight", "v-heights"),
+    row("100svh · 100dvh · 100lvh", "v-units"),
+    row("screen.height", "v-screen"),
+    row("잰 시각", "v-measured")
+  ]));
+
+  root.appendChild(el("h2", { text: "3. 아래 눈금자" }));
+  root.appendChild(el("p", { text: "화면 맨 아래 빨강·노랑 칸에서 보이는 가장 작은 번호 = 아래가 가려진 높이(px). 0이 보이면 안 가려짐." }));
+
+  root.appendChild(el("h2", { text: "4. 저장소" }));
+  root.appendChild(el("table", null, [
+    row("localStorage 쓰기", "s-writable"),
+    row("localStorage 표시", "s-local"),
+    row("sessionStorage 표시", "s-session"),
+    row("IndexedDB 표시", "s-idb"),
+    row("JS 쿠키(14일) 표시", "s-cookie"),
+    row("JS 세션 쿠키 표시", "s-cookie-session"),
+    row(AUTH_KEY, "s-auth")
+  ]));
+  root.appendChild(el("button", { type: "button", text: "표시 남기기", onclick: writeMarks }));
+  root.appendChild(el("span", { id: "s-write-result" }));
+
+  root.appendChild(el("h2", { text: "5. 로그인 쿠키" }));
+  root.appendChild(el("p", { "class": "warn", text: "테스트 계정 전환기로 로그인한 상태에서는 누르지 마세요." }));
+  root.appendChild(el("button", { type: "button", text: "로그인 쿠키 확인", onclick: checkRefreshCookie }));
+  root.appendChild(el("span", { id: "c-result", text: "아직 안 누름" }));
+
+  root.appendChild(el("h2", { text: "6. 밖으로 열기 시험" }));
+  root.appendChild(el("div", { "class": "links" }, [
+    el("a", { href: "intent://staging.buncheoleasy.com/diag/inapp.html#Intent;scheme=https;package=com.android.chrome;end", text: "안드로이드: 크롬으로 열기" }),
+    el("a", { href: "x-safari-https://staging.buncheoleasy.com/diag/inapp.html", text: "아이폰: 사파리로 열기" })
+  ]));
+
+  // ── 3) 아래 눈금자 ───────────────────────────────────
+  var ruler = el("div", { "class": "ruler", "aria-hidden": "true" });
+  for (var mark = 0; mark < 120; mark += 10) {
+    ruler.appendChild(el("div", null, [el("span", { text: String(mark) }), el("span", { text: String(mark) })]));
+  }
+  document.body.appendChild(ruler);
+
+  measure();
+  readStorage();
+  window.addEventListener("resize", measure);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", measure);
+  setTimeout(measure, 600);
+})();
+</script>
+</body>
+</html>

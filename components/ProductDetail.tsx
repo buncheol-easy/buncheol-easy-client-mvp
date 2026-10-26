@@ -4655,7 +4655,7 @@ export function ProductDetail({
           </div>
         </header>
 
-        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32">
+        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32 [body.is-browser-tab_&]:pb-[calc(8rem+env(safe-area-inset-bottom))]">
           <section
             className={`px-4 ${revealOnEnter ? "detail-reveal" : ""}`}
             style={revealOnEnter ? getRevealStyle(0) : undefined}
@@ -6230,7 +6230,7 @@ export function ProductDetail({
               type="button"
             />
             <section
-              className={`sheet-scroll bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              className={`sheet-scroll bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 [--bid-sheet-padding-bottom:1.5rem] shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isRefundAccountSheetEntered ? "bid-sheet-panel-active" : ""
               }`}
             >
