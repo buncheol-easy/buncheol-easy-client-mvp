@@ -2666,6 +2666,11 @@ export function ProductDetail({
     product.options,
   ]);
 
+  // 선택에서 파생되는 값이라 deps 로 두면 자리를 고를 때마다 복원이 다시 돌아 고르던 선택을 덮어쓴다.
+  const getRestorableMemberLimit = useEffectEvent(() =>
+    canSelectMultipleMembers ? maxSelectableMemberCount : 1,
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -2776,7 +2781,7 @@ export function ProductDetail({
 
         return optionIds;
       }, [])
-      .slice(0, canSelectMultipleMembers ? maxSelectableMemberCount : 1);
+      .slice(0, getRestorableMemberLimit());
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -2902,16 +2907,13 @@ export function ProductDetail({
     };
 
     void restoreAddressSheet();
-    // TODO(#99): hasMyActiveParticipation 이 deps 에서 빠져 있다. 추가하면 주소 시트 복원
-    // 타이밍이 바뀌어 회귀 가능성이 있어(참여 상태 변경마다 복원이 재실행됨) 수동 QA 와 함께
-    // 별도 PR 에서 처리한다. 그때까지 신규 warning 유입을 막기 위해 이 지점만 억제한다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     auctionOptions,
     authState.isLoggedIn,
     availableShippingStoreTypes,
     buncheolId,
     deliveryAddressState,
+    hasMyActiveParticipation,
     myBids,
     product.isApiProduct,
   ]);
