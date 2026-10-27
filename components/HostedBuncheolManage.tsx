@@ -1027,6 +1027,8 @@ export function HostedBuncheolManage({
           )
             ? "보냈어요"
             : undefined,
+          // 「보냈어요」 경고가 통장과 맞춰 보라고 하므로 대조 기준인 입금자명을 함께 보인다(목록 행과 같은 값).
+          caption: `입금자명 ${getDepositorName(head)}`,
           label: isSyntheticParticipantName(head.participantNickname)
             ? getDepositorName(head)
             : head.participantNickname,

@@ -8,6 +8,8 @@ export type ConfirmSheetDetail = {
   value: string;
   // 라벨 옆 강조 칩. 같은 목록 안에서 먼저 봐야 할 줄(예: 「보냈어요」를 누른 참여자)을 가린다.
   badge?: string;
+  // 라벨 아래 보조 줄(예: 통장과 맞춰 볼 입금자명).
+  caption?: string;
 };
 
 export type ConfirmSheetRequest = {
@@ -141,11 +143,18 @@ export function ConfirmSheet({
                 key={`${detail.label}-${index}`}
               >
                 {/* 라벨에 닉네임(최대 20자)과 칩이 함께 오면 값 칸이 눌린다 — 라벨은 줄 폭의 60%까지만 쓰고 말줄임. */}
-                <dt className="flex min-w-0 max-w-[60%] shrink-0 items-center gap-1.5 text-[12px] font-medium text-black/40">
-                  <span className="min-w-0 truncate">{detail.label}</span>
-                  {detail.badge ? (
-                    <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2 py-0.5 text-[11px] font-semibold text-black">
-                      {detail.badge}
+                <dt className="flex min-w-0 max-w-[60%] shrink-0 flex-col gap-0.5 text-[12px] font-medium text-black/40">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 truncate">{detail.label}</span>
+                    {detail.badge ? (
+                      <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2 py-0.5 text-[11px] font-semibold text-black">
+                        {detail.badge}
+                      </span>
+                    ) : null}
+                  </span>
+                  {detail.caption ? (
+                    <span className="truncate font-semibold text-black/65">
+                      {detail.caption}
                     </span>
                   ) : null}
                 </dt>
