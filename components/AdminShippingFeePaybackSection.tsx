@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  ApiRequestError,
+  isAdminSessionError,
   requestAdminShippingFeePaybackAction,
   requestAllAdminShippingFeePaybacks,
   type AdminShippingFeePaybackItem,
@@ -66,12 +66,6 @@ function PaybackStatusBadge({ status }: { status: ShippingFeePaybackStatus }) {
     >
       {getStatusLabel(status)}
     </span>
-  );
-}
-
-function isAdminSessionError(error: unknown) {
-  return (
-    error instanceof ApiRequestError && [401, 403].includes(error.status)
   );
 }
 

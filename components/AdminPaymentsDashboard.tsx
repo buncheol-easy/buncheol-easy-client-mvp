@@ -11,7 +11,7 @@ import {
   type FormEvent,
 } from "react";
 import {
-  ApiRequestError,
+  isAdminSessionError,
   requestAdminImpersonationToken,
   requestAdminLogin,
   requestAdminMe,
@@ -393,13 +393,6 @@ function groupPaymentRecords(records: AdminPaymentRecord[]) {
 }
 
 // 관리자 토큰 만료(12시간, refresh 없음)·권한 상실은 401/403 으로 온다 — 재로그인 대상.
-function isAdminSessionError(error: unknown) {
-  return (
-    error instanceof ApiRequestError &&
-    (error.status === 401 || error.status === 403)
-  );
-}
-
 function toAdminPaymentRecord(item: AdminPaymentRecordItem): AdminPaymentRecord {
   const memberName = item.memberName ?? "옵션";
   const rawStatus = item.cancelReason

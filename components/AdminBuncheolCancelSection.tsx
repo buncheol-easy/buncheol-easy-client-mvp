@@ -6,7 +6,7 @@ import {
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import {
-  ApiRequestError,
+  isAdminSessionError,
   cancelBuncheolByStaff,
   requestBuncheolDetail,
 } from "@/lib/auth-api";
@@ -29,10 +29,6 @@ type LoadedBuncheol = {
 type AdminBuncheolCancelSectionProps = {
   onSessionExpired: () => void;
 };
-
-function isAdminSessionError(error: unknown) {
-  return error instanceof ApiRequestError && [401, 403].includes(error.status);
-}
 
 // 공개 상세의 자리 상태로 센다. 입금 수집 중이면 빈 자리는 CLOSED 로 내려와 세지 않는다.
 function countSlots(saleStatuses: (string | undefined)[]) {

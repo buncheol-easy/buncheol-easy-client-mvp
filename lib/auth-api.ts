@@ -6036,6 +6036,11 @@ export type AdminBulkResult = {
   failures: AdminBulkFailure[];
 };
 
+// 관리자 토큰 만료·무효(401)와 권한 없음(403). 어드민 화면은 이때 로그아웃으로 보낸다.
+export function isAdminSessionError(error: unknown) {
+  return error instanceof ApiRequestError && [401, 403].includes(error.status);
+}
+
 async function parseAdminResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new ApiRequestError(await parseErrorMessage(response), response.status);
