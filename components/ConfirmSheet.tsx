@@ -140,10 +140,11 @@ export function ConfirmSheet({
                 className="flex items-baseline justify-between gap-3"
                 key={`${detail.label}-${index}`}
               >
-                <dt className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-black/40">
-                  {detail.label}
+                {/* 라벨에 닉네임(최대 20자)과 칩이 함께 오면 값 칸이 눌린다 — 라벨은 줄 폭의 60%까지만 쓰고 말줄임. */}
+                <dt className="flex min-w-0 max-w-[60%] shrink-0 items-center gap-1.5 text-[12px] font-medium text-black/40">
+                  <span className="min-w-0 truncate">{detail.label}</span>
                   {detail.badge ? (
-                    <span className="rounded-full bg-[#D7FF5F] px-2 py-0.5 text-[11px] font-semibold text-black">
+                    <span className="shrink-0 rounded-full bg-[#D7FF5F] px-2 py-0.5 text-[11px] font-semibold text-black">
                       {detail.badge}
                     </span>
                   ) : null}
