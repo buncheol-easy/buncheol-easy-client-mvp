@@ -1386,7 +1386,7 @@ export function ProductDetail({
   const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  // 회원 개최 신청 확인 단계의 약속 체크. 시트를 열 때마다 새로 받는다.
+  // 회원 개최 신청 확인 단계의 약속 체크. 새 신청을 시작할 때마다 새로 받는다.
   const [isPaymentPromiseChecked, setIsPaymentPromiseChecked] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
   const [isSheetClosing, setIsSheetClosing] = useState(false);
@@ -3391,6 +3391,11 @@ export function ProductDetail({
 
   async function handleSubmitBids() {
     if (isBidSubmitPending) {
+      return;
+    }
+
+    // 버튼이 꺼져 있어도 제출 경로에서 다시 막는다(개최 폼 handleSubmit 과 같은 방식).
+    if (isPaymentPromiseRequired && !isPaymentPromiseChecked) {
       return;
     }
 
