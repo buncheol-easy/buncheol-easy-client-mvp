@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 type PromiseCheckProps = {
   checked: boolean;
   className?: string;
@@ -15,15 +17,22 @@ export function PromiseCheck({
   message,
   onCheckedChange,
 }: PromiseCheckProps) {
+  // 체크박스 이름은 "알겠어요"뿐이라, 무엇을 약속하는지 스크린리더가 함께 읽도록 문장을 설명으로 잇는다.
+  const messageId = useId();
+
   return (
     <div
       className={`rounded-[0.95rem] bg-[#F7FAEE] px-4 py-3.5 ring-1 ring-[#E4F6A5]/70 ${className}`}
     >
-      <p className="break-keep text-[13px] font-semibold leading-[1.55] tracking-[-0.03em] text-black/75">
+      <p
+        className="break-keep text-[13px] font-semibold leading-[1.55] tracking-[-0.03em] text-black/75"
+        id={messageId}
+      >
         {message}
       </p>
       <label className="mt-2.5 flex w-fit items-center gap-2.5">
         <input
+          aria-describedby={messageId}
           checked={checked}
           className="h-[18px] w-[18px] accent-black"
           disabled={disabled}
