@@ -287,6 +287,11 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
 
 // 묶음 id 가 없으면 「입금 확인」을 서버에 보낼 수 없다. 되돌릴 수 없다고 묻는 시트를
 // 통과한 뒤 실패하지 않게, 버튼을 막고 이 문구를 미리 보여 준다.
+// 입금 기한이 지나면 서버 판정(confirmCheck)이 바뀌므로 그 시각에 관리 응답을 다시 받는다.
+// 서버 시계가 조금 늦어도 바뀐 값을 받도록 몇 초 뒤에 부른다. setTimeout 상한(약 24.8일)을 넘으면 예약하지 않는다.
+const PAYMENT_DUE_RELOAD_DELAY_MS = 5_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 const MISSING_BUNDLE_MESSAGE =
   "묶음 정보가 없어 이 참여를 처리할 수 없어요. 고객센터로 문의해 주세요.";
 
@@ -612,6 +617,50 @@ export function HostedBuncheolManage({
       isActive = false;
     };
   }, [authState.accessToken, authState.isLoggedIn, id, router]);
+
+  // 버튼은 계속 서버 confirmCheck 만 본다. 열어 둔 채 기한이 지나도 켜지도록 기한 시각에 한 번 다시 불러온다.
+  const paymentDueAtForReload = detail?.paymentDueAt ?? null;
+  const confirmCheckForReload = detail?.confirmCheck ?? null;
+
+  useEffect(() => {
+    if (
+      !paymentDueAtForReload ||
+      (confirmCheckForReload !== "BEFORE_DUE" &&
+        confirmCheckForReload !== "NO_CONFIRMED")
+    ) {
+      return;
+    }
+
+    const dueTime = new Date(paymentDueAtForReload).getTime();
+    const delay = dueTime - Date.now() + PAYMENT_DUE_RELOAD_DELAY_MS;
+
+    if (Number.isNaN(dueTime) || delay <= 0 || delay > MAX_TIMER_DELAY_MS) {
+      return;
+    }
+
+    let isActive = true;
+    const timer = window.setTimeout(() => {
+      void getFreshAccessToken()
+        .then((accessToken) =>
+          isActive && accessToken
+            ? requestHostedBuncheolManagement(accessToken, id)
+            : null,
+        )
+        .then((nextDetail) => {
+          if (isActive && nextDetail) {
+            setDetail(nextDetail);
+          }
+        })
+        .catch(() => {
+          // 다음 동작(새로고침, 다른 버튼)에서 다시 불러온다.
+        });
+    }, delay);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(timer);
+    };
+  }, [confirmCheckForReload, id, paymentDueAtForReload]);
 
   const memberCount = detail?.optionCount ?? detail?.options.length ?? 0;
   const participantCount =
