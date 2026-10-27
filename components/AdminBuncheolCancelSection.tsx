@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ConfirmSheet,
   type ConfirmSheetRequest,
@@ -58,17 +58,28 @@ export function AdminBuncheolCancelSection({
   const [isCancelling, setIsCancelling] = useState(false);
   const [confirmSheetRequest, setConfirmSheetRequest] =
     useState<ConfirmSheetRequest | null>(null);
+  // 파기는 되돌릴 수 없어, 입력이 바뀐 뒤 늦게 온 이전 번호의 응답은 버린다.
+  const requestedBuncheolIdRef = useRef("");
+  const inputBuncheolId = buncheolIdInput.trim();
+  const shownBuncheol =
+    loaded && loaded.id === inputBuncheolId ? loaded : null;
 
   async function load(buncheolId: string) {
     if (!buncheolId || isLoading) {
       return;
     }
 
+    requestedBuncheolIdRef.current = buncheolId;
     setIsLoading(true);
     setMessage("");
 
     try {
       const detail = await requestBuncheolDetail(undefined, buncheolId);
+
+      if (requestedBuncheolIdRef.current !== buncheolId) {
+        return;
+      }
+
       const counts = countSlots(
         detail.members.map((member) => member.saleStatus),
       );
@@ -83,6 +94,10 @@ export function AdminBuncheolCancelSection({
         title: detail.title,
       });
     } catch {
+      if (requestedBuncheolIdRef.current !== buncheolId) {
+        return;
+      }
+
       setLoaded(null);
       setMessage("분철을 찾을 수 없어요. 번호를 다시 확인해 주세요.");
     } finally {
@@ -91,11 +106,11 @@ export function AdminBuncheolCancelSection({
   }
 
   function requestCancel() {
-    if (!loaded || !loaded.isCancellable || isCancelling) {
+    if (!shownBuncheol || !shownBuncheol.isCancellable || isCancelling) {
       return;
     }
 
-    const target = loaded;
+    const target = shownBuncheol;
 
     setConfirmSheetRequest({
       confirmLabel: "파기",
@@ -158,12 +173,13 @@ export function AdminBuncheolCancelSection({
               className="h-11 w-40 rounded-[0.7rem] border border-black/10 px-3 text-[15px] font-semibold outline-none focus:border-black/30"
               inputMode="numeric"
               onChange={(event) => {
+                requestedBuncheolIdRef.current = "";
                 setBuncheolIdInput(event.target.value);
                 setLoaded(null);
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
-                  void load(buncheolIdInput.trim());
+                  void load(inputBuncheolId);
                 }
               }}
               placeholder="예: 33"
@@ -172,8 +188,8 @@ export function AdminBuncheolCancelSection({
           </label>
           <button
             className="h-11 rounded-full bg-black px-5 text-[14px] font-semibold text-white disabled:bg-black/25"
-            disabled={isLoading || buncheolIdInput.trim().length === 0}
-            onClick={() => void load(buncheolIdInput.trim())}
+            disabled={isLoading || inputBuncheolId.length === 0}
+            onClick={() => void load(inputBuncheolId)}
             type="button"
           >
             {isLoading ? "불러오는 중" : "불러오기"}
@@ -186,24 +202,24 @@ export function AdminBuncheolCancelSection({
         ) : null}
       </div>
 
-      {loaded ? (
+      {shownBuncheol ? (
         <div className="rounded-[1rem] border border-black/10 bg-white p-4">
           <p className="text-[16px] font-semibold tracking-[-0.03em]">
-            {loaded.title}
+            {shownBuncheol.title}
           </p>
           <p className="mt-1 text-[13px] font-medium text-black/55">
-            {`${loaded.statusLabel} · 입금 확인 ${loaded.confirmedSlotCount}자리 / 전체 ${loaded.activeSlotCount}자리`}
+            {`${shownBuncheol.statusLabel} · 입금 확인 ${shownBuncheol.confirmedSlotCount}자리 / 전체 ${shownBuncheol.activeSlotCount}자리`}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               className="h-11 rounded-full bg-[#c03131] px-5 text-[14px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
-              disabled={!loaded.isCancellable || isCancelling}
+              disabled={!shownBuncheol.isCancellable || isCancelling}
               onClick={requestCancel}
               type="button"
             >
               {isCancelling ? "파기하는 중" : "파기"}
             </button>
-            {loaded.isCancellable ? null : (
+            {shownBuncheol.isCancellable ? null : (
               <p className="text-[13px] font-medium text-black/50">
                 입금 수집 중인 회원 개최 분철만 파기할 수 있어요.
               </p>
