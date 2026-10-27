@@ -42,6 +42,7 @@ import {
   isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
+  getConfirmCheckLine,
   isConfirmCheckReady,
   isDeliveryShippingStatus,
   isParticipationAppliedStatus,
@@ -755,6 +756,7 @@ export function HostedBuncheolManage({
   ).length;
   // 진행 확정 버튼은 서버 판정만 본다. 옛 서버라 값이 없으면 꺼 둔다.
   const canConfirmBuncheol = isConfirmCheckReady(detail?.confirmCheck);
+  const confirmCheckLine = getConfirmCheckLine(detail?.confirmCheck);
   // 회원 개최 배송은 진행 확정 때 생기고 운송장도 그 뒤에만 받는다(서버 DLV-009). 옛 서버가 입금 확인 때
   // 만들어 둔 배송이 입금 수집 중 분철에 남아 있어도 운송장 칸을 열지 않는다.
   const isC2CShippingOpen = isBuncheolConfirmedStatus(detail?.status);
@@ -1908,14 +1910,8 @@ export function HostedBuncheolManage({
                     ? `입금된 멤버 ${c2cConfirmedCount}명으로 진행 확정`
                     : "진행 확정하기"}
               </button>
-              {detail.confirmCheck === "ALL_PAID" ? (
-                <HelpText className="mt-2">
-                  모든 참여자의 입금이 확인됐어요
-                </HelpText>
-              ) : detail.confirmCheck === "DUE_PASSED" ? (
-                <HelpText className="mt-2">
-                  입금 기한이 지났어요. 확인된 참여자로 진행하거나 운영진에게 알려 주세요
-                </HelpText>
+              {confirmCheckLine ? (
+                <HelpText className="mt-2">{confirmCheckLine}</HelpText>
               ) : (
                 <>
                   <HelpText className="mt-2">

@@ -65,6 +65,19 @@ export function isConfirmCheckReady(check: ConfirmCheck | null | undefined) {
   return check === "ALL_PAID" || check === "DUE_PASSED";
 }
 
+// 진행 확정 버튼이 켜졌을 때의 한 줄(사용자 확정 문구, 글자 그대로). 관리 화면과 「개최한 분철」 카드가 같이 쓴다.
+export function getConfirmCheckLine(check: ConfirmCheck | null | undefined) {
+  if (check === "ALL_PAID") {
+    return "모든 참여자의 입금이 확인됐어요";
+  }
+
+  if (check === "DUE_PASSED") {
+    return "입금 기한이 지났어요. 확인된 참여자로 진행하거나 운영진에게 알려 주세요";
+  }
+
+  return null;
+}
+
 // 상태 필드가 없는 구 응답·목업은 모집중으로 취급한다.
 export function isBuncheolRecruitingStatus(status: string | null | undefined) {
   const normalizedStatus = normalizeStatusValue(status);

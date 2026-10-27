@@ -74,6 +74,7 @@ import {
   isBuncheolRecruitingStatus,
   isDeliveryCompletedStatus,
   isDeliveryShippingStatus,
+  getConfirmCheckLine,
   isConfirmCheckReady,
   isHostedBuncheolClosed,
   isParticipationAppliedStatus,
@@ -4544,9 +4545,7 @@ export function ParticipationHistoryContent({
                           진행 확정해 주세요
                         </span>
                         <HelpText className="mt-1.5" size="caption">
-                          {product.hostConfirmCheck === "ALL_PAID"
-                            ? "모든 참여자의 입금이 확인됐어요"
-                            : "입금 기한이 지났어요. 확인된 참여자로 진행하거나 운영진에게 알려 주세요"}
+                          {getConfirmCheckLine(product.hostConfirmCheck)}
                         </HelpText>
                       </div>
                     ) : null}
