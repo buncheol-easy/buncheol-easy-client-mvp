@@ -2390,9 +2390,10 @@ export function ProductDetail({
   // 시작될 뿐 진행 확정은 개최자가 입금을 확인한 뒤 누르므로, 최소 인원 기준 진행 바와
   // "인원을 채우면 진행이 확정돼요" 문구를 그대로 쓰면 거짓 안내가 된다. C2C 는 전체 슬롯 대비 신청 현황으로 보여준다.
   // 개최자가 뺀 자리는 신청을 받는 동안에만 CLOSED 로 가려낼 수 있다. 마감 뒤엔 서버가 빈 자리를 전부 CLOSED 로
-  // 내려 구분이 안 되므로 그때는 전체 자리 수를 쓴다.
+  // 내려 구분이 안 되므로 그때는 전체 자리 수를 쓴다. 입금 수집 중도 빈 자리가 모두 CLOSED 로 오지만, 이때는 새 신청이
+  // 없어 CLOSED 를 빼고 센다 — 전체 수를 쓰면 자리를 빼서 정원이 찬 분철이 「4/5」처럼 덜 찬 것으로 보인다.
   const participationSlotCount =
-    isPurchasableStatus && !isDeadlineBlocked
+    (isPurchasableStatus && !isDeadlineBlocked) || isC2CCollectingProduct
       ? auctionOptions.filter(
           (option) => option.saleStatus?.toUpperCase() !== "CLOSED",
         ).length
