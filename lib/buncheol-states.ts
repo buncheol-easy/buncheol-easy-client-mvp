@@ -37,7 +37,7 @@ export function isBuncheolConfirmedStatus(status: string | null | undefined) {
   return normalizeStatusValue(status) === "CONFIRMED";
 }
 
-// C2C 입금 수집 중 — 입금 단계가 저절로 시작된 뒤 개최자가 진행 확정하기 전 구간.
+// C2C 입금 수집 중 — 입금 단계가 저절로 시작된 뒤 진행 확정되기 전 구간.
 export function isBuncheolPaymentCollectingStatus(
   status: string | null | undefined,
 ) {

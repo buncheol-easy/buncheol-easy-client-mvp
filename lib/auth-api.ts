@@ -6891,11 +6891,12 @@ export async function addBuncheolMember(
 
 // 묶음 입금확인 — all-or-nothing. expectedSlotIds 는 화면에 보인 슬롯 집합이며 서버가 가진 것과
 // 다르면 409(BCH-115)로 거부한다. 개최자가 본 것과 확정되는 것을 같게 만드는 장치다.
+// buncheolConfirmed 는 이 요청으로 분철이 진행 확정됐는지(마지막 미확인 묶음). 옛 서버는 필드가 없어 false.
 export async function confirmBundlePayment(
   accessToken: string,
   bundleId: string,
   expectedSlotIds: string[],
-) {
+): Promise<{ buncheolConfirmed: boolean }> {
   const response = await fetch(
     `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/confirm`,
     {
@@ -6912,4 +6913,12 @@ export async function confirmBundlePayment(
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));
   }
+
+  const body = getNestedData(await readJsonBody(response));
+
+  return {
+    buncheolConfirmed: isRecord(body)
+      ? (getOptionalBooleanValue(body, ["buncheolConfirmed"]) ?? false)
+      : false,
+  };
 }

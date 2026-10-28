@@ -1117,7 +1117,8 @@ export function HostedBuncheolManage({
   }
 
   // C2C 묶음 입금확인. 되돌릴 수 없어(참여가 CONFIRMED 로 확정되며 알림톡이 나간다) 확인 시트를 태운다.
-  // 전원이 확인돼도 분철은 저절로 진행 확정되지 않는다 — 개최자가 진행 확정을 눌러야 한다.
+  // 이 묶음으로 미확인이 0이 되면 서버가 같은 요청 안에서 분철을 진행 확정한다. 경고는 화면이 가진 상태로 한
+  // 예측일 뿐이고, 실제로 확정됐는지는 응답의 buncheolConfirmed 로 본다.
   function requestConfirmBundlePayment(
     bundle: ManagementBundle,
     expectedSlotIds: string[],
@@ -1131,6 +1132,13 @@ export function HostedBuncheolManage({
     const depositorName = getDepositorName(head);
     const total = bundle.slots.reduce((sum, slot) => sum + slot.amount, 0);
     const memberNames = bundle.slots.map(getSlotMemberLabel).join(", ");
+    const expectedSlotIdSet = new Set(expectedSlotIds);
+    const confirmsBuncheol = activeC2CParticipants.every(
+      (participant) =>
+        expectedSlotIdSet.has(participant.participationId) ||
+        isParticipationConfirmedStatus(participant.status) ||
+        Boolean(participant.confirmedAt),
+    );
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
@@ -1148,6 +1156,11 @@ export function HostedBuncheolManage({
         bundle.slots.length > 1
           ? `멤버 ${bundle.slots.length}명을 한 번에 확인할까요?`
           : "입금을 확인할까요?",
+      warnings: confirmsBuncheol
+        ? [
+            "마지막 입금 확인이에요. 확인하면 분철이 바로 진행 확정되고 운송장 입력칸이 열려요.",
+          ]
+        : undefined,
     });
   }
 
@@ -1178,10 +1191,19 @@ export function HostedBuncheolManage({
         return;
       }
 
-      await confirmBundlePayment(accessToken, bundle.bundleId, expectedSlotIds);
+      const { buncheolConfirmed } = await confirmBundlePayment(
+        accessToken,
+        bundle.bundleId,
+        expectedSlotIds,
+      );
 
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
-      showToast("입금 확인이 완료됐어요.", "success");
+      showToast(
+        buncheolConfirmed
+          ? "입금 확인이 완료됐어요. 모든 참여자의 입금이 확인돼 분철이 진행 확정됐어요."
+          : "입금 확인이 완료됐어요.",
+        "success",
+      );
 
       try {
         await reloadManagementDetail(accessToken);
