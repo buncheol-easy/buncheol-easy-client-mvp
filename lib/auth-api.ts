@@ -458,7 +458,7 @@ export type BuncheolManagementDetail = {
   // 취소된 참여(환불 계좌 확인용). participants 와 분리해 받는다 —
   // 슬롯을 점유하지 않아 참여 수·정원 집계에 섞이면 안 된다.
   cancelledParticipants: BuncheolManagementParticipant[];
-  // 진행 확정 버튼 판정(서버 ConfirmCheck). ALL_PAID·DUE_PASSED 일 때만 버튼을 켠다. 옛 서버면 null.
+  // 진행 확정 버튼 판정(서버 ConfirmCheck). ALL_PAID·DUE_PASSED 일 때만 버튼을 켠다(ALL_PAID 는 옛 데이터에서만 온다). 옛 서버면 null.
   confirmCheck: ConfirmCheck | null;
   confirmedCount?: number;
   deadline: string;
@@ -555,7 +555,7 @@ export type MyHostedBuncheol = BuncheolSummary & {
   // CANCELLABLE | BLOCKED_BY_STATUS | NEEDS_STAFF(입금 수집 중 — 운영진과 함께 접는다).
   // 필드가 없는 구 응답이면 null — 화면은 삭제 버튼을 남기는 쪽으로 폴백한다.
   cancellability?: string | null;
-  // 관리 응답과 같은 서버 판정. ALL_PAID·DUE_PASSED 면 카드에 「진행 확정해 주세요」를 띄운다.
+  // 관리 응답과 같은 서버 판정. DUE_PASSED 면 카드에 「진행 확정해 주세요」를 띄운다(showsConfirmBadge).
   confirmCheck: ConfirmCheck | null;
   createdAt: string;
   // 서버 판정 — 진행확정이고 확정 참여 전원의 택배가 편의점에 도착했으면 true. 진행확정이 아니면 늘 false.

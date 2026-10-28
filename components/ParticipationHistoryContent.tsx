@@ -75,7 +75,7 @@ import {
   isDeliveryCompletedStatus,
   isDeliveryShippingStatus,
   getConfirmCheckLine,
-  isConfirmCheckReady,
+  showsConfirmBadge,
   isHostedBuncheolClosed,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
@@ -4539,7 +4539,7 @@ export function ParticipationHistoryContent({
                       </div>
                     </div>
                     </Link>
-                    {isConfirmCheckReady(product.hostConfirmCheck) ? (
+                    {showsConfirmBadge(product.hostConfirmCheck) ? (
                       <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/60">
                         <span className="inline-flex rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[12px] font-semibold text-black">
                           진행 확정해 주세요

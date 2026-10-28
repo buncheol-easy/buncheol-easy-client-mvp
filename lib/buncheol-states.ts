@@ -61,8 +61,14 @@ export function toConfirmCheck(value: string | null | undefined): ConfirmCheck |
   return CONFIRM_CHECKS.find((check) => check === normalizedValue) ?? null;
 }
 
+// ALL_PAID 는 정상 흐름에서 오지 않는다(마지막 묶음 입금 확인이 그 자리에서 진행 확정한다). 옛 데이터 대비로 버튼을 연다.
 export function isConfirmCheckReady(check: ConfirmCheck | null | undefined) {
   return check === "ALL_PAID" || check === "DUE_PASSED";
+}
+
+// 「개최한 분철」 카드의 「진행 확정해 주세요」 배지. 개최자가 직접 정해야 하는 건 기한이 지났을 때뿐이다.
+export function showsConfirmBadge(check: ConfirmCheck | null | undefined) {
+  return check === "DUE_PASSED";
 }
 
 // 진행 확정 버튼이 켜졌을 때의 한 줄(사용자 확정 문구, 글자 그대로). 관리 화면과 「개최한 분철」 카드가 같이 쓴다.
