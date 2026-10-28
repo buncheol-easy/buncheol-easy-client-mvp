@@ -1158,7 +1158,7 @@ export function HostedBuncheolManage({
           : "입금을 확인할까요?",
       warnings: confirmsBuncheol
         ? [
-            "마지막 입금 확인이에요. 확인하면 분철이 바로 진행 확정되고 운송장 입력칸이 열려요.",
+            "이번이 마지막 입금 확인이에요. 확인하면 분철이 바로 진행 확정되고, 참여자에게 진행 확정 알림톡이 가요.",
           ]
         : undefined,
     });
@@ -1200,7 +1200,7 @@ export function HostedBuncheolManage({
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
       showToast(
         buncheolConfirmed
-          ? "입금 확인이 완료됐어요. 모든 참여자의 입금이 확인돼 분철이 진행 확정됐어요."
+          ? "모든 입금이 확인돼 분철이 진행 확정됐어요. 이제 굿즈 구매와 배송을 진행해 주세요."
           : "입금 확인이 완료됐어요.",
         "success",
       );
