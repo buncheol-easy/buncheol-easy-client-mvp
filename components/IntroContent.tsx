@@ -15,6 +15,7 @@ import {
 } from "react";
 import { requestBuncheols, type BuncheolSummary } from "@/lib/auth-api";
 import {
+  AUTO_CONFIRM_NOTICE,
   formatMemberCount,
   isBuncheolRecruitingStatus,
 } from "@/lib/buncheol-states";
@@ -1004,21 +1005,24 @@ const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progre
 export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { progress: number }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const shouldLoadManageImages = useDeferredMockupImages(frameRef);
-  // 모두 입금 확인된 장면이다 — 집계(입금 대기·보냈어요 0명), 켜진 진행 확정 버튼과 같은 상태여야 한다.
+  // 기한 전이고 미확인이 남은 입금 수집 중(BEFORE_DUE) 장면이다 — 집계(확인 4·대기 1·보냈어요 1),
+  // 꺼진 진행 확정 버튼, 「보냈어요」 줄의 입금 확인 버튼이 같은 상태여야 한다.
   const manageMembers = [
     {
       amount: "24,000원",
-      confirmedAt: "8월 12일 21시",
       depositor: "김분철",
       image: "/intro-members/ive/wonyoung.webp",
+      isSent: true,
       member: "장원영",
+      time: "보냈어요 8월 12일 21시",
     },
     {
       amount: "24,000원",
-      confirmedAt: "8월 12일 09시",
       depositor: "이분철",
       image: "/intro-members/ive/liz.webp",
+      isSent: false,
       member: "리즈",
+      time: "확인 8월 12일 09시",
     },
   ] as const;
 
@@ -1080,13 +1084,13 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
                 <p className="text-[11px] font-medium text-black/35">
                   입금 대기
                 </p>
-                <p className="mt-1 text-[15px] font-semibold">멤버 0명</p>
+                <p className="mt-1 text-[15px] font-semibold">멤버 1명</p>
               </div>
               <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
                 <p className="text-[11px] font-medium text-black/35">
                   보냈어요
                 </p>
-                <p className="mt-1 text-[15px] font-semibold">멤버 0명</p>
+                <p className="mt-1 text-[15px] font-semibold">멤버 1명</p>
               </div>
             </div>
           </div>
@@ -1101,14 +1105,14 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
               기한 8월 14일 17시
             </span>
           </div>
-          {/* 전원 입금(ALL_PAID)이라 버튼이 켜진 모습이다. 라벨·아래 한 줄은 HostedBuncheolManage 의 진행 확정 카드와 같게 둔다. */}
+          {/* 꺼진 버튼 모양·라벨·아래 안내는 HostedBuncheolManage 의 진행 확정 카드와 같게 둔다. */}
           <p className="mt-1 text-[13px] font-medium leading-5 text-black/50">
-            입금 확인 멤버 6명 · 입금 대기 0명 · 보냈어요 0명
+            입금 확인 멤버 4명 · 입금 대기 1명 · 보냈어요 1명
           </p>
-          <div className="intro-confirm-pulse mt-3 flex h-12 items-center justify-center rounded-full bg-black text-[15px] font-semibold tracking-[-0.04em] text-[#D7FF5F]">
+          <div className="mt-3 flex h-12 items-center justify-center rounded-full bg-black/15 text-[15px] font-semibold tracking-[-0.04em] text-black/35">
             진행 확정하기
           </div>
-          <HelpText className="mt-2">모든 참여자의 입금이 확인됐어요</HelpText>
+          <HelpText className="mt-2">{AUTO_CONFIRM_NOTICE}</HelpText>
         </section>
 
         <section className="mt-6">
@@ -1124,7 +1128,7 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
 
           <div className="grid gap-3">
             {manageMembers.map(
-              ({ amount, confirmedAt, depositor, image, member }) => (
+              ({ amount, depositor, image, isSent, member, time }) => (
                 <article
                   className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white shadow-[0_10px_28px_rgba(0,0,0,0.035)]"
                   key={member}
@@ -1156,14 +1160,25 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
                             입금자명 {depositor}
                           </p>
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
-                            {`${amount} · 확인 ${confirmedAt}`}
+                            {`${amount} · ${time}`}
                           </p>
                         </div>
                         {/* 입금 수집 중 그림이라 운송장 칸이 없다 — 운송장은 진행 확정 뒤에만 열린다. */}
-                        <span className="shrink-0 rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
-                          입금 확인
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                            isSent ? "bg-[#D7FF5F] text-black" : "bg-black text-white"
+                          }`}
+                        >
+                          {isSent ? "보냈어요" : "입금 확인 완료"}
                         </span>
                       </div>
+                      {isSent ? (
+                        <div className="mt-3 flex justify-end">
+                          <span className="intro-confirm-pulse inline-flex h-9 items-center rounded-full bg-black px-3.5 text-[12px] font-semibold text-white">
+                            입금 확인
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </article>
@@ -1208,7 +1223,7 @@ const introFlowSteps = [
     label: "입금 확인",
   },
   {
-    body: "입금이 확인되면 개최자가 진행을 확정하고 굿즈 준비를 시작해요.",
+    body: "참여자 입금이 모두 확인되면 진행이 확정되고 굿즈 준비가 시작돼요.",
     label: "진행 확정",
   },
   {

@@ -25,7 +25,7 @@ const keyPoints = [
     title: " 줄여 두기",
   },
   {
-    body: "모두 입금하면 바로 확정할 수 있어요. 입금 안 한 자리는 확정할 때 빠져요.",
+    body: "모두 입금하면 자동으로 진행 확정돼요. 안 한 자리가 남으면 직접 확정하고, 그 자리는 이때 빠져요.",
     highlight: "입금 기한 24시간",
     title: " 뒤엔 직접 진행 확정",
   },
@@ -205,17 +205,18 @@ export function EventGuideContent() {
                     <div className="flex items-center gap-3">
                       <StepBadge>{2}</StepBadge>
                       <p className="text-[17px] font-semibold tracking-[-0.035em]">
-                        입금 확인하고 진행 확정
+                        입금 확인하면 진행 확정
                       </p>
                     </div>
                     <div
                       aria-hidden="true"
                       className="mt-4 rounded-full bg-[#0A0B0D] py-3 text-center text-[14px] font-semibold text-white"
                     >
-                      진행 확정하기
+                      입금 확인
                     </div>
                     <p className="mt-3 text-[13px] font-medium text-[#868C95]">
-                      계좌와 입금 안내는 모이면 알림톡이 자동으로 보내요.
+                      계좌와 입금 안내는 모이면 알림톡이 자동으로 보내요. 모두
+                      확인되면 진행 확정도 저절로 돼요.
                     </p>
                   </div>
                 </Reveal>

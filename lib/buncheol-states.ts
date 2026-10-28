@@ -84,6 +84,10 @@ export function getConfirmCheckLine(check: ConfirmCheck | null | undefined) {
   return null;
 }
 
+// 진행 확정 버튼이 꺼져 있을 때의 안내(사용자 확정 문구, 글자 그대로). 관리 화면과 소개 그림이 같이 쓴다.
+export const AUTO_CONFIRM_NOTICE =
+  "참여자 전원의 입금이 확인되면 분철이 자동으로 진행 확정돼요. 입금 기한이 지나면 입금 확인이 된 참여자들로만 분철을 진행하거나, 분철을 파기할 수 있어요. *이 경우 운영진에게 문의 필요";
+
 // 상태 필드가 없는 구 응답·목업은 모집중으로 취급한다.
 export function isBuncheolRecruitingStatus(status: string | null | undefined) {
   const normalizedStatus = normalizeStatusValue(status);

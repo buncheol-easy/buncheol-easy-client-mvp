@@ -42,6 +42,7 @@ import {
   isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
+  AUTO_CONFIRM_NOTICE,
   getConfirmCheckLine,
   isConfirmCheckReady,
   isDeliveryShippingStatus,
@@ -1938,9 +1939,7 @@ export function HostedBuncheolManage({
                 <HelpText className="mt-2">{confirmCheckLine}</HelpText>
               ) : (
                 <>
-                  <HelpText className="mt-2">
-                    참여자 전원의 입금이 확인되면 분철이 자동으로 진행 확정돼요. 입금 기한이 지나면 입금 확인이 된 참여자들로만 분철을 진행하거나, 분철을 파기할 수 있어요. *이 경우 운영진에게 문의 필요
-                  </HelpText>
+                  <HelpText className="mt-2">{AUTO_CONFIRM_NOTICE}</HelpText>
                   {/* NO_CONFIRMED 는 기한 전후를 가리지 않아, 기한이 지났는지는 표시용으로만 입금 기한을 본다. */}
                   {detail.confirmCheck === "NO_CONFIRMED" &&
                   isPastDateTime(detail.paymentDueAt ?? undefined) ? (
