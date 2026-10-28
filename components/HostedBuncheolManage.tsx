@@ -1956,6 +1956,15 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
+          {/* 진행 확정 뒤에도 운송장이 하나도 없으면 운영진이 파기할 수 있다(있으면 서버 BCH-130). 첫 운송장이 들어가면 숨긴다. */}
+          {isC2C &&
+          isBuncheolConfirmedStatus(detail.status) &&
+          c2cTrackingCompletedCount === 0 ? (
+            <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
+              <StaffContactLink description="진행이 어렵다면 운송장을 넣기 전에 운영진에게 알려 주세요. 입금한 참여자와 환불 계획을 함께 확인한 뒤 운영진이 분철을 파기해요." />
+            </section>
+          ) : null}
+
           {isAcceptingNewParticipation(detail) && hasMemberSlotSaleStatus ? (
             <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
