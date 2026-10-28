@@ -14,6 +14,7 @@ import { readAdminAuthState } from "@/lib/admin-auth-store";
 import {
   getBuncheolStatusBadgeLabel,
   getFlowType,
+  isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
 } from "@/lib/buncheol-states";
 
@@ -22,6 +23,7 @@ type LoadedBuncheol = {
   confirmedSlotCount: number;
   id: string;
   isCancellable: boolean;
+  isConfirmed: boolean;
   statusLabel: string;
   title: string;
 };
@@ -42,8 +44,9 @@ function countSlots(saleStatuses: (string | undefined)[]) {
   };
 }
 
-// 운영진 파기. 입금 단계가 시작된 회원 개최 분철을 개최자 대신 접는다(입금 확인된 참여까지 전원 취소).
+// 운영진 파기. 입금 수집 중이거나 진행 확정된 회원 개최 분철을 개최자 대신 접는다(입금 확인된 참여까지 전원 취소).
 // 파기 전에 공개 상세로 제목·상태·인원을 확인하게 하고, 서버도 상태를 다시 본다(아니면 BCH-050).
+// 진행 확정 분철의 운송장 유무는 미리 보이지 않는다. 하나라도 있으면 서버가 BCH-130 으로 거절하고 그 문구를 그대로 보인다.
 export function AdminBuncheolCancelSection({
   onSessionExpired,
 }: AdminBuncheolCancelSectionProps) {
@@ -80,12 +83,16 @@ export function AdminBuncheolCancelSection({
         detail.members.map((member) => member.saleStatus),
       );
 
+      const isMemberHosted = getFlowType(detail.flowType) === "C2C";
+      const isConfirmed = isBuncheolConfirmedStatus(detail.status);
+
       setLoaded({
         ...counts,
         id: buncheolId,
         isCancellable:
-          getFlowType(detail.flowType) === "C2C" &&
-          isBuncheolPaymentCollectingStatus(detail.status),
+          isMemberHosted &&
+          (isBuncheolPaymentCollectingStatus(detail.status) || isConfirmed),
+        isConfirmed: isMemberHosted && isConfirmed,
         statusLabel: getBuncheolStatusBadgeLabel(detail.status),
         title: detail.title,
       });
@@ -118,6 +125,9 @@ export function AdminBuncheolCancelSection({
       },
       title: `${target.id}번 분철을 파기할까요?`,
       warnings: [
+        ...(target.isConfirmed
+          ? ["진행 확정 때 만들어진 배송 기록도 함께 지워져요."]
+          : []),
         `입금이 확인된 ${target.confirmedSlotCount}자리도 함께 취소돼요. 환불은 개최자가 하니 끝날 때까지 확인해 주세요. 되돌릴 수 없어요.`,
       ],
     });
@@ -157,8 +167,9 @@ export function AdminBuncheolCancelSection({
     <div className="space-y-4">
       <div className="rounded-[1rem] border border-black/10 bg-white p-4">
         <p className="text-[13px] font-medium leading-5 text-black/60">
-          입금 단계가 시작된 회원 개최 분철을 개최자 대신 파기해요. 개최자에게
-          사정을 듣고, 입금한 참여자의 환불 계획을 확인한 뒤에 진행해 주세요.
+          입금 단계가 시작된 회원 개최 분철을 개최자 대신 파기해요. 진행 확정된
+          분철도 운송장이 등록되기 전이면 파기할 수 있어요. 개최자에게 사정을 듣고,
+          입금한 참여자의 환불 계획을 확인한 뒤에 진행해 주세요.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
@@ -206,6 +217,11 @@ export function AdminBuncheolCancelSection({
           <p className="mt-1 text-[13px] font-medium text-black/55">
             {`${shownBuncheol.statusLabel} · 입금 확인 ${shownBuncheol.confirmedSlotCount}자리 / 전체 ${shownBuncheol.activeSlotCount}자리`}
           </p>
+          {shownBuncheol.isConfirmed ? (
+            <p className="mt-1.5 text-[13px] font-medium leading-5 text-black/50">
+              진행 확정된 분철이에요. 운송장이 하나라도 등록돼 있으면 파기할 수 없어요.
+            </p>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               className="h-11 rounded-full bg-[#c03131] px-5 text-[14px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
@@ -217,7 +233,7 @@ export function AdminBuncheolCancelSection({
             </button>
             {shownBuncheol.isCancellable ? null : (
               <p className="text-[13px] font-medium text-black/50">
-                입금 수집 중인 회원 개최 분철만 파기할 수 있어요.
+                입금 수집 중이거나 진행 확정된 회원 개최 분철만 파기할 수 있어요.
               </p>
             )}
           </div>

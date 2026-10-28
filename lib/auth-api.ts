@@ -6729,7 +6729,8 @@ export async function requestAdminPaymentConfirmation(
   return getAdminBulkResult(body);
 }
 
-// 운영진 파기. 회원 개최 입금 수집 중 분철만 되고(아니면 409 BCH-050), 입금 확인된 참여까지 전원 취소된다.
+// 운영진 파기. 회원 개최 입금 수집 중·진행 확정 분철만 되고(아니면 409 BCH-050), 입금 확인된 참여까지 전원 취소된다.
+// 진행 확정 분철은 운송장이 하나라도 있으면 409 BCH-130, 없으면 배송 기록도 지워진다.
 export async function cancelBuncheolByStaff(
   accessToken: string,
   buncheolId: string,
