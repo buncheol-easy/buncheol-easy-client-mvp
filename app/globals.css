@@ -1058,6 +1058,39 @@ body.is-pwa-standalone {
   }
 }
 
+/* AI 개최글 대기 막대. 서버가 진행 단계를 주지 않아 진행률이 아니라 움직임만 보인다. */
+@keyframes ai-draft-wait {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(260%);
+  }
+}
+
+.ai-draft-wait-bar {
+  animation: ai-draft-wait 1400ms ease-in-out infinite;
+}
+
+/* AI 를 기다리는 동안 AI 가 채울 개최 폼 칸. inert 로 잠그고 잠겼다는 것만 흐리게 보인다. */
+.upload-ai-lock {
+  transition: opacity 160ms ease;
+}
+
+.upload-ai-lock[inert] {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-draft-wait-bar {
+    animation: none;
+    transform: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 .motion-carousel {
   scroll-behavior: smooth;
   scroll-padding-inline: 1rem;
