@@ -6956,9 +6956,6 @@ export async function setExtraRecruit(
   }
 }
 
-// 묶음 수락·거절 본문의 자리 목록이 서버와 다르다(그사이 참여자가 취소했거나 다른 탭에서 처리함).
-export const BUNDLE_SLOTS_CHANGED_CODE = "BCH-115";
-
 async function requestBundleDecision(
   accessToken: string,
   bundleId: string,
