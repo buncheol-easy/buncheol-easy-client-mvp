@@ -45,6 +45,8 @@ export type ProductDetailItem = ProductCardItem & {
   courier: string;
   description: string;
   deadline: string;
+  // 진행 확정 분철이 끝났는지(상세 서버 판정). 없으면 null.
+  ended?: boolean | null;
   // 분철 flow_type — 없으면 LEGACY 취급(getFlowType). C2C 신청 플로우 분기 키.
   flowType?: string | null;
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.

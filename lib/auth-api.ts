@@ -386,6 +386,8 @@ export type BuncheolDetail = BuncheolSummary & {
   myInheritedShippingAddress?: RequestedShippingAddress | null;
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
   openChatUrl?: string | null;
+  // 진행 확정 분철이 끝났는지(관리·개최 목록과 같은 서버 판정). 없으면 null — 상세는 끝남과 추가 모집 꺼짐을 가르지 못한다.
+  ended?: boolean | null;
   purchaseSite?: string;
   // 서버가 이 응답을 만든 시각(ISO). 화면의 예약 오픈 카운트다운을 서버 시계에 맞추는 기준이다.
   serverTime?: string | null;
@@ -3174,6 +3176,7 @@ function getBuncheolDetailFromBody(body: unknown) {
           ])
         : undefined),
     description: getOptionalStringValue(data, ["description", "content"]),
+    ended: getOptionalBooleanValue(data, ["ended"]) ?? null,
     flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     myInheritedShippingAddress: inheritedShipping.address,
     myShippingInheritanceApplies: inheritedShipping.applies,
@@ -4250,6 +4253,7 @@ export function toProductDetailItem(
     // 빈 설명은 비워 둔다 — 안내 문구는 상세 화면이 그린다. 여기서 채우면 수정 폼 설명 칸에
     // 그 문구가 입력값으로 들어가 그대로 저장된다.
     description: detail.description?.trim() ?? "",
+    ended: detail.ended ?? null,
     flowType: detail.flowType ?? null,
     // 🔴 여기서 빠뜨리면 파서가 값을 읽어도 화면까지 오지 않는다 — 실제로 첫 PR 에서 불리언을
     // 이 줄에 안 실어, 파서·타입·주석은 다 있는데 화면이 못 읽는 상태로 리뷰에 걸렸다.
