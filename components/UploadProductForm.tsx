@@ -843,6 +843,8 @@ export function UploadProductForm({
     releaseDate: string | null;
   } | null>(null);
   const [isAiDraftPending, setIsAiDraftPending] = useState(false);
+  const [aiConfirmRequest, setAiConfirmRequest] =
+    useState<ConfirmSheetRequest | null>(null);
   const [isAiGroupPickNeeded, setIsAiGroupPickNeeded] = useState(false);
   const aiDraftUsedRef = useRef(false);
   // 제출을 눌렀을 때 안내한 항목.
@@ -1965,7 +1967,9 @@ export function UploadProductForm({
   // 기다리는 동안 AI 가 채울 칸은 잠겨 있어 여기서 읽는 폼 값은 요청을 보낼 때와 같다.
   async function applyAiDraft(draft: AiDraftForForm) {
     const labels: string[] = [];
-    const nextFilledValues: typeof aiFilledValues = {};
+    // 이번에 비어 온 칸은 이전 AI 값을 둔다 — 그 칸이 아직 AI 값 그대로면 다음에도 묻지 않게.
+    const nextFilledValues: typeof aiFilledValues = { ...aiFilledValues };
+    let matchedGroupId: string | null = null;
 
     if (draft.title) {
       const nextTitle = draft.title.slice(0, maxTitleLength);
@@ -1988,6 +1992,7 @@ export function UploadProductForm({
     let groupFallbackKeyword = draft.groupKeywords[0] ?? "";
 
     if (draftGroup && draftGroup.id === selectedGroupId) {
+      matchedGroupId = draftGroup.id;
       nextFilledValues.groupId = draftGroup.id;
       labels.push("아이돌");
     } else if (draftGroup) {
@@ -2010,6 +2015,7 @@ export function UploadProductForm({
           ...current.filter((candidate) => candidate.id !== group.id),
         ]);
         selectGroup(group);
+        matchedGroupId = group.id;
         nextFilledValues.groupId = group.id;
         labels.push("아이돌");
       } else {
@@ -2019,7 +2025,7 @@ export function UploadProductForm({
 
     // 그룹을 확정하지 못하면 검색어만 넣어 후보를 띄운다. 개최자가 이미 고른 그룹은 건드리지 않는다.
     const needsGroupPick =
-      !nextFilledValues.groupId &&
+      !matchedGroupId &&
       !selectedGroupId &&
       Boolean(groupFallbackKeyword);
 
@@ -3176,6 +3182,15 @@ export function UploadProductForm({
             <AiDraftCard
               getFieldsToReplace={getAiFieldsToReplace}
               onApply={applyAiDraft}
+              onConfirmRequest={(request) =>
+                setAiConfirmRequest({
+                  ...request,
+                  onConfirm: () => {
+                    setAiConfirmRequest(null);
+                    request.onConfirm();
+                  },
+                })
+              }
               onPendingChange={setIsAiDraftPending}
             />
           )}
@@ -4095,6 +4110,10 @@ export function UploadProductForm({
             cancelLabel="계속 작성"
             onCancel={handleExitConfirmCancel}
             request={exitConfirmRequest}
+          />
+          <ConfirmSheet
+            onCancel={() => setAiConfirmRequest(null)}
+            request={aiConfirmRequest}
           />
     </main>
   );

@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  ConfirmSheet,
-  type ConfirmSheetDetail,
-  type ConfirmSheetRequest,
+import type {
+  ConfirmSheetDetail,
+  ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { HelpText } from "@/components/HelpText";
 import { BrandSparkleIcon, CheckIcon } from "@/components/icons";
@@ -33,6 +32,8 @@ type AiDraftCardProps = {
   getFieldsToReplace: () => ConfirmSheetDetail[];
   // 채운 칸 이름을 돌려준다. 접힌 카드 요약에 쓴다.
   onApply: (draft: AiDraftForForm) => Promise<string[]>;
+  // 확인 창은 부르는 쪽이 띄운다. 개최 폼은 transform 이 남아 있어 그 안의 fixed 시트가 폼 기준으로 놓인다.
+  onConfirmRequest: (request: ConfirmSheetRequest) => void;
   onPendingChange: (isPending: boolean) => void;
 };
 
@@ -43,12 +44,13 @@ const maxRawTextLength = 5000;
 const networkErrorMessage =
   "AI 결과를 받지 못했어요. 연결을 확인하고 다시 시도해 주세요.";
 
-// 앱의 공유하기로 복사하면 "상품명 https://…" 처럼 주소 앞뒤에 글이 붙어 온다.
+// 앱의 공유하기로 복사하면 "상품명 https://…" 처럼 주소 앞뒤에 글이 붙어 온다. 한글이 그대로 든 주소도
+// 엔진이 받으므로 한글은 남기고, 주소 끝에 붙은 문장부호만 뗀다.
 function extractUrl(input: string) {
   const match = input.match(/https?:\/\/[^\s<>"']+/i);
 
   if (match) {
-    return match[0];
+    return match[0].replace(/[)\]}>.,!?;:'"]+$/, "");
   }
 
   const trimmed = input.trim();
@@ -140,6 +142,7 @@ function withObjectParticle(word: string) {
 export function AiDraftCard({
   getFieldsToReplace,
   onApply,
+  onConfirmRequest,
   onPendingChange,
 }: AiDraftCardProps) {
   // null 이면 카드를 그리지 않는다 — 조회 전, 조회 실패, 이 API 가 아직 없는 서버까지 지금 폼 그대로.
@@ -151,8 +154,6 @@ export function AiDraftCard({
   const [errorMessage, setErrorMessage] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
   const [filledLabels, setFilledLabels] = useState<string[]>([]);
-  const [confirmRequest, setConfirmRequest] =
-    useState<ConfirmSheetRequest | null>(null);
   // 객체로 감싸 effect 정리 함수가 마지막 요청을 끊게 한다.
   const pendingRef = useRef<{ controller: AbortController | null }>({
     controller: null,
@@ -247,13 +248,12 @@ export function AiDraftCard({
       return;
     }
 
-    setConfirmRequest({
+    onConfirmRequest({
       cancelLabel: "취소",
       confirmLabel: "바꾸기",
       description: "직접 쓴 내용이 AI가 쓴 내용으로 바뀌어요.",
       details: fieldsToReplace,
       onConfirm: () => {
-        setConfirmRequest(null);
         void runDraft(source);
       },
       title: "AI 결과로 바꿀까요?",
@@ -334,7 +334,10 @@ export function AiDraftCard({
       }
 
       if (code === AI_DRAFT_DAILY_LIMIT_EXCEEDED_CODE) {
+        // 남은 횟수 자리가 같은 문장을 보인다.
         setQuota((current) => current && { ...current, remainingToday: 0 });
+        setPhase("idle");
+        return;
       }
 
       setErrorMessage(
@@ -345,10 +348,7 @@ export function AiDraftCard({
             : networkErrorMessage,
       );
       setPhase("idle");
-
-      if (code !== AI_DRAFT_DAILY_LIMIT_EXCEEDED_CODE) {
-        refreshQuota();
-      }
+      refreshQuota();
     } finally {
       if (pendingRef.current.controller === controller) {
         pendingRef.current.controller = null;
@@ -534,10 +534,6 @@ export function AiDraftCard({
           </div>
         )}
       </div>
-      <ConfirmSheet
-        onCancel={() => setConfirmRequest(null)}
-        request={confirmRequest}
-      />
     </section>
   );
 }
