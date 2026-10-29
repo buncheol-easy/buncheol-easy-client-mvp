@@ -30,8 +30,8 @@ export type AiDraftForForm = AiDraft & {
 type AiDraftCardProps = {
   // 개최자가 직접 써서 AI 결과로 바뀔 칸. 비어 있으면 묻지 않고 보낸다.
   getFieldsToReplace: () => ConfirmSheetDetail[];
-  // 채운 칸 이름을 돌려준다. 접힌 카드 요약에 쓴다.
-  onApply: (draft: AiDraftForForm) => Promise<string[]>;
+  // 채운 칸 이름을 돌려준다. 접힌 카드 요약에 쓴다. 그사이 그만두면(signal) 폼을 바꾸지 않는다.
+  onApply: (draft: AiDraftForForm, signal: AbortSignal) => Promise<string[]>;
   // 확인 창은 부르는 쪽이 띄운다. 개최 폼은 transform 이 남아 있어 그 안의 fixed 시트가 폼 기준으로 놓인다.
   onConfirmRequest: (request: ConfirmSheetRequest) => void;
   onPendingChange: (isPending: boolean) => void;
@@ -288,7 +288,11 @@ export function AiDraftCard({
         return;
       }
 
-      const labels = await onApply({ ...draft, imageUrls });
+      const labels = await onApply({ ...draft, imageUrls }, controller.signal);
+
+      if (controller.signal.aborted) {
+        return;
+      }
 
       if (draft.remainingToday !== null) {
         const remainingToday = draft.remainingToday;

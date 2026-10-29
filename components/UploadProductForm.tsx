@@ -1950,7 +1950,17 @@ export function UploadProductForm({
       fields.push({ label: "구매처", value: "AI가 찾으면 바뀌어요" });
     }
 
-    if (selectedGroupId && selectedGroupId !== aiFilledValues.groupId) {
+    // 그룹이 AI 값 그대로여도 그 아래 가격·멤버 선택은 개최자가 정한 것이고, 그룹이 바뀌면 같이 지워진다.
+    const hasGroupDetails =
+      Object.values(memberMinimumPrices).some((price) => price.trim()) ||
+      excludedMemberIds.length > 0 ||
+      (selectedGroup !== null &&
+        minHeadcount !== String(selectedGroup.members.length));
+
+    if (
+      selectedGroupId &&
+      (selectedGroupId !== aiFilledValues.groupId || hasGroupDetails)
+    ) {
       fields.push({
         label: "아이돌",
         value: "AI가 다른 그룹을 찾으면 바뀌고, 멤버별 가격도 지워져요",
@@ -1965,7 +1975,29 @@ export function UploadProductForm({
   }
 
   // 기다리는 동안 AI 가 채울 칸은 잠겨 있어 여기서 읽는 폼 값은 요청을 보낼 때와 같다.
-  async function applyAiDraft(draft: AiDraftForForm) {
+  async function applyAiDraft(draft: AiDraftForForm, signal: AbortSignal) {
+    const draftGroup = draft.group;
+    // 기다리는 단계는 멤버 받기 하나뿐이다. 먼저 받고, 그사이 그만뒀으면 폼을 하나도 바꾸지 않는다.
+    const fetchedGroup =
+      draftGroup && draftGroup.id !== selectedGroupId
+        ? await requestGroupMembers(draftGroup.id)
+            .then(
+              (members) =>
+                ({
+                  id: draftGroup.id,
+                  name: draftGroup.name,
+                  label: draftGroup.name,
+                  aliases: [],
+                  members: members.map(toIdolGroupMember),
+                }) satisfies IdolGroup,
+            )
+            .catch(() => null)
+        : null;
+
+    if (signal.aborted) {
+      return [];
+    }
+
     const labels: string[] = [];
     // 이번에 비어 온 칸은 이전 AI 값을 둔다 — 그 칸이 아직 AI 값 그대로면 다음에도 묻지 않게.
     const nextFilledValues: typeof aiFilledValues = { ...aiFilledValues };
@@ -1988,7 +2020,6 @@ export function UploadProductForm({
       labels.push("구매처");
     }
 
-    const draftGroup = draft.group;
     let groupFallbackKeyword = draft.groupKeywords[0] ?? "";
 
     if (draftGroup && draftGroup.id === selectedGroupId) {
@@ -1996,18 +2027,7 @@ export function UploadProductForm({
       nextFilledValues.groupId = draftGroup.id;
       labels.push("아이돌");
     } else if (draftGroup) {
-      const group = await requestGroupMembers(draftGroup.id)
-        .then(
-          (members) =>
-            ({
-              id: draftGroup.id,
-              name: draftGroup.name,
-              label: draftGroup.name,
-              aliases: [],
-              members: members.map(toIdolGroupMember),
-            }) satisfies IdolGroup,
-        )
-        .catch(() => null);
+      const group = fetchedGroup;
 
       if (group) {
         setRemoteGroups((current) => [
