@@ -61,6 +61,7 @@ import type { IdolGroup } from "@/lib/mock-idol-directory";
 import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { HelpText } from "@/components/HelpText";
+import { formatKoreanDateTime } from "@/lib/korean-time";
 
 type PhotoPreview = {
   file?: File;
@@ -405,6 +406,19 @@ function getNextAvailableScheduleValue() {
 }
 
 function formatDateTimeLabel(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? ""
+    : formatKoreanDateTime(date, { withWeekday: true });
+}
+
+// toScheduleInputValue 가 다시 읽는 값이라 모양을 바꾸지 않는다.
+function formatStoredDateTime(value: string) {
   if (!value) {
     return "";
   }
@@ -2293,7 +2307,8 @@ export function UploadProductForm({
       minHeadcount: parsedMinHeadcount,
       targetMembers: targetMembers.map((member) => member.name),
       uploadedAt:
-        editingProduct?.uploadedAt ?? formatDateTimeLabel(new Date().toISOString()),
+        editingProduct?.uploadedAt ??
+        formatStoredDateTime(new Date().toISOString()),
       era: selectedGroup.name,
       rating: "0.0",
       reviews: "0",
@@ -2301,7 +2316,7 @@ export function UploadProductForm({
       liked: editingProduct?.liked ?? false,
       tone: editingProduct?.tone ?? "from-zinc-950 via-zinc-700 to-zinc-300",
       courier: selectedShipping[0],
-      deadline: formatDateTimeLabel(closingDate) || "일정 미정",
+      deadline: formatStoredDateTime(closingDate) || "일정 미정",
       imageUrl: storedPhotoUrls[coverPhotoIndex] ?? coverPhoto.url,
       imageUrls: storedPhotoUrls,
       purchaseSource: purchaseSource.trim(),

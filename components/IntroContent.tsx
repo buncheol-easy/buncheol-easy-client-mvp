@@ -542,7 +542,7 @@ function HomeMiniScreen() {
 
 // 목업의 구매 기한 — 렌더 중에 날짜를 만들면 정적 프리렌더된 HTML 에 빌드 시각(CI 는 UTC)이
 // 굳어 배포가 묵을수록 과거 날짜가 뜬다. 실제 화면 캡처처럼 고정 문자열로 둔다.
-const MOCKUP_PURCHASE_DEADLINE = "2026년 08월 14일 18시";
+const MOCKUP_PURCHASE_DEADLINE = "8월 14일 오후 6시";
 
 // 분철 상세 — components/ProductDetail.tsx 의 섹션 순서·토큰을 그대로 따른다.
 const DetailMiniScreen = memo(function DetailMiniScreen({ progress }: { progress: number }) {
@@ -824,7 +824,7 @@ const PaymentMiniScreen = memo(function PaymentMiniScreen({ progress }: { progre
                     ["상품 금액", "24,000원"],
                     ["배송비", "3,000원"],
                     ["입금 총액", "27,000원"],
-                    ["모집 기한", "8.14 17시"],
+                    ["모집 기한", "8월 14일 오후 5시"],
                   ].map(([label, value]) => (
                     <div
                       className="rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2 ring-1 ring-[#E4F6A5]/55"
@@ -1097,7 +1097,7 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
               입금 수집 중
             </p>
             <span className="shrink-0 text-[12px] font-semibold text-black/45">
-              기한 8월 14일 17시
+              입금 기한 8월 14일 오후 5시
             </span>
           </div>
           {/* 부분 확정 버튼은 미입금이 0일 때만 뜬다(HostedBuncheolManage). 목업이 그 조건을
@@ -1157,8 +1157,8 @@ export const ManageMiniScreen = memo(function ManageMiniScreen({ progress }: { p
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
                             {amount}
                             {state === "sent"
-                              ? " · 보냈어요 8월 12일 21시"
-                              : " · 확인 8월 12일 09시"}
+                              ? " · 보냈어요 8월 12일 오후 9시"
+                              : " · 확인 8월 12일 오전 9시"}
                           </p>
                         </div>
                         <span
