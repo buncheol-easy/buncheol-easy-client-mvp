@@ -732,7 +732,10 @@ function getBidRecordCancelBlockedNotice(bid: BidRecord) {
     bid.cancellability !== PARTICIPATION_CANCELLABLE &&
     isParticipationAwaitingPaymentStatus(bid.participationStatus)
   ) {
-    return "입금 단계가 시작된 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
+    // 진행 확정 분철의 입금 대기는 수락된 추가 신청이라 입금 단계 시작을 겪지 않았다.
+    return isBuncheolConfirmedStatus(bid.buncheolStatus)
+      ? "추가 신청이 수락된 뒤에는 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요."
+      : "입금 단계가 시작된 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
   }
 
   if (
