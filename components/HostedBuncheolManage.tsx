@@ -2734,8 +2734,9 @@ export function HostedBuncheolManage({
                               ? { label: "수락 대기", tone: "warning" }
                               : { label: "신청됨", tone: "grey" }
                             : { label: "확인 필요", tone: "grey" };
+                  // 이름만 말줄임하고 표시는 줄 끝에 남긴다 — 닉네임이 길어도 추가 신청 묶음을 가를 수 있어야 한다.
                   const extraApplyTag = isBundleExtra ? (
-                    <span className="ml-1.5 inline-flex rounded-full bg-brand-pale px-[7px] py-px align-[1px] text-[10.5px] font-bold text-brand-ink ring-1 ring-inset ring-brand-soft">
+                    <span className="ml-1.5 inline-flex shrink-0 rounded-full bg-brand-pale px-[7px] py-px text-[10.5px] font-bold text-brand-ink ring-1 ring-inset ring-brand-soft">
                       추가 신청
                     </span>
                   ) : null;
@@ -2779,14 +2780,18 @@ export function HostedBuncheolManage({
                               파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
                               같은 이름이 두 줄 뜬다. */}
                           {showsNicknameLine ? (
-                            <p className="truncate text-[13px] font-semibold text-black/60">
-                              <span className="mr-1.5 text-black/35">참여자</span>
-                              {head.participantNickname}
+                            <p className="flex min-w-0 items-center text-[13px] font-semibold text-black/60">
+                              <span className="mr-1.5 shrink-0 text-black/35">참여자</span>
+                              <span className="min-w-0 truncate">
+                                {head.participantNickname}
+                              </span>
                               {extraApplyTag}
                             </p>
                           ) : null}
-                          <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                            입금자명 {depositorName}
+                          <p className="mt-0.5 flex min-w-0 items-center text-[14px] font-semibold tracking-[-0.04em]">
+                            <span className="min-w-0 truncate">
+                              입금자명 {depositorName}
+                            </span>
                             {showsNicknameLine ? null : extraApplyTag}
                           </p>
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
