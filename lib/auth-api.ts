@@ -386,7 +386,7 @@ export type BuncheolDetail = BuncheolSummary & {
   myInheritedShippingAddress?: RequestedShippingAddress | null;
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
   openChatUrl?: string | null;
-  // 진행 확정 분철이 끝났는지(관리·개최 목록과 같은 서버 판정). 없으면 null — 상세는 끝남과 추가 모집 꺼짐을 가르지 못한다.
+  // 진행 확정 분철이 끝났는지(관리·개최 목록과 같은 서버 판정). 추가 모집을 아는 서버는 늘 싣는다 — 없으면(null) 옛 서버다.
   ended?: boolean | null;
   purchaseSite?: string;
   // 서버가 이 응답을 만든 시각(ISO). 화면의 예약 오픈 카운트다운을 서버 시계에 맞추는 기준이다.

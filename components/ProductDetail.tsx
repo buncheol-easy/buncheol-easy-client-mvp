@@ -2201,8 +2201,11 @@ export function ProductDetail({
   const isExtraRecruitingProduct =
     isC2CConfirmedProduct &&
     (extraRecruitingFromApi ?? product.isExtraRecruiting === true);
-  const isEndedProduct =
-    isC2CConfirmedProduct && (endedFromApi ?? product.ended) === true;
+  const productEnded = endedFromApi ?? product.ended ?? null;
+  const isEndedProduct = isC2CConfirmedProduct && productEnded === true;
+  // 추가 모집을 아는 서버는 회원 개최 진행 확정 분철 상세에 ended 를 늘 싣는다. 없으면 옛 서버라 P0-2 화면을 그대로 둔다
+  // (안내 상자·꺼진 버튼 문구·캡션). 옛 서버에는 스위치가 없어 "추가 모집을 열면"이 지킬 수 없는 안내가 된다.
+  const showsConfirmedC2CNotice = isC2CConfirmedProduct && productEnded !== null;
   // 자리를 여러 개 한 번에 잡는 것은 C2C 모집 중과 추가 모집 중 전용이다.
   // · LEGACY 는 1인 1자리가 DB 유니크로 강제돼 있다
   // · 코드 참여는 코드 하나가 자리 하나에 대응한다
@@ -2465,7 +2468,7 @@ export function ProductDetail({
     }
 
     // 확정 분철은 대부분 마감이 지났고 멤버도 전부 닫혀 있어 아래 두 사유보다 먼저 본다.
-    if (isC2CConfirmedProduct && !isExtraRecruitingProduct) {
+    if (showsConfirmedC2CNotice && !isExtraRecruitingProduct) {
       return isEndedProduct ? "끝난 분철이에요" : "지금은 신청을 받지 않아요";
     }
 
@@ -4814,7 +4817,7 @@ export function ProductDetail({
             >
               {product.title}
             </h1>
-            {isC2CConfirmedProduct ? (
+            {showsConfirmedC2CNotice ? (
               <div
                 className={`mt-5 rounded-[0.95rem] px-4 py-3 ${
                   isExtraRecruitingProduct
@@ -4900,7 +4903,7 @@ export function ProductDetail({
                   />
                 </div>
                 {/* 회원 개최 진행 확정 분철은 위 안내 상자가 지금 상태를 말한다. */}
-                {isC2CConfirmedProduct ? null : (
+                {showsConfirmedC2CNotice ? null : (
                   <HelpText className="mt-2">
                     {participationStatusCaption}
                   </HelpText>
