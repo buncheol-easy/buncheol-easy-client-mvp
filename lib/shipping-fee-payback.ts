@@ -2,6 +2,8 @@
 // 유저 노출 문구에는 "환불" 대신 "돌려받기"를 쓴다 (환불은 실패/취소 뉘앙스).
 // 내부 식별자(API 경로·상태값)는 shipping-fee-payback / payback 을 사용한다.
 
+import { formatKoreanDateTime } from "@/lib/korean-time";
+
 // 인용 대상 이벤트 트윗 퍼머링크 (쿼리스트링 없이). 이벤트 기간 동안 삭제/비공개 금지 — 인용 카드가 깨진다.
 // 트윗이 바뀌면 이 상수만 수정해 배포한다 (feature-flags 와 동일한 빌드타임 관리).
 export const EVENT_TWEET_URL =
@@ -55,18 +57,7 @@ export function formatPaybackDeadlineNotice(submitDeadline: string) {
     return null;
   }
 
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "numeric",
-    hour: "numeric",
-    hour12: false,
-    month: "numeric",
-    timeZone: "Asia/Seoul",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-
-  return `${partMap.month}월 ${partMap.day}일 ${partMap.hour}시까지 신청할 수 있어요`;
+  return `${formatKoreanDateTime(date)}까지 신청할 수 있어요`;
 }
 
 // 트윗 퍼머링크 형식 (서버 검증과 동일). 쿼리스트링은 서버가 제거 후 저장하므로 허용한다.

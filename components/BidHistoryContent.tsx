@@ -14,8 +14,12 @@ import type { MouseEvent } from "react";
 import {
   BanknoteIcon,
   CheckIcon,
+  CircleXIcon,
   ClipboardListIcon,
+  ClockIcon,
   CloseIcon,
+  HeadsetIcon,
+  KakaoIcon,
   PackageCheckIcon,
   TruckIcon,
   UsersRoundIcon,
@@ -82,7 +86,6 @@ import {
   isParticipationPaymentSentStatus,
   isUserCancelledReason,
   USER_CANCELLED_REASON,
-  formatMemberCount,
 } from "@/lib/buncheol-states";
 import { FEATURES } from "@/lib/feature-flags";
 import { rememberNextHistoryIndex } from "@/lib/history-index";
@@ -118,6 +121,8 @@ import {
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { CopyButton } from "@/components/CopyButton";
+import { KAKAO_CHANNEL_URL } from "@/lib/site";
+import { formatKoreanDateTime } from "@/lib/korean-time";
 import { DepositorNameGuide } from "@/components/DepositorNameGuide";
 import { SkeletonGroup } from "@/components/SkeletonGroup";
 import { useAppToast } from "@/components/Toast";
@@ -405,7 +410,7 @@ const c2cParticipationStatusGuide = [
     icon: BanknoteIcon,
     label: c2cProgressStepLabels[1],
     description:
-      "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요. 기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 뺄 수 있어요.",
+      "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요. 기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 취소할 수 있어요.",
   },
   {
     icon: CheckIcon,
@@ -910,7 +915,15 @@ function stillNeedsHostContact(bid: BidRecord) {
 
 // 취소 카드에 보여줄 라벨·사유 문구. 분철 취소는 buncheolStatus 로 사유를 구분한다
 // (CANCELLED = 최소 인원 미달 자동 취소, HOST_CANCELLED = 개최자 취소 — 워딩은 "개최자 사정"으로 완곡하게).
-function getBidRecordCancellationNotice(bid: BidRecord) {
+type BidRecordCancellationNotice = {
+  label: string;
+  description: string;
+  showContactButtons?: boolean;
+};
+
+function getBidRecordCancellationNotice(
+  bid: BidRecord,
+): BidRecordCancellationNotice | null {
   const cancellationKind = getBidRecordCancellationKind(bid);
 
   if (!cancellationKind) {
@@ -932,15 +945,17 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     // ⚠️ 흔적이 없다고 「낼 게 없다」고 단정하지 않는다. 「보냈어요」를 거치지 않고 개최자가 바로
     // 입금확인한 자리는 취소 후 paymentSentAt 이 비는데, 그 사람은 돈을 낸 사람이다.
     const hasTrace = hasBidRecordPaymentTrace(bid);
+    const isFree = isFreeBidRecord(bid);
     return {
-      label: "개최자가 뺐어요",
-      description: isFreeBidRecord(bid)
-        ? "개최자가 참여를 뺐어요."
+      label: "참여 취소됨",
+      description: isFree
+        ? "개최자가 참여를 취소했어요."
         : !isC2C
-          ? "개최자가 참여를 뺐어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
+          ? "개최자가 참여를 취소했어요. 이미 입금했다면 등록한 환불 계좌로 환불돼요."
           : hasTrace
-            ? "입금 기한이 지나 개최자가 참여를 뺐어요. 이미 보냈다면 대금은 개최자 계좌에 있으니 개최자에게 먼저 알려 주세요. 연락이 어려우면 고객센터로 문의해 주세요."
-            : "입금 기한이 지나 개최자가 참여를 뺐어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주시고, 연락이 어려우면 고객센터로 문의해 주세요.",
+            ? "입금 기한이 지나 개최자가 참여를 취소했어요. 이미 보냈다면 대금은 개최자 계좌에 있어요. 개최자에게 먼저 알려 주세요."
+            : "입금 기한이 지나 개최자가 참여를 취소했어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자나 고객센터에 알려 주세요.",
+      showContactButtons: isC2C && !isFree,
     };
   }
 
@@ -1204,8 +1219,8 @@ function toBidRecordBundles(source: BidRecord[]) {
   return order.map((key) => byKey.get(key)!);
 }
 
-// 전상법 §20① 중개자 고지. 약관 제9조·/broker-notice 가 "참여·입금 화면에 표시" 를 공표한 문언이라
-// 한쪽만 고쳐지면 안 된다 — 카드와 결제 시트가 같은 상수를 쓴다.
+// 전상법 §20① 중개자 고지. 약관 제9조·/broker-notice 가 "분철 상세 화면 및 참여·입금 화면에 표시" 를
+// 공표했다 — 그 세 화면에 한 번씩만 두고, 카드·도움말에서는 되풀이하지 않는다.
 const BROKER_NOTICE =
   "분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접 입금돼요.";
 
@@ -1367,50 +1382,7 @@ function getHostedProductOpenedAtTime(product: ProductDetailItem) {
 function formatApiDateTime(value: string) {
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  // 참여 카드(formatCompactDeadline)와 같은 모양으로 맞춘다 — 같은 화면의 두 탭이
-  // "8.12 17시" 와 "2026년 07월 05일 14시" 로 달랐다. 연도는 올해가 아닐 때만 붙인다.
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "numeric",
-    hour: "numeric",
-    hour12: false,
-    month: "numeric",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const currentYear = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).format(new Date());
-  const yearPrefix = currentYear.includes(partMap.year)
-    ? ""
-    : `${partMap.year}년 `;
-
-  return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}시`;
-}
-
-function formatCompactDeadline(value: string) {
-  const match = value
-    .trim()
-    .match(/^\d{4}\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2}))?/);
-
-  if (!match) {
-    return value;
-  }
-
-  // "8.12 17시" 같은 축약 대신 "8월 12일 17시" 로 쓴다 — 목록·상세·개최 기록이
-  // 각각 다른 날짜 표기를 쓰고 있어 같은 정보가 매번 다른 모양으로 보였다.
-  const [, month, day, hour] = match;
-
-  return hour
-    ? `${Number(month)}월 ${Number(day)}일 ${Number(hour)}시`
-    : `${Number(month)}월 ${Number(day)}일`;
+  return Number.isNaN(date.getTime()) ? value : formatKoreanDateTime(date);
 }
 
 /*
@@ -1703,7 +1675,7 @@ function getHostedProductFromBuncheol(
     optionCount: buncheol.memberSlotCount,
     targetMembers: buncheol.memberNames,
     uploadedAt: formatApiDateTime(buncheol.createdAt),
-    // 정렬용 원본 개최 시각. uploadedAt 은 "시" 단위로 잘린 표시용 문자열이라 같은 시각에 연
+    // 정렬용 원본 개최 시각. uploadedAt 은 분 단위로 잘린 표시용 문자열이라 같은 시각에 연
     // 분철들을 구분하지 못한다 (toProductCardItem 과 같은 방식으로 원본을 함께 들고 간다).
     createdAt: buncheol.createdAt,
     era: buncheol.groupName,
@@ -3047,7 +3019,8 @@ export function BidHistoryContent({
   }
 
   // 자리 2개 이상 묶음의 카드. 이체 1회 · 배송비 1회 · 택배 1개를 한 장으로 보여준다.
-  // ⚠️ 자리는 「행」이 아니라 「칩」이다 — 행이면 자리당 +36px 라 5자리에서 카드가 화면을 넘긴다.
+  // ⚠️ 자리마다 버튼 달린 「행」을 두지 않는다 — 자리당 +36px 라 5자리에서 카드가 화면을 넘긴다.
+  // 이름은 칩, 자리별 금액은 금액 블록 안의 작은 줄로만 보인다.
   function renderBundleCard(unsortedSlots: BidRecord[]) {
     // ⚠️ created_at 이 초 단위라 같은 트랜잭션에서 꽂힌 자리들의 순서가 MySQL 재량이다.
     // 배열 위치에 기대면 폴링마다 자리 순서와 대표가 흔들린다 — id 로 고정한다.
@@ -3218,6 +3191,22 @@ export function BidHistoryContent({
                     {formatPrice(bundleProductAmount)}
                   </dd>
                 </div>
+                {amountSlots.length > 1
+                  ? amountSlots.map((slot) => (
+                      <div
+                        className="flex items-baseline justify-between gap-2 pl-2.5 text-[11px]"
+                        key={slot.id}
+                      >
+                        <dt className="min-w-0 truncate font-medium text-black/35">
+                          <span aria-hidden="true">ㄴ </span>
+                          {getBidRecordOptionLabels(slot)[0]}
+                        </dt>
+                        <dd className="shrink-0 font-medium tracking-[-0.03em] text-black/45">
+                          {formatPrice(slot.amount)}
+                        </dd>
+                      </div>
+                    ))
+                  : null}
                 <div className="flex items-baseline justify-between gap-2">
                   <dt className="shrink-0 font-medium text-black/35">
                     배송비 (묶음 1회)
@@ -3233,7 +3222,7 @@ export function BidHistoryContent({
                     모집 기한
                   </dt>
                   <dd className="font-semibold tracking-[-0.03em]">
-                    {formatCompactDeadline(head.deadline)}
+                    {head.deadline}
                   </dd>
                 </div>
               </dl>
@@ -3241,74 +3230,68 @@ export function BidHistoryContent({
 
             {/* ⚠️ 진행바 6칸 라벨은 375px 에서 줄바꿈 여유가 1px 뿐이다 — 감싸거나 들여쓰지 말 것.
                 단일 카드와 px-3 을 맞춰야 그 실측이 유효하다. */}
-            <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5">
-              {cancellationNotice ? (
-                <div className="mb-3 flex flex-col items-center gap-1.5">
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-black/60">
-                    {cancellationNotice.label}
-                  </span>
-                  <HelpText align="center">
-                    {cancellationNotice.description}
-                  </HelpText>
-                </div>
-              ) : null}
-              <div className="relative">
-                {/* 연결선 여백 = 첫·마지막 점의 열 중심(열 폭의 절반) — 5열 10%, 6열 8.33% */}
-                <div
-                  className={
-                    progressSteps.length === 6
-                      ? "absolute left-[8.333%] right-[8.333%] top-[9px] h-px bg-[#CAD6A0]"
-                      : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
-                  }
-                />
-                {/* gap 은 0.5(2px) — 6단계 라벨이 한 줄에 들어갈 수 있는 폭을
-                    한 칸이라도 더 벌기 위한 값이다. 아래 라벨의 tracking 과 함께
-                    "한 줄로 필요한 폭"을 395px → 373px 로 낮춘다 (실측).
-                    그래야 iPhone SE(375) · iPhone 12~15(390) 에서 접히지 않는다. */}
-                <div
-                  className={`relative grid gap-0.5 ${
-                    progressSteps.length === 6
-                      ? "grid-cols-6"
-                      : "grid-cols-5"
-                  }`}
-                >
-                  {progressSteps.map((step) => (
-                    <div
-                      className="flex min-w-0 flex-col items-center gap-1.5"
-                      key={step.label}
-                    >
-                      {/* 현재 단계에만 링을 둘러 "지금 어디"를 표시한다 —
-                          라벨이 10px 이라 채워진 점만으로는 지나온 구간과
-                          현재 단계가 구분되지 않았다. */}
-                      <span
-                        className={`h-[18px] w-[18px] rounded-full border-2 ${
-                          step.isActive
-                            ? "border-[#CFE86B] bg-[#D7FF5F]"
-                            : "border-[#dedede] bg-white"
-                        } ${
-                          step.isCurrent
-                            ? "ring-2 ring-[#CFE86B]/45 ring-offset-1 ring-offset-[#F7FAEE]"
-                            : ""
-                        }`}
-                      />
-                      <span
-                        className={`break-keep text-center text-[10px] leading-3 tracking-[-0.06em] ${
-                          step.isCurrent
-                            ? "font-bold text-black"
-                            : step.isActive
-                              ? "font-semibold text-black/70"
-                              : "font-semibold text-black/35"
-                        }`}
+            {cancellationNotice ? (
+              renderCancellationNotice(cancellationNotice, safeOpenChatHref)
+            ) : (
+              <div className="mt-4 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5">
+                <div className="relative">
+                  {/* 연결선 여백 = 첫·마지막 점의 열 중심(열 폭의 절반) — 5열 10%, 6열 8.33% */}
+                  <div
+                    className={
+                      progressSteps.length === 6
+                        ? "absolute left-[8.333%] right-[8.333%] top-[9px] h-px bg-[#CAD6A0]"
+                        : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
+                    }
+                  />
+                  {/* gap 은 0.5(2px) — 6단계 라벨이 한 줄에 들어갈 수 있는 폭을
+                      한 칸이라도 더 벌기 위한 값이다. 아래 라벨의 tracking 과 함께
+                      "한 줄로 필요한 폭"을 395px → 373px 로 낮춘다 (실측).
+                      그래야 iPhone SE(375) · iPhone 12~15(390) 에서 접히지 않는다. */}
+                  <div
+                    className={`relative grid gap-0.5 ${
+                      progressSteps.length === 6
+                        ? "grid-cols-6"
+                        : "grid-cols-5"
+                    }`}
+                  >
+                    {progressSteps.map((step) => (
+                      <div
+                        className="flex min-w-0 flex-col items-center gap-1.5"
+                        key={step.label}
                       >
-                        {step.label}
-                      </span>
-                    </div>
-                  ))}
+                        {/* 현재 단계에만 링을 둘러 "지금 어디"를 표시한다 —
+                            라벨이 10px 이라 채워진 점만으로는 지나온 구간과
+                            현재 단계가 구분되지 않았다. */}
+                        <span
+                          className={`h-[18px] w-[18px] rounded-full border-2 ${
+                            step.isActive
+                              ? "border-[#CFE86B] bg-[#D7FF5F]"
+                              : "border-[#dedede] bg-white"
+                          } ${
+                            step.isCurrent
+                              ? "ring-2 ring-[#CFE86B]/45 ring-offset-1 ring-offset-[#F7FAEE]"
+                              : ""
+                          }`}
+                        />
+                        <span
+                          className={`break-keep text-center text-[10px] leading-3 tracking-[-0.06em] ${
+                            step.isCurrent
+                              ? "font-bold text-black"
+                              : step.isActive
+                                ? "font-semibold text-black/70"
+                                : "font-semibold text-black/35"
+                          }`}
+                        >
+                          {step.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {safeOpenChatHref ? (
+            {safeOpenChatHref && !cancellationNotice?.showContactButtons ? (
               <a
                 className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
                 href={safeOpenChatHref}
@@ -3322,7 +3305,11 @@ export function BidHistoryContent({
               </a>
             ) : null}
 
-            {renderCardHostAccount(slots)}
+            {cancelBlockedNotice ? (
+              <HelpText className="mt-3">{cancelBlockedNotice}</HelpText>
+            ) : null}
+
+            {renderCardAccountHint(slots)}
 
             {canOpenPaymentSheet || isPaymentSent ? (
               <div className="mt-4 flex justify-end gap-2">
@@ -3342,10 +3329,6 @@ export function BidHistoryContent({
                   </button>
                 ) : null}
               </div>
-            ) : null}
-
-            {cancelBlockedNotice ? (
-              <HelpText className="mt-3">{cancelBlockedNotice}</HelpText>
             ) : null}
 
             {/* 취소는 자리 단위 API 뿐이다 — 묶음판이 없고, 같은 묶음의 두 자리를 동시에 취소하면
@@ -3659,82 +3642,76 @@ export function BidHistoryContent({
     }
   }
 
-  // 카드에 붙이는 개최자 계좌. 시트를 열지 않고 바로 보내게 하는 것이 목적이다.
-  //
-  // 🔴 게이트를 <b>결제 단계</b>로 잡는다 — 계좌가 실렸는지만 보면 안 된다. hostBankAccount 는 목록
-  // 응답 전용이 아니라 결제 상세·분철 상세에서도 병합되고, 분철이 취소됐는데 참여 취소가 아직 전파되지
-  // 않은 응답도 실재한다. 그러면 <b>취소된 분철 카드가 계좌를 띄워 입금을 유도한다</b>.
-  // C2C 는 LEGACY 와 달리 회수 경로가 문의뿐이라 그 사고가 특히 나쁘다.
-  //
-  // LEGACY 를 뺀 이유는 다르다 — 목록 프리페치가 입금 대기 참여로만 개최자 id 를 모아서 「보냈어요」
-  // 행의 계좌가 null 로 내려올 수 있고, 빈 박스는 "아직 안 준 것" 처럼 보인다.
-  //
-  // 중개자 고지는 별도 문단이 아니라 안내 문장에 흡수한다 (docs/56 H-06 — 사용자가 "고지가 너무 많다").
-  function renderCardHostAccount(slots: BidRecord[]) {
-    if (!isC2CBidRecord(slots[0])) {
-      return null;
-    }
-
-    // canViewBidRecordPaymentSheet 가 곧 docs/46 §3-5 의 "계좌 노출 = 입금 대기 + 보냈어요" 다.
-    // C2C 는 만료 잠금이 항상 false 라 기한 지난 카드도 남는다. 취소 검사는 PAYMENT_SENT 분기에
-    // 없으므로 따로 얹는다.
+  // 계좌는 입금 정보 시트 한 곳에서만 보여 준다. 카드에는 어디서 보는지만 알린다.
+  function renderCardAccountHint(slots: BidRecord[]) {
     const payableSlots = slots.filter(
       (slot) =>
         !isBidRecordCancelled(slot) && canViewBidRecordPaymentSheet(slot, now),
     );
 
-    if (payableSlots.length === 0) {
+    if (
+      !isC2CBidRecord(slots[0]) ||
+      payableSlots.length === 0 ||
+      payableSlots.every((slot) => isFreeBidRecord(slot))
+    ) {
       return null;
     }
-
-    // 낼 돈이 없는 참여(0원)에 계좌를 띄우면 "24시간 안에 보내라" 와 같은 오안내가 된다.
-    if (payableSlots.every((slot) => isFreeBidRecord(slot))) {
-      return null;
-    }
-
-    const account = payableSlots.find((slot) => slot.hostBankAccount)
-      ?.hostBankAccount;
-
-    if (!account?.account) {
-      return null;
-    }
-
-    const depositorName = payableSlots.find((slot) => slot.refundHolder)
-      ?.refundHolder;
-    const accountText = `${account.bank} ${account.account}`.trim();
 
     return (
-      <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            {/* 잘린 계좌번호는 복사만 되고 눈으로 대조가 안 된다 — 카드는 폭이 좁으니 줄바꿈을 허용한다. */}
-            <p className="break-all text-[13px] font-semibold leading-5 tracking-[-0.03em]">
-              {accountText}
-            </p>
-            {account.holder || depositorName ? (
-              <p className="mt-0.5 text-[11px] font-medium text-black/40">
-                {[
-                  account.holder ? `예금주 ${account.holder}` : "",
-                  depositorName ? `입금자명 ${depositorName}` : "",
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
+      <HelpText className="mt-3 text-balance">
+        &lsquo;입금 정보&rsquo;에서 계좌와 입금자명을 볼 수 있어요.
+      </HelpText>
+    );
+  }
+
+  // 취소된 카드는 진행바가 전부 빈 칸이라 그 자리에 취소 안내만 둔다.
+  function renderCancellationNotice(
+    notice: BidRecordCancellationNotice,
+    openChatHref: string | null,
+  ) {
+    return (
+      <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] p-3.5 ring-1 ring-[#E4F6A5]/50">
+        <p className="flex items-center gap-1.5 text-[14px] font-semibold tracking-[-0.03em]">
+          <CircleXIcon className="h-4 w-4 shrink-0 text-black/35" />
+          {notice.label}
+        </p>
+        <HelpText className="mt-1.5 text-balance">{notice.description}</HelpText>
+        {notice.showContactButtons ? (
+          <div className="mt-3.5 flex justify-center gap-8">
+            {openChatHref ? (
+              <a
+                className="flex flex-col items-center gap-1.5 transition-transform active:scale-95"
+                href={openChatHref}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#FEE500] text-[#191919] shadow-[0_6px_16px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.04)]">
+                  <KakaoIcon className="h-5 w-5" />
+                </span>
+                <span className="text-[11.5px] font-semibold tracking-[-0.03em]">
+                  개최자 오픈채팅
+                </span>
+              </a>
             ) : null}
+            <a
+              className="flex flex-col items-center gap-1.5 transition-transform active:scale-95"
+              href={KAKAO_CHANNEL_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-black text-[#D7FF5F] shadow-[0_6px_16px_rgba(0,0,0,0.08),0_0_0_1px_rgba(0,0,0,0.04)]">
+                <HeadsetIcon className="h-5 w-5" />
+              </span>
+              <span className="text-[11.5px] font-semibold tracking-[-0.03em]">
+                고객센터 문의
+              </span>
+            </a>
           </div>
-          <CopyButton
-            label="복사"
-            onCopyFailed={showAccountCopyFailedToast}
-            value={account.account}
-            variant="dark"
-          />
-        </div>
-        <HelpText className="mt-2" size="caption">
-          {BROKER_NOTICE}
-        </HelpText>
+        ) : null}
       </div>
     );
   }
+
 
   function showAccountCopyFailedToast() {
     showToast("계좌번호를 복사하지 못했어요. 길게 눌러 복사해 주세요.", "error");
@@ -4104,80 +4081,78 @@ export function BidHistoryContent({
                               모집 기한
                             </dt>
                             <dd className="truncate font-semibold tracking-[-0.03em]">
-                              {formatCompactDeadline(bid.deadline)}
+                              {bid.deadline}
                             </dd>
                           </div>
                         </dl>
                       </div>
 
-                      <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
-                        {isCancelled && cancellationNotice ? (
-                          <div className="mb-3 flex flex-col items-center gap-1.5">
-                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black/45 ring-1 ring-black/10 shadow-[0_4px_10px_rgba(0,0,0,0.04)]">
-                              {cancellationNotice.label}
-                            </span>
-                            <HelpText align="center">
-                              {cancellationNotice.description}
-                            </HelpText>
-                          </div>
-                        ) : null}
-                        <div className="relative">
-                          {/* 연결선 여백 = 첫·마지막 점의 열 중심(열 폭의 절반) — 5열 10%, 6열 8.33% */}
-                          <div
-                            className={
-                              progressSteps.length === 6
-                                ? "absolute left-[8.333%] right-[8.333%] top-[9px] h-px bg-[#CAD6A0]"
-                                : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
-                            }
-                          />
-                          {/* gap 은 0.5(2px) — 6단계 라벨이 한 줄에 들어갈 수 있는 폭을
-                              한 칸이라도 더 벌기 위한 값이다. 아래 라벨의 tracking 과 함께
-                              "한 줄로 필요한 폭"을 395px → 373px 로 낮춘다 (실측).
-                              그래야 iPhone SE(375) · iPhone 12~15(390) 에서 접히지 않는다. */}
-                          <div
-                            className={`relative grid gap-0.5 ${
-                              progressSteps.length === 6
-                                ? "grid-cols-6"
-                                : "grid-cols-5"
-                            }`}
-                          >
-                            {progressSteps.map((step) => (
-                              <div
-                                className="flex min-w-0 flex-col items-center gap-1.5"
-                                key={step.label}
-                              >
-                                {/* 현재 단계에만 링을 둘러 "지금 어디"를 표시한다 —
-                                    라벨이 10px 이라 채워진 점만으로는 지나온 구간과
-                                    현재 단계가 구분되지 않았다. */}
-                                <span
-                                  className={`h-[18px] w-[18px] rounded-full border-2 ${
-                                    step.isActive
-                                      ? "border-[#CFE86B] bg-[#D7FF5F]"
-                                      : "border-[#dedede] bg-white"
-                                  } ${
-                                    step.isCurrent
-                                      ? "ring-2 ring-[#CFE86B]/45 ring-offset-1 ring-offset-[#F7FAEE]"
-                                      : ""
-                                  }`}
-                                />
-                                <span
-                                  className={`break-keep text-center text-[10px] leading-3 tracking-[-0.06em] ${
-                                    step.isCurrent
-                                      ? "font-bold text-black"
-                                      : step.isActive
-                                        ? "font-semibold text-black/70"
-                                        : "font-semibold text-black/35"
-                                  }`}
+                      {isCancelled && cancellationNotice ? (
+                        renderCancellationNotice(
+                          cancellationNotice,
+                          safeOpenChatHref,
+                        )
+                      ) : (
+                        <div className="mt-4 rounded-[0.8rem] bg-[#F7FAEE] px-3 py-3 ring-1 ring-[#E4F6A5]/50">
+                          <div className="relative">
+                            {/* 연결선 여백 = 첫·마지막 점의 열 중심(열 폭의 절반) — 5열 10%, 6열 8.33% */}
+                            <div
+                              className={
+                                progressSteps.length === 6
+                                  ? "absolute left-[8.333%] right-[8.333%] top-[9px] h-px bg-[#CAD6A0]"
+                                  : "absolute left-[10%] right-[10%] top-[9px] h-px bg-[#CAD6A0]"
+                              }
+                            />
+                            {/* gap 은 0.5(2px) — 6단계 라벨이 한 줄에 들어갈 수 있는 폭을
+                                한 칸이라도 더 벌기 위한 값이다. 아래 라벨의 tracking 과 함께
+                                "한 줄로 필요한 폭"을 395px → 373px 로 낮춘다 (실측).
+                                그래야 iPhone SE(375) · iPhone 12~15(390) 에서 접히지 않는다. */}
+                            <div
+                              className={`relative grid gap-0.5 ${
+                                progressSteps.length === 6
+                                  ? "grid-cols-6"
+                                  : "grid-cols-5"
+                              }`}
+                            >
+                              {progressSteps.map((step) => (
+                                <div
+                                  className="flex min-w-0 flex-col items-center gap-1.5"
+                                  key={step.label}
                                 >
-                                  {step.label}
-                                </span>
-                              </div>
-                            ))}
+                                  {/* 현재 단계에만 링을 둘러 "지금 어디"를 표시한다 —
+                                      라벨이 10px 이라 채워진 점만으로는 지나온 구간과
+                                      현재 단계가 구분되지 않았다. */}
+                                  <span
+                                    className={`h-[18px] w-[18px] rounded-full border-2 ${
+                                      step.isActive
+                                        ? "border-[#CFE86B] bg-[#D7FF5F]"
+                                        : "border-[#dedede] bg-white"
+                                    } ${
+                                      step.isCurrent
+                                        ? "ring-2 ring-[#CFE86B]/45 ring-offset-1 ring-offset-[#F7FAEE]"
+                                        : ""
+                                    }`}
+                                  />
+                                  <span
+                                    className={`break-keep text-center text-[10px] leading-3 tracking-[-0.06em] ${
+                                      step.isCurrent
+                                        ? "font-bold text-black"
+                                        : step.isActive
+                                          ? "font-semibold text-black/70"
+                                          : "font-semibold text-black/35"
+                                    }`}
+                                  >
+                                    {step.label}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
 
-                      {safeOpenChatHref ? (
+                      {safeOpenChatHref &&
+                      !(isCancelled && cancellationNotice?.showContactButtons) ? (
                         <a
                           className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
                           href={safeOpenChatHref}
@@ -4197,7 +4172,7 @@ export function BidHistoryContent({
                           {cancelBlockedNotice}
                         </HelpText>
                       ) : null}
-                      {renderCardHostAccount([bid])}
+                      {renderCardAccountHint([bid])}
                       {canOpenPaymentSheet || canCancel || isPaymentSent ? (
                         <div className="mt-4 flex items-center justify-end gap-2">
                           {isPaymentSent ? (
@@ -4401,7 +4376,7 @@ export function BidHistoryContent({
                   product.optionCount ??
                   product.targetMembers?.length ??
                   product.options.length;
-                // 아래 participantCount 는 <b>멤버(자리) 수</b>다 — 표기는 formatMemberCount 참조.
+                // 아래 participantCount 는 사람 수가 아니라 <b>멤버(자리) 수</b>다 — 게이지 분모 optionCount 와 같은 축.
                 const participantCount = product.options.reduce(
                   (total, option) => total + option.participantCount,
                   0,
@@ -4448,21 +4423,35 @@ export function BidHistoryContent({
                             {statusBadge.label}
                           </span>
                         </div>
-                        {/* 부제에서 "멤버 N명"을 뺐다 — 바로 아래 칩이 같은 말을 반복하고 있었다. */}
+                        {/* 부제에 "멤버 N명"을 쓰지 않는다 — 바로 아래 게이지가 같은 수를 보여 준다. */}
                         <p className="mt-1 truncate text-[13px] font-medium text-black/45">
                           {product.era}
                         </p>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          <span className="rounded-full bg-[#E4F6A5] px-2.5 py-1 text-[12px] font-semibold text-black/70">
-                            멤버 {optionCount}명
-                          </span>
-                          <span className="rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
-                            {`참여 ${formatMemberCount(participantCount)}`}
-                          </span>
-                          <span className="max-w-full truncate rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
-                            마감 {product.deadline}
-                          </span>
+                        <div className="mt-3 flex items-center gap-2">
+                          <div
+                            aria-hidden="true"
+                            className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#EDF1E1]"
+                          >
+                            <div
+                              className="h-full rounded-full bg-[#BFE33C]"
+                              style={{
+                                width: `${optionCount > 0 ? Math.min(participantCount / optionCount, 1) * 100 : 0}%`,
+                              }}
+                            />
+                          </div>
+                          <p className="shrink-0 text-[12.5px] font-semibold tracking-[-0.02em]">
+                            {participantCount}
+                            <span className="text-black/35">
+                              /{optionCount}명 참여
+                            </span>
+                          </p>
                         </div>
+                        <p className="mt-1.5 flex items-center gap-1.5 text-[12px] font-semibold tracking-[-0.02em] text-black/50">
+                          <ClockIcon className="h-3.5 w-3.5 shrink-0" />
+                          <span className="min-w-0 truncate">
+                            {product.deadline} 마감
+                          </span>
+                        </p>
                       </div>
                     </div>
                     </Link>
@@ -4608,7 +4597,8 @@ export function BidHistoryContent({
                 <>
                   <HelpText className="px-1 pt-2">
                     성사가 확정되지 않으면 참여가 취소돼요. 입금 기한이 지나도
-                    자동 취소는 아니지만, 그때부터 개최자가 참여를 뺄 수 있어요.
+                    자동 취소는 아니지만, 그때부터 개최자가 참여를 취소할 수
+                    있어요.
                     입금 전이었다면 돌려받을 금액이 없고, 이미 보냈다면
                     개최자에게 먼저 알려 주세요.
                   </HelpText>
@@ -4617,9 +4607,8 @@ export function BidHistoryContent({
                     뒤에는 개최자에게 먼저 알려 주세요.
                   </HelpText>
                   <HelpText className="px-1 pt-2">
-                    분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
-                    입금돼요. 분철이지가 직접 개최한 분철은 신청 단계 없이 참여
-                    즉시 10분 안에 입금하면 돼요.
+                    분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 10분
+                    안에 입금하면 돼요.
                   </HelpText>
                 </>
               ) : (

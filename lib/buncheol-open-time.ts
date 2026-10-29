@@ -1,13 +1,11 @@
 // 운영진 분철 예약 오픈 시각 표기. 오픈 전 참여를 막는 정본은 서버이고, 화면은 같은 시각을 보여 주기만 한다.
 
 import { isBuncheolPurchasableStatus } from "@/lib/buncheol-states";
+import { formatKoreanClock } from "@/lib/korean-time";
 
 // 서버 렌더(UTC)와 브라우저가 같은 글자를 내도록 시간대를 한국으로 고정한다.
 const opensAtPartsFormatter = new Intl.DateTimeFormat("ko-KR", {
   day: "numeric",
-  hour: "2-digit",
-  hourCycle: "h23",
-  minute: "2-digit",
   month: "numeric",
   timeZone: "Asia/Seoul",
   weekday: "short",
@@ -61,7 +59,7 @@ function getKstDayNumber(timeMs: number) {
 }
 
 /**
- * 오픈 시각 표기. 한국 날짜로 오늘·내일이면 "오늘 20:00"·"내일 20:00", 그 뒤는 "10/20(화) 20:00".
+ * 오픈 시각 표기. 한국 날짜로 오늘·내일이면 "오늘 오후 8시"·"내일 오후 8시", 그 뒤는 "10/20(화) 오후 8시".
  * 카드·상세 띠와 오픈 대기 버튼의 화면 낭독용 설명이 함께 쓴다.
  */
 export function formatOpensAt(opensAtMs: number, nowMs: number) {
@@ -70,7 +68,7 @@ export function formatOpensAt(opensAtMs: number, nowMs: number) {
       .formatToParts(new Date(opensAtMs))
       .map((part) => [part.type, part.value]),
   );
-  const time = `${parts.hour}:${parts.minute}`;
+  const time = formatKoreanClock(new Date(opensAtMs));
   const dayGap = getKstDayNumber(opensAtMs) - getKstDayNumber(nowMs);
 
   if (dayGap === 0) {

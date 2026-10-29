@@ -1597,8 +1597,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               ))}
               <HelpText className="px-1 pt-1">
                 분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 10분 안에
-                입금하면 돼요. 분철이지는 통신판매중개자이며, 회원 개최 분철의
-                대금은 개최자 계좌로 직접 입금돼요.
+                입금하면 돼요.
               </HelpText>
               <HelpText className="px-1 pt-2">
                 마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 원하는 분철이
