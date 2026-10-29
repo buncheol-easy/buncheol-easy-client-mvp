@@ -4783,7 +4783,7 @@ export function ProductDetail({
                         : "bg-black/75 text-white backdrop-blur"
                     }`}
                   >
-                    {product.badge}
+                    {isEndedProduct ? "종료" : product.badge}
                   </div>
                   {isExtraRecruitingProduct ? (
                     <div className="rounded-full bg-[#DDE7B8] px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
