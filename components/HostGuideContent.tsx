@@ -62,8 +62,12 @@ const guideSteps: readonly { body: string; details?: readonly string[]; label: s
     label: "입금 확인",
   },
   {
-    body: "참여자 전원의 입금을 확인하면 자동으로 진행 확정돼요. 입금 안 한 자리가 남으면 기한이 지난 뒤 '입금된 멤버 N명으로 진행 확정'을 눌러 주세요. 입금 안 한 자리는 이때 빠지고, 다시 모집하지 않아요.",
+    body: "참여자 전원의 입금을 확인하면 자동으로 진행 확정돼요. 입금 안 한 자리가 남으면 기한이 지난 뒤 '입금된 멤버 N명으로 진행 확정'을 눌러 주세요. 입금 안 한 자리는 이때 빠지고, 추가 모집으로 다시 채울 수 있어요.",
     label: "진행 확정",
+  },
+  {
+    body: "진행 확정 뒤 빈 자리는 '멤버 관리'의 '빈 자리 추가 모집'을 켜면 추가 신청을 받아요. 추가 신청을 수락하면 참여자가 24시간 안에 입금하고, 기한이 지나도 입금이 없으면 '제외'로 뺄 수 있어요. 모든 배송이 도착하면 추가 모집도 닫혀요.",
+    label: "추가 모집",
   },
   {
     body: "진행 확정이 되면 운송장을 등록할 수 있어요. 택배를 보낸 뒤 운송장 번호를 넣으면 참여자에게 알림이 가고 배송 상태가 자동으로 바뀌어요. 참여자가 편의점에서 받고 수령을 확인하면 끝이에요.",
@@ -228,7 +232,7 @@ export function HostGuideContent() {
               <h2 className="relative z-10 break-keep text-[38px] font-semibold leading-[1.18] tracking-[-0.048em]">
                 분철 여는
                 <br />
-                여섯 단계.
+                일곱 단계.
               </h2>
               <p className="relative z-10 mt-6 break-keep text-[16px] font-medium leading-[1.7] tracking-[-0.02em] text-white/52">
                 등록부터 운송장까지,

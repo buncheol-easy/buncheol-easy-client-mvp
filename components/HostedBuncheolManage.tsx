@@ -1226,7 +1226,7 @@ export function HostedBuncheolManage({
               "「보냈어요」를 누른 참여자가 있어요. 통장에 입금이 들어왔다면 진행 확정 전에 「입금 확인」을 먼저 눌러 주세요.",
             ]
           : []),
-        "빠진 자리는 다시 모집하지 않아요. 확정한 뒤에는 되돌릴 수 없어요.",
+        "빠진 자리는 진행 확정 뒤 추가 모집으로 다시 채울 수 있어요. 확정한 뒤에는 되돌릴 수 없어요.",
       ],
     });
   }
@@ -2004,7 +2004,12 @@ export function HostedBuncheolManage({
       });
       setAddMemberSheet(null);
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
-      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`, "success");
+      showToast(
+        isConfirmedC2C
+          ? `${candidate.name} 멤버를 넣었어요. 바로 추가 신청을 받을 수 있어요.`
+          : `${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`,
+        "success",
+      );
 
       try {
         await reloadManagementDetail(accessToken);
@@ -2433,7 +2438,7 @@ export function HostedBuncheolManage({
                 </>
               ) : (
                 <HelpText className="mt-1">
-                  다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
+                  모집하지 않을 멤버는 「빼기」를 눌러 주세요. 뺀 멤버는 신청을 받지
                   않아요.
                 </HelpText>
               )}
