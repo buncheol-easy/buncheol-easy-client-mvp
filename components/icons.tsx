@@ -7,8 +7,10 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleX,
   ClipboardList,
   Clock,
+  Headset,
   Heart,
   House,
   Minus,
@@ -70,6 +72,8 @@ export const ClockIcon = createIcon(Clock, "h-4 w-4");
 export const TruckIcon = createIcon(Truck, "h-3.5 w-3.5");
 export const UsersRoundIcon = createIcon(UsersRound, "h-3.5 w-3.5");
 export const PackageCheckIcon = createIcon(PackageCheck, "h-3.5 w-3.5");
+export const CircleXIcon = createIcon(CircleX, "h-4 w-4");
+export const HeadsetIcon = createIcon(Headset, "h-5 w-5");
 
 // lucide 의 X 는 닫기(✕) 아이콘이라 브랜드 마크로 쓸 수 없다. X 로고는 스트로크가
 // 아닌 단색 채움이라 createIcon 을 태우지 않고 공식 path 를 그대로 둔다.

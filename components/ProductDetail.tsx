@@ -120,6 +120,7 @@ import {
   type MemberChipState,
   MemberChips,
 } from "@/components/MemberChips";
+import { formatKoreanDateTime } from "@/lib/korean-time";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   OpensAtBand,
@@ -629,14 +630,7 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
    * 시선을 끈다. 마감이 임박한 24시간 안에서만 시계가 의미를 갖는다.
    */
   if (days >= 1) {
-    return `${new Intl.DateTimeFormat("ko-KR", {
-      day: "numeric",
-      hour: "2-digit",
-      hour12: false,
-      minute: "2-digit",
-      month: "long",
-      timeZone: "Asia/Seoul",
-    }).format(deadlineDate)}`;
+    return formatKoreanDateTime(deadlineDate);
   }
 
   return `${formatCountdownClock(totalSeconds)} 남음`;
@@ -796,7 +790,6 @@ const MEMBER_STATUS_CHIP_LABELS = {
   otherComplete: "매진",
   otherPaymentWaiting: "다른 사람이 입금 중이에요",
   otherPaymentChecking: "입금 확인 중이에요",
-  otherPaymentOverdue: "입금 기한이 지났어요",
   codeOnly: "서포터즈 전용 자리",
   notOpen: "오픈 전",
 } as const;
@@ -855,13 +848,12 @@ function getOptionPaymentWaitingLabel(
       : MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting;
   }
 
-  if (!isOverdue) {
+  // C2C 는 기한이 지나도 입금할 수 있고, 남의 기한 사정은 보는 사람에게 드러내지 않는다.
+  if (!isOverdue || isC2C) {
     return MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
   }
 
-  return isC2C
-    ? MEMBER_STATUS_CHIP_LABELS.otherPaymentOverdue
-    : MEMBER_STATUS_CHIP_LABELS.otherPaymentChecking;
+  return MEMBER_STATUS_CHIP_LABELS.otherPaymentChecking;
 }
 
 // 자리가 열리기를 기다리는 사람이 가늠하는 용도라, 1시간 넘게 남으면 시간 단위까지만 보인다.
@@ -984,12 +976,7 @@ function formatCheckoutDateTime(value: string | null | undefined) {
     return value ?? "-";
   }
 
-  return new Intl.DateTimeFormat("ko-KR", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-  }).format(date);
+  return formatKoreanDateTime(date);
 }
 
 function getBankAccountKey(account: BankAccountInfo | null | undefined) {
@@ -5973,18 +5960,10 @@ export function ProductDetail({
                       </HelpText>
                     </div>
 
-                    {/* 여기서도 고지를 별도 문단이 아니라 안내 문장에 흡수한다.
-                        원래 문단은 isC2CProduct 로 감싸여 있지 않아 회사 개최 분철에도
-                        노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
+                    {/* 중개자 고지는 바로 앞 확인 단계에 있다 — 신청 완료 화면에서 되풀이하지 않는다. */}
                     <HelpText className="px-1">
                       개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
                       있어요.
-                      {isC2CProduct ? (
-                        <span className="block font-semibold text-black/75">
-                          분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
-                          직접 입금돼요.
-                        </span>
-                      ) : null}
                     </HelpText>
                   </div>
 
