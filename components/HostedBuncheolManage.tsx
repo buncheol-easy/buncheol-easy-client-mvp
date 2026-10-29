@@ -11,6 +11,8 @@ import {
 } from "@/components/ConfirmSheet";
 import { HelpText } from "@/components/HelpText";
 import { StaffContactLink } from "@/components/StaffContactLink";
+import { StatusTag, type StatusTagTone } from "@/components/StatusTag";
+import { Switch } from "@/components/Switch";
 import { useAppToast } from "@/components/Toast";
 import {
   addBuncheolMember,
@@ -26,6 +28,7 @@ import {
   requestGroupMembers,
   requestGroups,
   requestPaymentConfirmation,
+  setExtraRecruit,
   updateBuncheolOpenChatUrl,
   type BuncheolDetail,
   type BuncheolManagementDetail,
@@ -42,6 +45,7 @@ import {
   isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
+  isAwaitingHostAccept,
   AUTO_CONFIRM_NOTICE,
   getConfirmCheckLine,
   isConfirmCheckReady,
@@ -382,12 +386,23 @@ function getManagementOptionsFromDetail(
       participationCount: Math.max(member.participantCount, participants.length),
       // 상세 파서는 서버 members[].price 를 bidMinPrice 로 읽는다(그 응답에 다른 금액 키가 없다).
       price: member.bidMinPrice,
+      removed: member.removed,
       saleStatus: member.saleStatus,
       winner: currentParticipant
         ? getWinnerFromParticipant(currentParticipant)
         : null,
     };
   });
+}
+
+// 진행 확정 뒤 추가 신청을 받는 중 — 서버 extraRecruiting 과 같은 식(진행 확정 + 스위치 켜짐 + 종료 전).
+function isExtraRecruiting(detail: BuncheolManagementDetail) {
+  return (
+    getFlowType(detail.flowType) === "C2C" &&
+    isBuncheolConfirmedStatus(detail.status) &&
+    detail.extraRecruitOpen === true &&
+    detail.ended === false
+  );
 }
 
 // 서버 Buncheol.acceptsNewParticipation 과 같은 술어 — 자리 빼기·넣기는 이 구간에서만 통한다(아니면 BCH-060).
@@ -398,33 +413,86 @@ function isAcceptingNewParticipation(detail: BuncheolManagementDetail) {
   }
 
   return (
-    isBuncheolRecruitingStatus(detail.status) && !isPastDateTime(detail.deadline)
+    (isBuncheolRecruitingStatus(detail.status) &&
+      !isPastDateTime(detail.deadline)) ||
+    isExtraRecruiting(detail)
   );
 }
 
-function isClosedMemberSlot(option: BuncheolManagementOption) {
-  return option.saleStatus?.toUpperCase() === "CLOSED";
+// 「빼기」로 뺀 자리. 옛 응답에는 removed 가 없어 CLOSED 로 가른다 — 그때는 진행 확정 뒤 멤버 관리를 그리지 않으므로
+// 추가 모집이 꺼져 CLOSED 로 내려오는 빈 자리와 섞이지 않는다.
+function isRemovedMemberSlot(option: BuncheolManagementOption) {
+  return typeof option.removed === "boolean"
+    ? option.removed
+    : option.saleStatus?.toUpperCase() === "CLOSED";
 }
 
 type MemberSlotState = {
   label: string;
   kind: "empty" | "occupied" | "unknown";
+  tone: StatusTagTone;
+  // 진행 확정 뒤 추가 신청으로 잡힌 자리 — 상태 칩 앞에 「추가 모집」을 단다.
+  extra: boolean;
 };
 
-// 뺄 수 있는지는 서버 saleStatus 그대로 가른다. 모르는 값(롤백 중 CODE_ONLY 등)은 버튼 없이 둔다.
-function getMemberSlotState(saleStatus: string | undefined): MemberSlotState {
-  switch (saleStatus?.toUpperCase()) {
+const UNKNOWN_MEMBER_SLOT_STATE: MemberSlotState = {
+  extra: false,
+  kind: "unknown",
+  label: "확인 필요",
+  tone: "grey",
+};
+
+// 빈 자리인지는 서버 saleStatus 로, 잡힌 자리의 상태는 관리 응답의 참여 상태로 가른다 — saleStatus 는 「보냈어요」를
+// 입금 대기로 접고 수락 대기를 신청됨과 가르지 않는다. 모르는 값(롤백 중 CODE_ONLY 등)은 버튼 없이 둔다.
+function getMemberSlotState(
+  option: BuncheolManagementOption,
+  participant: BuncheolManagementParticipant | undefined,
+  detail: BuncheolManagementDetail,
+): MemberSlotState {
+  if (participant) {
+    const extra = participant.extra === true;
+
+    if (
+      isParticipationConfirmedStatus(participant.status) ||
+      participant.confirmedAt
+    ) {
+      return { extra, kind: "occupied", label: "입금 확인", tone: "black" };
+    }
+
+    if (isParticipationPaymentSentStatus(participant.status)) {
+      return { extra, kind: "occupied", label: "보냈어요", tone: "lime" };
+    }
+
+    if (isParticipationAwaitingPaymentStatus(participant.status)) {
+      return { extra, kind: "occupied", label: "입금 대기", tone: "grey" };
+    }
+
+    if (isParticipationAppliedStatus(participant.status)) {
+      return isAwaitingHostAccept(detail.status, participant.status)
+        ? { extra, kind: "occupied", label: "수락 대기", tone: "warning" }
+        : { extra, kind: "occupied", label: "신청됨", tone: "grey" };
+    }
+  }
+
+  switch (option.saleStatus?.toUpperCase()) {
     case "AVAILABLE":
-      return { kind: "empty", label: "빈 자리" };
+      return isExtraRecruiting(detail)
+        ? { extra: false, kind: "empty", label: "모집 중", tone: "open" }
+        : { extra: false, kind: "empty", label: "빈 자리", tone: "grey" };
+    // 추가 모집이 꺼진 진행 확정 분철은 빈 자리도 CLOSED 로 내려온다. 뺀 자리는 이미 removed 로 걸렀다.
+    case "CLOSED":
+      return isBuncheolConfirmedStatus(detail.status)
+        ? { extra: false, kind: "empty", label: "빈 자리", tone: "grey" }
+        : UNKNOWN_MEMBER_SLOT_STATE;
     case "APPLIED":
-      return { kind: "occupied", label: "신청됨" };
+      return { extra: false, kind: "occupied", label: "신청됨", tone: "grey" };
     // 「보냈어요」도 서버가 AWAITING_PAYMENT 로 접어 내려준다.
     case "AWAITING_PAYMENT":
-      return { kind: "occupied", label: "입금 대기" };
+      return { extra: false, kind: "occupied", label: "입금 대기", tone: "grey" };
     case "SOLD":
-      return { kind: "occupied", label: "입금 확인" };
+      return { extra: false, kind: "occupied", label: "입금 확인", tone: "black" };
     default:
-      return { kind: "unknown", label: "확인 필요" };
+      return UNKNOWN_MEMBER_SLOT_STATE;
   }
 }
 
@@ -793,11 +861,11 @@ export function HostedBuncheolManage({
   const c2cTrackingCompletedCount = [...c2cDeliveries.values()].filter(
     (delivery) => Boolean(delivery.trackingNumber),
   ).length;
-  // 「멤버 관리」 — 뺀 자리(삭제·CLOSED)는 목록에서 숨기고 「멤버 추가」에서 다시 보여 준다.
+  // 「멤버 관리」 — 뺀 자리는 목록에서 숨기고 「멤버 추가」에서 다시 보여 준다.
   const memberSlots = (detail?.options ?? []).filter(
-    (option) => !isClosedMemberSlot(option),
+    (option) => !isRemovedMemberSlot(option),
   );
-  const closedMemberSlots = (detail?.options ?? []).filter(isClosedMemberSlot);
+  const closedMemberSlots = (detail?.options ?? []).filter(isRemovedMemberSlot);
   // 서버의 마지막 자리 판정(BCH-120)·최소 인원 하향과 같은 수 — 닫히지 않은 자리.
   const openMemberSlotCount = memberSlots.length;
   // 관리 응답이 자리 목록을 직접 실으면 상세 보충을 건너뛰는데, 그 파서는 saleStatus 를 읽지 않는다.
@@ -805,6 +873,33 @@ export function HostedBuncheolManage({
   const hasMemberSlotSaleStatus =
     (detail?.options ?? []).length > 0 &&
     (detail?.options ?? []).every((option) => Boolean(option.saleStatus));
+  const activeParticipantBySlotId = new Map(
+    activeC2CParticipants.flatMap((participant) =>
+      participant.buncheolMemberId
+        ? [[participant.buncheolMemberId, participant] as const]
+        : [],
+    ),
+  );
+  const memberSlotStates = detail
+    ? memberSlots.map((option) => ({
+        option,
+        state: getMemberSlotState(
+          option,
+          activeParticipantBySlotId.get(option.buncheolMemberId),
+          detail,
+        ),
+      }))
+    : [];
+  const isConfirmedC2C = isC2C && isBuncheolConfirmedStatus(detail?.status);
+  // 진행 확정 뒤 「멤버 관리」와 스위치. 스위치 값이 없는 옛 서버거나 끝난 분철이면 그리지 않는다.
+  const showsExtraRecruitControls =
+    isConfirmedC2C &&
+    detail?.ended === false &&
+    typeof detail.extraRecruitOpen === "boolean";
+  const isExtraRecruitOn = detail ? isExtraRecruiting(detail) : false;
+  const canEditMemberSlots = detail ? isAcceptingNewParticipation(detail) : false;
+  // 진행 확정 분철의 신청은 수락을 기다리는 추가 신청뿐이다.
+  const c2cAppliedTileLabel = isConfirmedC2C ? "수락 대기" : "신청";
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -1362,21 +1457,24 @@ export function HostedBuncheolManage({
     }
   }
 
-  // 서버는 빼는 순간 최소 인원을 남은 열린 자리 수로 낮추고(다시 넣어도 올리지 않는다), 남은 열린 자리가
+  // 모집 중에는 빼는 순간 서버가 최소 인원을 남은 열린 자리 수로 낮추고(다시 넣어도 올리지 않는다), 남은 열린 자리가
   // 모두 신청됐으면 같은 요청 안에서 입금 단계를 시작한다. 경고는 그 결과를 미리 알리는 것뿐이고,
-  // 실제로 시작됐는지는 빼고 난 관리 응답의 상태로 본다.
+  // 실제로 시작됐는지는 빼고 난 관리 응답의 상태로 본다. 진행 확정 뒤 빼기는 둘 다 하지 않는다.
   function requestRemoveMemberSlot(option: BuncheolManagementOption) {
     if (!detail || pendingC2CAction) {
       return;
     }
 
+    const isRecruiting = isBuncheolRecruitingStatus(detail.status);
     const nextOpenSlotCount = openMemberSlotCount - 1;
-    const lowersMinHeadcount = nextOpenSlotCount < minHeadcount;
+    const lowersMinHeadcount =
+      isRecruiting && nextOpenSlotCount < minHeadcount;
     const nextMinHeadcount = Math.min(minHeadcount, nextOpenSlotCount);
-    const occupiedSlotCount = memberSlots.filter(
-      (slot) => getMemberSlotState(slot.saleStatus).kind === "occupied",
+    const occupiedSlotCount = memberSlotStates.filter(
+      ({ state }) => state.kind === "occupied",
     ).length;
     const startsPayment =
+      isRecruiting &&
       occupiedSlotCount > 0 &&
       occupiedSlotCount === nextOpenSlotCount &&
       occupiedSlotCount >= nextMinHeadcount;
@@ -1396,7 +1494,7 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "빼기",
       description:
-        "이 멤버는 더 신청받지 않아요. 실수였다면 「멤버 추가」로 다시 넣을 수 있어요.",
+        "뺀 멤버는 신청을 받지 않아요. 실수였다면 「멤버 추가」로 다시 넣을 수 있어요.",
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runRemoveMemberSlot(option);
@@ -1452,6 +1550,55 @@ export function HostedBuncheolManage({
       );
 
       // 그사이 신청이 들어왔거나 다른 탭에서 뺐으면 서버가 거부한다 — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
+    } finally {
+      setPendingC2CAction(null);
+    }
+  }
+
+  async function changeExtraRecruit(open: boolean) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    setPendingC2CAction("extra-recruit");
+
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
+        return;
+      }
+
+      await setExtraRecruit(accessToken, id, open);
+      // 목록 카드의 「추가 모집」 배지와 남은 멤버 칩이 60초 저장본으로 남지 않게 한다.
+      void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      showToast(
+        open ? "추가 모집을 켰어요" : "추가 모집을 껐어요. 새 추가 신청만 막혀요",
+        "success",
+      );
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
+    } catch (error: unknown) {
+      showToast(
+        error instanceof Error ? error.message : "추가 모집을 바꾸지 못했어요.",
+        "error",
+      );
+
+      // 그사이 모든 배송이 도착해 끝났으면 서버가 켜기를 거절한다(BCH-131) — 다시 불러와 지금 상태를 보여 준다.
       if (accessToken) {
         try {
           await reloadManagementDetail(accessToken);
@@ -1791,9 +1938,15 @@ export function HostedBuncheolManage({
               </div>
               {isC2C ? (
                 <>
-                  <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
+                  <div
+                    className={`rounded-[0.85rem] px-3 py-3 ${
+                      isConfirmedC2C && c2cAppliedCount > 0
+                        ? "bg-brand-pale ring-1 ring-inset ring-brand-soft"
+                        : "bg-[#f5f5f5]"
+                    }`}
+                  >
                     <p className="text-[11px] font-medium text-black/35">
-                      {"\uc2e0\uccad"}
+                      {c2cAppliedTileLabel}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
                       {formatMemberCount(c2cAppliedCount)}
@@ -1965,23 +2118,62 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
-          {isAcceptingNewParticipation(detail) && hasMemberSlotSaleStatus ? (
+          {hasMemberSlotSaleStatus &&
+          (canEditMemberSlots || showsExtraRecruitControls) ? (
             <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
-              <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                멤버 관리
-              </p>
-              <HelpText className="mt-1">
-                다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
-                않아요.
-              </HelpText>
+              <div className="flex items-center gap-2">
+                <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                  멤버 관리
+                </p>
+                {isExtraRecruitOn ? (
+                  <span className="shrink-0 rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-brand-strong">
+                    추가 모집 중
+                  </span>
+                ) : null}
+              </div>
+              {showsExtraRecruitControls ? (
+                <>
+                  <div className="mt-2.5 flex items-center justify-between gap-3 rounded-[0.85rem] bg-[#f6f6f6] px-3 py-3">
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold tracking-[-0.03em]">
+                        빈 자리 추가 모집
+                      </p>
+                      <p className="mt-px text-[12px] font-medium text-black/50">
+                        {isExtraRecruitOn
+                          ? "추가 신청을 수락해야 참여자가 입금해요"
+                          : "켜면 빈 자리에 추가 신청을 받아요"}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={isExtraRecruitOn}
+                      disabled={pendingC2CAction !== null}
+                      label="빈 자리 추가 모집"
+                      onCheckedChange={(open) => void changeExtraRecruit(open)}
+                    />
+                  </div>
+                  <HelpText className="mt-2">
+                    {isExtraRecruitOn
+                      ? "추가 모집을 하지 않을 멤버는 「빼기」를 눌러 주세요. 뺀 멤버는 신청을 받지 않아요."
+                      : "추가 모집을 켜야 빈 자리에 추가 신청을 받고, 멤버를 빼거나 더할 수 있어요."}
+                  </HelpText>
+                </>
+              ) : (
+                <HelpText className="mt-1">
+                  다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
+                  않아요.
+                </HelpText>
+              )}
               <ul className="mt-3 divide-y divide-black/[0.06]">
-                {memberSlots.map((option) => {
-                  const slotState = getMemberSlotState(option.saleStatus);
+                {memberSlotStates.map(({ option, state: slotState }) => {
                   const isLastOpenSlot = openMemberSlotCount <= 1;
-                  const blockedReason =
-                    slotState.kind === "occupied"
+                  const canRemove =
+                    canEditMemberSlots && slotState.kind === "empty";
+                  // 진행 확정 뒤에는 잡힌 자리가 대부분이라 「뺄 수 없어요」를 줄마다 달지 않는다.
+                  const blockedReason = !canEditMemberSlots
+                    ? null
+                    : slotState.kind === "occupied" && !isConfirmedC2C
                       ? "신청자가 있는 자리는 뺄 수 없어요."
-                      : slotState.kind === "empty" && isLastOpenSlot
+                      : canRemove && isLastOpenSlot
                         ? "마지막 멤버는 뺄 수 없어요."
                         : null;
                   const isRemoving =
@@ -2006,16 +2198,11 @@ export function HostedBuncheolManage({
                           </HelpText>
                         ) : null}
                       </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                          option.saleStatus?.toUpperCase() === "SOLD"
-                            ? "bg-black text-white"
-                            : "bg-[#eeeeee] text-black/60"
-                        }`}
-                      >
-                        {slotState.label}
-                      </span>
-                      {slotState.kind === "empty" ? (
+                      {slotState.extra ? (
+                        <StatusTag tone="extra">추가 모집</StatusTag>
+                      ) : null}
+                      <StatusTag tone={slotState.tone}>{slotState.label}</StatusTag>
+                      {canRemove ? (
                         <button
                           className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                           disabled={isLastOpenSlot || pendingC2CAction !== null}
@@ -2029,15 +2216,17 @@ export function HostedBuncheolManage({
                   );
                 })}
               </ul>
-              <button
-                className="mt-3 flex h-11 w-full items-center justify-center gap-1 rounded-full border border-black/10 bg-white text-[14px] font-semibold tracking-[-0.04em] text-black/70 disabled:text-black/25"
-                disabled={pendingC2CAction !== null}
-                onClick={() => void openAddMemberSheet()}
-                type="button"
-              >
-                <PlusIcon className="h-4 w-4" />
-                멤버 추가
-              </button>
+              {canEditMemberSlots ? (
+                <button
+                  className="mt-3 flex h-11 w-full items-center justify-center gap-1 rounded-full border border-black/10 bg-white text-[14px] font-semibold tracking-[-0.04em] text-black/70 disabled:text-black/25"
+                  disabled={pendingC2CAction !== null}
+                  onClick={() => void openAddMemberSheet()}
+                  type="button"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  멤버 추가
+                </button>
+              ) : null}
             </section>
           ) : null}
 
