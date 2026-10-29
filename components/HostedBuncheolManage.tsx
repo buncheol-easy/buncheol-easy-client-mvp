@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,6 +67,10 @@ import {
   formatMemberCount,
 } from "@/lib/buncheol-states";
 import { rankGroupSearchResults } from "@/lib/group-presenters";
+import {
+  hasSeenExtraRecruitPrompt,
+  markExtraRecruitPromptSeen,
+} from "@/lib/extra-recruit-prompt";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -967,6 +977,14 @@ export function HostedBuncheolManage({
     detail?.ended === false &&
     typeof detail.extraRecruitOpen === "boolean";
   const isExtraRecruitOn = detail ? isExtraRecruiting(detail) : false;
+  // 진행 확정 뒤 처음 들어올 때 추가 모집을 권하는 시트에 올릴 빈 자리(뺀 자리와 잡힌 자리 제외).
+  const extraRecruitPromptSlotNamesKey =
+    showsExtraRecruitControls && !isExtraRecruitOn
+      ? memberSlotStates
+          .filter(({ state }) => state.kind === "empty")
+          .map(({ option }) => option.memberName)
+          .join("\n")
+      : "";
   const canEditMemberSlots = detail ? isAcceptingNewParticipation(detail) : false;
   // 진행 확정 분철의 신청은 수락을 기다리는 추가 신청뿐이다.
   const c2cAppliedTileLabel = isConfirmedC2C ? "수락 대기" : "신청";
@@ -1830,6 +1848,42 @@ export function HostedBuncheolManage({
       setPendingC2CAction(null);
     }
   }
+
+  // 뜨는 순간 기억한다 — 「나중에」, 「추가 모집 열기」, 바깥 누르기 모두 다시 뜨지 않는다.
+  const openExtraRecruitPrompt = useEffectEvent((slotNames: string[]) => {
+    if (confirmSheetRequest) {
+      return;
+    }
+
+    markExtraRecruitPromptSeen(id);
+    setConfirmSheetRequest({
+      cancelLabel: "나중에",
+      confirmLabel: "추가 모집 열기",
+      description: `추가 모집을 열면 ${slotNames.join(", ")}에 추가 신청을 받아요. 추가 신청을 수락하면 참여자가 24시간 안에 입금해요.`,
+      footnote:
+        "「나중에」를 눌러도 「멤버 관리」 카드의 스위치로 언제든 켤 수 있어요.",
+      onCancel: () => showToast("「멤버 관리」에서 언제든 켤 수 있어요"),
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void changeExtraRecruit(true);
+      },
+      title: `빈 자리 ${slotNames.length}개가 남았어요`,
+    });
+  });
+
+  useEffect(() => {
+    if (!extraRecruitPromptSlotNamesKey || hasSeenExtraRecruitPrompt(id)) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      openExtraRecruitPrompt(extraRecruitPromptSlotNamesKey.split("\n"));
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [extraRecruitPromptSlotNamesKey, id]);
 
   async function openAddMemberSheet() {
     if (!detail || pendingC2CAction) {
@@ -3522,7 +3576,10 @@ export function HostedBuncheolManage({
       ) : null}
 
       <ConfirmSheet
-        onCancel={() => setConfirmSheetRequest(null)}
+        onCancel={() => {
+          confirmSheetRequest?.onCancel?.();
+          setConfirmSheetRequest(null);
+        }}
         request={confirmSheetRequest}
       />
     </main>

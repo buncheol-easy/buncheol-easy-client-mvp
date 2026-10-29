@@ -20,6 +20,10 @@ export type ConfirmSheetRequest = {
   details?: ConfirmSheetDetail[];
   // 목록 위 작은 제목(예: 「빠지는 멤버」). 없으면 목록만 그린다.
   detailsTitle?: string;
+  // 버튼 바로 위 작은 안내(예: 나중에 다시 할 수 있는 곳). 경고와 달리 강조하지 않는다.
+  footnote?: string;
+  // 취소 버튼·바깥·Escape 로 닫힐 때 시트를 연 쪽이 따로 할 일. 닫기는 ConfirmSheet 의 onCancel 이 한다.
+  onCancel?: () => void;
   onConfirm: () => void;
   title: string;
   // 강조 경고. 마지막 줄만 굵게 — 되돌릴 수 없다는 사실이 목록에 묻히면 안 된다.
@@ -180,6 +184,11 @@ export function ConfirmSheet({
               </p>
             ))}
           </div>
+        ) : null}
+        {request.footnote ? (
+          <HelpText className="mt-2" size="caption">
+            {request.footnote}
+          </HelpText>
         ) : null}
         </div>
         <div className="mt-5 shrink-0 grid grid-cols-2 gap-2">
