@@ -2728,6 +2728,12 @@ export function HostedBuncheolManage({
                   const showsNicknameLine =
                     head.participantNickname !== depositorName &&
                     !isSyntheticParticipantName(head.participantNickname);
+                  // 수락 전에 더 고른 자리가 같은 묶음에 붙으므로 묶음의 신청 시각은 가장 이른 자리 것이다.
+                  const bundleAppliedAt = bundle.slots
+                    .flatMap((slot) => (slot.appliedAt ? [slot.appliedAt] : []))
+                    .sort(
+                      (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+                    )[0];
                   const bundleTimeInfo =
                     isBundleSent && sentAtSlot?.paymentSentAt
                       ? ` · 보냈어요 ${formatKoreaDateTime(sentAtSlot.paymentSentAt)}`
@@ -2735,7 +2741,9 @@ export function HostedBuncheolManage({
                         ? ` · 기한 ${formatKoreaDateTime(head.dueAt)}`
                         : isBundleConfirmed && head.confirmedAt
                           ? ` · 확인 ${formatKoreaDateTime(head.confirmedAt)}`
-                          : "";
+                          : isPendingAccept && bundleAppliedAt
+                            ? ` · 신청 ${formatKoreaDateTime(bundleAppliedAt)}`
+                            : "";
 
                   return (
                     <article

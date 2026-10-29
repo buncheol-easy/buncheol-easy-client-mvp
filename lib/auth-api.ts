@@ -452,6 +452,8 @@ export type BuncheolManagementParticipant = {
   releasability?: BundleReleasability | null;
   // 진행 확정 뒤 추가 신청으로 열린 묶음인가. 표시에만 쓴다.
   extra?: boolean | null;
+  // 신청한 시각(ISO). 수락 대기 카드의 「신청 …」 줄에 쓴다. 옛 응답이면 null 이고 그 줄을 그리지 않는다.
+  appliedAt?: string | null;
 };
 
 export type BuncheolManagementOption = {
@@ -3733,6 +3735,7 @@ function getBuncheolManagementParticipantFromRecord(
       getOptionalStringValue(record, ["releasability"]),
     ),
     extra: getOptionalBooleanValue(record, ["extra"]) ?? null,
+    appliedAt: getOptionalStringValue(record, ["appliedAt"]) ?? null,
     status:
       getOptionalStringValue(record, [
         "status",
