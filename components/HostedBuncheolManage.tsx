@@ -68,9 +68,10 @@ import {
 } from "@/lib/buncheol-states";
 import { rankGroupSearchResults } from "@/lib/group-presenters";
 import {
+  EXTRA_ACCEPT_ANCHOR_ID,
   hasSeenExtraRecruitPrompt,
   markExtraRecruitPromptSeen,
-} from "@/lib/extra-recruit-prompt";
+} from "@/lib/extra-recruit";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -333,9 +334,6 @@ function getBundleReleasability(bundle: ManagementBundle) {
 // 서버 시계가 조금 늦어도 바뀐 값을 받도록 몇 초 뒤에 부른다. setTimeout 상한(약 24.8일)을 넘으면 예약하지 않는다.
 const PAYMENT_DUE_RELOAD_DELAY_MS = 5_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
-
-// 「개최한 분철」의 「수락해 주세요」가 붙여 오는 주소 조각. 첫 수락 대기 카드로 내려 준다.
-export const EXTRA_ACCEPT_ANCHOR_ID = "extra-accept";
 
 const MISSING_BUNDLE_MESSAGE =
   "묶음 정보가 없어 이 참여를 처리할 수 없어요. 고객센터로 문의해 주세요.";

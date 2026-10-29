@@ -42,6 +42,9 @@ export type ProductDetailItem = ProductCardItem & {
   hostEnded?: boolean | null;
   // 진행 확정 버튼 판정(서버 confirmCheck) — 개최 목록에서만 채운다.
   hostConfirmCheck?: ConfirmCheck | null;
+  // 추가 모집 스위치 값과 수락을 기다리는 추가 신청 묶음 수 — 개최 목록에서만 채운다.
+  hostExtraRecruitOpen?: boolean | null;
+  hostPendingAcceptCount?: number | null;
   courier: string;
   description: string;
   deadline: string;

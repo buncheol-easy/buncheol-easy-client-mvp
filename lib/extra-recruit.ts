@@ -1,3 +1,6 @@
+// 「개최한 분철」의 「수락해 주세요」가 관리 화면 주소에 붙이는 조각. 관리 화면이 첫 수락 대기 카드로 내려 준다.
+export const EXTRA_ACCEPT_ANCHOR_ID = "extra-accept";
+
 // 진행 확정 뒤 관리 화면에 처음 들어올 때 추가 모집을 권하는 시트를 한 번만 띄운다. 기기 기억이라
 // 다른 브라우저에서 한 번 더 뜰 수 있고, 시트는 「나중에」로 바로 닫혀 손해가 없다.
 const extraRecruitPromptStorageKey = "buncheol-extra-recruit-prompt-seen-v1";
