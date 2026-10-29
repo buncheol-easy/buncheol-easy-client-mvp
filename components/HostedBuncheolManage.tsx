@@ -464,10 +464,46 @@ function isRemovedMemberSlot(option: BuncheolManagementOption) {
     : option.saleStatus?.toUpperCase() === "CLOSED";
 }
 
-type MemberSlotState = {
-  label: string;
+type StatusChip = { label: string; tone: StatusTagTone };
+
+// 참여 상태 하나의 칩. 자리 줄과 참여자 카드가 같이 쓴다 — 따로 적으면 한쪽만 고쳐져 두 줄이 어긋난다.
+function getParticipationStatusChip(
+  participant: Pick<BuncheolManagementParticipant, "confirmedAt" | "status">,
+  buncheolStatus: string | null | undefined,
+): StatusChip | null {
+  if (
+    isParticipationConfirmedStatus(participant.status) ||
+    participant.confirmedAt
+  ) {
+    return { label: "입금 확인", tone: "black" };
+  }
+
+  if (isParticipationPaymentSentStatus(participant.status)) {
+    return { label: "보냈어요", tone: "lime" };
+  }
+
+  if (isParticipationAwaitingPaymentStatus(participant.status)) {
+    return { label: "입금 대기", tone: "grey" };
+  }
+
+  if (isParticipationAppliedStatus(participant.status)) {
+    return isAwaitingHostAccept(buncheolStatus, participant.status)
+      ? { label: "수락 대기", tone: "warning" }
+      : { label: "신청됨", tone: "grey" };
+  }
+
+  return null;
+}
+
+// 잡힌 자리의 saleStatus 를 참여 상태로 옮긴다. 「보냈어요」도 서버가 AWAITING_PAYMENT 로 접어 내려준다.
+const SALE_STATUS_PARTICIPATION_STATUS: Record<string, string> = {
+  APPLIED: "APPLIED",
+  AWAITING_PAYMENT: "AWAITING_PAYMENT",
+  SOLD: "CONFIRMED",
+};
+
+type MemberSlotState = StatusChip & {
   kind: "empty" | "occupied" | "unknown";
-  tone: StatusTagTone;
   // 진행 확정 뒤 추가 신청으로 잡힌 자리 — 상태 칩 앞에 「추가 모집」을 단다.
   extra: boolean;
 };
@@ -486,32 +522,31 @@ function getMemberSlotState(
   participant: BuncheolManagementParticipant | undefined,
   detail: BuncheolManagementDetail,
 ): MemberSlotState {
-  if (participant) {
-    const extra = participant.extra === true;
+  const participantChip = participant
+    ? getParticipationStatusChip(participant, detail.status)
+    : null;
 
-    if (
-      isParticipationConfirmedStatus(participant.status) ||
-      participant.confirmedAt
-    ) {
-      return { extra, kind: "occupied", label: "입금 확인", tone: "black" };
-    }
-
-    if (isParticipationPaymentSentStatus(participant.status)) {
-      return { extra, kind: "occupied", label: "보냈어요", tone: "lime" };
-    }
-
-    if (isParticipationAwaitingPaymentStatus(participant.status)) {
-      return { extra, kind: "occupied", label: "입금 대기", tone: "grey" };
-    }
-
-    if (isParticipationAppliedStatus(participant.status)) {
-      return isAwaitingHostAccept(detail.status, participant.status)
-        ? { extra, kind: "occupied", label: "수락 대기", tone: "warning" }
-        : { extra, kind: "occupied", label: "신청됨", tone: "grey" };
-    }
+  if (participantChip) {
+    return {
+      ...participantChip,
+      extra: participant?.extra === true,
+      kind: "occupied",
+    };
   }
 
-  switch (option.saleStatus?.toUpperCase()) {
+  const saleStatus = option.saleStatus?.toUpperCase() ?? "";
+  const occupiedChip = SALE_STATUS_PARTICIPATION_STATUS[saleStatus]
+    ? getParticipationStatusChip(
+        { status: SALE_STATUS_PARTICIPATION_STATUS[saleStatus] },
+        detail.status,
+      )
+    : null;
+
+  if (occupiedChip) {
+    return { ...occupiedChip, extra: false, kind: "occupied" };
+  }
+
+  switch (saleStatus) {
     case "AVAILABLE":
       return isExtraRecruiting(detail)
         ? { extra: false, kind: "empty", label: "모집 중", tone: "open" }
@@ -521,13 +556,6 @@ function getMemberSlotState(
       return isBuncheolConfirmedStatus(detail.status)
         ? { extra: false, kind: "empty", label: "빈 자리", tone: "grey" }
         : UNKNOWN_MEMBER_SLOT_STATE;
-    case "APPLIED":
-      return { extra: false, kind: "occupied", label: "신청됨", tone: "grey" };
-    // 「보냈어요」도 서버가 AWAITING_PAYMENT 로 접어 내려준다.
-    case "AWAITING_PAYMENT":
-      return { extra: false, kind: "occupied", label: "입금 대기", tone: "grey" };
-    case "SOLD":
-      return { extra: false, kind: "occupied", label: "입금 확인", tone: "black" };
     default:
       return UNKNOWN_MEMBER_SLOT_STATE;
   }
@@ -2648,9 +2676,6 @@ export function HostedBuncheolManage({
                   const isBundleAwaiting = bundle.slots.some((slot) =>
                     isParticipationAwaitingPaymentStatus(slot.status),
                   );
-                  const isBundleApplied = bundle.slots.some((slot) =>
-                    isParticipationAppliedStatus(slot.status),
-                  );
                   // 🔴 확정 대상은 서버가 슬롯마다 내려주는 confirmTarget 이다. 화면이 상태로
                   // 재판정하면 서버가 가진 집합과 갈려 409(BCH-115)가 영구히 난다.
                   // 판정이 없는 구 응답에서는 입금 가능 상태로 폴백한다.
@@ -2720,20 +2745,28 @@ export function HostedBuncheolManage({
                   const sentAtSlot = bundle.slots.find(
                     (slot) => slot.paymentSentAt,
                   );
-                  const bundleStatusTag: { label: string; tone: StatusTagTone } =
-                    isBundleConfirmed
-                      ? { label: "입금 확인 완료", tone: "black" }
-                      : isBundleSent
-                        ? { label: "보냈어요", tone: "lime" }
-                        : isBundleAwaiting
-                          ? releasability === "RELEASABLE"
-                            ? { label: "기한 지남", tone: "warning" }
-                            : { label: "입금 대기", tone: "grey" }
-                          : isBundleApplied
-                            ? isAwaitingHostAccept(detail.status, head.status)
-                              ? { label: "수락 대기", tone: "warning" }
-                              : { label: "신청됨", tone: "grey" }
-                            : { label: "확인 필요", tone: "grey" };
+                  // 묶음 칩은 가장 뒤처진 자리의 상태로 정하고, 묶음에만 있는 두 경우(모두 확인, 「제외」 기한 지남)를 덮어쓴다.
+                  const bundleStatusSlot =
+                    bundle.slots.find((slot) =>
+                      isParticipationPaymentSentStatus(slot.status),
+                    ) ??
+                    bundle.slots.find((slot) =>
+                      isParticipationAwaitingPaymentStatus(slot.status),
+                    ) ??
+                    bundle.slots.find((slot) =>
+                      isParticipationAppliedStatus(slot.status),
+                    ) ??
+                    head;
+                  const bundleStatusTag: StatusChip = isBundleConfirmed
+                    ? { label: "입금 확인 완료", tone: "black" }
+                    : isBundleAwaiting &&
+                        !isBundleSent &&
+                        releasability === "RELEASABLE"
+                      ? { label: "기한 지남", tone: "warning" }
+                      : (getParticipationStatusChip(
+                          bundleStatusSlot,
+                          detail.status,
+                        ) ?? { label: "확인 필요", tone: "grey" });
                   // 이름만 말줄임하고 표시는 줄 끝에 남긴다 — 닉네임이 길어도 추가 신청 묶음을 가를 수 있어야 한다.
                   const extraApplyTag = isBundleExtra ? (
                     <span className="ml-1.5 inline-flex shrink-0 rounded-full bg-brand-pale px-[7px] py-px text-[10.5px] font-bold text-brand-ink ring-1 ring-inset ring-brand-soft">
