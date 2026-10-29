@@ -6033,7 +6033,9 @@ export function ProductDetail({
 
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                       <div className="flex items-center justify-between text-[13px] font-semibold text-black/60">
-                        <span>입금할 금액</span>
+                        <span>
+                          {isExtraRecruitingProduct ? "수락되면 낼 돈" : "입금할 금액"}
+                        </span>
                         <span className="text-[16px] tracking-[-0.04em] text-black">
                           {formatPrice(checkoutPaymentSummary.totalAmount)}
                         </span>
