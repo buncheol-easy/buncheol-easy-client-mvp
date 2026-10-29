@@ -14,8 +14,10 @@ import {
 import { useRouter } from "next/navigation";
 import {
   ConfirmSheet,
+  type ConfirmSheetDetail,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
+import { AiDraftCard, type AiDraftForForm } from "@/components/AiDraftCard";
 import {
   BRIEF_TOAST_DURATION_MS,
   Toast,
@@ -46,6 +48,7 @@ import {
   requestUserProfile,
   toProductDetailItem,
   updateBuncheol,
+  type ApiGroupMember,
 } from "@/lib/auth-api";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import { createLoginHref } from "@/lib/auth-navigation";
@@ -61,6 +64,7 @@ import type { IdolGroup } from "@/lib/mock-idol-directory";
 import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { HelpText } from "@/components/HelpText";
+import { trackEvent } from "@/lib/analytics";
 
 type PhotoPreview = {
   file?: File;
@@ -98,6 +102,8 @@ type UploadProductFormProps = {
 
 const shippingOptions = ["GS25 반값택배", "CU 알뜰택배"];
 const maxPhotos = 5;
+// AI 가 넣은 사진 표시. 다른 주소로 다시 돌리면 이 사진만 갈아 끼운다.
+const aiPhotoIdPrefix = "ai-photo-";
 // 제목 길이 상한(docs/56 H-02): 200자는 어느 화면에서도 전부 볼 수 없어 64자로 축소.
 // 서버 검증(@Size)도 같은 값으로 맞춘다 — FE 가 더 엄격해야 서버 400 이 나지 않는다.
 const maxTitleLength = 64;
@@ -271,6 +277,25 @@ function formatWon(value: number) {
   return `${value.toLocaleString("ko-KR")}원`;
 }
 
+const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+
+function formatReleaseDateLabel(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const weekday =
+    weekdayLabels[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  const yearLabel = year === new Date().getFullYear() ? "" : `${year}년 `;
+
+  return `${yearLabel}${month}월 ${day}일(${weekday})`;
+}
+
+function AiFilledTag() {
+  return (
+    <span className="ml-1.5 inline-flex rounded-full bg-[#CFE86B] px-1.5 align-[1px] text-[10px] font-semibold leading-4 text-black">
+      AI
+    </span>
+  );
+}
+
 function getInitials(value: string) {
   return value
     .trim()
@@ -293,6 +318,16 @@ function getEditableDescription(value: string | undefined) {
   }
 
   return value ?? "";
+}
+
+function toIdolGroupMember(member: ApiGroupMember) {
+  return {
+    id: member.id,
+    imageUrl: member.imageUrl,
+    name: member.name,
+    initials: getInitials(member.name),
+    tone: getMemberTone(member.id),
+  };
 }
 
 function getMemberTone(seed: string) {
@@ -795,6 +830,23 @@ export function UploadProductForm({
   const [remoteGroups, setRemoteGroups] = useState<IdolGroup[]>([]);
   const [isGroupSearchLoading, setIsGroupSearchLoading] = useState(false);
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
+  // AI 가 마지막으로 넣은 값. 지금 값과 같으면 「AI」 꼬리표를 붙이고, 다시 돌릴 때 묻지 않고 바꾼다.
+  const [aiFilledValues, setAiFilledValues] = useState<{
+    description?: string;
+    groupId?: string;
+    purchaseSource?: string;
+    title?: string;
+  }>({});
+  // AI 가 읽어 왔지만 넣을 칸이 없는 값. 칸은 비워 두고 참고로만 보인다.
+  const [aiReference, setAiReference] = useState<{
+    listPrice: number | null;
+    releaseDate: string | null;
+  } | null>(null);
+  const [isAiDraftPending, setIsAiDraftPending] = useState(false);
+  const [aiConfirmRequest, setAiConfirmRequest] =
+    useState<ConfirmSheetRequest | null>(null);
+  const [isAiGroupPickNeeded, setIsAiGroupPickNeeded] = useState(false);
+  const aiDraftUsedRef = useRef(false);
   // 제출을 눌렀을 때 안내한 항목.
   const [highlightedSubmitField, setHighlightedSubmitField] =
     useState<SubmitFieldKey | null>(null);
@@ -835,7 +887,8 @@ export function UploadProductForm({
   const isFormDirty = isEditMode
     ? baselineFormSignatureRef.current !== null &&
       formSignature !== baselineFormSignatureRef.current
-    : formSignature !== emptyFormSignatureRef.current;
+    : // AI 를 기다리는 동안 나가면 결과를 못 받는다 — 빈 폼이어도 묻는다.
+      isAiDraftPending || formSignature !== emptyFormSignatureRef.current;
 
   // 수정 모드 기준선 — 불러오기가 끝나 editingProduct 가 채워진 시점의 폼 값을 기억한다.
   useEffect(() => {
@@ -864,7 +917,9 @@ export function UploadProductForm({
       confirmLabel: "나가기",
       description: isEditMode
         ? "수정한 내용은 저장되지 않아요."
-        : "지금까지 작성한 사진과 내용이 모두 사라져요.",
+        : isAiDraftPending
+          ? "AI가 쓰는 중이에요. 지금 나가면 결과를 받지 못해요."
+          : "지금까지 작성한 사진과 내용이 모두 사라져요.",
       onConfirm: () => {
         setExitConfirmRequest(null);
         leave();
@@ -1483,13 +1538,7 @@ export function UploadProductForm({
               // 서버 별칭을 그대로 실어야 한다. 아래 idolResults 가 rankGroupSearchResults 로 한 번 더
               // 거르기 때문에, 여기서 버리면 별칭으로만 걸린 그룹이 무매치 처리돼 조용히 사라진다.
               aliases: group.aliases ?? [],
-              members: members.map((member) => ({
-                id: member.id,
-                imageUrl: member.imageUrl,
-                name: member.name,
-                initials: getInitials(member.name),
-                tone: getMemberTone(member.id),
-              })),
+              members: members.map(toIdolGroupMember),
             } satisfies IdolGroup;
           }),
         );
@@ -1884,6 +1933,174 @@ export function UploadProductForm({
     setMemberMinimumPrices({});
     hideMemberToast();
     hideMinimumPricePrompt();
+  }
+
+  // 개최자가 직접 써 둔 칸만 묻는다. AI 가 넣은 그대로인 칸은 다시 돌릴 때 묻지 않고 바꾼다.
+  function getAiFieldsToReplace(): ConfirmSheetDetail[] {
+    const fields: ConfirmSheetDetail[] = [];
+
+    if (title.trim() && title !== aiFilledValues.title) {
+      fields.push({ label: "상품 제목", value: "AI 글로 바뀌어요" });
+    }
+
+    if (
+      purchaseSource.trim() &&
+      purchaseSource !== aiFilledValues.purchaseSource
+    ) {
+      fields.push({ label: "구매처", value: "AI가 찾으면 바뀌어요" });
+    }
+
+    // 그룹이 AI 값 그대로여도 그 아래 가격·멤버 선택은 개최자가 정한 것이고, 그룹이 바뀌면 같이 지워진다.
+    const hasGroupDetails =
+      Object.values(memberMinimumPrices).some((price) => price.trim()) ||
+      excludedMemberIds.length > 0 ||
+      (selectedGroup !== null &&
+        minHeadcount !== String(selectedGroup.members.length));
+
+    if (
+      selectedGroupId &&
+      (selectedGroupId !== aiFilledValues.groupId || hasGroupDetails)
+    ) {
+      fields.push({
+        label: "아이돌",
+        value: "AI가 다른 그룹을 찾으면 바뀌고, 멤버별 가격도 지워져요",
+      });
+    }
+
+    if (description.trim() && description !== aiFilledValues.description) {
+      fields.push({ label: "상품 설명", value: "AI 글로 바뀌어요" });
+    }
+
+    return fields;
+  }
+
+  // 기다리는 동안 AI 가 채울 칸은 잠겨 있어 여기서 읽는 폼 값은 요청을 보낼 때와 같다.
+  async function applyAiDraft(draft: AiDraftForForm, signal: AbortSignal) {
+    const draftGroup = draft.group;
+    // 기다리는 단계는 멤버 받기 하나뿐이다. 먼저 받고, 그사이 그만뒀으면 폼을 하나도 바꾸지 않는다.
+    const fetchedGroup =
+      draftGroup && draftGroup.id !== selectedGroupId
+        ? await requestGroupMembers(draftGroup.id)
+            .then(
+              (members) =>
+                ({
+                  id: draftGroup.id,
+                  name: draftGroup.name,
+                  label: draftGroup.name,
+                  aliases: [],
+                  members: members.map(toIdolGroupMember),
+                }) satisfies IdolGroup,
+            )
+            .catch(() => null)
+        : null;
+
+    if (signal.aborted) {
+      return [];
+    }
+
+    const labels: string[] = [];
+    // 이번에 비어 온 칸은 이전 AI 값을 둔다 — 그 칸이 아직 AI 값 그대로면 다음에도 묻지 않게.
+    const nextFilledValues: typeof aiFilledValues = { ...aiFilledValues };
+    let matchedGroupId: string | null = null;
+
+    if (draft.title) {
+      const nextTitle = draft.title.slice(0, maxTitleLength);
+      setTitle(nextTitle);
+      nextFilledValues.title = nextTitle;
+      labels.push("제목");
+    }
+
+    if (draft.purchaseSite) {
+      const nextPurchaseSource = draft.purchaseSite.slice(
+        0,
+        maxPurchaseSourceLength,
+      );
+      setPurchaseSource(nextPurchaseSource);
+      nextFilledValues.purchaseSource = nextPurchaseSource;
+      labels.push("구매처");
+    }
+
+    let groupFallbackKeyword = draft.groupKeywords[0] ?? "";
+
+    if (draftGroup && draftGroup.id === selectedGroupId) {
+      matchedGroupId = draftGroup.id;
+      nextFilledValues.groupId = draftGroup.id;
+      labels.push("아이돌");
+    } else if (draftGroup) {
+      const group = fetchedGroup;
+
+      if (group) {
+        setRemoteGroups((current) => [
+          group,
+          ...current.filter((candidate) => candidate.id !== group.id),
+        ]);
+        selectGroup(group);
+        matchedGroupId = group.id;
+        nextFilledValues.groupId = group.id;
+        labels.push("아이돌");
+      } else {
+        groupFallbackKeyword = draftGroup.name;
+      }
+    }
+
+    // 그룹을 확정하지 못하면 검색어만 넣어 후보를 띄운다. 개최자가 이미 고른 그룹은 건드리지 않는다.
+    const needsGroupPick =
+      !matchedGroupId &&
+      !selectedGroupId &&
+      Boolean(groupFallbackKeyword);
+
+    if (needsGroupPick) {
+      setIdolQuery(groupFallbackKeyword);
+    }
+
+    setIsAiGroupPickNeeded(needsGroupPick);
+
+    if (draft.description) {
+      const nextDescription = draft.description.slice(0, maxDescriptionLength);
+      setDescription(nextDescription);
+      nextFilledValues.description = nextDescription;
+      labels.push("설명");
+    }
+
+    const userPhotos = photos.filter(
+      (photo) => !photo.id.startsWith(aiPhotoIdPrefix),
+    );
+    const aiPhotos = draft.imageUrls
+      .slice(0, Math.max(0, maxPhotos - userPhotos.length))
+      .map((url, index) => {
+        photoIdSeed.current += 1;
+
+        return {
+          id: `${aiPhotoIdPrefix}${photoIdSeed.current}`,
+          name: `AI 사진 ${index + 1}`,
+          url,
+        } satisfies PhotoPreview;
+      });
+
+    if (aiPhotos.length > 0) {
+      const userCoverPhoto = userPhotos.find(
+        (photo) => photo.id === coverPhotoId,
+      );
+      const aiCoverPhoto =
+        aiPhotos[Math.min(draft.thumbnailIndex, aiPhotos.length - 1)] ??
+        aiPhotos[0];
+
+      setPhotos([...userPhotos, ...aiPhotos]);
+      setCoverPhotoId(userCoverPhoto?.id ?? aiCoverPhoto.id);
+      labels.push(`사진 ${aiPhotos.length}장`);
+    }
+
+    setAiFilledValues(nextFilledValues);
+    setAiReference({
+      listPrice: draft.listPrice,
+      releaseDate: draft.releaseDate,
+    });
+
+    if (labels.length > 0) {
+      aiDraftUsedRef.current = true;
+    }
+
+    return labels;
   }
 
   async function addPhotos(files: FileList | null) {
@@ -2472,6 +2689,10 @@ export function UploadProductForm({
                 imageFiles,
               )
             : await createBuncheol(accessToken, createRequest, imageFiles);
+          trackEvent("buncheol_hosted", {
+            ai_draft_used: aiDraftUsedRef.current,
+            staff: isStaffOpensAtShown,
+          });
           // 새로 개최한 분철이 홈 목록에 바로 뜨도록 목록 쿼리를 무효화한다.
           void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
 
@@ -2977,7 +3198,27 @@ export function UploadProductForm({
               onSubmit={(event) => event.preventDefault()}
               ref={formScrollRef}
             >
-          <section className="px-4 pt-4" ref={registerSubmitField("photos")}>
+          {isEditMode ? null : (
+            <AiDraftCard
+              getFieldsToReplace={getAiFieldsToReplace}
+              onApply={applyAiDraft}
+              onConfirmRequest={(request) =>
+                setAiConfirmRequest({
+                  ...request,
+                  onConfirm: () => {
+                    setAiConfirmRequest(null);
+                    request.onConfirm();
+                  },
+                })
+              }
+              onPendingChange={setIsAiDraftPending}
+            />
+          )}
+          <section
+            className="upload-ai-lock px-4 pt-4"
+            inert={isAiDraftPending}
+            ref={registerSubmitField("photos")}
+          >
             {/* 사진이 없을 때 4:3 히어로를 띄우면 첫 화면을 전부 먹어 폼이 "사진 올리는 화면"으로만
                 읽힌다. 0장은 카메라 타일 한 칸으로 줄이고, 대표 사진이 생긴 뒤에만 히어로를 연다.
                 coverPhoto 는 사진이 1장 이상이면 항상 있으므로(위 fallback) 이 조건이 곧 0장 여부다. */}
@@ -3071,6 +3312,11 @@ export function UploadProductForm({
                               src={photo.url}
                             />
                           </button>
+                          {photo.id.startsWith(aiPhotoIdPrefix) ? (
+                            <span className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#CFE86B] px-1.5 text-[10px] font-semibold leading-4 text-black">
+                              AI
+                            </span>
+                          ) : null}
                           {isCover ? (
                             <>
                               <span className="pointer-events-none absolute inset-0 rounded-[0.8rem] border-2 border-black" />
@@ -3118,10 +3364,17 @@ export function UploadProductForm({
           <section className="px-5 pt-6">
             {/* 에러 <p> 는 label 밖에 둔다 — 안에 넣으면 마크업이 무효가 되고
                 (label 은 phrasing content 만 받는다) 문구가 input 의 접근명에 합쳐진다. */}
-            <div ref={registerSubmitField("title")}>
+            <div
+              className="upload-ai-lock"
+              inert={isAiDraftPending}
+              ref={registerSubmitField("title")}
+            >
               <label className="block">
                 <span className="text-[13px] font-semibold text-black/45">
                   상품 제목
+                  {title && title === aiFilledValues.title ? (
+                    <AiFilledTag />
+                  ) : null}
                 </span>
                 <input
                   {...getSubmitFieldErrorProps("title")}
@@ -3142,10 +3395,18 @@ export function UploadProductForm({
               {renderSubmitFieldError("title")}
             </div>
 
-            <div className="mt-5" ref={registerSubmitField("purchaseSource")}>
+            <div
+              className="upload-ai-lock mt-5"
+              inert={isAiDraftPending}
+              ref={registerSubmitField("purchaseSource")}
+            >
               <label className="block">
                 <span className="text-[13px] font-semibold text-black/45">
                   구매처
+                  {purchaseSource &&
+                  purchaseSource === aiFilledValues.purchaseSource ? (
+                    <AiFilledTag />
+                  ) : null}
                 </span>
                 <input
                   {...getSubmitFieldErrorProps("purchaseSource")}
@@ -3172,11 +3433,16 @@ export function UploadProductForm({
             </div>
 
             <div
-              className="mt-7 border-t border-black/10 pt-6"
+              className="upload-ai-lock mt-7 border-t border-black/10 pt-6"
+              inert={isAiDraftPending}
               ref={registerSubmitField("members")}
             >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 아이돌 선택
+                {selectedGroupId &&
+                selectedGroupId === aiFilledValues.groupId ? (
+                  <AiFilledTag />
+                ) : null}
               </h2>
               {renderSubmitFieldError("members")}
               {selectedGroup ? (
@@ -3213,6 +3479,11 @@ export function UploadProductForm({
                       {targetMembers.length}/{allTargetMembers.length}명
                     </span>
                   </div>
+                  {aiReference?.listPrice ? (
+                    <p className="mt-2 rounded-[0.65rem] bg-[#F7FBEA] px-3 py-2 text-[12px] font-semibold text-black/60">
+                      판매 페이지 정가 {formatWon(aiReference.listPrice)} · 참고
+                    </p>
+                  ) : null}
 
                   {allTargetMembers.length > 0 ? (
                     <div
@@ -3436,6 +3707,11 @@ export function UploadProductForm({
                   className="idol-selection-enter"
                   key="idol-search"
                 >
+                  {isAiGroupPickNeeded && idolQuery.trim() ? (
+                    <p className="mt-2 text-[13px] font-semibold text-brand-ink">
+                      AI가 그룹을 정하지 못했어요. 아래에서 골라 주세요.
+                    </p>
+                  ) : null}
                   <label className="mt-3 flex h-14 items-center gap-3 rounded-[0.9rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
                     <input
                       className="min-w-0 flex-1 bg-transparent text-[16px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/30"
@@ -3574,6 +3850,12 @@ export function UploadProductForm({
                 일정
               </h2>
               {renderSubmitFieldError("closingDate")}
+              {aiReference?.releaseDate ? (
+                <p className="mt-2 rounded-[0.65rem] bg-[#F7FBEA] px-3 py-2 text-[12px] font-semibold text-black/60">
+                  발매일 {formatReleaseDateLabel(aiReference.releaseDate)} · 마감은
+                  직접 정해 주세요
+                </p>
+              ) : null}
               <div className="mt-3 grid gap-3">
                 {(isStaffOpensAtShown
                   ? ([
@@ -3749,9 +4031,15 @@ export function UploadProductForm({
             </div>
 
             <div className="mt-7 border-t border-black/10 pt-6">
-              <label className="block">
+              <label
+                className="upload-ai-lock block"
+                inert={isAiDraftPending}
+              >
                 <span className="text-[13px] font-semibold text-black/45">
                   상품 설명
+                  {description && description === aiFilledValues.description ? (
+                    <AiFilledTag />
+                  ) : null}
                 </span>
                 <textarea
                   className="mt-2 min-h-28 w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-3 text-[15px] leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
@@ -3764,6 +4052,11 @@ export function UploadProductForm({
                   {description.length}/{maxDescriptionLength}자
                 </span>
               </label>
+              {aiFilledValues.description !== undefined ? (
+                <HelpText className="mt-1" size="caption">
+                  구성·특전 기간은 판매 페이지에서 한 번 더 확인해 주세요.
+                </HelpText>
+              ) : null}
 
               {/* 수정 요청(BuncheolModifyRequest)은 이 필드를 받지 않는다 — 입력이 조용히
                   버려지지 않도록 생성 모드에서만 노출한다 (docs/46 §4.7-E4 서버 후속). */}
@@ -3797,7 +4090,9 @@ export function UploadProductForm({
 
             <button
               className="mt-8 h-14 w-full rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:opacity-60"
-              disabled={isSubmitPending || isStaffHostUnknown}
+              disabled={
+                isSubmitPending || isStaffHostUnknown || isAiDraftPending
+              }
               onClick={handleSubmit}
               type="button"
             >
@@ -3835,6 +4130,10 @@ export function UploadProductForm({
             cancelLabel="계속 작성"
             onCancel={handleExitConfirmCancel}
             request={exitConfirmRequest}
+          />
+          <ConfirmSheet
+            onCancel={() => setAiConfirmRequest(null)}
+            request={aiConfirmRequest}
           />
     </main>
   );
