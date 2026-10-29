@@ -1076,9 +1076,13 @@ function CollectingStatusNotice({ bid, now }: { bid: BidRecord; now: Date }) {
   );
 }
 
+// 기한이 지난 수락 추가 신청 안내. 목록 카드 상자와 결제 시트 설명이 같이 쓴다.
+const EXTRA_APPLY_OVERDUE_NOTICE =
+  "개최자가 참여를 취소할 수 있어요. 이미 보냈다면 '보냈어요'를 눌러 주세요.";
+
 // 진행 확정 뒤 추가 신청의 안내. 수락 전에는 계좌가 없고, 수락 뒤 계좌·기한·「보냈어요」는 지금 입금 대기 화면 그대로다.
 // 진행 확정 분철의 신청·입금 대기는 추가 신청뿐이라 상태로 가른다(extra 가 없는 옛 추가 모집 묶음도 같다).
-function ExtraApplyStatusNotice({ bid }: { bid: BidRecord }) {
+function ExtraApplyStatusNotice({ bid, now }: { bid: BidRecord; now: Date }) {
   if (!isC2CBidRecord(bid) || isBidRecordCancelled(bid)) {
     return null;
   }
@@ -1100,6 +1104,19 @@ function ExtraApplyStatusNotice({ bid }: { bid: BidRecord }) {
     isBuncheolConfirmedStatus(bid.buncheolStatus) &&
     isParticipationAwaitingPaymentStatus(bid.participationStatus)
   ) {
+    if (isBidRecordPaymentOverdue(bid, now)) {
+      return (
+        <div className="mt-3">
+          <p className="text-[13px] font-semibold tracking-[-0.03em] text-black/80">
+            입금 기한이 지났어요
+          </p>
+          <HelpText className="mt-1" size="caption">
+            {EXTRA_APPLY_OVERDUE_NOTICE}
+          </HelpText>
+        </div>
+      );
+    }
+
     return (
       <p className="mt-3 text-[13px] font-semibold tracking-[-0.03em] text-black/80">
         추가 신청이 수락됐어요. 입금해 주세요
@@ -1447,7 +1464,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
     if (isBidRecordPaymentOverdue(bid, now)) {
       // 진행 확정 분철의 입금 대기는 수락된 추가 신청이다 — 진행 확정이 아니라 「제외」로 취소된다.
       return isC2C && isBuncheolConfirmedStatus(bid.buncheolStatus)
-        ? "입금 기한이 지났어요. 개최자가 참여를 취소할 수 있어요. 이미 보냈다면 '보냈어요'를 눌러 주세요."
+        ? `입금 기한이 지났어요. ${EXTRA_APPLY_OVERDUE_NOTICE}`
         : "입금 기한이 지났어요. 개최자가 진행을 확정할 때까지 입금이 확인되지 않으면 참여가 취소돼요.";
     }
 
@@ -3505,7 +3522,7 @@ export function ParticipationHistoryContent({
             </div>
 
             <CollectingStatusNotice bid={head} now={now} />
-            <ExtraApplyStatusNotice bid={head} />
+            <ExtraApplyStatusNotice bid={head} now={now} />
             {safeOpenChatHref ? (
               <a
                 className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
@@ -4390,7 +4407,7 @@ export function ParticipationHistoryContent({
                       </div>
 
                       <CollectingStatusNotice bid={bid} now={now} />
-                      <ExtraApplyStatusNotice bid={bid} />
+                      <ExtraApplyStatusNotice bid={bid} now={now} />
                       {safeOpenChatHref ? (
                         <a
                           className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
