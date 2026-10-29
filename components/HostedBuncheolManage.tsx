@@ -2395,6 +2395,20 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
+          {/* 끝나면 「멤버 관리」와 스위치가 사라진다 — 스위치를 쓰던 개최자가 이유를 알도록 그 자리에 남긴다. */}
+          {isConfirmedC2C &&
+          detail.ended === true &&
+          typeof detail.extraRecruitOpen === "boolean" ? (
+            <section className="mt-4 rounded-[1.05rem] bg-[#f7f7f7] px-4 py-3.5">
+              <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                분철이 끝났어요
+              </p>
+              <HelpText className="mt-1">
+                모든 배송이 도착해 「종료」됐어요. 추가 모집과 멤버 편집도 함께 닫혔어요. 다시 모으려면 새 분철을 열어 주세요.
+              </HelpText>
+            </section>
+          ) : null}
+
           {hasMemberSlotSaleStatus &&
           (canEditMemberSlots || showsExtraRecruitControls) ? (
             <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
