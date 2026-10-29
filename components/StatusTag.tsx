@@ -6,7 +6,7 @@ export type StatusTagTone = "black" | "lime" | "grey" | "warning" | "extra" | "o
 const STATUS_TAG_TONE_CLASS_NAMES: Record<StatusTagTone, string> = {
   black: "bg-black px-2.5 py-1 text-white",
   lime: "bg-brand-strong px-2.5 py-1 text-black",
-  grey: "bg-[#eeeeee] px-2.5 py-1 text-black/60",
+  grey: "bg-surface-3 px-2.5 py-1 text-black/60",
   warning: "bg-warning-soft px-2.5 py-1 text-warning-ink",
   extra: "bg-brand-pale px-2.5 py-1 text-brand-ink ring-1 ring-inset ring-brand-soft",
   open: "border border-dashed border-brand-ink/60 bg-white px-[9px] py-[3px] text-brand-ink",

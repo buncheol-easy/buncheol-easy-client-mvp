@@ -2247,7 +2247,7 @@ export function HostedBuncheolManage({
                     className={`rounded-[0.85rem] px-3 py-3 ${
                       isConfirmedC2C && c2cAppliedCount > 0
                         ? "bg-brand-pale ring-1 ring-inset ring-brand-soft"
-                        : "bg-[#f5f5f5]"
+                        : "bg-surface-2"
                     }`}
                   >
                     <p className="text-[11px] font-medium text-black/35">
@@ -2427,7 +2427,7 @@ export function HostedBuncheolManage({
           {isConfirmedC2C &&
           detail.ended === true &&
           typeof detail.extraRecruitOpen === "boolean" ? (
-            <section className="mt-4 rounded-[1.05rem] bg-[#f7f7f7] px-4 py-3.5">
+            <section className="mt-4 rounded-[1.05rem] bg-surface-2 px-4 py-3.5">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
                 분철이 끝났어요
               </p>
@@ -2452,7 +2452,7 @@ export function HostedBuncheolManage({
               </div>
               {showsExtraRecruitControls ? (
                 <>
-                  <div className="mt-2.5 flex items-center justify-between gap-3 rounded-[0.85rem] bg-[#f6f6f6] px-3 py-3">
+                  <div className="mt-2.5 flex items-center justify-between gap-3 rounded-[0.85rem] bg-surface-2 px-3 py-3">
                     <div className="min-w-0">
                       <p className="text-[14px] font-semibold tracking-[-0.03em]">
                         빈 자리 추가 모집
@@ -2868,7 +2868,7 @@ export function HostedBuncheolManage({
                           )}
                           <div className="mt-3 grid grid-cols-2 gap-2">
                             <button
-                              className="h-11 rounded-full bg-[#f1f1f1] text-[14px] font-semibold tracking-[-0.04em] text-black/60 disabled:text-black/25"
+                              className="h-11 rounded-full bg-surface-2 text-[14px] font-semibold tracking-[-0.04em] text-black/60 disabled:text-black/25"
                               disabled={!hasBundleId || pendingC2CAction !== null}
                               onClick={() =>
                                 requestRejectExtraBundle(bundle, acceptTargetIds)

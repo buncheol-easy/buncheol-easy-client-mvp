@@ -1498,7 +1498,7 @@ function HostedActionNotice({
 }) {
   const content = (
     <>
-      <span className="inline-flex rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[12px] font-semibold text-black">
+      <span className="inline-flex rounded-full bg-brand-strong px-2.5 py-1 text-[12px] font-semibold text-black">
         {label}
       </span>
       {description ? (

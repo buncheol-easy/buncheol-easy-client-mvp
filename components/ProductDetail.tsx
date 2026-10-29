@@ -4779,14 +4779,14 @@ export function ProductDetail({
                       !isExtraRecruitingProduct &&
                       !isCancelledProduct &&
                       !isDeadlineBlocked
-                        ? "bg-[#DDE7B8] text-black"
+                        ? "bg-brand-soft text-black"
                         : "bg-black/75 text-white backdrop-blur"
                     }`}
                   >
                     {isEndedProduct ? "종료" : product.badge}
                   </div>
                   {isExtraRecruitingProduct ? (
-                    <div className="rounded-full bg-[#DDE7B8] px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                    <div className="rounded-full bg-brand-soft px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                       추가 모집 중
                     </div>
                   ) : null}
@@ -4822,7 +4822,7 @@ export function ProductDetail({
                 className={`mt-5 rounded-[0.95rem] px-4 py-3 ${
                   isExtraRecruitingProduct
                     ? "bg-brand-pale ring-1 ring-inset ring-brand-soft"
-                    : "bg-[#f5f5f5]"
+                    : "bg-surface-2"
                 } ${revealOnEnter ? "detail-reveal" : ""}`}
                 style={revealOnEnter ? getRevealStyle(2) : undefined}
               >
