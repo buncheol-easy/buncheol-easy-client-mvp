@@ -1003,14 +1003,6 @@ export function HostedBuncheolManage({
     detail?.ended === false &&
     typeof detail.extraRecruitOpen === "boolean";
   const isExtraRecruitOn = detail ? isExtraRecruiting(detail) : false;
-  // 진행 확정 뒤 처음 들어올 때 추가 모집을 권하는 시트에 올릴 빈 자리(뺀 자리와 잡힌 자리 제외).
-  const extraRecruitPromptSlotNamesKey =
-    showsExtraRecruitControls && !isExtraRecruitOn
-      ? memberSlotStates
-          .filter(({ state }) => state.kind === "empty")
-          .map(({ option }) => option.memberName)
-          .join("\n")
-      : "";
   const canEditMemberSlots = detail ? isAcceptingNewParticipation(detail) : false;
   // 진행 확정 분철의 신청은 수락을 기다리는 추가 신청뿐이다.
   const c2cAppliedTileLabel = isConfirmedC2C ? "수락 대기" : "신청";
@@ -1876,8 +1868,18 @@ export function HostedBuncheolManage({
   }
 
   // 뜨는 순간 기억한다 — 「나중에」, 「추가 모집 열기」, 바깥 누르기 모두 다시 뜨지 않는다.
-  const openExtraRecruitPrompt = useEffectEvent((slotNames: string[]) => {
-    if (confirmSheetRequest) {
+  const openExtraRecruitPrompt = useEffectEvent(() => {
+    const slotNames = memberSlotStates
+      .filter(({ state }) => state.kind === "empty")
+      .map(({ option }) => option.memberName);
+
+    if (
+      !showsExtraRecruitControls ||
+      isExtraRecruitOn ||
+      slotNames.length === 0 ||
+      confirmSheetRequest ||
+      hasSeenExtraRecruitPrompt(id)
+    ) {
       return;
     }
 
@@ -1897,19 +1899,25 @@ export function HostedBuncheolManage({
     });
   });
 
+  // 진행 확정을 처음 본 순간(첫 응답, 또는 이 화면에서 넘어간 순간)에만 권한다. 스위치를 끄거나 거절·「제외」로
+  // 자리가 비는 때에 권하면 개최자가 방금 한 결정 위에 시트가 겹친다.
+  const hasCheckedExtraRecruitPromptRef = useRef(false);
+
   useEffect(() => {
-    if (!extraRecruitPromptSlotNamesKey || hasSeenExtraRecruitPrompt(id)) {
+    if (!isConfirmedC2C || hasCheckedExtraRecruitPromptRef.current) {
       return;
     }
 
+    hasCheckedExtraRecruitPromptRef.current = true;
+
     const frame = window.requestAnimationFrame(() => {
-      openExtraRecruitPrompt(extraRecruitPromptSlotNamesKey.split("\n"));
+      openExtraRecruitPrompt();
     });
 
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [extraRecruitPromptSlotNamesKey, id]);
+  }, [isConfirmedC2C]);
 
   async function openAddMemberSheet() {
     if (!detail || pendingC2CAction) {
