@@ -58,8 +58,13 @@ export type UserProfileStatus = {
 
 // 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
 export const hostingEligibilityReasons = [
+  // 카카오 가입자가 아님(애플 가입 등) — 회복 경로 없음
+  "KAKAO_ACCOUNT_REQUIRED",
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
+  // 「만 19세 이상」 본인 체크 기록 없음 — 체크를 저장하면 통과
+  "ADULT_CONFIRM_REQUIRED",
+  // ⚠️ 아래 연령대 사유 둘은 새 서버가 내리지 않지만, 웹이 서버보다 먼저 나가므로 그동안은 옛 서버 응답을 받아야 한다.
   // 연령대 미확인 — 카카오 연령대 추가 동의로 회복 가능 (서버 USR-032)
   "AGE_UNVERIFIED",
   // 미성년 확정 — 개최 불가 (서버 USR-033)
@@ -1726,6 +1731,25 @@ export async function requestHostingEligibility(
   }
 
   return { eligible, reason: getHostingEligibilityReason(data) };
+}
+
+// 「만 19세 이상」 본인 체크 저장 (server: POST /v1/buncheols/hosting-eligibility/adult-confirmation). 본문 없음, 멱등, 성공 204.
+export async function requestHostingAdultConfirmation(accessToken: string) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/hosting-eligibility/adult-confirmation`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      await parseErrorMessage(response),
+      response.status,
+    );
+  }
 }
 
 function getHostingEligibilityReason(data: unknown): HostingEligibilityReason {

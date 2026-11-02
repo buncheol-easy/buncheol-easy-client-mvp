@@ -2,13 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import { BackIcon } from "@/components/icons";
 import {
   getKakaoAgeRangeConsentUrl,
+  requestHostingAdultConfirmation,
   type AgeRangeConsentResult,
   type HostingEligibilityReason,
 } from "@/lib/auth-api";
+import { getFreshAccessToken } from "@/lib/auth-session";
 import { authProfileSetupReturnHrefStorageKey } from "@/lib/auth-store";
 import { getHistoryIndex } from "@/lib/history-index";
 import { CONTACT_EMAIL } from "@/lib/site";
@@ -22,6 +25,8 @@ type HostingIneligibleNoticeProps = {
   variant?: "blocked" | "requirements";
   // 연령대 추가 동의에서 돌아온 결과 — 아직 미확인일 때만 안내한다.
   ageRangeConsentResult?: AgeRangeConsentResult;
+  // 「만 19세 이상」 체크가 저장된 뒤 — 자격을 다시 조회할 쪽(UploadEntry)이 넘긴다.
+  onAdultConfirmed?: () => void;
 };
 
 type NoticeCopy = {
@@ -29,22 +34,23 @@ type NoticeCopy = {
   description: string;
   sectionTitle: string;
   items: { title: string; description: string }[];
-  // 링크로 끝나지 않는 CTA 가 둘 있다 — 연령대 추가 동의는 백엔드 OAuth 경로로 페이지째 이동해야 하고,
-  // 가입 정보 입력은 완료 후 개최 화면으로 돌아오도록 복귀 주소를 먼저 남겨야 한다.
+  // 링크로 끝나지 않는 CTA 가 셋 있다 — 연령대 추가 동의는 백엔드 OAuth 경로로 페이지째 이동해야 하고,
+  // 가입 정보 입력은 완료 후 개최 화면으로 돌아오도록 복귀 주소를 먼저 남겨야 하며,
+  // 「만 19세 이상」 체크는 저장한 뒤 자격을 다시 조회해야 한다.
   primaryAction:
     | { label: string; href: string }
     | {
         label: string;
-        kind: "age-range-consent" | "profile-setup";
+        kind: "adult-confirm" | "age-range-consent" | "profile-setup";
         note?: string;
       };
 };
 
 const hostingRequirementItems = [
   {
-    title: "성인 회원만 개최할 수 있어요",
+    title: "만 19세 이상 회원만 개최할 수 있어요",
     description:
-      "참여자 돈이 개최자 계좌로 바로 가는 직거래라, 카카오 연령대 정보로 성인 여부를 확인해요. 카카오는 연령대를 구간으로만 알려주는데 15~19세가 한 구간이라 성인인 만 19세를 가려낼 수 없어서, 20대 이상 구간부터 확인돼요.",
+      "참여자 돈이 개최자 계좌로 바로 가는 직거래라, 분철은 성인 회원만 열 수 있어요. 처음 열 때 한 번만 확인하면 돼요.",
   },
   {
     title: "연락처가 필요해요",
@@ -67,6 +73,28 @@ function getNoticeCopy(
   reason: HostingEligibilityReason,
   variant: "blocked" | "requirements",
 ): NoticeCopy {
+  if (reason === "KAKAO_ACCOUNT_REQUIRED") {
+    return {
+      headline: "분철 열기는 카카오로 가입한 계정에서 할 수 있어요",
+      description:
+        "애플로 가입한 계정은 전화번호를 확인할 수 없어 분철을 열 수 없어요. 참여는 지금처럼 할 수 있어요.",
+      sectionTitle: "",
+      items: [],
+      primaryAction: { label: "진행 중인 분철 둘러보기", href: "/" },
+    };
+  }
+
+  if (reason === "ADULT_CONFIRM_REQUIRED") {
+    return {
+      headline: "만 19세 이상인지 확인해 주세요",
+      description:
+        "참여자 돈이 개최자 계좌로 바로 가는 직거래라, 분철은 성인 회원만 열 수 있어요.",
+      sectionTitle: "",
+      items: [],
+      primaryAction: { label: "계속하기", kind: "adult-confirm" },
+    };
+  }
+
   if (reason === "PHONE_REQUIRED") {
     return {
       headline: "가입 정보를 먼저 채워 주세요",
@@ -242,10 +270,87 @@ function getAgeRangeConsentResultCopy(result: AgeRangeConsentResult) {
   };
 }
 
+function AdultConfirmForm({
+  label,
+  onConfirmed,
+}: {
+  label: string;
+  onConfirmed?: () => void;
+}) {
+  const [isChecked, setIsChecked] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  // 연타는 다시 그려지기 전에 들어오므로 state 로는 두 번째 요청을 못 막는다.
+  const isSubmittingRef = useRef(false);
+
+  async function handleSubmit() {
+    if (isSubmittingRef.current) {
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    setErrorMessage("");
+
+    try {
+      const accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        throw new Error("세션 없음");
+      }
+
+      await requestHostingAdultConfirmation(accessToken);
+      onConfirmed?.();
+    } catch {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      setErrorMessage(
+        "확인 내용을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.",
+      );
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-3 rounded-[1.15rem] bg-[#f7f7f7] px-4 py-4">
+        <input
+          checked={isChecked}
+          className="h-5 w-5 shrink-0 accent-black"
+          onChange={(event) => setIsChecked(event.currentTarget.checked)}
+          type="checkbox"
+        />
+        <span className="text-[15px] font-semibold tracking-[-0.04em]">
+          만 19세 이상이에요
+        </span>
+      </label>
+      <p className="break-keep text-[13px] font-medium leading-5 tracking-[-0.03em] text-black/45">
+        사실과 다르면 개최가 제한될 수 있어요. 한 번만 확인하면 돼요.
+      </p>
+      {errorMessage ? (
+        <p
+          className="break-keep text-[13px] font-semibold leading-5 tracking-[-0.03em] text-[#D32F2F]"
+          role="alert"
+        >
+          {errorMessage}
+        </p>
+      ) : null}
+      <button
+        className="flex h-14 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)] disabled:bg-black/20 disabled:text-white disabled:shadow-none"
+        disabled={!isChecked || isSubmitting}
+        onClick={handleSubmit}
+        type="button"
+      >
+        {label}
+      </button>
+    </div>
+  );
+}
+
 export function HostingIneligibleNotice({
   reason,
   variant = "blocked",
   ageRangeConsentResult,
+  onAdultConfirmed,
 }: HostingIneligibleNoticeProps) {
   const router = useRouter();
   const copy = getNoticeCopy(reason, variant);
@@ -255,6 +360,8 @@ export function HostingIneligibleNotice({
       : null;
   // 좁힌 타입이 콜백 안에서도 유지되도록 지역 상수로 뽑는다.
   const primaryAction = copy.primaryAction;
+  const isAdultConfirm =
+    "kind" in primaryAction && primaryAction.kind === "adult-confirm";
 
   function handleBack() {
     const historyIndex = getHistoryIndex();
@@ -284,6 +391,23 @@ export function HostingIneligibleNotice({
 
     router.push("/signup/profile");
   }
+
+  const contactSection = (
+    <section className="mt-7 rounded-[1.15rem] border border-black/10 px-4 py-4">
+      <p className="text-[12px] font-semibold leading-none text-black/35">
+        문의
+      </p>
+      <a
+        className="mt-2 inline-block text-[15px] font-semibold tracking-[-0.03em] underline underline-offset-4"
+        href={`mailto:${CONTACT_EMAIL}`}
+      >
+        {CONTACT_EMAIL}
+      </a>
+      <p className="mt-1.5 break-keep text-[13px] font-medium leading-5 tracking-[-0.03em] text-black/45">
+        안내가 실제와 다르거나 도움이 필요하면 메일로 알려주세요.
+      </p>
+    </section>
+  );
 
   return (
     <main className="system-chrome-white system-chrome-bottom-black h-[100dvh] overflow-hidden bg-[#f3f3f3] text-[#111111]">
@@ -336,44 +460,38 @@ export function HostingIneligibleNotice({
                 </div>
               </section>
 
-              <section className="mt-7">
-                <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
-                  {copy.sectionTitle}
-                </h2>
-                <ul className="mt-4 space-y-3">
-                  {copy.items.map((item) => (
-                    <li
-                      className="rounded-[1.15rem] bg-[#f7f7f7] px-4 py-4"
-                      key={item.title}
-                    >
-                      <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                        {item.title}
-                      </p>
-                      <p className="mt-1.5 break-keep text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/60">
-                        {item.description}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              {copy.items.length > 0 ? (
+                <section className="mt-7">
+                  <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
+                    {copy.sectionTitle}
+                  </h2>
+                  <ul className="mt-4 space-y-3">
+                    {copy.items.map((item) => (
+                      <li
+                        className="rounded-[1.15rem] bg-[#f7f7f7] px-4 py-4"
+                        key={item.title}
+                      >
+                        <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                          {item.title}
+                        </p>
+                        <p className="mt-1.5 break-keep text-[14px] font-medium leading-6 tracking-[-0.03em] text-black/60">
+                          {item.description}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
 
-              <section className="mt-7 rounded-[1.15rem] border border-black/10 px-4 py-4">
-                <p className="text-[12px] font-semibold leading-none text-black/35">
-                  문의
-                </p>
-                <a
-                  className="mt-2 inline-block text-[15px] font-semibold tracking-[-0.03em] underline underline-offset-4"
-                  href={`mailto:${CONTACT_EMAIL}`}
-                >
-                  {CONTACT_EMAIL}
-                </a>
-                <p className="mt-1.5 break-keep text-[13px] font-medium leading-5 tracking-[-0.03em] text-black/45">
-                  안내가 실제와 다르거나 도움이 필요하면 메일로 알려주세요.
-                </p>
-              </section>
+              {isAdultConfirm ? null : contactSection}
 
               <div className="mt-8 space-y-3">
-                {"href" in primaryAction ? (
+                {isAdultConfirm ? (
+                  <AdultConfirmForm
+                    label={primaryAction.label}
+                    onConfirmed={onAdultConfirmed}
+                  />
+                ) : "href" in primaryAction ? (
                   <Link
                     className="flex h-14 w-full items-center justify-center rounded-full bg-[#CFE86B] text-[17px] font-semibold tracking-[-0.04em] text-black shadow-[0_12px_28px_rgba(120,132,82,0.24)]"
                     href={primaryAction.href}
@@ -410,6 +528,9 @@ export function HostingIneligibleNotice({
                   </Link>
                 )}
               </div>
+
+              {/* 체크박스와 버튼 사이가 벌어지지 않게 이 화면만 문의를 아래로 내린다. */}
+              {isAdultConfirm ? contactSection : null}
             </div>
           </div>
         </div>

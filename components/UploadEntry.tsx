@@ -57,6 +57,7 @@ export function UploadEntry({
   // 비로그인은 기존 동작 유지 — 폼을 열어 두고 제출 시점에 로그인으로 보낸다. 수정 모드도 자격과 무관하다.
   const shouldCheck = !isEditMode && authState.isLoggedIn;
   const [check, setCheck] = useState<EligibilityCheck | null>(null);
+  const [recheckCount, setRecheckCount] = useState(0);
   // 이펙트 안 동기 setState 없이(react-hooks/set-state-in-effect) 렌더 시점에 세션 일치만 확인한다.
   const currentCheck =
     check && check.token === authState.accessToken ? check : null;
@@ -118,7 +119,13 @@ export function UploadEntry({
     return () => {
       isActive = false;
     };
-  }, [authState.accessToken, shouldCheck]);
+  }, [authState.accessToken, recheckCount, shouldCheck]);
+
+  // 체크가 저장되면 조회 화면으로 돌아가 다시 묻는다 — 남은 사유(상한·계좌)가 있으면 그 안내로, 없으면 폼으로 간다.
+  function handleAdultConfirmed() {
+    setCheck(null);
+    setRecheckCount((count) => count + 1);
+  }
 
   if (!isHydrated || (shouldCheck && currentCheck === null)) {
     return <UploadGateCheckingScreen />;
@@ -129,6 +136,7 @@ export function UploadEntry({
     return (
       <HostingIneligibleNotice
         ageRangeConsentResult={ageRangeConsentResult}
+        onAdultConfirmed={handleAdultConfirmed}
         reason={currentCheck.reason}
       />
     );
