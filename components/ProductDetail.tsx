@@ -144,6 +144,7 @@ import {
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { PRODUCT_HOME_ENTRY_INDEX_KEY } from "@/components/ProductCard";
 import { ProductPhoto } from "@/components/ProductPhoto";
+import { PromiseCheck } from "@/components/PromiseCheck";
 import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -321,7 +322,7 @@ const CvsStoreSearchSheet = dynamic(
 
 // 서버 입금 기한 정책(참여 후 10분 칼컷, ParticipationService.STAFF_PAYMENT_TIME_LIMIT)과 동일해야 한다.
 const paymentWindowMs = 10 * 60 * 1000;
-// C2C 입금 창 — 성사 확정·추가 모집(즉시입금) 후 24시간 (docs/46 §7.1-3).
+// C2C 입금 창 — 입금 단계 시작 후 24시간.
 const c2cPaymentWindowMs = 24 * 60 * 60 * 1000;
 const sheetDragCloseThreshold = 72;
 const maxTimerDelayMs = 2_147_483_647;
@@ -1385,6 +1386,8 @@ export function ProductDetail({
   const [isEntered, setIsEntered] = useState(startEntered);
   const [isExiting, setIsExiting] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  // 회원 개최 신청 확인 단계의 약속 체크. 새 신청을 시작할 때마다 새로 받는다.
+  const [isPaymentPromiseChecked, setIsPaymentPromiseChecked] = useState(false);
   const [isSheetEntered, setIsSheetEntered] = useState(false);
   const [isSheetClosing, setIsSheetClosing] = useState(false);
   const [sheetDragOffset, setSheetDragOffset] = useState(0);
@@ -1613,7 +1616,7 @@ export function ProductDetail({
   // 오픈 판정의 정본은 서버(상세 NOT_OPEN, 참여 409 BCH-128)다. 화면은 서버 시계로 같은 시각에 열기만 한다.
   const hasOpened = opensAtMs !== null && serverNowMs >= opensAtMs;
   const isBeforeOpen = opensAtMs !== null && !hasOpened;
-  // 재조회로 갱신되는 현재 상태. prop 은 마운트 시점 값이라 그대로 읽으면 성사 확정이 화면에 안 걸린다.
+  // 재조회로 갱신되는 현재 상태. prop 은 마운트 시점 값이라 그대로 읽으면 입금 단계 시작이 화면에 안 걸린다.
   const productStatus = statusFromApi ?? product.status;
   // 취소 판정은 개최자 취소(HOST_CANCELLED)를 포함한다 — 중앙 모듈 기준.
   const isCancelledProduct = isBuncheolCancelledStatus(productStatus);
@@ -1767,7 +1770,7 @@ export function ProductDetail({
   ) {
     // 배송지 시트를 다녀오면 선택 전체가 복원돼야 한다 — 잘라내면 자리 3개를 고른 사용자가
     // 주소만 바꾸고 돌아왔는데 1자리로 줄고 총액도 함께 바뀐다.
-    // 단 다녀온 사이에 다중 선택이 닫혔으면(개최자가 성사 확정) 한 자리로 자른다 — 그대로 복원하면
+    // 단 다녀온 사이에 다중 선택이 닫혔으면(입금 단계 시작) 한 자리로 자른다 — 그대로 복원하면
     // 확인 스텝까지 들어간 뒤 제출 버튼에서야 막히는데, 그 화면엔 선택을 줄일 UI가 없다.
     const restorableOptionIds = getRestorableCheckoutOptionIds(
       returnOptions,
@@ -2185,37 +2188,35 @@ export function ProductDetail({
   );
   const isConfirmedProduct = isBuncheolConfirmedStatus(productStatus);
   const isC2CProduct = getFlowType(product.flowType) === "C2C";
-  // E1(docs/46 §4.7): C2C 확정 후(PAYMENT_COLLECTING) 빈 슬롯은 즉시입금으로 추가 신청을
-  // 받는다 — deadline(신청 마감)이 지났어도 열어둔다. 분철 CONFIRMED 후에는 서버가 차단.
+  // 입금 수집 중은 모집이 끝난 분철이다 — 빈 자리가 있어도 새 신청을 받지 않는다(서버 BCH-060).
   const isC2CCollectingProduct =
     isC2CProduct && isBuncheolPaymentCollectingStatus(productStatus);
   // 자리를 여러 개 한 번에 잡는 것은 C2C 모집중 전용이다.
-  // · 추가 모집은 자리마다 별개 묶음·별개 이체·별개 기한이라 합산 안내가 거짓이 된다(서버도 BCH-060)
   // · LEGACY 는 1인 1자리가 DB 유니크로 강제돼 있다
   // · 코드 참여는 코드 하나가 자리 하나에 대응한다
   const canSelectMultipleMembers =
     isC2CProduct && isBuncheolRecruitingStatus(productStatus) && !isCodeCheckout;
-  // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를,
-  // C2C 입금 수집 중에는 기한이 지나도 빈 슬롯 즉시입금 신청이 열려 있으므로
-  // 카운트다운의 "참여 마감" 대신 추가 신청 가능 문구를 보여준다.
+  // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를 보여준다.
+  // 입금 수집 중은 마감 전에 자리가 다 차서 시작됐을 수 있어 남은 시간 대신 상태 이름(「입금 진행」)을 쓴다.
   const purchaseDeadlineDisplay = isCancelledProduct
     ? getBuncheolStatusBadgeLabel(productStatus)
     : isConfirmedProduct
       ? "마감됨"
-      : isC2CCollectingProduct && isDeadlinePassed
-        ? "추가 신청 가능"
+      : isC2CCollectingProduct
+        ? getBuncheolStatusBadgeLabel(productStatus)
         : purchaseDeadlineCountdown;
-  const isPurchasableStatus =
-    isBuncheolPurchasableStatus(productStatus) || isC2CCollectingProduct;
-  const isDeadlineBlocked = isDeadlinePassed && !isC2CCollectingProduct;
+  const isPurchasableStatus = isBuncheolPurchasableStatus(productStatus);
+  const isDeadlineBlocked = isDeadlinePassed;
   // 오픈 전 모집 중이면 사진 아래 띠가 상태 배지를 대신한다(카드와 같은 모양). 정각에 사라진다.
   const showOpensAtBand =
     isBeforeOpen &&
     isPurchasableStatus &&
     !isCancelledProduct &&
     !isDeadlineBlocked;
+  // 입금 수집 중은 진행 중인 분철이라 목록 카드처럼 흐리지 않는다.
   const shouldDimProductMedia =
     !isPublicPreview &&
+    !isC2CCollectingProduct &&
     (!isPurchasableStatus || isCancelledProduct || isDeadlineBlocked);
   const productOptionBlockLabel = isPublicPreview
     ? null
@@ -2255,8 +2256,8 @@ export function ProductDetail({
   const isHostedProduct =
     product.isHostedByMe === true || isHostedByMeFromApi === true;
   // 개최자가 자기 분철 상세를 열면 참여 CTA 자리가 "내가 연 분철은 참여할 수 없어요" 회색
-  // 버튼으로 죽는다. 개최자가 이 화면에서 원하는 다음 행동은 참여가 아니라 신청자 확인·성사
-  // 확정이므로, 화면에서 가장 강조된 그 자리를 개최 관리 진입으로 바꾼다. 관리 화면은 서버
+  // 버튼으로 죽는다. 개최자가 이 화면에서 원하는 다음 행동은 참여가 아니라 신청자 확인·입금
+  // 확인이므로, 화면에서 가장 강조된 그 자리를 개최 관리 진입으로 바꾼다. 관리 화면은 서버
   // 분철에만 있어 목업 상품은 제외하고 기존 안내 버튼을 그대로 둔다.
   const canManageHostedProduct = isHostedProduct && product.isApiProduct === true;
   // 오픈 이벤트 무료 분철(전 슬롯 0원) 판정. 참여 전 화면이라 서버 payback 상태가 없어
@@ -2288,8 +2289,10 @@ export function ProductDetail({
     !isCodeCheckout &&
     activeBidCount > 0 &&
     estimatedCheckoutTotal === 0;
+  // 약속 체크는 회원 개최 신청에만 띄운다. 운영진 분철 참여(10분 즉시 입금)와 코드 참여에는 없다.
+  const isPaymentPromiseRequired = isC2CProduct && !isCodeCheckout;
   // 서버 수정 가드(validateRecruiting)와 같은 조건으로 맞춘다 — 모집중이고 마감 전일 때만 저장이 통한다.
-  // 상태를 안 보면 성사 확정 뒤에도 버튼이 떠서, 개최자가 다 고친 뒤 저장에서야 거부당한다.
+  // 상태를 안 보면 입금 단계가 시작된 뒤에도 버튼이 떠서, 개최자가 다 고친 뒤 저장에서야 거부당한다.
   // 로컬 임시 분철(uploaded-)은 서버 가드 대상이 아니라 그대로 둔다.
   // ⚠️ 오픈채팅 링크는 여기서 막혀도 개최 관리 화면에서 상태와 무관하게 고칠 수 있다.
   const canEditProduct =
@@ -2297,25 +2300,15 @@ export function ProductDetail({
     (isHostedProduct &&
       isBuncheolRecruitingStatus(productStatus) &&
       !isDeadlinePassed);
-  // 입금 확인(확정)된 참여가 1건이라도 있으면 개최자 취소를 막는다 (docs/56 §14-3).
-  // 서버 CAS(hostCancelIfCollectingAndNoConfirmed, BCH-093)와 같은 범위로 맞춘다 —
-  // C2C + 입금 수집중(PAYMENT_COLLECTING) + 확정(CONFIRMED) 참여 ≥1건.
-  // "보냈어요"(PAYMENT_SENT)는 참여자 자기 신고라 포함하지 않는다 — 허위 마킹 1건으로 개최자가 분철을
-  // 영영 못 접게 된다. 슬롯 saleStatus 는 PAYMENT_SENT 를 AWAITING_PAYMENT 로 접어 내리므로 자연히 제외된다.
-  // 확정 판정에 hasOptionPurchaseState 를 함께 요구해 취소·환불된 참여의 잔여 확정 값은 제외한다.
-  const isHostCancelBlocked =
-    isC2CProduct &&
-    isBuncheolPaymentCollectingStatus(productStatus) &&
-    auctionOptions.some(
-      (option) =>
-        hasOptionPurchaseState(option) && isConfirmedOptionPurchase(option),
-    );
+  // 입금 단계가 시작된 회원 개최 분철은 입금 확인 건수와 상관없이 개최자가 지울 수 없다(서버 BCH-126).
+  // 운영진과 함께 접는다(운영진 파기).
+  const isHostCancelBlocked = isC2CCollectingProduct;
   const canDeleteProduct =
     product.isApiProduct && isHostedProduct && !isHostCancelBlocked;
-  // 버튼만 사라지면 개최자는 "취소가 왜 없지" 로 문의한다 — 서버 BCH-093 과 같은 안내를 미리 보여준다.
+  // 버튼만 사라지면 개최자는 "취소가 왜 없지" 로 문의한다 — 서버 BCH-126 과 같은 안내를 미리 보여준다.
   const hostCancelBlockedNotice =
     product.isApiProduct && isHostedProduct && isHostCancelBlocked
-      ? "입금이 확인된 참여자가 있어 분철을 취소할 수 없어요. 받은 금액을 환불한 뒤 고객센터로 문의해 주세요."
+      ? "입금 단계가 시작된 분철은 혼자 취소할 수 없어요. 진행이 어렵다면 카카오톡 채널로 운영진에게 알려 주세요."
       : null;
   // 임시 저장 분철(uploaded-)은 브라우저 로컬에만 있어 공유해도 열리지 않는다.
   const canShareProduct = product.isApiProduct === true;
@@ -2328,25 +2321,15 @@ export function ProductDetail({
   const hasMyActiveParticipation = auctionOptions.some((option) =>
     isOptionParticipatedByMe(option, myBids[option.id]),
   );
-  // C2C 는 1인 다슬롯 허용(docs/46 §7.1-11) — 활성 참여가 있어도 다른 멤버에 추가 신청 가능.
+  // C2C 는 1인 다슬롯 허용(docs/46 §7.1-11) — 활성 참여가 있어도 모집 중이면 다른 멤버에 추가 신청 가능.
   // 추가 신청 판정은 서버 응답(participatedByMe)만 신뢰한다 — 로컬 myBids 는 같은 세션에서
   // 취소한 뒤에도 남아 "배송비 0원" 오판(서버는 첫 참여로 부과)을 만들 수 있다.
   const hasMyServerParticipation = auctionOptions.some(
     (option) => option.participatedByMe === true,
   );
-  // 확정 뒤 빈 슬롯을 잡는 경우. 화면은 첫 신청과 같되 배송비가 왜 또 붙는지만 한 문장 덧붙인다.
-  const isRebundledC2CApplication =
-    hasMyServerParticipation && isC2CCollectingProduct;
-  // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 성사 확정 전 재참여만
-  // 해당한다: 확정 뒤 추가 모집은 서버가 새 묶음을 만들고 배송비를 다시 부과한다.
-  //
-  // 🔴 서버 신호(server#178 inheritanceApplies)를 OR 로 얹되 <b>재번들 판정이 이긴다</b> —
-  // 낡은 응답(확정 직전 조회)으로 신호가 남아 있으면 「배송비 0원」과 「배송비 또 부과」가
-  // 한 화면에 같이 찍히기 때문이다. 서버 쪽도 상속 판정을 모집중(RECRUITING)으로 게이트하므로
-  // (ParticipationDomainService.inheritanceAppliesTo = isC2c && RECRUITING) 입금 수집중에
-  // 신호가 참인 조합은 낡은 응답뿐이다 — 신선한 응답에서 두 판정이 충돌할 일은 없다.
+  // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 모집 중 재참여만 해당한다
+  // (서버 상속 판정 inheritanceApplies 도 모집중으로 게이트한다).
   const isAdditionalC2CApplication =
-    !isRebundledC2CApplication &&
     isC2CProduct &&
     (hasMyServerParticipation || shippingInheritanceAppliesFromApi);
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
@@ -2403,13 +2386,14 @@ export function ProductDetail({
     typeof product.minHeadcount === "number" && product.minHeadcount > 0
       ? product.minHeadcount
       : null;
-  // 최소 진행 인원은 LEGACY 마감 판정(입금확인 인원 ≥ minHeadcount)에만 쓰인다. C2C 는 인원이 차도
-  // 자동 확정되지 않고 개최자가 성사 확정을 눌러야 진행되므로(docs/46 §4.1), 최소 인원 기준 진행 바와
+  // 최소 진행 인원은 LEGACY 마감 판정(입금확인 인원 ≥ minHeadcount)에 쓰인다. C2C 는 인원이 차면 입금 단계가
+  // 시작될 뿐이고, 진행 확정은 모두 입금이 확인되면 저절로, 아니면 기한 뒤 개최자가 눌러야 되므로, 최소 인원 기준 진행 바와
   // "인원을 채우면 진행이 확정돼요" 문구를 그대로 쓰면 거짓 안내가 된다. C2C 는 전체 슬롯 대비 신청 현황으로 보여준다.
   // 개최자가 뺀 자리는 신청을 받는 동안에만 CLOSED 로 가려낼 수 있다. 마감 뒤엔 서버가 빈 자리를 전부 CLOSED 로
-  // 내려 구분이 안 되므로 그때는 전체 자리 수를 쓴다.
+  // 내려 구분이 안 되므로 그때는 전체 자리 수를 쓴다. 입금 수집 중도 빈 자리가 모두 CLOSED 로 오지만, 이때는 새 신청이
+  // 없어 CLOSED 를 빼고 센다 — 전체 수를 쓰면 자리를 빼서 정원이 찬 분철이 「4/5」처럼 덜 찬 것으로 보인다.
   const participationSlotCount =
-    isPurchasableStatus && !isDeadlineBlocked
+    (isPurchasableStatus && !isDeadlineBlocked) || isC2CCollectingProduct
       ? auctionOptions.filter(
           (option) => option.saleStatus?.toUpperCase() !== "CLOSED",
         ).length
@@ -2440,9 +2424,8 @@ export function ProductDetail({
       ? "취소된 분철이에요."
       : isC2CProduct
       ? isC2CCollectingProduct
-        ? "개최자가 성사를 확정했어요. 참여자 입금이 모두 확인되면 진행이 확정돼요."
-        : // 마감+48시간 미확정 자동 취소(서버 C2C_CONFIRM_GRACE) — 신청자에게도 이 시계를 알린다.
-          "신청이 모이면 개최자가 성사를 확정하고, 그때 입금 안내를 보내드려요. 신청 기한 뒤 2일(48시간) 안에 확정되지 않으면 신청은 자동으로 취소돼요."
+        ? "모집이 끝나 입금을 받고 있어요. 참여자 입금이 모두 확인되면 진행이 확정돼요."
+        : "자리가 모두 차거나 마감되면 입금 안내를 보내드려요. 마감 때 신청이 최소 인원보다 적으면 분철은 자동으로 취소돼요."
       : remainingHeadcount === null
         ? "개최자가 정한 진행 기준을 확인하고 있어요."
         : remainingHeadcount > 0
@@ -2756,7 +2739,7 @@ export function ProductDetail({
 
     const restorableOptions =
       getCheckoutReturnOptionsFromState(checkoutReturnState);
-    // 세션에 저장된 선택을 되살리되, 지금 다중 선택이 닫혀 있으면(LEGACY·추가 모집·코드 참여)
+    // 세션에 저장된 선택을 되살리되, 지금 다중 선택이 닫혀 있으면(LEGACY·코드 참여)
     // 1개만 복원한다 — 여러 자리가 살아 돌아오면 제출 직전까지 갔다가 막힌다.
     const restorableOptionIds = auctionOptions
       .reduce<string[]>((optionIds, option) => {
@@ -3013,7 +2996,7 @@ export function ProductDetail({
       setShippingInheritanceAppliesFromApi(
         refreshedProduct.myShippingInheritanceApplies === true,
       );
-      // 상태를 버리면 성사 확정이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
+      // 상태를 버리면 입금 단계 시작이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
       setServerAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
@@ -3411,6 +3394,11 @@ export function ProductDetail({
       return;
     }
 
+    // 버튼이 꺼져 있어도 제출 경로에서 다시 막는다(개최 폼 handleSubmit 과 같은 방식).
+    if (isPaymentPromiseRequired && !isPaymentPromiseChecked) {
+      return;
+    }
+
     if (!canBidProduct) {
       window.alert(getBidUnavailableMessage());
       return;
@@ -3422,7 +3410,7 @@ export function ProductDetail({
       return;
     }
 
-    // 다중 선택이 열리지 않은 구간(코드 참여·추가 모집)에서 복원 등으로 여러 개가 들어온 경우 방어.
+    // 다중 선택이 열리지 않은 구간(LEGACY·코드 참여)에서 복원 등으로 여러 개가 들어온 경우 방어.
     if (submittedBids.length > 1 && !canSelectMultipleMembers) {
       window.alert(
         "지금은 멤버를 한 번에 한 명씩만 신청할 수 있어요. 한 명만 선택해 주세요.",
@@ -3563,11 +3551,9 @@ export function ProductDetail({
         }
 
         const firstParticipationId = resultParticipationIds[0] ?? "";
-        // C2C 신청(무입금): 서버가 dueAt·계좌 없이 APPLIED 로 생성한다 (docs/46 §3-1).
-        // 확정 후 추가 모집(E1, PAYMENT_COLLECTING)은 즉시입금 구간이라 dueAt 누락 응답이
-        // 와도 신청 완료로 오판하지 않도록 제외한다 — 입금 안내 경로(보충 조회 포함)를 태운다.
-        const isC2CAppliedResult =
-          isC2CProduct && !isC2CCollectingProduct && !result.paymentDueAt;
+        // C2C 신청(무입금): 서버가 dueAt·계좌 없이 응답한다 (docs/46 §3-1). 마지막 자리를 채워
+        // 같은 요청 안에서 입금 단계가 시작돼도 응답 모양은 같고, 입금 안내는 알림톡이 맡는다.
+        const isC2CAppliedResult = isC2CProduct && !result.paymentDueAt;
         // 계좌·기한이 없는 게 정상이라 결제 상세 보충 조회를 태우면 빈 응답을 입금 안내로 오인한다.
         const isCodeConfirmedResult = isCodeCheckout;
         // LEGACY 0원 + 고른 편의점 배송비 0원은 서버가 즉시 확정하고 계좌·기한 없이 응답한다(유료 LEGACY 는
@@ -3612,7 +3598,7 @@ export function ProductDetail({
           (sum, item) => sum + item.bidAmount,
           0,
         );
-        // 다슬롯 추가 신청은 배송비가 첫 참여에 귀속돼 0 이다 (docs/46 §4.7-A2) —
+        // 모집 중 다슬롯 추가 신청은 배송비가 첫 참여에 귀속돼 0 이다 (docs/46 §4.7-A2) —
         // 확인 스텝 표기와 동일하게 폴백 금액에서도 배송비를 더하지 않는다.
         // 코드 참여는 서버가 0원을 확정해 내려준다. 폴백을 열어 두면 배송비가 캐시에 굳어
         // 참여 내역이 "0원 참여"를 유상으로 표시한다.
@@ -4048,10 +4034,7 @@ export function ProductDetail({
       return;
     }
 
-    const copy = getHostCancelCopy({
-      flowType: product.flowType,
-      status: productStatus,
-    });
+    const copy = getHostCancelCopy({ status: productStatus });
 
     setDeleteConfirmRequest({
       confirmLabel: copy.actionLabel,
@@ -4210,6 +4193,7 @@ export function ProductDetail({
     setCheckoutCodeInput("");
     setCheckoutError("");
     setCheckoutStepAfterSuccess(null);
+    setIsPaymentPromiseChecked(false);
     pendingSubmittedBidStateRef.current = null;
     setIsSheetOpen(true);
     setIsSheetClosing(false);
@@ -4624,10 +4608,7 @@ export function ProductDetail({
                 className="product-detail-action inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black disabled:text-black/25"
                 onClick={requestDeleteProduct}
                 aria-label={
-                  getHostCancelCopy({
-                    flowType: product.flowType,
-                    status: productStatus,
-                  }).iconLabel
+                  getHostCancelCopy({ status: productStatus }).iconLabel
                 }
                 disabled={isDeletePending}
               >
@@ -5116,9 +5097,7 @@ export function ProductDetail({
                 isPurchasableStatus ? (
                 <HelpText align="center" className="mb-2" size="caption">
                   {isC2CProduct
-                    ? isC2CCollectingProduct
-                      ? "빈 자리는 바로 입금하는 추가 신청으로 참여해요."
-                      : "신청만 하면 끝! 입금은 분철이 확정된 뒤에 해요."
+                    ? "신청만 하면 끝! 입금은 모집이 끝난 뒤에 해요."
                     : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                 </HelpText>
               ) : null}
@@ -5170,7 +5149,7 @@ export function ProductDetail({
                         ? "신청하기"
                         : "참여하기"
                       : canBidProduct
-                        ? isC2CProduct && !isC2CCollectingProduct
+                        ? isC2CProduct
                           ? "신청하기"
                           : "참여하기"
                         : getBidUnavailableMessage()}
@@ -5257,7 +5236,7 @@ export function ProductDetail({
                           : checkoutStep === "confirm"
                             ? isCodeCheckout
                               ? "코드 참여 확인"
-                              : isC2CProduct && !isC2CCollectingProduct
+                              : isC2CProduct
                                 ? "신청 확인"
                                 : "참여 확인"
                             : "멤버 선택"}
@@ -5266,7 +5245,7 @@ export function ProductDetail({
                     {checkoutStep === "payment"
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "applied"
-                        ? "개최자가 성사를 확정하면 입금 안내를 드려요."
+                        ? "모집이 끝나면 입금 안내를 드려요."
                         : checkoutStep === "codeConfirmed"
                           ? checkoutPaymentSummary?.isFreeConfirmed
                             ? "입금할 금액이 없어 바로 참여가 확정됐어요."
@@ -5274,8 +5253,8 @@ export function ProductDetail({
                           : checkoutStep === "confirm"
                             ? isCodeCheckout
                               ? "전달받은 참여 코드를 입력하면 슬롯이 확정돼요."
-                              : isC2CProduct && !isC2CCollectingProduct
-                                ? "신청 단계에서는 입금하지 않아요. 개최자가 확정하면 입금 안내를 받아요."
+                              : isC2CProduct
+                                ? "신청 단계에서는 입금하지 않아요. 모집이 끝나면 입금 안내를 받아요."
                                 : isFreeCheckoutEstimate
                                   ? "입금할 금액이 없는 무료 참여예요."
                                   : "참여하면 입금 계좌와 마감 시각이 안내돼요."
@@ -5457,8 +5436,7 @@ export function ProductDetail({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-[12px] font-semibold text-black/40">배송지</p>
-                          {/* docs/46 §4.7-A1 의 배송지 스냅샷 강제는 이제 <b>성사 확정 전</b> 재신청에만
-                              해당한다 — 확정 뒤 추가 모집은 새 묶음이라 배송지를 다시 고른다. 상속 구간에서만
+                          {/* docs/46 §4.7-A1 의 배송지 스냅샷 강제는 모집 중 재신청에 해당한다. 상속 구간에서만
                               현재 선택값 대신 문구로 대체한다(선택값이 실제 배송지와 다를 수 있으므로). */}
                           {/* 상속 구간에서는 서버가 준 <b>그 묶음의 실제 주소</b>를 보여준다 — 어떤 배송지로
                               신청했는지 잊었을 수 있어서다. 서버가 값을 못 주면(옛 응답·주소 삭제) 기존 문구로
@@ -5509,21 +5487,6 @@ export function ProductDetail({
                           ? "추가 신청은 첫 신청과 같은 배송지와 입금자명으로 묶여요. 배송비도 추가로 부과되지 않아요."
                           : "택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요."}
                       </HelpText>
-                      {/* 재번들은 이 블록에서 배송지를 새로 고르는 사람이라 위 수령 안내가 그대로
-                          필요하다. 배송비가 왜 또 붙는지만 한 줄 덧붙인다. 오픈채팅 링크는 개최자가
-                          등록해야 생기므로(:productOpenChatHref) 없을 때 문의를 유도하면 갈 곳이 없다. */}
-                      {isRebundledC2CApplication ? (
-                        // 코드 참여는 배송비까지 전액 지원이라 "한 번 더 부과" 만 틀린 말이 된다.
-                        // 별도 택배로 따로 온다는 사실은 그대로 참이라 그 부분은 남긴다.
-                        <HelpText className="mt-1.5">
-                          {(isCodeCheckout
-                            ? "성사 확정 후 추가 신청은 별도 택배로 따로 도착해요."
-                            : "성사 확정 후 추가 신청은 별도 택배라 배송비가 한 번 더 부과돼요.") +
-                            (productOpenChatHref
-                              ? " 한 상자로 받고 싶으면 개최자에게 오픈채팅으로 문의해 주세요."
-                              : "")}
-                        </HelpText>
-                      ) : null}
                     </div>
 
                     {isCodeCheckout ? (
@@ -5630,14 +5593,20 @@ export function ProductDetail({
                     <HelpText className="px-1">
                       {isCodeCheckout
                         ? "코드가 확인되면 바로 참여가 확정돼요. 입금 단계는 없어요."
-                        : isC2CProduct && !isC2CCollectingProduct
-                        ? "지금은 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 드려요. 확정 전에는 언제든 무료로 취소할 수 있어요."
-                        : isC2CCollectingProduct
-                          ? "신청하면 24시간 입금 기한이 정해져요. 기한이 지나도 자동 취소는 아니지만, 그때부터 개최자가 참여를 취소할 수 있어요."
+                        : isC2CProduct
+                          ? "지금은 입금하지 않아요. 모집이 끝나면 알림톡으로 입금 안내를 드려요. 그 전까지는 언제든 무료로 취소할 수 있어요."
                           : isFreeCheckoutEstimate
                             ? "참여하면 바로 확정돼요. 입금 단계는 없어요."
                             : "참여하면 입금 마감 시각이 정해져요. 마감 시간 안에 입금하지 않으면 참여가 자동 취소돼요."}
                     </HelpText>
+                    {isPaymentPromiseRequired ? (
+                      <PromiseCheck
+                        checked={isPaymentPromiseChecked}
+                        disabled={isBidSubmitPending || checkoutStepAfterSuccess !== null}
+                        message="입금 단계가 시작되면 24시간 안에 입금해 주세요."
+                        onCheckedChange={setIsPaymentPromiseChecked}
+                      />
+                    ) : null}
                     {isC2CProduct ? (
                       // 중개자 고지(전상법 §20① — docs/41 §3.3-1) + 미성년자 §13③ 취소 가능성 고지
                       // (docs/43 §2-5): 계약 체결 화면에 미리 노출한다.
@@ -5685,7 +5654,8 @@ export function ProductDetail({
                         activeBidCount === 0 ||
                         !canBidProduct ||
                         !checkoutDeliveryAddress ||
-                        (isCodeCheckout && checkoutCodeInput.trim().length === 0)
+                        (isCodeCheckout && checkoutCodeInput.trim().length === 0) ||
+                        (isPaymentPromiseRequired && !isPaymentPromiseChecked)
                       }
                       onClick={() => void handleSubmitBids()}
                       type="button"
@@ -5697,7 +5667,7 @@ export function ProductDetail({
                             : isBidSubmitPending
                               ? "코드 확인 중"
                               : "코드 입력하고 참여하기"
-                          : isC2CProduct && !isC2CCollectingProduct
+                          : isC2CProduct
                             ? checkoutStepAfterSuccess
                               ? "신청이 접수됐어요"
                               : isBidSubmitPending
@@ -5929,8 +5899,8 @@ export function ProductDetail({
                         신청이 접수됐어요!
                       </p>
                       <HelpText className="mt-3" tone="dark">
-                        지금은 입금하지 않아도 돼요. 개최자가 성사를 확정하면
-                        알림톡으로 입금 계좌와 기한을 안내드려요.
+                        지금은 입금하지 않아도 돼요. 모집이 끝나면 알림톡으로 입금
+                        계좌와 기한을 안내드려요.
                       </HelpText>
                     </div>
 
@@ -5962,14 +5932,14 @@ export function ProductDetail({
 
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                       <div className="flex items-center justify-between text-[13px] font-semibold text-black/60">
-                        <span>성사 시 입금할 금액</span>
+                        <span>입금할 금액</span>
                         <span className="text-[16px] tracking-[-0.04em] text-black">
                           {formatPrice(checkoutPaymentSummary.totalAmount)}
                         </span>
                       </div>
                       <HelpText className="mt-2">
-                        배송비 포함 예상 금액이에요. 정확한 금액은 성사 확정
-                        알림에서 다시 안내드려요.
+                        배송비 포함 예상 금액이에요. 정확한 금액은 입금 안내
+                        알림톡에서 다시 알려 드려요.
                       </HelpText>
                     </div>
 
@@ -5977,8 +5947,8 @@ export function ProductDetail({
                         원래 문단은 isC2CProduct 로 감싸여 있지 않아 회사 개최 분철에도
                         노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
                     <HelpText className="px-1">
-                      개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
-                      있어요.
+                      입금 단계가 시작되기 전에는 참여 내역에서 언제든 무료로
+                      취소할 수 있어요.
                       {isC2CProduct ? (
                         <span className="block font-semibold text-black/75">
                           분철이지는 통신판매중개자이며, 대금은 개최자 계좌로

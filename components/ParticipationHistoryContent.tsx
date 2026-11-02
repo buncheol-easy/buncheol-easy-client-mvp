@@ -74,6 +74,8 @@ import {
   isBuncheolRecruitingStatus,
   isDeliveryCompletedStatus,
   isDeliveryShippingStatus,
+  getConfirmCheckLine,
+  showsConfirmBadge,
   isHostedBuncheolClosed,
   isParticipationAppliedStatus,
   isParticipationAwaitingPaymentStatus,
@@ -113,6 +115,7 @@ import {
 import { getCachedProductImageUrl } from "@/lib/product-card-image";
 import { HelpText } from "@/components/HelpText";
 import { SlidingFilterChips, SlidingTabs } from "@/components/SlidingTabs";
+import { StaffContactLink } from "@/components/StaffContactLink";
 import {
   ConfirmSheet,
   type ConfirmSheetRequest,
@@ -128,7 +131,7 @@ function formatPrice(price: number) {
 
 const kstOffsetHours = 9;
 const paymentDeadlineMinutes = 10;
-// C2C 입금 창 — 성사 확정 후 24시간 (docs/46 §7.1-3). 카운트다운 상한 보정에 쓴다.
+// C2C 입금 창 — 입금 단계 시작 후 24시간. 카운트다운 상한 보정에 쓴다.
 const c2cPaymentWindowMs = 24 * 60 * 60_000;
 const PRODUCT_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY = "product-participation-history-entry-index";
 export const MANAGE_PARTICIPATION_HISTORY_ENTRY_INDEX_KEY =
@@ -376,7 +379,7 @@ const c2cProgressStepLabels = [
 ] as const;
 
 // LEGACY 0원 참여는 입금 단계를 거치지 않는다 — 앞 두 단계만 참여 축으로 갈아끼우고 이후는 공용 라벨을 쓴다.
-// C2C 0원은 서버가 성사 확정 뒤 입금 대기로 보내므로 이 축이 아니라 C2C 6칸 축을 쓴다.
+// C2C 0원은 서버가 입금 단계 시작 때 입금 대기로 보내므로 이 축이 아니라 C2C 6칸 축을 쓴다.
 const freeProgressStepLabels = [
   "참여 접수",
   "참여 확정",
@@ -399,13 +402,13 @@ const c2cParticipationStatusGuide = [
     icon: ClipboardListIcon,
     label: c2cProgressStepLabels[0],
     description:
-      "원하는 멤버 자리를 잡아둔 단계예요. 아직 입금하지 않아요. 개최자가 성사를 확정하면 알림톡으로 입금 안내를 보내드려요.",
+      "원하는 멤버 자리를 잡아둔 단계예요. 아직 입금하지 않아요. 모집이 끝나면 알림톡으로 입금 안내를 보내드려요.",
   },
   {
     icon: BanknoteIcon,
     label: c2cProgressStepLabels[1],
     description:
-      "성사가 확정돼 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러주세요. 기한이 지나도 자동으로 취소되진 않지만, 그때부터 개최자가 참여를 뺄 수 있어요.",
+      "모집이 끝나 입금할 차례예요. 안내된 24시간 안에 개최자 계좌로 보내고, 송금 뒤 '보냈어요'를 꼭 눌러 주세요. 기한이 지나면 개최자가 입금이 확인된 참여자로만 진행할 수 있고, 이때 입금이 확인되지 않은 참여는 취소돼요.",
   },
   {
     icon: CheckIcon,
@@ -434,7 +437,7 @@ const c2cParticipationStatusGuide = [
 
 // LEGACY 0원 참여(코드 참여 포함) 전용 안내. 진행바를 freeProgressStepLabels(5칸) 축으로 가른 이상
 // 시트도 같이 갈라야 한다 — 안 그러면 입금할 게 없는 사람에게 "10분 안에 꼭 입금" 안내가 뜬다.
-// C2C 0원은 서버가 성사 확정 뒤 입금 대기(개최자 입금 확인까지)로 보내므로 C2C 안내를 쓴다.
+// C2C 0원은 서버가 입금 단계 시작 때 입금 대기(개최자 입금 확인까지)로 보내므로 C2C 안내를 쓴다.
 const freeParticipationStatusGuide = [
   {
     icon: ClipboardListIcon,
@@ -509,21 +512,21 @@ const hostingStatusGuide = [
   },
   {
     icon: CheckIcon,
-    label: "성사 확정",
+    label: "입금 단계 시작",
     description:
-      "진행하기로 마음먹었다면 성사 확정을 눌러요. 신청자 전원에게 내 정산 계좌와 24시간 입금 기한이 알림톡으로 나가요.",
+      "자리가 모두 차거나, 최소 진행 멤버 수를 채운 채 마감되면 자동으로 시작돼요. 신청자 전원에게 내 정산 계좌와 24시간 입금 기한이 알림톡으로 나가요.",
   },
   {
     icon: BanknoteIcon,
     label: "입금 확인",
     description:
-      "통장을 보고 입금자명으로 대조해 확인을 눌러요. 멤버를 여러 명 고른 참여자는 한 번에 확인돼요. 기한이 지난 미입금 참여는 '제외'로 뺄 수 있어요.",
+      "통장을 보고 입금자명으로 대조해 확인을 눌러요. 멤버를 여러 명 고른 참여자는 한 번에 확인돼요.",
   },
   {
     icon: UsersRoundIcon,
     label: "진행 확정",
     description:
-      "전원 입금이 확인되면 자동으로 진행 확정돼요. 기한이 지난 미입금 참여를 직접 정리하면 입금한 인원만으로 확정할 수도 있어요.",
+      "전원 입금이 확인되면 자동으로 진행 확정돼요. 입금 기한이 지나면 입금이 확인된 참여자로만 직접 확정할 수 있고, 입금 안 한 참여는 이때 취소돼요.",
   },
   {
     icon: TruckIcon,
@@ -624,6 +627,9 @@ type BidRecord = {
   // 서버가 취소 API 게이트와 같은 판정으로 내려주는 취소 가능 여부·사유 (docs/56 S-1).
   // 필드가 없는 구 응답이면 null.
   cancellability?: string | null;
+  // 입금 수집 중 분철의 입금 현황(그 분철 전체 자리 기준, 이름 없음). 아니거나 옛 서버면 null.
+  confirmedSlotCount?: number | null;
+  activeSlotCount?: number | null;
   shippingAddress?: DeliveryAddress | null;
   // 이 참여가 속한 묶음의 배송지(server#178). 배송 스냅샷과 달리 입금확인 전에도 온다.
   requestedShippingAddress?: RequestedShippingAddress | null;
@@ -675,13 +681,8 @@ function canViewBidRecordPaymentSheet(bid: BidRecord, now: Date) {
 // 서버 취소 판정 값 (docs/56 S-1 — server ParticipationCancellability).
 const PARTICIPATION_CANCELLABLE = "CANCELLABLE";
 const PARTICIPATION_CANCEL_BLOCKED_BY_STATUS = "BLOCKED_BY_STATUS";
-const PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM = "BLOCKED_BY_HOST_CONFIRM";
 
-// C2C 자발 취소 가능 구간 (docs/46 §5). 판정은 서버가 하고 화면은 그 값을 따르기만 한다 —
-// 상태로 재판정하면 성사 확정을 거치지 않은 추가 모집(docs/46 §4.7-E1) 참여자까지 가둔다.
-//
-// 기한 축을 뺐다 — 예전 만료 가드의 근거가 "곧 서버가 자동 취소할 것" 이었고 C2C 에서 그 전제가
-// 사라졌다. 이제 서버 값(cancellability)만 따른다 (docs/84 §3-1).
+// C2C 자발 취소 가능 구간 — 신청(APPLIED)에서만 된다. 판정은 서버가 하고 화면은 그 값을 따르기만 한다.
 function canCancelBidRecord(bid: BidRecord) {
   if (!isC2CBidRecord(bid) || isBidRecordCancelled(bid)) {
     return false;
@@ -691,12 +692,8 @@ function canCancelBidRecord(bid: BidRecord) {
     return bid.cancellability === PARTICIPATION_CANCELLABLE;
   }
 
-  // 폴백(필드 없는 구 응답·조회 실패) — 잘못 숨겨 가두는 것보다 눌러서 이유를 아는 편이 낫다.
-  // 서버가 거부하면 그 사유가 토스트로 뜬다(runCancelParticipation).
-  return (
-    isParticipationAppliedStatus(bid.participationStatus) ||
-    isParticipationAwaitingPaymentStatus(bid.participationStatus)
-  );
+  // 폴백(필드 없는 구 응답·조회 실패). 서버가 거부하면 그 사유가 토스트로 뜬다(runCancelParticipation).
+  return isParticipationAppliedStatus(bid.participationStatus);
 }
 
 // 낙관적 갱신용 판정 전이. 「보냈어요」 마킹이 상태만 올리고 판정을 그대로 두면 버튼과 사유가
@@ -707,7 +704,7 @@ function markPaymentSentCancellability(current: string | null | undefined) {
     return current ?? null;
   }
 
-  // 이미 다른 사유로 막혀 있으면(성사 확정 등) 그 사유가 더 구체적이라 유지한다.
+  // 이미 막혀 있으면 그 사유를 유지한다.
   return current === PARTICIPATION_CANCELLABLE
     ? PARTICIPATION_CANCEL_BLOCKED_BY_STATUS
     : current;
@@ -715,7 +712,6 @@ function markPaymentSentCancellability(current: string | null | undefined) {
 
 
 // 버튼만 사라지면 "취소가 왜 없지" 로 문의가 는다 — 왜 안 되는지 + 다음에 뭘 해야 하는지를 함께 보여준다.
-// 서버 에러 문구(BCH-086 · BCH-092)와 같은 내용이다.
 // 노출 범위는 사용자가 실제로 취소를 찾는 두 구간뿐 — 입금확인·배송 단계 카드까지 상시 안내를 띄우면
 // 정작 필요한 곳에서 묻힌다(Wave 2 에서 완료 분철에 상시 노출됐던 문제, docs/56 §21-4).
 function getBidRecordCancelBlockedNotice(bid: BidRecord) {
@@ -725,11 +721,13 @@ function getBidRecordCancelBlockedNotice(bid: BidRecord) {
 
   // 구간을 화면에서도 못박는다 — 지금 서버는 상태를 먼저 판정해 입금확인·배송 카드가 이 값을 받지
   // 않지만, 그 평가 순서에 안내 노출을 기대는 순간 서버 enum 이 바뀔 때 조용히 노이즈가 된다.
+  // 입금 대기는 서버가 BLOCKED_BY_STATUS 로 막는다. 옛 서버의 다른 막힘 값도 같은 안내로 받는다.
   if (
-    bid.cancellability === PARTICIPATION_CANCEL_BLOCKED_BY_HOST_CONFIRM &&
+    bid.cancellability &&
+    bid.cancellability !== PARTICIPATION_CANCELLABLE &&
     isParticipationAwaitingPaymentStatus(bid.participationStatus)
   ) {
-    return "개최자가 성사 확정한 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
+    return "입금 단계가 시작된 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
   }
 
   if (
@@ -770,7 +768,12 @@ function getBidRecordCancellationKind(bid: BidRecord) {
     return "USER_CANCELLED";
   }
 
-  // 개최자가 뺀 자리. 만료와 뭉뚱그리면 주체·사실·문의처가 모두 틀린다 — C2C 는 돈이 개최자
+  // 진행 확정 때 입금이 확인되지 않아 빠진 자리. 돈은 개최자 계좌에 있을 수 있어 개최자에게 먼저 묻게 한다.
+  if (bid.cancelReason === "PAYMENT_NOT_CONFIRMED") {
+    return "PAYMENT_NOT_CONFIRMED";
+  }
+
+  // 옛 「제외」 기록(읽기용). 만료와 뭉뚱그리면 주체·사실·문의처가 모두 틀린다 — C2C 는 돈이 개최자
   // 계좌로 가므로 「분철이지로 문의」가 오안내다.
   if (bid.cancelReason === "HOST_RELEASED") {
     return "HOST_RELEASED";
@@ -788,7 +791,7 @@ function getBidRecordCancellationKind(bid: BidRecord) {
   }
 
   // 🔴 모르는 사유의 기본값은 <b>flow 로 갈린다</b>. C2C 는 돈이 개최자에게 있으니 「개최자가 뺐다」가
-  // 최악의 경우에도 물어볼 상대를 맞게 가리킨다. LEGACY 는 「제외」 자체가 없고 환불 주체가
+  // 최악의 경우에도 물어볼 상대를 맞게 가리킨다. LEGACY 는 개최자가 빼는 길이 없고 환불 주체가
   // 플랫폼이라, 같은 기본값을 쓰면 일어날 수 없는 사건을 단정하고 문의처까지 틀리게 보낸다.
   return isC2CBidRecord(bid) ? "HOST_RELEASED" : "PAYMENT_TIMEOUT";
 }
@@ -899,10 +902,9 @@ function stillNeedsHostContact(bid: BidRecord) {
     return false;
   }
   const kind = getBidRecordCancellationKind(bid);
-  // 개최자가 뺀 건은 흔적이 없어도 연다 — 「보냈어요」 없이 개최자가 바로 입금확인한 뒤
-  // 취소된 사람은 흔적이 비는데 돈을 낸 사람이고, 취소 행에는 paidAt 이 안 실려 클라가
-  // 그를 식별할 수 없다. 문구가 "개최자에게 알려 주세요"라면 닿을 수단도 있어야 한다.
-  if (kind === "HOST_RELEASED") {
+  // 개최자가 뺀 건(옛 「제외」, 진행 확정 때 빠짐)은 흔적이 없어도 연다 — 「보냈어요」 없이 보낸 사람은
+  // 흔적이 비는데 돈을 낸 사람일 수 있다. 문구가 "개최자에게 알려 주세요"라면 닿을 수단도 있어야 한다.
+  if (kind === "HOST_RELEASED" || kind === "PAYMENT_NOT_CONFIRMED") {
     return true;
   }
   return kind === "BUNCHEOL_CANCELLED" && hasBidRecordPaymentTrace(bid);
@@ -924,6 +926,18 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
       label: "참여 취소됨",
       description:
         "직접 취소한 참여예요. 분철이 모집 중이면 다시 신청할 수 있어요.",
+    };
+  }
+
+  if (cancellationKind === "PAYMENT_NOT_CONFIRMED") {
+    // ⚠️ 흔적이 없다고 「낼 게 없다」고 단정하지 않는다 — 「보냈어요」 없이 보낸 사람일 수 있다.
+    return {
+      label: "참여 취소됨",
+      description: isFreeBidRecord(bid)
+        ? "입금 기한이 지나 개최자가 참여를 취소했어요."
+        : hasBidRecordPaymentTrace(bid)
+          ? "입금 기한이 지나 개최자가 참여를 취소했어요. 이미 보냈다면 대금은 개최자 계좌에 있으니 개최자에게 먼저 알려 주세요. 연락이 어려우면 고객센터로 문의해 주세요."
+          : "입금 기한이 지나 개최자가 참여를 취소했어요. 입금 전이었다면 따로 하실 일은 없어요. 이미 보냈다면 개최자에게 알려 주시고, 연락이 어려우면 고객센터로 문의해 주세요.",
     };
   }
 
@@ -974,6 +988,61 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
         ? `${buncheolCancelDescription} 입금 전이었다면 돌려받을 금액이 없어요. 이미 보냈다면 환불은 개최자가 진행해요. 늦어지면 고객센터로 문의해 주세요.`
         : `${buncheolCancelDescription} 이미 입금했다면 등록한 환불 계좌로 환불돼요.`,
   };
+}
+
+// 입금 수집 중 회원 개최 참여의 입금 현황과 멈춤 안내. 현황은 서버가 센 분철 전체 자리 수만 쓰고 이름은 가린다.
+// 기한이 지났는지는 서버 필드가 없어 입금 기한으로 표시만 가른다 — 기한 뒤에도 서버는 아무것도 처리하지 않는다.
+function CollectingStatusNotice({ bid, now }: { bid: BidRecord; now: Date }) {
+  if (
+    !isC2CBidRecord(bid) ||
+    isBidRecordCancelled(bid) ||
+    !isBuncheolPaymentCollectingStatus(bid.buncheolStatus)
+  ) {
+    return null;
+  }
+
+  const hasSlotCounts =
+    typeof bid.activeSlotCount === "number" &&
+    typeof bid.confirmedSlotCount === "number" &&
+    bid.activeSlotCount > 0;
+  const paymentDeadline = getPaymentDeadlineDate(
+    bid,
+    bid.paymentDueAt,
+    bid.createdAt,
+    true,
+  );
+  const isDuePassed =
+    !Number.isNaN(paymentDeadline.getTime()) &&
+    paymentDeadline.getTime() <= now.getTime();
+
+  if (!hasSlotCounts && !isDuePassed) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50">
+      {hasSlotCounts ? (
+        <p className="text-[12px] font-semibold text-black/60">
+          {`${bid.activeSlotCount}자리 중 ${bid.confirmedSlotCount}자리 입금 확인`}
+        </p>
+      ) : null}
+      {isDuePassed ? (
+        <>
+          <p
+            className={`text-[13px] font-semibold tracking-[-0.03em] text-black/80${
+              hasSlotCounts ? " mt-1.5" : ""
+            }`}
+          >
+            개최자의 결정을 기다리고 있어요
+          </p>
+          <StaffContactLink
+            className="mt-2"
+            description="결정이 늦어지면 운영진에게 알려 주세요. 운영진이 개최자에게 연락해요."
+          />
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 // 기한 경과 여부 — 표시 전용이라 아무것도 잠그지 않는다. C2C 기한은 "지나면 개최자가 정리에 나설 수
@@ -1151,7 +1220,7 @@ function getBidRecordProgressSteps(bid: BidRecord, now: Date) {
 }
 
 // 묶음 키가 둘인 이유: 서버가 묶음을 안 준 응답에서 폴백 방향이 반대여야 한다.
-// · 표시(카드 그룹핑) — 자기 자신이 한 묶음. 분철로 묶으면 성사 확정 뒤 추가로 잡은 자리까지 합쳐져
+// · 표시(카드 그룹핑) — 자기 자신이 한 묶음. 분철로 묶으면 취소로 닫힌 묶음 뒤에 다시 잡은 자리까지 합쳐져
 //   서로 다른 이체 2건이 「한 번에 보내요」 한 장이 된다. 개최 관리도 같은 선택이다.
 // · 액션(마킹) — 분철 전체. 자기 자리만 잡으면 묶음이 쪼개져 개최자 입금확인이 409 로 막힌다.
 // 실측상 prod·staging 모두 bundle_id 가 빈 참여는 0건이라 둘은 지금 같은 답을 낸다.
@@ -1280,7 +1349,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   }
 
   if (isC2C && isParticipationAppliedStatus(bid.participationStatus)) {
-    return "개최자가 성사를 확정하면 알림톡으로 입금 안내를 드려요. 아직 입금할 필요 없어요.";
+    return "모집이 끝나면 알림톡으로 입금 안내를 드려요. 아직 입금할 필요 없어요.";
   }
 
   if (isC2C && isParticipationPaymentSentStatus(bid.participationStatus)) {
@@ -1294,7 +1363,7 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordPaymentReady(bid, now)) {
     // ⚠️ overdue 검사가 ready 보다 뒤에 있으면 도달하지 못한다 — C2C 는 기한이 지나도 ready 다.
     if (isBidRecordPaymentOverdue(bid, now)) {
-      return "입금 기한이 지났어요. 지금 보내도 되지만, 개최자가 참여를 취소할 수 있어요.";
+      return "입금 기한이 지났어요. 개최자가 진행을 확정할 때까지 입금이 확인되지 않으면 참여가 취소돼요.";
     }
 
     const remaining = formatPaymentRemainingTime(
@@ -1349,7 +1418,7 @@ const hostedStatusBadgeClassNames: Record<HostedBuncheolStatusKind, string> = {
   // 입금 진행은 끝난 분철이 아니다 — 회색(끝남)으로 묶지 않는다(docs/98 §5-C, 공개 카드와 같은 취급).
   paymentCollecting: "bg-[#E4F6A5] text-black/70",
   confirmed: "bg-[#E4F6A5] text-black/70",
-  // 마감 뒤 성사 확정 대기(C2C 48시간 유예)도 개최자가 할 일이 남은 분철이라 끝남 색을 쓰지 않는다.
+  // 마감 직후 스케줄러가 입금 단계로 넘기기 전 잠깐도 끝난 분철이 아니라 끝남 색을 쓰지 않는다.
   recruitingClosed: "bg-[#E4F6A5] text-black/70",
   ended: "bg-[#f3f3f3] text-black/50",
   cancelled: "bg-[#f3f3f3] text-black/50",
@@ -1501,6 +1570,8 @@ function getBidRecordFromParticipation(
     participationStatus,
     cancelReason: participation.cancelReason ?? null,
     cancellability: participation.cancellability ?? null,
+    confirmedSlotCount: participation.confirmedSlotCount ?? null,
+    activeSlotCount: participation.activeSlotCount ?? null,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
     // ⚠️ 여기에는 캐시 폴백을 붙이지 않는다 — 캐시에 없는 값이고, 붙일 곳도 아니다.
@@ -1661,8 +1732,8 @@ async function getBidRecordWithShippingData(
 
 // 서버 개최자 취소 판정 값 (docs/56 S-2 — server BuncheolHostCancellability).
 const BUNCHEOL_HOST_CANCELLABLE = "CANCELLABLE";
-const BUNCHEOL_HOST_CANCEL_BLOCKED_BY_CONFIRMED_PAYMENT =
-  "BLOCKED_BY_CONFIRMED_PAYMENT";
+// 입금 단계가 시작된 회원 개최 분철 — 입금 확인 건수와 상관없이 운영진과 함께 접는다.
+const BUNCHEOL_HOST_CANCEL_NEEDS_STAFF = "NEEDS_STAFF";
 
 // 개최자 취소(삭제) 가능 구간. 판정은 서버가 하고 화면은 그 값을 따르기만 한다 —
 // Wave 2 에서 상태 집합으로 자체 판정했다가 정작 대상인 입금 수집중을 빠뜨렸다 (docs/56 §21-4).
@@ -1678,12 +1749,11 @@ function canDeleteHostedProduct(product: ProductDetailItem) {
   );
 }
 
-// 입금을 받은 뒤 막히는 경우만 안내한다 — 서버 BCH-093 과 같은 문구다. 진행 확정·이미 취소된
+// 입금 단계가 시작돼 막히는 경우만 안내한다 — 서버 BCH-126 과 같은 말이다. 진행 확정·이미 취소된
 // 분철은 카드 배지가 이미 상태를 말하고 있어, 거기까지 상시 안내를 붙이면 노이즈가 된다.
 function getHostedProductCancelBlockedNotice(product: ProductDetailItem) {
-  return product.hostCancellability ===
-    BUNCHEOL_HOST_CANCEL_BLOCKED_BY_CONFIRMED_PAYMENT
-    ? "입금이 확인된 참여자가 있어 분철을 취소할 수 없어요. 받은 금액을 환불한 뒤 고객센터로 문의해 주세요."
+  return product.hostCancellability === BUNCHEOL_HOST_CANCEL_NEEDS_STAFF
+    ? "입금 단계가 시작된 분철은 혼자 취소할 수 없어요. 진행이 어렵다면 운영진에게 알려 주세요."
     : null;
 }
 
@@ -1697,6 +1767,7 @@ function getHostedProductFromBuncheol(
     id: buncheol.id,
     buncheolId: buncheol.id,
     hostCancellability: buncheol.cancellability ?? null,
+    hostConfirmCheck: buncheol.confirmCheck,
     hostEnded: buncheol.ended,
     title: buncheol.title,
     member: `멤버 ${buncheol.memberSlotCount}명`,
@@ -3308,6 +3379,7 @@ export function ParticipationHistoryContent({
               </div>
             </div>
 
+            <CollectingStatusNotice bid={head} now={now} />
             {safeOpenChatHref ? (
               <a
                 className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
@@ -3651,7 +3723,7 @@ export function ParticipationHistoryContent({
           : "참여를 취소하지 못했어요. 잠시 후 다시 시도해 주세요.";
 
       setHistoryMessage(failureMessage);
-      // 서버가 성사 확정 후 취소를 거부하면(BCH-092) 그 사유가 사용자에게 닿아야 한다 —
+      // 서버가 입금 단계 뒤 취소를 거부하면(BCH-086) 그 사유가 사용자에게 닿아야 한다 —
       // historyMessage 는 목록 맨 위라 카드까지 스크롤한 상태에서는 보이지 않는다 (docs/56 H-09).
       showToast(failureMessage, "error");
     } finally {
@@ -4177,6 +4249,7 @@ export function ParticipationHistoryContent({
                         </div>
                       </div>
 
+                      <CollectingStatusNotice bid={bid} now={now} />
                       {safeOpenChatHref ? (
                         <a
                           className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
@@ -4466,10 +4539,21 @@ export function ParticipationHistoryContent({
                       </div>
                     </div>
                     </Link>
+                    {showsConfirmBadge(product.hostConfirmCheck) ? (
+                      <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/60">
+                        <span className="inline-flex rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[12px] font-semibold text-black">
+                          진행 확정해 주세요
+                        </span>
+                        <HelpText className="mt-1.5" size="caption">
+                          {getConfirmCheckLine(product.hostConfirmCheck)}
+                        </HelpText>
+                      </div>
+                    ) : null}
                     {cancelBlockedNotice ? (
-                      <HelpText className="mt-3">
-                        {cancelBlockedNotice}
-                      </HelpText>
+                      <StaffContactLink
+                        className="mt-3"
+                        description={cancelBlockedNotice}
+                      />
                     ) : null}
                     <div className="mt-3 flex justify-end gap-2 border-t border-black/[0.08] pt-3">
                       {product.isApiProduct ? (
@@ -4607,14 +4691,15 @@ export function ParticipationHistoryContent({
               {isHostingHelpSheet ? null : isStatusGuideC2C ? (
                 <>
                   <HelpText className="px-1 pt-2">
-                    성사가 확정되지 않으면 참여가 취소돼요. 입금 기한이 지나도
-                    자동 취소는 아니지만, 그때부터 개최자가 참여를 뺄 수 있어요.
-                    입금 전이었다면 돌려받을 금액이 없고, 이미 보냈다면
-                    개최자에게 먼저 알려 주세요.
+                    마감 때 신청이 최소 인원보다 적으면 분철이 취소돼요. 입금
+                    기한이 지나면 개최자가 입금이 확인된 참여자로만 진행할 수
+                    있고, 이때 입금이 확인되지 않은 참여는 취소돼요. 입금
+                    전이었다면 돌려받을 금액이 없고, 이미 보냈다면 개최자에게
+                    먼저 알려 주세요.
                   </HelpText>
                   <HelpText className="px-1 pt-2">
-                    성사 확정 전까지는 참여를 직접 취소할 수 있어요. 확정된
-                    뒤에는 개최자에게 먼저 알려 주세요.
+                    입금 단계가 시작되기 전까지는 참여를 직접 취소할 수 있어요.
+                    시작된 뒤에는 개최자에게 먼저 알려 주세요.
                   </HelpText>
                   <HelpText className="px-1 pt-2">
                     분철이지는 통신판매중개자이며, 대금은 개최자 계좌로 직접
@@ -4637,9 +4722,8 @@ export function ParticipationHistoryContent({
                   )}
                   <HelpText className="px-1 pt-2">
                     위 순서는 분철이지가 직접 개최한 분철 기준이에요. 회원이
-                    개최한 분철은 먼저 신청만 하고, 개최자가 성사를 확정하면
-                    24시간 안에 입금해요. 송금한 뒤에는 &lsquo;보냈어요&rsquo;를
-                    눌러 주세요.
+                    개최한 분철은 먼저 신청만 하고, 모집이 끝나면 24시간 안에
+                    입금해요. 송금한 뒤에는 &lsquo;보냈어요&rsquo;를 눌러 주세요.
                   </HelpText>
                 </>
               )}

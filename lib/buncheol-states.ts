@@ -37,12 +37,56 @@ export function isBuncheolConfirmedStatus(status: string | null | undefined) {
   return normalizeStatusValue(status) === "CONFIRMED";
 }
 
-// C2C 입금 수집 중 — 개최자 성사 확정 후 전원 입금확인 전 구간 (docs/46 §1.2).
+// C2C 입금 수집 중 — 입금 단계가 저절로 시작된 뒤 진행 확정되기 전 구간.
 export function isBuncheolPaymentCollectingStatus(
   status: string | null | undefined,
 ) {
   return normalizeStatusValue(status) === "PAYMENT_COLLECTING";
 }
+
+// 진행 확정 버튼 판정. 서버(관리 응답·개최 목록)가 같은 판정으로 내려 주는 값이라 화면은 다시 계산하지 않는다.
+// 입금 수집 중이 아니거나 옛 서버라 값이 없으면 null.
+export type ConfirmCheck = "ALL_PAID" | "DUE_PASSED" | "BEFORE_DUE" | "NO_CONFIRMED";
+
+const CONFIRM_CHECKS: readonly ConfirmCheck[] = [
+  "ALL_PAID",
+  "DUE_PASSED",
+  "BEFORE_DUE",
+  "NO_CONFIRMED",
+];
+
+export function toConfirmCheck(value: string | null | undefined): ConfirmCheck | null {
+  const normalizedValue = normalizeStatusValue(value);
+
+  return CONFIRM_CHECKS.find((check) => check === normalizedValue) ?? null;
+}
+
+// ALL_PAID 는 정상 흐름에서 오지 않는다(마지막 묶음 입금 확인이 그 자리에서 진행 확정한다). 옛 데이터 대비로 버튼을 연다.
+export function isConfirmCheckReady(check: ConfirmCheck | null | undefined) {
+  return check === "ALL_PAID" || check === "DUE_PASSED";
+}
+
+// 「개최한 분철」 카드의 「진행 확정해 주세요」 배지. 개최자가 직접 정해야 하는 건 기한이 지났을 때뿐이다.
+export function showsConfirmBadge(check: ConfirmCheck | null | undefined) {
+  return check === "DUE_PASSED";
+}
+
+// 진행 확정 버튼이 켜졌을 때의 한 줄(사용자 확정 문구, 글자 그대로). 관리 화면과 「개최한 분철」 카드가 같이 쓴다.
+export function getConfirmCheckLine(check: ConfirmCheck | null | undefined) {
+  if (check === "ALL_PAID") {
+    return "모든 참여자의 입금이 확인됐어요";
+  }
+
+  if (check === "DUE_PASSED") {
+    return "입금 기한이 지났어요. 확인된 참여자로 진행하거나 운영진에게 알려 주세요";
+  }
+
+  return null;
+}
+
+// 진행 확정 버튼이 꺼져 있을 때의 안내(사용자 확정 문구, 글자 그대로). 관리 화면과 소개 그림이 같이 쓴다.
+export const AUTO_CONFIRM_NOTICE =
+  "참여자 전원의 입금이 확인되면 분철이 자동으로 진행 확정돼요. 입금 기한이 지나면 입금 확인이 된 참여자들로만 분철을 진행하거나, 분철을 파기할 수 있어요. *이 경우 운영진에게 문의 필요";
 
 // 상태 필드가 없는 구 응답·목업은 모집중으로 취급한다.
 export function isBuncheolRecruitingStatus(status: string | null | undefined) {
@@ -135,12 +179,12 @@ function getHostedBuncheolStatusKind({
     return "recruiting";
   }
 
-  // 마감 지난 모집(C2C 48시간 유예 포함)과 알 수 없는 상태.
+  // 마감 지난 모집(스케줄러가 입금 단계·취소로 넘기기 전 잠깐)과 알 수 없는 상태.
   return "recruitingClosed";
 }
 
 // 공용 getBuncheolStatusBadgeLabel 을 이 용도로 바꾸거나 deadline 인자를 붙이지 마라 — 공용 쪽은
-// 마감을 모르므로 C2C 48시간 유예 구간이 「모집 중」으로 돌아간다(docs/98 §5-C).
+// 마감을 모르므로 마감이 지난 모집 중이 「모집 중」으로 돌아간다(docs/98 §5-C).
 export function getHostedBuncheolStatusBadge(
   input: HostedBuncheolStatusInput & { isDeadlinePassed: boolean },
 ) {

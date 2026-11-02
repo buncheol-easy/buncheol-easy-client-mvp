@@ -1333,39 +1333,6 @@ body.is-pwa-standalone {
   }
 }
 
-@keyframes intro-waybill-typing {
-  0%,
-  38% {
-    max-width: 0;
-  }
-
-  72%,
-  100% {
-    max-width: 11.5rem;
-  }
-}
-
-@keyframes intro-ship-complete-button {
-  0%,
-  66% {
-    background: rgba(0, 0, 0, 0.15);
-    color: rgba(0, 0, 0, 0.35);
-    transform: scale(1);
-  }
-
-  82% {
-    background: #111111;
-    color: #fff;
-    transform: scale(1.015);
-  }
-
-  100% {
-    background: #111111;
-    color: #fff;
-    transform: scale(1);
-  }
-}
-
 .intro-mini-phone-screen {
   --intro-phone-screen-scale: 0.707;
 }
@@ -1388,16 +1355,6 @@ body.is-pwa-standalone {
   animation: intro-confirm-pulse 1.8s ease-in-out infinite;
 }
 
-.intro-waybill-typing {
-  animation: intro-waybill-typing 3.2s steps(17, end) infinite;
-  max-width: 11.5rem;
-  vertical-align: bottom;
-}
-
-.intro-ship-complete-button {
-  animation: intro-ship-complete-button 3.2s ease-in-out infinite;
-}
-
 .product-hero-media {
   aspect-ratio: 4 / 3;
 }
@@ -1407,8 +1364,6 @@ body.is-pwa-standalone {
   .settlement-account-panel-exit,
   .intro-payment-sheet,
   .intro-confirm-pulse,
-  .intro-waybill-typing,
-  .intro-ship-complete-button,
   .intro-live-ping,
   .intro-float,
   .intro-spin-slow,

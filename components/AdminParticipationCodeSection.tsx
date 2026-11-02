@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  ApiRequestError,
+  isAdminSessionError,
   requestAdminBuncheolMembers,
   requestAdminParticipationCodeIssue,
   requestAdminParticipationCodeRevoke,
@@ -19,10 +19,6 @@ const MAX_VALID_HOURS = 24 * 30;
 
 function formatPrice(value: number) {
   return `${value.toLocaleString("ko-KR")}원`;
-}
-
-function isAdminSessionError(error: unknown) {
-  return error instanceof ApiRequestError && [401, 403].includes(error.status);
 }
 
 function getCodeStatusLabel(status: AdminParticipationCodeItem["status"]) {
