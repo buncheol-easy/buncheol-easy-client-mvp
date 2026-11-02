@@ -19,7 +19,7 @@ import { HelpText } from "@/components/HelpText";
 import { StaffContactLink } from "@/components/StaffContactLink";
 import { StatusTag, type StatusTagTone } from "@/components/StatusTag";
 import { Switch } from "@/components/Switch";
-import { useAppToast } from "@/components/Toast";
+import { TOAST_VISIBLE_MS, useAppToast } from "@/components/Toast";
 import { formatKoreaDateTime } from "@/lib/format-korea-date-time";
 import {
   acceptBundle,
@@ -654,6 +654,10 @@ export function HostedBuncheolManage({
   const [addMemberError, setAddMemberError] = useState("");
   // 시트를 닫았다 다시 열면 앞선 그룹 멤버 조회가 늦게 끝나 새 목록을 덮지 않게 한다.
   const addMemberLoadIdRef = useRef(0);
+  // 이 화면에서 진행 확정을 일으킨 토스트가 사라지는 시각. 권하는 시트가 그 문장을 가리지 않게 그때까지 기다린다.
+  const confirmToastEndsAtRef = useRef(0);
+  // 기다리는 동안 개최자가 스위치를 만졌으면 권하지 않는다 — 방금 한 결정 위에 시트가 겹친다.
+  const hasChangedExtraRecruitRef = useRef(false);
 
   useEffect(() => {
     const accessToken = authState.isLoggedIn
@@ -1219,6 +1223,11 @@ export function HostedBuncheolManage({
     openConfirmBuncheolSheet(detail);
   }
 
+  function showBuncheolConfirmedToast(message: string) {
+    showToast(message, "success");
+    confirmToastEndsAtRef.current = Date.now() + TOAST_VISIBLE_MS;
+  }
+
   async function runConfirmBuncheol(
     cancelParticipations: ConfirmCancelParticipation[],
   ) {
@@ -1240,7 +1249,9 @@ export function HostedBuncheolManage({
 
       await confirmBuncheol(accessToken, id, cancelParticipations);
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확정이 실패로 보이지 않게.
-      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.", "success");
+      showBuncheolConfirmedToast(
+        "진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.",
+      );
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1379,14 +1390,18 @@ export function HostedBuncheolManage({
       );
 
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
-      showToast(
-        buncheolConfirmed
-          ? "모든 입금이 확인돼 분철이 진행 확정됐어요. 이제 굿즈 구매와 배송을 진행해 주세요."
-          : isConfirmedC2C
+      if (buncheolConfirmed) {
+        showBuncheolConfirmedToast(
+          "모든 입금이 확인돼 분철이 진행 확정됐어요. 이제 굿즈 구매와 배송을 진행해 주세요.",
+        );
+      } else {
+        showToast(
+          isConfirmedC2C
             ? "입금을 확인했어요. 운송장 칸이 열렸어요"
             : "입금 확인이 완료됐어요.",
-        "success",
-      );
+          "success",
+        );
+      }
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1785,6 +1800,7 @@ export function HostedBuncheolManage({
       return;
     }
 
+    hasChangedExtraRecruitRef.current = true;
     setPendingC2CAction("extra-recruit");
 
     let accessToken: string | null = null;
@@ -1838,6 +1854,7 @@ export function HostedBuncheolManage({
     if (
       !showsExtraRecruitControls ||
       isExtraRecruitOn ||
+      hasChangedExtraRecruitRef.current ||
       slotNames.length === 0 ||
       confirmSheetRequest ||
       hasSeenExtraRecruitPrompt(id)
@@ -1872,12 +1889,15 @@ export function HostedBuncheolManage({
 
     hasCheckedExtraRecruitPromptRef.current = true;
 
-    const frame = window.requestAnimationFrame(() => {
-      openExtraRecruitPrompt();
-    });
+    const timer = window.setTimeout(
+      () => {
+        openExtraRecruitPrompt();
+      },
+      Math.max(0, confirmToastEndsAtRef.current - Date.now()),
+    );
 
     return () => {
-      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
     };
   }, [isConfirmedC2C]);
 
