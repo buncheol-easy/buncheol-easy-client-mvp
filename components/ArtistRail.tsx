@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, HeartIcon, PlusIcon } from "@/components/icons";
+import { IMAGE_HOSTS } from "@/lib/image-hosts";
 
 export type ArtistRailItem = {
   apiId?: string;
@@ -31,12 +32,6 @@ type ArtistRailProps = {
   pinFirstItem?: boolean;
   selectedId?: string;
 };
-
-const proxiedImageHosts = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
 
 // 대비색은 이미지 픽셀만으로 정해지니 URL 당 한 번이면 된다. /artists 는 검색어 한 글자마다
 // 카드가 통째로 리마운트돼, 캐시가 없으면 getImageData(GPU→CPU 동기 읽기)가 매번 카드 수만큼 돈다.
@@ -94,7 +89,7 @@ function getProxiedImageUrl(imageUrl: string) {
     const url = new URL(imageUrl);
 
     if (
-      proxiedImageHosts.has(url.hostname) &&
+      IMAGE_HOSTS.has(url.hostname) &&
       url.pathname.startsWith("/idol-groups/")
     ) {
       return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;
