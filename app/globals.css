@@ -51,6 +51,10 @@
   --danger-base: #c03131;
   --danger-soft: #fdecec;
 
+  /* 주의 — 사람이 처리해야 할 일이 남았다는 표시(수락 대기, 입금 기한 지남). 면과 그 위 글자색. */
+  --warning-soft: #fff0c7;
+  --warning-ink: #7a4e00;
+
   /* 모서리 — 12/16/20 세 단계. 0.8~1.2rem 이 뒤섞여 인접 카드가 어긋나 보이던 것을 정리한다.
      Tailwind 의 --radius-* 네임스페이스와 이름이 겹치면 @theme 에서 자기 참조가 되므로
      원본 값은 --app-radius-* 로 두고 아래 @theme 에서 매핑한다. */
@@ -85,6 +89,8 @@
   --color-brand-ink: var(--brand-ink);
   --color-danger-base: var(--danger-base);
   --color-danger-soft: var(--danger-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-ink: var(--warning-ink);
   --radius-sm: var(--app-radius-sm);
   --radius-md: var(--app-radius-md);
   --radius-lg: var(--app-radius-lg);

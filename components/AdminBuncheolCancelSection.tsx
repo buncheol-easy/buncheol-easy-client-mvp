@@ -126,7 +126,7 @@ export function AdminBuncheolCancelSection({
       title: `${target.id}번 분철을 파기할까요?`,
       warnings: target.isConfirmed
         ? [
-            "진행 확정 때 만들어진 배송 기록도 함께 지워져요.",
+            "진행 확정 뒤 만들어진 배송 기록도 함께 지워져요.",
             `입금이 확인된 ${target.confirmedSlotCount}자리가 취소돼요. 환불은 개최자가 하니 끝날 때까지 확인해 주세요. 되돌릴 수 없어요.`,
           ]
         : [

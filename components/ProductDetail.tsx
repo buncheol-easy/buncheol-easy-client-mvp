@@ -1578,6 +1578,11 @@ export function ProductDetail({
   );
   // 분철 상태(prop 은 마운트 시점 값이라 굳는다 — refreshDetailOptions 가 덮는다).
   const [statusFromApi, setStatusFromApi] = useState<string | null>(null);
+  // 추가 모집 여부와 끝남도 재조회로 덮는다 — 개최자가 스위치를 바꾸거나 배송이 모두 도착하면 바뀐다.
+  const [extraRecruitingFromApi, setExtraRecruitingFromApi] = useState<
+    boolean | null
+  >(null);
+  const [endedFromApi, setEndedFromApi] = useState<boolean | null>(null);
   const [openChatUrlFromApi, setOpenChatUrlFromApi] = useState<string | null>(
     product.openChatUrl ?? null,
   );
@@ -2191,11 +2196,23 @@ export function ProductDetail({
   // 입금 수집 중은 모집이 끝난 분철이다 — 빈 자리가 있어도 새 신청을 받지 않는다(서버 BCH-060).
   const isC2CCollectingProduct =
     isC2CProduct && isBuncheolPaymentCollectingStatus(productStatus);
-  // 자리를 여러 개 한 번에 잡는 것은 C2C 모집중 전용이다.
+  const isC2CConfirmedProduct = isC2CProduct && isConfirmedProduct;
+  // 진행 확정 뒤 추가 신청을 받는 중(서버 extraRecruiting). 원래 마감은 이미 지났으므로 상태·마감 막음을 건너뛴다.
+  const isExtraRecruitingProduct =
+    isC2CConfirmedProduct &&
+    (extraRecruitingFromApi ?? product.isExtraRecruiting === true);
+  const productEnded = endedFromApi ?? product.ended ?? null;
+  const isEndedProduct = isC2CConfirmedProduct && productEnded === true;
+  // 추가 모집을 아는 서버는 회원 개최 진행 확정 분철 상세에 ended 를 늘 싣는다. 없으면 옛 서버라 P0-2 화면을 그대로 둔다
+  // (안내 상자·꺼진 버튼 문구·캡션). 옛 서버에는 스위치가 없어 "추가 모집을 열면"이 지킬 수 없는 안내가 된다.
+  const showsConfirmedC2CNotice = isC2CConfirmedProduct && productEnded !== null;
+  // 자리를 여러 개 한 번에 잡는 것은 C2C 모집 중과 추가 모집 중 전용이다.
   // · LEGACY 는 1인 1자리가 DB 유니크로 강제돼 있다
   // · 코드 참여는 코드 하나가 자리 하나에 대응한다
   const canSelectMultipleMembers =
-    isC2CProduct && isBuncheolRecruitingStatus(productStatus) && !isCodeCheckout;
+    isC2CProduct &&
+    (isBuncheolRecruitingStatus(productStatus) || isExtraRecruitingProduct) &&
+    !isCodeCheckout;
   // 확정·취소 분철은 기한이 남아 있어도 더 살 수 없으므로 카운트다운 대신 상태 문구를 보여준다.
   // 입금 수집 중은 마감 전에 자리가 다 차서 시작됐을 수 있어 남은 시간 대신 상태 이름(「입금 진행」)을 쓴다.
   const purchaseDeadlineDisplay = isCancelledProduct
@@ -2205,8 +2222,9 @@ export function ProductDetail({
       : isC2CCollectingProduct
         ? getBuncheolStatusBadgeLabel(productStatus)
         : purchaseDeadlineCountdown;
-  const isPurchasableStatus = isBuncheolPurchasableStatus(productStatus);
-  const isDeadlineBlocked = isDeadlinePassed;
+  const isPurchasableStatus =
+    isBuncheolPurchasableStatus(productStatus) || isExtraRecruitingProduct;
+  const isDeadlineBlocked = isDeadlinePassed && !isExtraRecruitingProduct;
   // 오픈 전 모집 중이면 사진 아래 띠가 상태 배지를 대신한다(카드와 같은 모양). 정각에 사라진다.
   const showOpensAtBand =
     isBeforeOpen &&
@@ -2224,7 +2242,7 @@ export function ProductDetail({
       ? "분철 취소"
       : isDeadlineBlocked
         ? "참여 마감"
-        : isConfirmedProduct
+        : isConfirmedProduct && !isExtraRecruitingProduct
           ? "진행 확정"
           : !isPurchasableStatus || isBidUnavailable
             ? "참여 불가"
@@ -2321,17 +2339,20 @@ export function ProductDetail({
   const hasMyActiveParticipation = auctionOptions.some((option) =>
     isOptionParticipatedByMe(option, myBids[option.id]),
   );
-  // C2C 는 1인 다슬롯 허용(docs/46 §7.1-11) — 활성 참여가 있어도 모집 중이면 다른 멤버에 추가 신청 가능.
-  // 추가 신청 판정은 서버 응답(participatedByMe)만 신뢰한다 — 로컬 myBids 는 같은 세션에서
+  // C2C 는 1인 다슬롯 허용(docs/46 §7.1-11) — 활성 참여가 있어도 모집 중이면 다른 멤버를 더 신청할 수 있다.
+  // 더 고른 신청인지는 서버 응답(participatedByMe)만 신뢰한다 — 로컬 myBids 는 같은 세션에서
   // 취소한 뒤에도 남아 "배송비 0원" 오판(서버는 첫 참여로 부과)을 만들 수 있다.
   const hasMyServerParticipation = auctionOptions.some(
     (option) => option.participatedByMe === true,
   );
-  // 「첫 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 모집 중 재참여만 해당한다
-  // (서버 상속 판정 inheritanceApplies 도 모집중으로 게이트한다).
+  // 「먼저 한 신청과 묶인다」는 판정 — 확인 스텝의 배송지·금액 표시를 지배한다. 모집 중 재참여와, 추가 모집 중
+  // 수락 전 추가 신청에 더 고르는 경우다. 추가 모집 중에는 서버 상속 판정만 본다 — 입금 확인된 원래 참여자는
+  // 새 묶음·새 배송비라 participatedByMe 로 켜면 「배송비 0원」 오안내가 된다.
   const isAdditionalC2CApplication =
     isC2CProduct &&
-    (hasMyServerParticipation || shippingInheritanceAppliesFromApi);
+    (isExtraRecruitingProduct
+      ? shippingInheritanceAppliesFromApi
+      : hasMyServerParticipation || shippingInheritanceAppliesFromApi);
   // 서버는 링크를 개최자·활성 참여자에게만 싣는데(server#144) prop 은 마운트 시점 응답이라
   // 신청해도 갱신되지 않는다. prop 으로 시작해 재조회 결과로 덮는 로컬 값을 대신 읽는다.
   const productOpenChatHref = isC2CProduct
@@ -2447,7 +2468,11 @@ export function ProductDetail({
     }
 
     // 확정 분철은 대부분 마감이 지났고 멤버도 전부 닫혀 있어 아래 두 사유보다 먼저 본다.
-    if (isConfirmedProduct) {
+    if (showsConfirmedC2CNotice && !isExtraRecruitingProduct) {
+      return isEndedProduct ? "끝난 분철이에요" : "지금은 신청을 받지 않아요";
+    }
+
+    if (isConfirmedProduct && !isExtraRecruitingProduct) {
       return "진행 확정된 분철이에요";
     }
 
@@ -2604,6 +2629,8 @@ export function ProductDetail({
       product.myShippingInheritanceApplies === true,
     );
     setStatusFromApi(null);
+    setExtraRecruitingFromApi(null);
+    setEndedFromApi(null);
   }, [
     product.id,
     product.myInheritedShippingAddress,
@@ -2998,6 +3025,8 @@ export function ProductDetail({
       );
       // 상태를 버리면 입금 단계 시작이 화면에 안 걸린다 — 배송지·배송비 표시가 서버와 어긋난다.
       setStatusFromApi(refreshedProduct.status ?? null);
+      setExtraRecruitingFromApi(refreshedProduct.isExtraRecruiting === true);
+      setEndedFromApi(refreshedProduct.ended ?? null);
       setServerAuctionOptions(refreshedProduct.options);
       setMyBids(refreshedMyBids);
       setBidAmounts((current) =>
@@ -3598,7 +3627,7 @@ export function ProductDetail({
           (sum, item) => sum + item.bidAmount,
           0,
         );
-        // 모집 중 다슬롯 추가 신청은 배송비가 첫 참여에 귀속돼 0 이다 (docs/46 §4.7-A2) —
+        // 먼저 한 신청에 붙는 다슬롯 신청은 배송비가 첫 참여에 귀속돼 0 이다 (docs/46 §4.7-A2) —
         // 확인 스텝 표기와 동일하게 폴백 금액에서도 배송비를 더하지 않는다.
         // 코드 참여는 서버가 0원을 확정해 내려준다. 폴백을 열어 두면 배송비가 캐시에 굳어
         // 참여 내역이 "0원 참여"를 유상으로 표시한다.
@@ -3682,7 +3711,9 @@ export function ProductDetail({
         const needsBankAccount =
           error instanceof ApiRequestError &&
           error.code === USER_BANK_ACCOUNT_NOT_REGISTERED_CODE;
-        const didDeadlinePass = isDeadlineClosed(product.deadline);
+        // 추가 모집은 원래 마감이 이미 지난 분철이라 마감으로 실패를 설명하지 않는다(서버 문구를 그대로 보인다).
+        const didDeadlinePass =
+          !isExtraRecruitingProduct && isDeadlineClosed(product.deadline);
         const errorCode =
           error instanceof ApiRequestError ? error.code : undefined;
         // 이 분기는 문구만이 아니라 화면 모드(isHostedByMeFromApi → CTA 「내 분철 관리하기」)까지
@@ -4741,16 +4772,24 @@ export function ProductDetail({
                   size="detail"
                 />
               ) : (
-                <div
-                  className={`absolute left-5 top-5 rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
-                    isPurchasableStatus &&
-                    !isCancelledProduct &&
-                    !isDeadlineBlocked
-                      ? "bg-[#DDE7B8] text-black"
-                      : "bg-black/75 text-white backdrop-blur"
-                  }`}
-                >
-                  {product.badge}
+                <div className="absolute left-5 top-5 flex flex-wrap gap-1.5">
+                  <div
+                    className={`rounded-full px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] shadow-[0_8px_18px_rgba(0,0,0,0.18)] ${
+                      isPurchasableStatus &&
+                      !isExtraRecruitingProduct &&
+                      !isCancelledProduct &&
+                      !isDeadlineBlocked
+                        ? "bg-brand-soft text-black"
+                        : "bg-black/75 text-white backdrop-blur"
+                    }`}
+                  >
+                    {isEndedProduct ? "종료" : product.badge}
+                  </div>
+                  {isExtraRecruitingProduct ? (
+                    <div className="rounded-full bg-brand-soft px-3 py-1.5 text-[11px] font-semibold tracking-[0.16em] text-black shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+                      추가 모집 중
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -4778,6 +4817,43 @@ export function ProductDetail({
             >
               {product.title}
             </h1>
+            {showsConfirmedC2CNotice ? (
+              <div
+                className={`mt-5 rounded-[0.95rem] px-4 py-3 ${
+                  isExtraRecruitingProduct
+                    ? "bg-brand-pale ring-1 ring-inset ring-brand-soft"
+                    : "bg-surface-2"
+                } ${revealOnEnter ? "detail-reveal" : ""}`}
+                style={revealOnEnter ? getRevealStyle(2) : undefined}
+              >
+                <p className="text-[14px] font-bold tracking-[-0.03em]">
+                  {isExtraRecruitingProduct
+                    ? "추가 모집 중이에요"
+                    : isEndedProduct
+                      ? "끝난 분철이에요"
+                      : "진행이 확정된 분철이에요"}
+                </p>
+                <HelpText className="mt-1">
+                  {isExtraRecruitingProduct
+                    ? "진행이 확정된 분철의 남은 자리예요. 추가 신청하면 개최자가 수락한 뒤 입금 계좌를 알려 드려요. 배송은 원래 참여자와 따로, 배송비도 따로예요."
+                    : isEndedProduct
+                      ? "모든 배송이 도착했어요. 더 이상 신청을 받지 않아요."
+                      : "지금은 새 신청을 받지 않아요. 개최자가 추가 모집을 열면 빈 자리에 추가 신청할 수 있어요."}
+                </HelpText>
+                {isExtraRecruitingProduct ? (
+                  <dl className="mt-2.5 space-y-1 border-t border-black/[0.06] pt-2.5 text-[13px]">
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-black/45">배송</dt>
+                      <dd className="font-semibold">추가 신청마다 택배 1개</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-black/45">입금</dt>
+                      <dd className="font-semibold">수락 뒤 24시간 안에</dd>
+                    </div>
+                  </dl>
+                ) : null}
+              </div>
+            ) : null}
             <div
               className={`mt-7 overflow-hidden rounded-[1.15rem] border border-black/10 bg-white shadow-[0_14px_34px_rgba(0,0,0,0.045)] ${revealOnEnter ? "detail-reveal" : ""}`}
               style={revealOnEnter ? getRevealStyle(3) : undefined}
@@ -4826,9 +4902,12 @@ export function ProductDetail({
                     style={{ width: participationProgressPercent }}
                   />
                 </div>
-                <HelpText className="mt-2">
-                  {participationStatusCaption}
-                </HelpText>
+                {/* 회원 개최 진행 확정 분철은 위 안내 상자가 지금 상태를 말한다. */}
+                {showsConfirmedC2CNotice ? null : (
+                  <HelpText className="mt-2">
+                    {participationStatusCaption}
+                  </HelpText>
+                )}
                 {hostCancelBlockedNotice ? (
                   <HelpText className="mt-2">{hostCancelBlockedNotice}</HelpText>
                 ) : null}
@@ -5096,9 +5175,13 @@ export function ProductDetail({
                 !isDeadlineBlocked &&
                 isPurchasableStatus ? (
                 <HelpText align="center" className="mb-2" size="caption">
-                  {isC2CProduct
-                    ? "신청만 하면 끝! 입금은 모집이 끝난 뒤에 해요."
-                    : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
+                  {isExtraRecruitingProduct
+                    ? isAdditionalC2CApplication
+                      ? "수락 전에 더 고르면 같은 추가 신청에 붙어서 배송비를 한 번만 내요."
+                      : "추가 신청은 개최자가 수락한 뒤 입금해요."
+                    : isC2CProduct
+                      ? "신청만 하면 끝! 입금은 모집이 끝난 뒤에 해요."
+                      : "분철당 1명의 멤버에게 1번만 참여할 수 있어요."}
                 </HelpText>
               ) : null}
               {canManageHostedProduct ? (
@@ -5236,16 +5319,20 @@ export function ProductDetail({
                           : checkoutStep === "confirm"
                             ? isCodeCheckout
                               ? "코드 참여 확인"
-                              : isC2CProduct
-                                ? "신청 확인"
-                                : "참여 확인"
+                              : isExtraRecruitingProduct
+                                ? "추가 신청할까요?"
+                                : isC2CProduct
+                                  ? "신청 확인"
+                                  : "참여 확인"
                             : "멤버 선택"}
                   </h2>
                   <HelpText className="mt-1">
                     {checkoutStep === "payment"
                       ? "입금 마감 시간 내에 아래 계좌로 입금해 주세요."
                       : checkoutStep === "applied"
-                        ? "모집이 끝나면 입금 안내를 드려요."
+                        ? isExtraRecruitingProduct
+                          ? "개최자가 수락하면 입금 안내를 드려요."
+                          : "모집이 끝나면 입금 안내를 드려요."
                         : checkoutStep === "codeConfirmed"
                           ? checkoutPaymentSummary?.isFreeConfirmed
                             ? "입금할 금액이 없어 바로 참여가 확정됐어요."
@@ -5253,7 +5340,9 @@ export function ProductDetail({
                           : checkoutStep === "confirm"
                             ? isCodeCheckout
                               ? "전달받은 참여 코드를 입력하면 슬롯이 확정돼요."
-                              : isC2CProduct
+                              : isExtraRecruitingProduct
+                                ? "진행이 확정된 분철의 남은 자리예요. 원래 참여자와 따로 배송되고, 배송비도 따로 내요."
+                                : isC2CProduct
                                 ? "신청 단계에서는 입금하지 않아요. 모집이 끝나면 입금 안내를 받아요."
                                 : isFreeCheckoutEstimate
                                   ? "입금할 금액이 없는 무료 참여예요."
@@ -5452,14 +5541,18 @@ export function ProductDetail({
                                         inheritedShippingFromApi.storeType,
                                     },
                                   )}`
-                                : "첫 신청 때 선택한 배송지"
+                                : isExtraRecruitingProduct
+                                  ? "먼저 한 추가 신청 때 선택한 배송지"
+                                  : "첫 신청 때 선택한 배송지"
                               : checkoutDeliveryAddress
                                 ? `${getConvenienceStoreLabel(checkoutDeliveryAddress.storeType)} ${getDeliveryAddressDisplayBranchName(checkoutDeliveryAddress)}`
                                 : "등록된 배송지 없음"}
                           </p>
                           {isAdditionalC2CApplication ? (
                             <HelpText className="mt-1">
-                              첫 신청 배송지로 함께 배송돼요. 변경할 수 없어요.
+                              {isExtraRecruitingProduct
+                                ? "먼저 한 추가 신청과 함께 배송돼요. 변경할 수 없어요."
+                                : "첫 신청 배송지로 함께 배송돼요. 변경할 수 없어요."}
                             </HelpText>
                           ) : (
                             <p className="mt-1 line-clamp-2 text-[13px] font-medium leading-5 text-black/60">
@@ -5484,7 +5577,9 @@ export function ProductDetail({
                       </div>
                       <HelpText className="mt-2.5">
                         {isAdditionalC2CApplication
-                          ? "추가 신청은 첫 신청과 같은 배송지와 입금자명으로 묶여요. 배송비도 추가로 부과되지 않아요."
+                          ? isExtraRecruitingProduct
+                            ? "이번에 고른 멤버는 먼저 한 추가 신청과 같은 배송지와 입금자명으로 묶여요. 배송비도 한 번만 내요."
+                            : "이번에 고른 멤버는 첫 신청과 같은 배송지와 입금자명으로 묶여요. 배송비도 한 번만 내요."
                           : "택배가 도착하면 선택한 편의점 지점에 직접 방문해서 수령해요."}
                       </HelpText>
                     </div>
@@ -5547,12 +5642,16 @@ export function ProductDetail({
                         <span>예상 배송비</span>
                         <span>
                           {isAdditionalC2CApplication
-                            ? "0원 (첫 신청에 포함)"
+                            ? isExtraRecruitingProduct
+                              ? "0원, 먼저 한 추가 신청에 붙어요"
+                              : "0원 (첫 신청에 포함)"
                             : formatPrice(estimatedShippingAmount)}
                         </span>
                       </div>
                       <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-4">
-                        <span className="text-[14px] font-semibold text-white/70">총 예상 금액</span>
+                        <span className="text-[14px] font-semibold text-white/70">
+                          {isExtraRecruitingProduct ? "수락되면 낼 돈" : "총 예상 금액"}
+                        </span>
                         <span className="text-[22px] font-semibold tracking-[-0.05em] text-[#DDE7B8]">
                           <RollingNumber
                             value={formatPrice(
@@ -5584,7 +5683,9 @@ export function ProductDetail({
                           멤버 {selectedCheckoutItems.length}명을 한 번에 신청해요.
                         </span>
                         {isAdditionalC2CApplication
-                          ? "배송비는 첫 신청에 이미 포함돼 있어요."
+                          ? isExtraRecruitingProduct
+                            ? "배송비는 먼저 한 추가 신청에 이미 포함돼 있어요."
+                            : "배송비는 첫 신청에 이미 포함돼 있어요."
                           : "배송비는 한 번만 붙고 택배도 한 개로 와요."}
                         고른 멤버 중 한 명이라도 먼저 팔리면 전체가 신청되지 않아요. 그때는 다시 골라 주세요.
                       </HelpText>
@@ -5593,7 +5694,9 @@ export function ProductDetail({
                     <HelpText className="px-1">
                       {isCodeCheckout
                         ? "코드가 확인되면 바로 참여가 확정돼요. 입금 단계는 없어요."
-                        : isC2CProduct
+                        : isExtraRecruitingProduct
+                          ? "지금은 입금하지 않아요. 개최자가 수락하면 알림톡으로 입금 계좌를 보내드려요. 수락 전에는 언제든 무료로 취소할 수 있어요."
+                          : isC2CProduct
                           ? "지금은 입금하지 않아요. 모집이 끝나면 알림톡으로 입금 안내를 드려요. 그 전까지는 언제든 무료로 취소할 수 있어요."
                           : isFreeCheckoutEstimate
                             ? "참여하면 바로 확정돼요. 입금 단계는 없어요."
@@ -5899,8 +6002,9 @@ export function ProductDetail({
                         신청이 접수됐어요!
                       </p>
                       <HelpText className="mt-3" tone="dark">
-                        지금은 입금하지 않아도 돼요. 모집이 끝나면 알림톡으로 입금
-                        계좌와 기한을 안내드려요.
+                        {isExtraRecruitingProduct
+                          ? "지금은 입금하지 않아도 돼요. 개최자가 수락하면 알림톡으로 입금 계좌와 기한을 안내드려요."
+                          : "지금은 입금하지 않아도 돼요. 모집이 끝나면 알림톡으로 입금 계좌와 기한을 안내드려요."}
                       </HelpText>
                     </div>
 
@@ -5932,7 +6036,9 @@ export function ProductDetail({
 
                     <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                       <div className="flex items-center justify-between text-[13px] font-semibold text-black/60">
-                        <span>입금할 금액</span>
+                        <span>
+                          {isExtraRecruitingProduct ? "수락되면 낼 돈" : "입금할 금액"}
+                        </span>
                         <span className="text-[16px] tracking-[-0.04em] text-black">
                           {formatPrice(checkoutPaymentSummary.totalAmount)}
                         </span>
@@ -5947,8 +6053,9 @@ export function ProductDetail({
                         원래 문단은 isC2CProduct 로 감싸여 있지 않아 회사 개최 분철에도
                         노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
                     <HelpText className="px-1">
-                      입금 단계가 시작되기 전에는 참여 내역에서 언제든 무료로
-                      취소할 수 있어요.
+                      {isExtraRecruitingProduct
+                        ? "수락 전에는 참여 내역에서 언제든 무료로 취소할 수 있어요."
+                        : "입금 단계가 시작되기 전에는 참여 내역에서 언제든 무료로 취소할 수 있어요."}
                       {isC2CProduct ? (
                         <span className="block font-semibold text-black/75">
                           분철이지는 통신판매중개자이며, 대금은 개최자 계좌로

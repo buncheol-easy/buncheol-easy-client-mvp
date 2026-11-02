@@ -13,7 +13,9 @@ import { FEATURES } from "@/lib/feature-flags";
 import {
   getBuncheolStatusBadgeLabel,
   isParticipationCancelledStatus,
+  toBundleReleasability,
   toConfirmCheck,
+  type BundleReleasability,
   type ConfirmCheck,
 } from "@/lib/buncheol-states";
 import type { ShippingFeePaybackStatus } from "@/lib/shipping-fee-payback";
@@ -189,7 +191,7 @@ export type UpdateBuncheolRequest = {
 export type ParticipateBuncheolRequest = {
   buncheolMemberId: number;
   // 자리를 여러 개 한 번에 잡을 때. 서버는 배열이 있으면 배열을 쓰고 단수는 무시한다.
-  // C2C 모집중 전용 — 입금 단계가 시작된 뒤 보내면 409(BCH-060)다.
+  // C2C 모집 중과 추가 모집 중에만 된다 — 입금 수집 중이나 추가 모집이 꺼진 진행 확정 분철에 보내면 409(BCH-060)다.
   buncheolMemberIds?: number[];
   shippingAddressId: number;
   participationCode?: string | null;
@@ -310,6 +312,8 @@ export type BuncheolSummary = {
   freeShippingEventTarget?: boolean;
   // 분철 flow_type. 필드가 없는 구 응답은 null 이고 getFlowType 이 LEGACY 로 떨어뜨린다.
   flowType?: string | null;
+  // 지금 추가 신청을 받는 중인가(서버 판정: 진행 확정 + 개최자 스위치 켜짐 + 종료 전). 옛 응답이면 false.
+  extraRecruiting?: boolean;
   groupName: string;
   id: string;
   isHostedByMe?: boolean;
@@ -344,6 +348,9 @@ export type BuncheolMember = {
   purchasePaymentStatus?: string;
   purchaseParticipationId?: string;
   requiresCode?: boolean;
+  // 개최자가 「빼기」로 뺀 자리. 추가 모집이 꺼진 진행 확정 분철은 빈 자리도 CLOSED 로 내려와
+  // saleStatus 만으로는 둘을 가를 수 없다. 옛 응답이면 undefined.
+  removed?: boolean;
   saleStatus?: string;
   topBidAmounts: number[];
 };
@@ -379,6 +386,8 @@ export type BuncheolDetail = BuncheolSummary & {
   myInheritedShippingAddress?: RequestedShippingAddress | null;
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.
   openChatUrl?: string | null;
+  // 진행 확정 분철이 끝났는지(관리·개최 목록과 같은 서버 판정). 추가 모집을 아는 서버는 늘 싣는다 — 없으면(null) 옛 서버다.
+  ended?: boolean | null;
   purchaseSite?: string;
   // 서버가 이 응답을 만든 시각(ISO). 화면의 예약 오픈 카운트다운을 서버 시계에 맞추는 기준이다.
   serverTime?: string | null;
@@ -437,6 +446,14 @@ export type BuncheolManagementParticipant = {
   // 이 슬롯이 묶음 입금확인의 대상인가. confirm 요청의 expectedSlotIds 는 이 값이 true 인
   // 슬롯만 담아야 한다 — 아니면 409(BCH-115)가 영구히 난다.
   confirmTarget?: boolean | null;
+  // 추가 신청 수락·거절의 대상인가. accept·reject 의 expectedSlotIds 도 같은 규칙이다.
+  acceptTarget?: boolean | null;
+  // 「제외」 판정(서버 BundleReleasability, 묶음 단위). 옛 응답이면 null.
+  releasability?: BundleReleasability | null;
+  // 진행 확정 뒤 추가 신청으로 열린 묶음인가. 표시에만 쓴다.
+  extra?: boolean | null;
+  // 신청한 시각(ISO). 수락 대기 카드의 「신청 …」 줄에 쓴다. 옛 응답이면 null 이고 그 줄을 그리지 않는다.
+  appliedAt?: string | null;
 };
 
 export type BuncheolManagementOption = {
@@ -450,6 +467,7 @@ export type BuncheolManagementOption = {
   // 공개 상세 members[] 의 price(개최자가 정한 멤버 금액)·saleStatus. currentHighestBid 는 참여 금액(배송비 포함)이
   // 우선이라 자리 가격으로 쓸 수 없다. 관리 응답에는 자리 목록이 없어 상세에서 옮겨 실을 때만 값이 있다.
   price?: number;
+  removed?: boolean;
   saleStatus?: string;
   winner?: BuncheolManagementWinner | null;
 };
@@ -464,6 +482,8 @@ export type BuncheolManagementDetail = {
   deadline: string;
   // 개최 목록(MyHostedBuncheol.ended)과 같은 서버 판정. 구 응답이면 null.
   ended: boolean | null;
+  // 개최자의 추가 모집 스위치 값. 옛 서버면 null 이고, 그때 화면은 스위치와 진행 확정 뒤 멤버 관리를 그리지 않는다.
+  extraRecruitOpen: boolean | null;
   // 분철 flow_type — 없으면 LEGACY 취급 (getFlowType).
   flowType?: string | null;
   groupName: string;
@@ -519,6 +539,8 @@ export type MyParticipation = {
   activeSlotCount?: number | null;
   deliveryId?: string | null;
   deliveryStatus?: string | null;
+  // 진행 확정 뒤 추가 신청으로 열린 묶음의 참여인가. 옛 응답이면 null.
+  extra?: boolean | null;
   thumbnailUrl?: string;
   // 분철 flow_type — 필드가 없는 구 응답은 LEGACY 로 취급한다 (getFlowType).
   flowType?: string | null;
@@ -533,6 +555,8 @@ export type MyParticipation = {
   // C2C "보냈어요" 마킹 시각 — 마킹 안 했으면 null.
   paymentSentAt?: string | null;
   createdAt?: string | null;
+  // 신청 시각. createdAt 과 합치지 않는다 — createdAt 은 운영진 입금 기한 폴백의 기준이라 값이 차면 화면 기한이 바뀐다.
+  appliedAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
   // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
   // 나중에 계좌를 다시 열어본 사용자가 다른 이름으로 송금할 위험이 있었다 (docs/53 Q-17).
@@ -561,6 +585,9 @@ export type MyHostedBuncheol = BuncheolSummary & {
   // 서버 판정 — 진행확정이고 확정 참여 전원의 택배가 편의점에 도착했으면 true. 진행확정이 아니면 늘 false.
   // 필드가 없는 구 응답이면 null — 개최 목록 탭은 기존 규칙으로 폴백한다.
   ended: boolean | null;
+  // 추가 모집 스위치 값과 수락을 기다리는 추가 신청 묶음 수(「수락해 주세요」). 옛 응답이면 null.
+  extraRecruitOpen: boolean | null;
+  pendingAcceptCount: number | null;
   memberSlotCount: number;
 };
 
@@ -2492,6 +2519,8 @@ function getBuncheolSummaryFromRecord(
       "liked",
     ]) ?? undefined,
     createdAt: getOptionalStringValue(record, ["createdAt", "uploadedAt"]),
+    extraRecruiting:
+      getOptionalBooleanValue(record, ["extraRecruiting"]) ?? false,
     flowType: getOptionalStringValue(record, ["flowType"]) ?? null,
     memberSlotCount: getOptionalNumberValue(record, [
       "memberSlotCount",
@@ -2774,6 +2803,7 @@ function getBuncheolMemberFromRecord(
     participatedByMe:
       getBooleanValue(record, ["participatedByMe", "isParticipatedByMe"]) ??
       undefined,
+    removed: getOptionalBooleanValue(record, ["removed"]),
     saleStatus,
     ...purchaseState,
   };
@@ -3150,6 +3180,7 @@ function getBuncheolDetailFromBody(body: unknown) {
           ])
         : undefined),
     description: getOptionalStringValue(data, ["description", "content"]),
+    ended: getOptionalBooleanValue(data, ["ended"]) ?? null,
     flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     myInheritedShippingAddress: inheritedShipping.address,
     myShippingInheritanceApplies: inheritedShipping.applies,
@@ -3701,6 +3732,12 @@ function getBuncheolManagementParticipantFromRecord(
     refundAccount,
     bundleId: getOptionalStringValue(record, ["bundleId"]) ?? null,
     confirmTarget: getOptionalBooleanValue(record, ["confirmTarget"]) ?? null,
+    acceptTarget: getOptionalBooleanValue(record, ["acceptTarget"]) ?? null,
+    releasability: toBundleReleasability(
+      getOptionalStringValue(record, ["releasability"]),
+    ),
+    extra: getOptionalBooleanValue(record, ["extra"]) ?? null,
+    appliedAt: getOptionalStringValue(record, ["appliedAt"]) ?? null,
     status:
       getOptionalStringValue(record, [
         "status",
@@ -3956,6 +3993,8 @@ function getBuncheolManagementDetailFromBody(body: unknown) {
       getStringValue(data, ["deadline", "buncheolDeadline"]) ||
       getStringValue(responseData, ["deadline", "buncheolDeadline"]),
     ended: getOptionalBooleanValue(data, ["ended"]) ?? null,
+    extraRecruitOpen:
+      getOptionalBooleanValue(data, ["extraRecruitOpen"]) ?? null,
     flowType: getOptionalStringValue(data, ["flowType"]) ?? null,
     groupName:
       getStringValue(data, ["groupName", "group"]) ||
@@ -4136,6 +4175,7 @@ export function toProductCardItem(summary: BuncheolSummary): ProductCardItem {
     reviews: String(summary.activeParticipationCount ?? 0),
     badge: getBuncheolStatusBadgeLabel(summary.status),
     imageUrl: summary.thumbnailUrl,
+    isExtraRecruiting: summary.extraRecruiting === true,
     isHostedByMe: summary.isHostedByMe,
     liked: summary.bookmarked,
     status: summary.status,
@@ -4218,6 +4258,7 @@ export function toProductDetailItem(
     // 빈 설명은 비워 둔다 — 안내 문구는 상세 화면이 그린다. 여기서 채우면 수정 폼 설명 칸에
     // 그 문구가 입력값으로 들어가 그대로 저장된다.
     description: detail.description?.trim() ?? "",
+    ended: detail.ended ?? null,
     flowType: detail.flowType ?? null,
     // 🔴 여기서 빠뜨리면 파서가 값을 읽어도 화면까지 오지 않는다 — 실제로 첫 PR 에서 불리언을
     // 이 줄에 안 실어, 파서·타입·주석은 다 있는데 화면이 못 읽는 상태로 리뷰에 걸렸다.
@@ -4766,6 +4807,7 @@ export async function requestMyParticipations(accessToken: string) {
             : undefined) ??
           getOptionalStringValue(record, participationDeliveryStatusKeys) ??
           null,
+        extra: getOptionalBooleanValue(record, ["extra"]) ?? null,
         thumbnailUrl:
           getOptionalStringValue(record, [
             "thumbnailUrl",
@@ -4852,6 +4894,7 @@ export async function requestMyParticipations(accessToken: string) {
             "participatedAt",
             "requestedAt",
           ]) ?? null,
+        appliedAt: getOptionalStringValue(record, ["appliedAt"]) ?? null,
         hostBankAccount:
           getNestedBankAccountInfo(record, [
             "hostBankAccount",
@@ -4967,6 +5010,10 @@ export async function requestMyHostedBuncheols(accessToken: string) {
         ),
         createdAt: summary.createdAt ?? "",
         ended: getOptionalBooleanValue(record, ["ended"]) ?? null,
+        extraRecruitOpen:
+          getOptionalBooleanValue(record, ["extraRecruitOpen"]) ?? null,
+        pendingAcceptCount:
+          getOptionalNumberValue(record, ["pendingAcceptCount"]) ?? null,
         memberSlotCount:
           summary.memberSlotCount ??
           getNumberValue(record, ["memberSlotCount"]) ??
@@ -6890,9 +6937,88 @@ export async function addBuncheolMember(
     : null;
 }
 
+// 추가 모집 스위치. 켜기는 진행 확정·종료 전 회원 개최 분철만 되고(아니면 409 BCH-131), 끄기는 늘 된다.
+// 끄면 새 추가 신청만 막히고 이미 들어온 신청은 그대로 수락·거절할 수 있다.
+export async function setExtraRecruit(
+  accessToken: string,
+  buncheolId: string,
+  open: boolean,
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/${buncheolId}/extra-recruit`,
+    {
+      body: JSON.stringify({ open }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "PATCH",
+    },
+  );
+
+  if (!response.ok) {
+    throw await readApiRequestError(response);
+  }
+}
+
+async function requestBundleDecision(
+  accessToken: string,
+  bundleId: string,
+  decision: "accept" | "reject",
+  expectedSlotIds: string[],
+) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/${decision}`,
+    {
+      body: JSON.stringify({ expectedSlotIds }),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw await readApiRequestError(response);
+  }
+}
+
+// 추가 신청 수락. 묶음의 자리가 입금 대기로 넘어가고 기한이 지금부터 24시간으로 잡힌다.
+// expectedSlotIds 는 acceptTarget 이 true 인 자리만 담는다. 다르면 409(BCH-115), 수락할 신청이 없으면 409(BCH-132).
+export function acceptBundle(
+  accessToken: string,
+  bundleId: string,
+  expectedSlotIds: string[],
+) {
+  return requestBundleDecision(accessToken, bundleId, "accept", expectedSlotIds);
+}
+
+// 추가 신청 거절. 묶음이 닫히고 자리는 다시 빈다. 대조 규칙은 수락과 같다.
+export function rejectBundle(
+  accessToken: string,
+  bundleId: string,
+  expectedSlotIds: string[],
+) {
+  return requestBundleDecision(accessToken, bundleId, "reject", expectedSlotIds);
+}
+
+// 「제외」. 진행 확정 뒤 수락한 추가 묶음이 기한까지 입금 확인되지 않았을 때만 된다(아니면 409 BCH-133~135).
+export async function releaseBundle(accessToken: string, bundleId: string) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/participation-bundles/${bundleId}/release`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw await readApiRequestError(response);
+  }
+}
+
 // 묶음 입금확인 — all-or-nothing. expectedSlotIds 는 화면에 보인 슬롯 집합이며 서버가 가진 것과
 // 다르면 409(BCH-115)로 거부한다. 개최자가 본 것과 확정되는 것을 같게 만드는 장치다.
 // buncheolConfirmed 는 이 요청으로 분철이 진행 확정됐는지(마지막 미확인 묶음). 옛 서버는 필드가 없어 false.
+// 이미 진행 확정된 분철의 추가 묶음이면 서버가 그 묶음의 배송을 바로 만들고 buncheolConfirmed 는 false 다.
 export async function confirmBundlePayment(
   accessToken: string,
   bundleId: string,

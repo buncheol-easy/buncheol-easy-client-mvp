@@ -84,6 +84,35 @@ export function getConfirmCheckLine(check: ConfirmCheck | null | undefined) {
   return null;
 }
 
+// 「제외」 판정(서버 BundleReleasability). 판정 순서와 뜻은 서버가 정한다 — 화면은 값으로 버튼만 가른다.
+// BEFORE_DUE 는 버튼을 꺼 두고 보이고, RELEASABLE 만 켠다. 나머지는 버튼을 그리지 않는다.
+export type BundleReleasability =
+  | "RELEASABLE"
+  | "BEFORE_DUE"
+  | "BUNCHEOL_NOT_CONFIRMED"
+  | "NOT_ACCEPTED"
+  | "HAS_CONFIRMED"
+  | "ALREADY_CLOSED";
+
+const BUNDLE_RELEASABILITIES: readonly BundleReleasability[] = [
+  "RELEASABLE",
+  "BEFORE_DUE",
+  "BUNCHEOL_NOT_CONFIRMED",
+  "NOT_ACCEPTED",
+  "HAS_CONFIRMED",
+  "ALREADY_CLOSED",
+];
+
+export function toBundleReleasability(
+  value: string | null | undefined,
+): BundleReleasability | null {
+  const normalizedValue = normalizeStatusValue(value);
+
+  return (
+    BUNDLE_RELEASABILITIES.find((check) => check === normalizedValue) ?? null
+  );
+}
+
 // 진행 확정 버튼이 꺼져 있을 때의 안내(사용자 확정 문구, 글자 그대로). 관리 화면과 소개 그림이 같이 쓴다.
 export const AUTO_CONFIRM_NOTICE =
   "참여자 전원의 입금이 확인되면 분철이 자동으로 진행 확정돼요. 입금 기한이 지나면 입금 확인이 된 참여자들로만 분철을 진행하거나, 분철을 파기할 수 있어요. *이 경우 운영진에게 문의 필요";
@@ -248,6 +277,23 @@ export const USER_CANCELLED_REASON = "USER_CANCELLED";
 
 export function isUserCancelledReason(reason: string | null | undefined) {
   return normalizeStatusValue(reason) === USER_CANCELLED_REASON;
+}
+
+// 개최자가 추가 신청을 거절함 — 서버 ParticipationCancelReason.HOST_REJECTED.
+export function isHostRejectedReason(reason: string | null | undefined) {
+  return normalizeStatusValue(reason) === "HOST_REJECTED";
+}
+
+// 진행 확정 분철의 신청(APPLIED)은 개최자 수락을 기다리는 추가 신청뿐이다. 본 모집 신청은 입금 단계가
+// 시작될 때 모두 입금 대기로 넘어가고, 입금 단계에는 새 신청이 없다.
+export function isAwaitingHostAccept(
+  buncheolStatus: string | null | undefined,
+  participationStatus: string | null | undefined,
+) {
+  return (
+    isBuncheolConfirmedStatus(buncheolStatus) &&
+    isParticipationAppliedStatus(participationStatus)
+  );
 }
 
 // ---------------------------------------------------------------------------

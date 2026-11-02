@@ -39,6 +39,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { FloatingHelpButton } from "@/components/FloatingHelpButton";
 import { ProductPhoto } from "@/components/ProductPhoto";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { formatKoreaDateTime } from "@/lib/format-korea-date-time";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
@@ -82,10 +83,13 @@ import {
   isParticipationCancelledStatus,
   isParticipationConfirmedStatus,
   isParticipationPaymentSentStatus,
+  isAwaitingHostAccept,
+  isHostRejectedReason,
   isUserCancelledReason,
   USER_CANCELLED_REASON,
   formatMemberCount,
 } from "@/lib/buncheol-states";
+import { EXTRA_ACCEPT_ANCHOR_ID } from "@/lib/extra-recruit";
 import { FEATURES } from "@/lib/feature-flags";
 import { rememberNextHistoryIndex } from "@/lib/history-index";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
@@ -622,6 +626,7 @@ type BidRecord = {
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
   createdAt?: string | null;
+  appliedAt?: string | null;
   participationStatus?: string;
   cancelReason?: string | null;
   // 서버가 취소 API 게이트와 같은 판정으로 내려주는 취소 가능 여부·사유 (docs/56 S-1).
@@ -630,6 +635,8 @@ type BidRecord = {
   // 입금 수집 중 분철의 입금 현황(그 분철 전체 자리 기준, 이름 없음). 아니거나 옛 서버면 null.
   confirmedSlotCount?: number | null;
   activeSlotCount?: number | null;
+  // 진행 확정 뒤 추가 신청으로 열린 묶음의 참여. 표시에만 쓴다.
+  extra?: boolean | null;
   shippingAddress?: DeliveryAddress | null;
   // 이 참여가 속한 묶음의 배송지(server#178). 배송 스냅샷과 달리 입금확인 전에도 온다.
   requestedShippingAddress?: RequestedShippingAddress | null;
@@ -727,7 +734,10 @@ function getBidRecordCancelBlockedNotice(bid: BidRecord) {
     bid.cancellability !== PARTICIPATION_CANCELLABLE &&
     isParticipationAwaitingPaymentStatus(bid.participationStatus)
   ) {
-    return "입금 단계가 시작된 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
+    // 진행 확정 분철의 입금 대기는 수락된 추가 신청이라 입금 단계 시작을 겪지 않았다.
+    return isBuncheolConfirmedStatus(bid.buncheolStatus)
+      ? "추가 신청이 수락된 뒤에는 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요."
+      : "입금 단계가 시작된 뒤에는 참여를 직접 취소할 수 없어요. 사정이 생겼다면 개최자에게 먼저 알려 주세요.";
   }
 
   if (
@@ -773,8 +783,13 @@ function getBidRecordCancellationKind(bid: BidRecord) {
     return "PAYMENT_NOT_CONFIRMED";
   }
 
-  // 옛 「제외」 기록(읽기용). 만료와 뭉뚱그리면 주체·사실·문의처가 모두 틀린다 — C2C 는 돈이 개최자
-  // 계좌로 가므로 「분철이지로 문의」가 오안내다.
+  // 개최자가 추가 신청을 받지 않음. 수락 전이라 돈이 오간 적이 없다.
+  if (isHostRejectedReason(bid.cancelReason)) {
+    return "HOST_REJECTED";
+  }
+
+  // 「제외」(진행 확정 뒤 기한 지난 추가 신청)와 옛 「제외」 기록. 만료와 뭉뚱그리면 주체·사실·문의처가 모두
+  // 틀린다 — C2C 는 돈이 개최자 계좌로 가므로 「분철이지로 문의」가 오안내다.
   if (bid.cancelReason === "HOST_RELEASED") {
     return "HOST_RELEASED";
   }
@@ -941,6 +956,24 @@ function getBidRecordCancellationNotice(bid: BidRecord) {
     };
   }
 
+  if (cancellationKind === "HOST_REJECTED") {
+    return {
+      label: "추가 신청 취소됨",
+      description:
+        "개최자가 이번 추가 신청을 받지 않았어요. 입금 전이라 낸 돈은 없어요.",
+    };
+  }
+
+  // 추가 신청의 「제외」는 알림톡(입금 기한이 지나 개최자가 참여를 취소했어요)과 같은 말로 쓴다.
+  if (cancellationKind === "HOST_RELEASED" && bid.extra === true) {
+    return {
+      label: "참여 취소됨",
+      description: isFreeBidRecord(bid)
+        ? "입금 기한이 지나 개최자가 참여를 취소했어요."
+        : "입금 기한이 지나 개최자가 참여를 취소했어요. 이미 보냈다면 오픈채팅이나 고객센터로 알려 주세요.",
+    };
+  }
+
   if (cancellationKind === "HOST_RELEASED") {
     // 돈을 누가 갖고 있나로 갈린다 — C2C 는 개최자 개인계좌, LEGACY 는 플랫폼이다.
     // ⚠️ 흔적이 없다고 「낼 게 없다」고 단정하지 않는다. 「보냈어요」를 거치지 않고 개최자가 바로
@@ -1045,6 +1078,58 @@ function CollectingStatusNotice({ bid, now }: { bid: BidRecord; now: Date }) {
   );
 }
 
+// 기한이 지난 수락 추가 신청 안내. 목록 카드 상자와 결제 시트 설명이 같이 쓴다.
+const EXTRA_APPLY_OVERDUE_NOTICE =
+  "개최자가 참여를 취소할 수 있어요. 이미 보냈다면 '보냈어요'를 눌러 주세요.";
+
+// 진행 확정 뒤 추가 신청의 안내. 수락 전에는 계좌가 없고, 수락 뒤 계좌·기한·「보냈어요」는 지금 입금 대기 화면 그대로다.
+// 진행 확정 분철의 신청·입금 대기는 추가 신청뿐이라 상태로 가른다(extra 가 없는 옛 추가 모집 묶음도 같다).
+function ExtraApplyStatusNotice({ bid, now }: { bid: BidRecord; now: Date }) {
+  if (!isC2CBidRecord(bid) || isBidRecordCancelled(bid)) {
+    return null;
+  }
+
+  if (isAwaitingHostAccept(bid.buncheolStatus, bid.participationStatus)) {
+    return (
+      <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50">
+        <p className="text-[13px] font-semibold tracking-[-0.03em] text-black/80">
+          개최자의 수락을 기다리고 있어요
+        </p>
+        <HelpText className="mt-1" size="caption">
+          수락되면 입금 계좌와 기한을 알림톡으로 보내드려요. 그 전에는 언제든 취소할 수 있어요.
+        </HelpText>
+      </div>
+    );
+  }
+
+  if (
+    isBuncheolConfirmedStatus(bid.buncheolStatus) &&
+    isParticipationAwaitingPaymentStatus(bid.participationStatus)
+  ) {
+    if (isBidRecordPaymentOverdue(bid, now)) {
+      return (
+        <div className="mt-3">
+          <p className="text-[13px] font-semibold tracking-[-0.03em] text-black/80">
+            입금 기한이 지났어요
+          </p>
+          <HelpText className="mt-1" size="caption">
+            {EXTRA_APPLY_OVERDUE_NOTICE}
+          </HelpText>
+        </div>
+      );
+    }
+
+    return (
+      <p className="mt-3 text-[13px] font-semibold tracking-[-0.03em] text-black/80">
+        추가 신청이 수락됐어요. 입금해 주세요
+      </p>
+    );
+  }
+
+  return null;
+}
+
+
 // 기한 경과 여부 — 표시 전용이라 아무것도 잠그지 않는다. C2C 기한은 "지나면 개최자가 정리에 나설 수
 // 있는 시각" 이지 참여가 죽는 시각이 아니다 (docs/71 §8-1).
 function isBidRecordPaymentOverdue(bid: BidRecord, now: Date) {
@@ -1086,6 +1171,84 @@ function isDeliveryInProgress(bid: BidRecord) {
     isDeliveryShippingStatus(bid.deliveryStatus) ||
     isDeliveryCompletedStatus(bid.deliveryStatus) ||
     Boolean(bid.trackingNumber)
+  );
+}
+
+function getExtraApplyStatusChip(bid: BidRecord, now: Date) {
+  if (isBidRecordCancelled(bid)) {
+    return { className: "bg-surface-2 text-black/45", label: "취소" };
+  }
+
+  if (isBidRecordPaymentConfirmed(bid)) {
+    return {
+      className: "bg-black text-white",
+      label: isDeliveryCompletedStatus(bid.deliveryStatus)
+        ? "배송 완료"
+        : isDeliveryInProgress(bid)
+          ? "배송 중"
+          : "진행 확정",
+    };
+  }
+
+  if (isParticipationPaymentSentStatus(bid.participationStatus)) {
+    return { className: "bg-brand-strong text-black", label: "보냈어요" };
+  }
+
+  if (isParticipationAwaitingPaymentStatus(bid.participationStatus)) {
+    return isBidRecordPaymentOverdue(bid, now)
+      ? { className: "bg-black text-white", label: "기한 지남" }
+      : { className: "bg-black text-brand-strong", label: "입금 필요" };
+  }
+
+  return { className: "bg-warning-soft text-warning-ink", label: "수락 대기" };
+}
+
+// 추가 신청 카드 금액 상자의 마지막 줄. 모집 기한은 이미 지난 시각이라 이 신청의 시각을 보인다.
+// 응답에 값이 없으면 줄을 그리지 않는다.
+function getExtraApplyTimeRow(statusSlot: BidRecord, slots: BidRecord[]) {
+  const isPaymentStage =
+    !isBidRecordCancelled(statusSlot) &&
+    !isBidRecordPaymentConfirmed(statusSlot) &&
+    (isParticipationAwaitingPaymentStatus(statusSlot.participationStatus) ||
+      isParticipationPaymentSentStatus(statusSlot.participationStatus));
+
+  if (isPaymentStage) {
+    return statusSlot.paymentDueAt
+      ? {
+          label: "입금 기한",
+          value: formatKoreaDateTime(statusSlot.paymentDueAt),
+        }
+      : null;
+  }
+
+  // 수락 전에 더 고른 자리가 같은 묶음에 붙으므로 묶음의 신청 시각은 가장 이른 자리 것이다.
+  const appliedAt = slots
+    .flatMap((slot) => (slot.appliedAt ? [slot.appliedAt] : []))
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
+
+  return appliedAt
+    ? { label: "신청", value: formatKoreaDateTime(appliedAt) }
+    : null;
+}
+
+const thumbnailChipClassName =
+  "w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold";
+
+// 추가 신청의 분철은 늘 진행 확정이라, 분철 상태 칩을 그대로 두면 수락 전이나 거절된 신청도 확정처럼 읽힌다.
+function ExtraApplyChips({ bid, now }: { bid: BidRecord; now: Date }) {
+  const statusChip = getExtraApplyStatusChip(bid, now);
+
+  return (
+    <>
+      <span
+        className={`${thumbnailChipClassName} bg-brand-pale text-brand-ink ring-1 ring-inset ring-brand-soft`}
+      >
+        추가 신청
+      </span>
+      <span className={`${thumbnailChipClassName} ${statusChip.className}`}>
+        {statusChip.label}
+      </span>
+    </>
   );
 }
 
@@ -1302,6 +1465,10 @@ function getBidRecordPaymentStatusLabel(bid: BidRecord, now: Date) {
   }
 
   if (isC2CBidRecord(bid)) {
+    if (isAwaitingHostAccept(bid.buncheolStatus, bid.participationStatus)) {
+      return "수락 대기";
+    }
+
     if (isParticipationAppliedStatus(bid.participationStatus)) {
       return "신청됨";
     }
@@ -1348,6 +1515,10 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
       : "관리자가 입금을 확인했어요.";
   }
 
+  if (isC2C && isAwaitingHostAccept(bid.buncheolStatus, bid.participationStatus)) {
+    return "수락되면 입금 계좌와 기한을 알림톡으로 보내드려요. 그 전에는 언제든 취소할 수 있어요.";
+  }
+
   if (isC2C && isParticipationAppliedStatus(bid.participationStatus)) {
     return "모집이 끝나면 알림톡으로 입금 안내를 드려요. 아직 입금할 필요 없어요.";
   }
@@ -1363,7 +1534,10 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   if (isBidRecordPaymentReady(bid, now)) {
     // ⚠️ overdue 검사가 ready 보다 뒤에 있으면 도달하지 못한다 — C2C 는 기한이 지나도 ready 다.
     if (isBidRecordPaymentOverdue(bid, now)) {
-      return "입금 기한이 지났어요. 개최자가 진행을 확정할 때까지 입금이 확인되지 않으면 참여가 취소돼요.";
+      // 진행 확정 분철의 입금 대기는 수락된 추가 신청이다 — 진행 확정이 아니라 「제외」로 취소된다.
+      return isC2C && isBuncheolConfirmedStatus(bid.buncheolStatus)
+        ? `입금 기한이 지났어요. ${EXTRA_APPLY_OVERDUE_NOTICE}`
+        : "입금 기한이 지났어요. 개최자가 진행을 확정할 때까지 입금이 확인되지 않으면 참여가 취소돼요.";
     }
 
     const remaining = formatPaymentRemainingTime(
@@ -1380,6 +1554,42 @@ function getBidRecordPaymentStatusDescription(bid: BidRecord, now: Date) {
   return isBidRecordClosed(bid, now)
     ? "모집 종료된 분철이에요."
     : "진행 중인 참여예요.";
+}
+
+// 「개최한 분철」 카드에서 개최자가 지금 할 일. 누를 곳이 있으면 관리 화면의 그 자리로 데려간다.
+function HostedActionNotice({
+  description,
+  href,
+  label,
+  onClick,
+}: {
+  description: string | null;
+  href?: string;
+  label: string;
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  const content = (
+    <>
+      <span className="inline-flex rounded-full bg-brand-strong px-2.5 py-1 text-[12px] font-semibold text-black">
+        {label}
+      </span>
+      {description ? (
+        <HelpText className="mt-1.5" size="caption">
+          {description}
+        </HelpText>
+      ) : null}
+    </>
+  );
+  const className =
+    "mt-3 block rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/60";
+
+  return href ? (
+    <Link className={className} href={href} onClick={onClick}>
+      {content}
+    </Link>
+  ) : (
+    <div className={className}>{content}</div>
+  );
 }
 
 type HostedProductItem = ProductDetailItem & { deadlineAt?: string | null };
@@ -1566,12 +1776,14 @@ function getBidRecordFromParticipation(
     paymentDueAt:
       participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
     createdAt: participation.createdAt,
+    appliedAt: participation.appliedAt ?? null,
     productId: participation.buncheolId,
     participationStatus,
     cancelReason: participation.cancelReason ?? null,
     cancellability: participation.cancellability ?? null,
     confirmedSlotCount: participation.confirmedSlotCount ?? null,
     activeSlotCount: participation.activeSlotCount ?? null,
+    extra: participation.extra ?? null,
     shippingAddress:
       participation.shippingAddress ?? cachedPayment?.shippingAddress ?? null,
     // ⚠️ 여기에는 캐시 폴백을 붙이지 않는다 — 캐시에 없는 값이고, 붙일 곳도 아니다.
@@ -1769,6 +1981,8 @@ function getHostedProductFromBuncheol(
     hostCancellability: buncheol.cancellability ?? null,
     hostConfirmCheck: buncheol.confirmCheck,
     hostEnded: buncheol.ended,
+    hostExtraRecruitOpen: buncheol.extraRecruitOpen,
+    hostPendingAcceptCount: buncheol.pendingAcceptCount,
     title: buncheol.title,
     member: `멤버 ${buncheol.memberSlotCount}명`,
     optionCount: buncheol.memberSlotCount,
@@ -3168,6 +3382,10 @@ export function ParticipationHistoryContent({
       ) ??
       head;
     const progressSteps = getBidRecordProgressSteps(progressSlot, now);
+    const lastAmountRow =
+      head.extra === true
+        ? getExtraApplyTimeRow(progressSlot, slots)
+        : { label: "모집 기한", value: formatCompactDeadline(head.deadline) };
     // 금액은 「이 이체에 들어가는 자리」만 더한다 — 취소·확정 자리를 더하면 배송비가 이중 계산된다.
     const amountSlots = getBundleTransferSlots(slots);
     const bundleProductAmount = amountSlots.reduce(
@@ -3227,19 +3445,25 @@ export function ParticipationHistoryContent({
                 />
               ) : null}
             </Link>
-            <span
-              className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
-            >
-              {buncheolChip.label}
-            </span>
-            {/* 자리 1개 카드와 같은 칩이다. 진행바는 C2C 기한 경과를 반영하지 않고(만료 판정이
-                LEGACY 전용) 분철 칩은 분철 축만 보므로, 이걸 빼면 묶음 카드만 "개최자가 취소할
-                수 있는 구간" 에 들어온 것을 목록에서 알리지 못한다. */}
-            {isOverdue ? (
-              <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
-                기한 지남
-              </span>
-            ) : null}
+            {head.extra === true ? (
+              <ExtraApplyChips bid={progressSlot} now={now} />
+            ) : (
+              <>
+                <span
+                  className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+                >
+                  {buncheolChip.label}
+                </span>
+                {/* 자리 1개 카드와 같은 칩이다. 진행바는 C2C 기한 경과를 반영하지 않고(만료 판정이
+                    LEGACY 전용) 분철 칩은 분철 축만 보므로, 이걸 빼면 묶음 카드만 "개최자가 취소할
+                    수 있는 구간" 에 들어온 것을 목록에서 알리지 못한다. */}
+                {isOverdue ? (
+                  <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
+                    기한 지남
+                  </span>
+                ) : null}
+              </>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <Link
@@ -3299,14 +3523,16 @@ export function ParticipationHistoryContent({
                       : "-"}
                   </dd>
                 </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt className="shrink-0 font-medium text-black/35">
-                    모집 기한
-                  </dt>
-                  <dd className="font-semibold tracking-[-0.03em]">
-                    {formatCompactDeadline(head.deadline)}
-                  </dd>
-                </div>
+                {lastAmountRow ? (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="shrink-0 font-medium text-black/35">
+                      {lastAmountRow.label}
+                    </dt>
+                    <dd className="font-semibold tracking-[-0.03em]">
+                      {lastAmountRow.value}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
             </div>
 
@@ -3380,6 +3606,7 @@ export function ParticipationHistoryContent({
             </div>
 
             <CollectingStatusNotice bid={head} now={now} />
+            <ExtraApplyStatusNotice bid={head} now={now} />
             {safeOpenChatHref ? (
               <a
                 className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
@@ -3643,6 +3870,19 @@ export function ParticipationHistoryContent({
     }
 
     const isApplied = isParticipationAppliedStatus(bid.participationStatus);
+
+    if (isAwaitingHostAccept(bid.buncheolStatus, bid.participationStatus)) {
+      setConfirmSheetRequest({
+        confirmLabel: "신청 취소",
+        description: `수락 전이라 낸 돈은 없어요. 취소하면 ${getBidRecordOptionLabels(bid)[0]} 자리가 다시 비어요.`,
+        onConfirm: () => {
+          setConfirmSheetRequest(null);
+          void runCancelParticipation(bid);
+        },
+        title: "추가 신청을 취소할까요?",
+      });
+      return;
+    }
 
     setConfirmSheetRequest({
       confirmLabel: isApplied ? "신청 취소" : "참여 취소",
@@ -4041,6 +4281,13 @@ export function ParticipationHistoryContent({
                   ? getSafeOpenChatHref(bid.openChatUrl)
                   : null;
               const progressSteps = getBidRecordProgressSteps(bid, now);
+              const lastAmountRow =
+                bid.extra === true
+                  ? getExtraApplyTimeRow(bid, slots)
+                  : {
+                      label: "모집 기한",
+                      value: formatCompactDeadline(bid.deadline),
+                    };
               const cardShippingFee =
                 typeof bid.shippingFee === "number" ? bid.shippingFee : null;
               const cardTotalAmount = getBidRecordPaymentTotal(bid);
@@ -4108,20 +4355,26 @@ export function ParticipationHistoryContent({
                           />
                         ) : null}
                       </Link>
-                      {/* 썸네일 폭(56px)에 갇힌 칩이라 라벨이 길면 글자가 잘려 나갔다
-                          ("입금 모으는 중" → "입금 모으는"). 넘치면 말줄임으로 드러나게 한다. */}
-                      <span
-                        className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
-                      >
-                        {buncheolChip.label}
-                      </span>
-                      {/* 잠금이 풀리면서 기한 지난 카드가 기한 안 카드와 시각적으로 같아졌다.
-                          "개최자가 취소할 수 있는 구간" 에 들어온 것을 목록에서도 알린다. */}
-                      {isOverdue ? (
-                        <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
-                          기한 지남
-                        </span>
-                      ) : null}
+                      {bid.extra === true ? (
+                        <ExtraApplyChips bid={bid} now={now} />
+                      ) : (
+                        <>
+                          {/* 썸네일 폭(56px)에 갇힌 칩이라 라벨이 길면 글자가 잘려 나갔다
+                              ("입금 모으는 중" → "입금 모으는"). 넘치면 말줄임으로 드러나게 한다. */}
+                          <span
+                            className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+                          >
+                            {buncheolChip.label}
+                          </span>
+                          {/* 잠금이 풀리면서 기한 지난 카드가 기한 안 카드와 시각적으로 같아졌다.
+                              "개최자가 취소할 수 있는 구간" 에 들어온 것을 목록에서도 알린다. */}
+                          {isOverdue ? (
+                            <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
+                              기한 지남
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <Link
@@ -4171,14 +4424,16 @@ export function ParticipationHistoryContent({
                                 : "-"}
                             </dd>
                           </div>
-                          <div className="flex items-baseline justify-between gap-2">
-                            <dt className="shrink-0 font-medium text-black/35">
-                              모집 기한
-                            </dt>
-                            <dd className="truncate font-semibold tracking-[-0.03em]">
-                              {formatCompactDeadline(bid.deadline)}
-                            </dd>
-                          </div>
+                          {lastAmountRow ? (
+                            <div className="flex items-baseline justify-between gap-2">
+                              <dt className="shrink-0 font-medium text-black/35">
+                                {lastAmountRow.label}
+                              </dt>
+                              <dd className="truncate font-semibold tracking-[-0.03em]">
+                                {lastAmountRow.value}
+                              </dd>
+                            </div>
+                          ) : null}
                         </dl>
                       </div>
 
@@ -4250,6 +4505,7 @@ export function ParticipationHistoryContent({
                       </div>
 
                       <CollectingStatusNotice bid={bid} now={now} />
+                      <ExtraApplyStatusNotice bid={bid} now={now} />
                       {safeOpenChatHref ? (
                         <a
                           className="mt-3 flex items-center justify-between gap-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/50"
@@ -4480,6 +4736,7 @@ export function ParticipationHistoryContent({
                   0,
                 );
                 const canDelete = canDeleteHostedProduct(product);
+                const isConfirmedHosted = isBuncheolConfirmedStatus(product.status);
                 const cancelBlockedNotice =
                   getHostedProductCancelBlockedNotice(product);
 
@@ -4535,19 +4792,32 @@ export function ParticipationHistoryContent({
                           <span className="max-w-full truncate rounded-full bg-[#F7FAEE] px-2.5 py-1 text-[12px] font-semibold text-black/60 ring-1 ring-[#E4F6A5]/60">
                             마감 {product.deadline}
                           </span>
+                          {isConfirmedHosted &&
+                          product.hostExtraRecruitOpen === true &&
+                          product.hostEnded === false ? (
+                            <span className="rounded-full bg-black px-2.5 py-1 text-[12px] font-semibold text-brand-strong">
+                              추가 모집 중
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </div>
                     </Link>
                     {showsConfirmBadge(product.hostConfirmCheck) ? (
-                      <div className="mt-3 rounded-[0.75rem] bg-[#F7FAEE] px-3 py-2.5 ring-1 ring-[#E4F6A5]/60">
-                        <span className="inline-flex rounded-full bg-[#D7FF5F] px-2.5 py-1 text-[12px] font-semibold text-black">
-                          진행 확정해 주세요
-                        </span>
-                        <HelpText className="mt-1.5" size="caption">
-                          {getConfirmCheckLine(product.hostConfirmCheck)}
-                        </HelpText>
-                      </div>
+                      <HostedActionNotice
+                        description={getConfirmCheckLine(product.hostConfirmCheck)}
+                        label="진행 확정해 주세요"
+                      />
+                    ) : null}
+                    {product.isApiProduct &&
+                    isConfirmedHosted &&
+                    (product.hostPendingAcceptCount ?? 0) > 0 ? (
+                      <HostedActionNotice
+                        description={`추가 신청 ${product.hostPendingAcceptCount}건이 수락을 기다려요. 수락하면 참여자가 24시간 안에 입금해요.`}
+                        href={`/products/${product.buncheolId ?? product.id}/manage#${EXTRA_ACCEPT_ANCHOR_ID}`}
+                        label="수락해 주세요"
+                        onClick={rememberParticipationHistoryManageEntry}
+                      />
                     ) : null}
                     {cancelBlockedNotice ? (
                       <StaffContactLink

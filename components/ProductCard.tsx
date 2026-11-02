@@ -77,6 +77,8 @@ export type ProductCardItem = {
   // 배송비 0원 이벤트 대상(운영진 개최 + 배송비 전액 0원) 분철 배지. 서버 판정값이라 사용자 개최(C2C) 분철이
   // 배송비를 0원으로 잡아도 false 로 내려온다. 필드가 없는 구 응답이면 배지를 띄우지 않는다.
   isFreeShippingEvent?: boolean;
+  // 진행 확정 뒤 추가 신청을 받는 중(서버 extraRecruiting). 목록 순서는 바꾸지 않고 배지와 남은 멤버만 살린다.
+  isExtraRecruiting?: boolean;
   // 예약 오픈 시각(ISO). 운영진 분철에 오픈 시각을 넣었을 때만 있다.
   opensAt?: string | null;
 };
@@ -261,15 +263,23 @@ export function isCardDeadlineOpen(deadline: string) {
     : deadlineDate.getTime() > Date.now();
 }
 
+// 추가 모집 중인 진행 확정 분철은 원래 마감이 지났어도 신청할 수 있는 카드다(서버 판정).
 function isProductCardPurchasable(item: ProductCardItem) {
   return (
-    isBuncheolPurchasableStatus(item.status) && isCardDeadlineOpen(item.deadline)
+    item.isExtraRecruiting === true ||
+    (isBuncheolPurchasableStatus(item.status) &&
+      isCardDeadlineOpen(item.deadline))
   );
 }
 
 // 취소(개최자 취소 HOST_CANCELLED 포함)·진행 확정 계열 판정은 중앙 모듈 기준.
 // 그 외 비구매 상태(마감 지남 등)는 "모집 종료"로 접는다.
 function getProductCardBadge(item: ProductCardItem) {
+  // 마감 카운트다운이 없는 신청 가능 카드 — 남은 시간 대신 추가 모집임을 보인다.
+  if (item.isExtraRecruiting === true) {
+    return { label: "추가 모집", value: null };
+  }
+
   if (!isProductCardPurchasable(item)) {
     return {
       label: isBuncheolCancelledStatus(item.status)

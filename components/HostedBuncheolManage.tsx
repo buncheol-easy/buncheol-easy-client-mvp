@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,14 +17,20 @@ import {
 } from "@/components/ConfirmSheet";
 import { HelpText } from "@/components/HelpText";
 import { StaffContactLink } from "@/components/StaffContactLink";
-import { useAppToast } from "@/components/Toast";
+import { StatusTag, type StatusTagTone } from "@/components/StatusTag";
+import { Switch } from "@/components/Switch";
+import { TOAST_VISIBLE_MS, useAppToast } from "@/components/Toast";
+import { formatKoreaDateTime } from "@/lib/format-korea-date-time";
 import {
+  acceptBundle,
   addBuncheolMember,
   ApiRequestError,
   BUNCHEOL_CONFIRM_LIST_CHANGED_CODE,
   confirmBuncheol,
   confirmBundlePayment,
   isSyntheticParticipantName,
+  rejectBundle,
+  releaseBundle,
   removeBuncheolMember,
   requestBuncheolDetail,
   requestBuncheolManagement,
@@ -26,6 +38,7 @@ import {
   requestGroupMembers,
   requestGroups,
   requestPaymentConfirmation,
+  setExtraRecruit,
   updateBuncheolOpenChatUrl,
   type BuncheolDetail,
   type BuncheolManagementDetail,
@@ -42,6 +55,7 @@ import {
   isBuncheolConfirmedStatus,
   isBuncheolPaymentCollectingStatus,
   isBuncheolRecruitingStatus,
+  isAwaitingHostAccept,
   AUTO_CONFIRM_NOTICE,
   getConfirmCheckLine,
   isConfirmCheckReady,
@@ -54,6 +68,11 @@ import {
   formatMemberCount,
 } from "@/lib/buncheol-states";
 import { rankGroupSearchResults } from "@/lib/group-presenters";
+import {
+  EXTRA_ACCEPT_ANCHOR_ID,
+  hasSeenExtraRecruitPrompt,
+  markExtraRecruitPromptSeen,
+} from "@/lib/extra-recruit";
 import { normalizeOpenChatUrlInput } from "@/lib/open-chat-url";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -92,45 +111,6 @@ function getDepositorName(participant: BuncheolManagementParticipant) {
   // 파서 합성 폴백(「참여 {id}」)은 통장 대조에 쓸 수 없다 — 입금자명 노출 지점 전부가
   // 이 함수를 거치므로 여기 한 곳에서 흡수한다.
   return isSyntheticParticipantName(name) ? "확인 필요" : name;
-}
-
-function formatKoreaDateTime(value: string | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  /*
-   * 참여 내역·개최 기록과 같은 "8월 12일 17:30" 모양으로 맞춘다.
-   * 같은 정보가 화면마다 "8.12 17시" / "2026년 07월 05일 14시" / "2026. 12. 22. 20:00"
-   * 세 가지로 보이고 있었다. 연도는 올해가 아닐 때만 붙인다.
-   */
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "numeric",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "numeric",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const currentYear = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).format(new Date());
-  const yearPrefix = currentYear.includes(partMap.year)
-    ? ""
-    : `${partMap.year}년 `;
-
-  return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
 // 금액을 하나도 모르면 0 이 아니라 null — 0 은 「0원」으로 그려져 실제 0원 자리와 구분되지 않는다.
@@ -287,6 +267,29 @@ function getSlotMemberLabel(slot: BuncheolManagementParticipant) {
   return !name || name === "멤버" ? "멤버 확인 필요" : name;
 }
 
+// 확인 시트에서 참여자를 부르는 이름. 닉네임이 파서 합성 폴백이면 입금자명으로 부른다.
+function getParticipantLabel(participant: BuncheolManagementParticipant) {
+  return isSyntheticParticipantName(participant.participantNickname)
+    ? getDepositorName(participant)
+    : participant.participantNickname;
+}
+
+// 수락·거절 본문에 실을 자리 — 서버가 수락 대상으로 내려 준 자리만. 옛 응답(null)이면 버튼을 그리지 않는다.
+function getAcceptTargetIds(bundle: ManagementBundle) {
+  return bundle.slots
+    .filter((slot) => slot.acceptTarget === true)
+    .map((slot) => slot.participationId);
+}
+
+// 「제외」 버튼은 기한 전(꺼짐)과 기한 지남(켜짐)에만 그린다. 판정은 묶음 단위라 자리마다 같다.
+function getBundleReleasability(bundle: ManagementBundle) {
+  const releasability = bundle.slots[0]?.releasability ?? null;
+
+  return releasability === "RELEASABLE" || releasability === "BEFORE_DUE"
+    ? releasability
+    : null;
+}
+
 // 묶음 id 가 없으면 「입금 확인」을 서버에 보낼 수 없다. 되돌릴 수 없다고 묻는 시트를
 // 통과한 뒤 실패하지 않게, 버튼을 막고 이 문구를 미리 보여 준다.
 // 입금 기한이 지나면 서버 판정(confirmCheck)이 바뀌므로 그 시각에 관리 응답을 다시 받는다.
@@ -382,12 +385,23 @@ function getManagementOptionsFromDetail(
       participationCount: Math.max(member.participantCount, participants.length),
       // 상세 파서는 서버 members[].price 를 bidMinPrice 로 읽는다(그 응답에 다른 금액 키가 없다).
       price: member.bidMinPrice,
+      removed: member.removed,
       saleStatus: member.saleStatus,
       winner: currentParticipant
         ? getWinnerFromParticipant(currentParticipant)
         : null,
     };
   });
+}
+
+// 진행 확정 뒤 추가 신청을 받는 중 — 서버 extraRecruiting 과 같은 식(진행 확정 + 스위치 켜짐 + 종료 전).
+function isExtraRecruiting(detail: BuncheolManagementDetail) {
+  return (
+    getFlowType(detail.flowType) === "C2C" &&
+    isBuncheolConfirmedStatus(detail.status) &&
+    detail.extraRecruitOpen === true &&
+    detail.ended === false
+  );
 }
 
 // 서버 Buncheol.acceptsNewParticipation 과 같은 술어 — 자리 빼기·넣기는 이 구간에서만 통한다(아니면 BCH-060).
@@ -398,33 +412,114 @@ function isAcceptingNewParticipation(detail: BuncheolManagementDetail) {
   }
 
   return (
-    isBuncheolRecruitingStatus(detail.status) && !isPastDateTime(detail.deadline)
+    (isBuncheolRecruitingStatus(detail.status) &&
+      !isPastDateTime(detail.deadline)) ||
+    isExtraRecruiting(detail)
   );
 }
 
-function isClosedMemberSlot(option: BuncheolManagementOption) {
-  return option.saleStatus?.toUpperCase() === "CLOSED";
+// 「빼기」로 뺀 자리. 옛 응답에는 removed 가 없어 CLOSED 로 가른다 — 그때는 진행 확정 뒤 멤버 관리를 그리지 않으므로
+// 추가 모집이 꺼져 CLOSED 로 내려오는 빈 자리와 섞이지 않는다.
+function isRemovedMemberSlot(option: BuncheolManagementOption) {
+  return typeof option.removed === "boolean"
+    ? option.removed
+    : option.saleStatus?.toUpperCase() === "CLOSED";
 }
 
-type MemberSlotState = {
-  label: string;
-  kind: "empty" | "occupied" | "unknown";
+type StatusChip = { label: string; tone: StatusTagTone };
+
+// 참여 상태 하나의 칩. 자리 줄과 참여자 카드가 같이 쓴다 — 따로 적으면 한쪽만 고쳐져 두 줄이 어긋난다.
+function getParticipationStatusChip(
+  participant: Pick<BuncheolManagementParticipant, "confirmedAt" | "status">,
+  buncheolStatus: string | null | undefined,
+): StatusChip | null {
+  if (
+    isParticipationConfirmedStatus(participant.status) ||
+    participant.confirmedAt
+  ) {
+    return { label: "입금 확인", tone: "black" };
+  }
+
+  if (isParticipationPaymentSentStatus(participant.status)) {
+    return { label: "보냈어요", tone: "lime" };
+  }
+
+  if (isParticipationAwaitingPaymentStatus(participant.status)) {
+    return { label: "입금 대기", tone: "grey" };
+  }
+
+  if (isParticipationAppliedStatus(participant.status)) {
+    return isAwaitingHostAccept(buncheolStatus, participant.status)
+      ? { label: "수락 대기", tone: "warning" }
+      : { label: "신청됨", tone: "grey" };
+  }
+
+  return null;
+}
+
+// 잡힌 자리의 saleStatus 를 참여 상태로 옮긴다. 「보냈어요」도 서버가 AWAITING_PAYMENT 로 접어 내려준다.
+const SALE_STATUS_PARTICIPATION_STATUS: Record<string, string> = {
+  APPLIED: "APPLIED",
+  AWAITING_PAYMENT: "AWAITING_PAYMENT",
+  SOLD: "CONFIRMED",
 };
 
-// 뺄 수 있는지는 서버 saleStatus 그대로 가른다. 모르는 값(롤백 중 CODE_ONLY 등)은 버튼 없이 둔다.
-function getMemberSlotState(saleStatus: string | undefined): MemberSlotState {
-  switch (saleStatus?.toUpperCase()) {
+type MemberSlotState = StatusChip & {
+  kind: "empty" | "occupied" | "unknown";
+  // 진행 확정 뒤 추가 신청으로 잡힌 자리 — 상태 칩 앞에 「추가 모집」을 단다.
+  extra: boolean;
+};
+
+const UNKNOWN_MEMBER_SLOT_STATE: MemberSlotState = {
+  extra: false,
+  kind: "unknown",
+  label: "확인 필요",
+  tone: "grey",
+};
+
+// 빈 자리인지는 서버 saleStatus 로, 잡힌 자리의 상태는 관리 응답의 참여 상태로 가른다 — saleStatus 는 「보냈어요」를
+// 입금 대기로 접고 수락 대기를 신청됨과 가르지 않는다. 모르는 값(롤백 중 CODE_ONLY 등)은 버튼 없이 둔다.
+function getMemberSlotState(
+  option: BuncheolManagementOption,
+  participant: BuncheolManagementParticipant | undefined,
+  detail: BuncheolManagementDetail,
+): MemberSlotState {
+  const participantChip = participant
+    ? getParticipationStatusChip(participant, detail.status)
+    : null;
+
+  if (participantChip) {
+    return {
+      ...participantChip,
+      extra: participant?.extra === true,
+      kind: "occupied",
+    };
+  }
+
+  const saleStatus = option.saleStatus?.toUpperCase() ?? "";
+  const occupiedChip = SALE_STATUS_PARTICIPATION_STATUS[saleStatus]
+    ? getParticipationStatusChip(
+        { status: SALE_STATUS_PARTICIPATION_STATUS[saleStatus] },
+        detail.status,
+      )
+    : null;
+
+  if (occupiedChip) {
+    return { ...occupiedChip, extra: false, kind: "occupied" };
+  }
+
+  switch (saleStatus) {
     case "AVAILABLE":
-      return { kind: "empty", label: "빈 자리" };
-    case "APPLIED":
-      return { kind: "occupied", label: "신청됨" };
-    // 「보냈어요」도 서버가 AWAITING_PAYMENT 로 접어 내려준다.
-    case "AWAITING_PAYMENT":
-      return { kind: "occupied", label: "입금 대기" };
-    case "SOLD":
-      return { kind: "occupied", label: "입금 확인" };
+      return isExtraRecruiting(detail)
+        ? { extra: false, kind: "empty", label: "모집 중", tone: "open" }
+        : { extra: false, kind: "empty", label: "빈 자리", tone: "grey" };
+    // 추가 모집이 꺼진 진행 확정 분철은 빈 자리도 CLOSED 로 내려온다. 뺀 자리는 이미 removed 로 걸렀다.
+    case "CLOSED":
+      return isBuncheolConfirmedStatus(detail.status)
+        ? { extra: false, kind: "empty", label: "빈 자리", tone: "grey" }
+        : UNKNOWN_MEMBER_SLOT_STATE;
     default:
-      return { kind: "unknown", label: "확인 필요" };
+      return UNKNOWN_MEMBER_SLOT_STATE;
   }
 }
 
@@ -559,6 +654,10 @@ export function HostedBuncheolManage({
   const [addMemberError, setAddMemberError] = useState("");
   // 시트를 닫았다 다시 열면 앞선 그룹 멤버 조회가 늦게 끝나 새 목록을 덮지 않게 한다.
   const addMemberLoadIdRef = useRef(0);
+  // 이 화면에서 진행 확정을 일으킨 토스트가 사라지는 시각. 권하는 시트가 그 문장을 가리지 않게 그때까지 기다린다.
+  const confirmToastEndsAtRef = useRef(0);
+  // 기다리는 동안 개최자가 스위치를 만졌으면 권하지 않는다 — 방금 한 결정 위에 시트가 겹친다.
+  const hasChangedExtraRecruitRef = useRef(false);
 
   useEffect(() => {
     const accessToken = authState.isLoggedIn
@@ -620,23 +719,39 @@ export function HostedBuncheolManage({
     };
   }, [authState.accessToken, authState.isLoggedIn, id, router]);
 
-  // 버튼은 계속 서버 confirmCheck 만 본다. 열어 둔 채 기한이 지나도 켜지도록 기한 시각에 한 번 다시 불러온다.
-  const paymentDueAtForReload = detail?.paymentDueAt ?? null;
-  const confirmCheckForReload = detail?.confirmCheck ?? null;
+  // 버튼은 계속 서버 판정(진행 확정 confirmCheck, 「제외」 releasability)만 본다. 열어 둔 채 기한이 지나도 켜지도록
+  // 아직 오지 않은 기한 가운데 가장 가까운 시각에 한 번 다시 불러온다.
+  const reloadDueTimesKey = [
+    detail?.confirmCheck === "BEFORE_DUE" ||
+    detail?.confirmCheck === "NO_CONFIRMED"
+      ? detail.paymentDueAt
+      : null,
+    ...(detail?.participants ?? []).map((participant) =>
+      participant.releasability === "BEFORE_DUE" ? participant.dueAt : null,
+    ),
+  ]
+    .flatMap((value) => {
+      const time = value ? new Date(value).getTime() : Number.NaN;
+
+      return Number.isNaN(time) ? [] : [time];
+    })
+    .sort((a, b) => a - b)
+    .join(",");
 
   useEffect(() => {
-    if (
-      !paymentDueAtForReload ||
-      (confirmCheckForReload !== "BEFORE_DUE" &&
-        confirmCheckForReload !== "NO_CONFIRMED")
-    ) {
+    const now = Date.now();
+    const dueTime = reloadDueTimesKey
+      .split(",")
+      .map(Number)
+      .find((time) => time > now);
+
+    if (dueTime === undefined) {
       return;
     }
 
-    const dueTime = new Date(paymentDueAtForReload).getTime();
-    const delay = dueTime - Date.now() + PAYMENT_DUE_RELOAD_DELAY_MS;
+    const delay = dueTime - now + PAYMENT_DUE_RELOAD_DELAY_MS;
 
-    if (Number.isNaN(dueTime) || delay <= 0 || delay > MAX_TIMER_DELAY_MS) {
+    if (delay > MAX_TIMER_DELAY_MS) {
       return;
     }
 
@@ -662,7 +777,7 @@ export function HostedBuncheolManage({
       isActive = false;
       window.clearTimeout(timer);
     };
-  }, [confirmCheckForReload, id, paymentDueAtForReload]);
+  }, [id, reloadDueTimesKey]);
 
   const memberCount = detail?.optionCount ?? detail?.options.length ?? 0;
   const participantCount =
@@ -737,7 +852,32 @@ export function HostedBuncheolManage({
   const activeC2CParticipants = (detail?.participants ?? []).filter(
     (participant) => !isParticipationCancelledStatus(participant.status),
   );
-  const c2cBundles = getParticipantBundles(activeC2CParticipants);
+  // 수락을 기다리는 추가 신청을 맨 위로 올린다 — 「개최한 분철」의 「수락해 주세요」가 여기로 데려온다.
+  const c2cBundles = getParticipantBundles(activeC2CParticipants).sort(
+    (a, b) =>
+      Number(getAcceptTargetIds(b).length > 0) -
+      Number(getAcceptTargetIds(a).length > 0),
+  );
+  const firstPendingAcceptBundleKey = c2cBundles.find(
+    (bundle) => getAcceptTargetIds(bundle).length > 0,
+  )?.key;
+  const hasScrolledToPendingAcceptRef = useRef(false);
+
+  // 관리 응답이 온 뒤에야 카드가 생겨 브라우저의 주소 조각 이동이 닿지 않는다. 처음 한 번만 직접 내려 준다.
+  useEffect(() => {
+    if (
+      !firstPendingAcceptBundleKey ||
+      hasScrolledToPendingAcceptRef.current ||
+      window.location.hash !== `#${EXTRA_ACCEPT_ANCHOR_ID}`
+    ) {
+      return;
+    }
+
+    hasScrolledToPendingAcceptRef.current = true;
+    document
+      .getElementById(EXTRA_ACCEPT_ANCHOR_ID)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [firstPendingAcceptBundleKey]);
 
   const c2cAppliedCount = activeC2CParticipants.filter((participant) =>
     isParticipationAppliedStatus(participant.status),
@@ -793,11 +933,11 @@ export function HostedBuncheolManage({
   const c2cTrackingCompletedCount = [...c2cDeliveries.values()].filter(
     (delivery) => Boolean(delivery.trackingNumber),
   ).length;
-  // 「멤버 관리」 — 뺀 자리(삭제·CLOSED)는 목록에서 숨기고 「멤버 추가」에서 다시 보여 준다.
+  // 「멤버 관리」 — 뺀 자리는 목록에서 숨기고 「멤버 추가」에서 다시 보여 준다.
   const memberSlots = (detail?.options ?? []).filter(
-    (option) => !isClosedMemberSlot(option),
+    (option) => !isRemovedMemberSlot(option),
   );
-  const closedMemberSlots = (detail?.options ?? []).filter(isClosedMemberSlot);
+  const closedMemberSlots = (detail?.options ?? []).filter(isRemovedMemberSlot);
   // 서버의 마지막 자리 판정(BCH-120)·최소 인원 하향과 같은 수 — 닫히지 않은 자리.
   const openMemberSlotCount = memberSlots.length;
   // 관리 응답이 자리 목록을 직접 실으면 상세 보충을 건너뛰는데, 그 파서는 saleStatus 를 읽지 않는다.
@@ -805,6 +945,33 @@ export function HostedBuncheolManage({
   const hasMemberSlotSaleStatus =
     (detail?.options ?? []).length > 0 &&
     (detail?.options ?? []).every((option) => Boolean(option.saleStatus));
+  const activeParticipantBySlotId = new Map(
+    activeC2CParticipants.flatMap((participant) =>
+      participant.buncheolMemberId
+        ? [[participant.buncheolMemberId, participant] as const]
+        : [],
+    ),
+  );
+  const memberSlotStates = detail
+    ? memberSlots.map((option) => ({
+        option,
+        state: getMemberSlotState(
+          option,
+          activeParticipantBySlotId.get(option.buncheolMemberId),
+          detail,
+        ),
+      }))
+    : [];
+  const isConfirmedC2C = isC2C && isBuncheolConfirmedStatus(detail?.status);
+  // 진행 확정 뒤 「멤버 관리」와 스위치. 스위치 값이 없는 옛 서버거나 끝난 분철이면 그리지 않는다.
+  const showsExtraRecruitControls =
+    isConfirmedC2C &&
+    detail?.ended === false &&
+    typeof detail.extraRecruitOpen === "boolean";
+  const isExtraRecruitOn = detail ? isExtraRecruiting(detail) : false;
+  const canEditMemberSlots = detail ? isAcceptingNewParticipation(detail) : false;
+  // 진행 확정 분철의 신청은 수락을 기다리는 추가 신청뿐이다.
+  const c2cAppliedTileLabel = isConfirmedC2C ? "수락 대기" : "신청";
 
   function updateTrackingNumber(optionId: string, trackingNumber: string) {
     setDeliveryStates((current) => ({
@@ -1030,9 +1197,7 @@ export function HostedBuncheolManage({
             : undefined,
           // 「보냈어요」 경고가 통장과 맞춰 보라고 하므로 대조 기준인 입금자명을 함께 보인다(목록 행과 같은 값).
           caption: `입금자명 ${getDepositorName(head)}`,
-          label: isSyntheticParticipantName(head.participantNickname)
-            ? getDepositorName(head)
-            : head.participantNickname,
+          label: getParticipantLabel(head),
           value: `${bundle.slots.map(getSlotMemberLabel).join(", ")} · ${formatWonAmount(total)}`,
         };
       }),
@@ -1045,7 +1210,7 @@ export function HostedBuncheolManage({
               "「보냈어요」를 누른 참여자가 있어요. 통장에 입금이 들어왔다면 진행 확정 전에 「입금 확인」을 먼저 눌러 주세요.",
             ]
           : []),
-        "빠진 자리는 다시 모집하지 않아요. 확정한 뒤에는 되돌릴 수 없어요.",
+        "빠진 자리는 진행 확정 뒤 추가 모집으로 다시 채울 수 있어요. 확정한 뒤에는 되돌릴 수 없어요.",
       ],
     });
   }
@@ -1056,6 +1221,11 @@ export function HostedBuncheolManage({
     }
 
     openConfirmBuncheolSheet(detail);
+  }
+
+  function showBuncheolConfirmedToast(message: string) {
+    showToast(message, "success");
+    confirmToastEndsAtRef.current = Date.now() + TOAST_VISIBLE_MS;
   }
 
   async function runConfirmBuncheol(
@@ -1079,7 +1249,9 @@ export function HostedBuncheolManage({
 
       await confirmBuncheol(accessToken, id, cancelParticipations);
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확정이 실패로 보이지 않게.
-      showToast("진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.", "success");
+      showBuncheolConfirmedToast(
+        "진행을 확정했어요. 이제 굿즈 구매와 배송을 진행해 주세요.",
+      );
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1133,6 +1305,28 @@ export function HostedBuncheolManage({
     const depositorName = getDepositorName(head);
     const total = bundle.slots.reduce((sum, slot) => sum + slot.amount, 0);
     const memberNames = bundle.slots.map(getSlotMemberLabel).join(", ");
+    const onConfirm = () => {
+      setConfirmSheetRequest(null);
+      void runConfirmBundlePayment(bundle, expectedSlotIds);
+    };
+
+    // 진행 확정 뒤에 확인하는 묶음은 추가 신청뿐이다. 서버가 그 묶음의 배송을 바로 만들어 운송장 칸이 열린다.
+    if (isConfirmedC2C) {
+      setConfirmSheetRequest({
+        confirmLabel: "입금 확인",
+        description: "통장에 들어온 걸 봤을 때만 눌러 주세요.",
+        onConfirm,
+        title:
+          total > 0
+            ? `입금자명 ${depositorName}, ${formatWonAmount(total)} 입금을 확인했나요?`
+            : `입금자명 ${depositorName} 입금을 확인했나요?`,
+        warnings: [
+          "확인하면 운송장 칸이 열리고, 참여자에게 진행 확정 알림톡이 가요.",
+        ],
+      });
+      return;
+    }
+
     const expectedSlotIdSet = new Set(expectedSlotIds);
     const confirmsBuncheol = activeC2CParticipants.every(
       (participant) =>
@@ -1149,10 +1343,7 @@ export function HostedBuncheolManage({
         total > 0
           ? `${depositorName}님의 ${memberNames} ${formatWonAmount(total)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
           : `${depositorName}님의 ${memberNames} 입금을 받으셨나요? 확인하면 되돌릴 수 없어요.`,
-      onConfirm: () => {
-        setConfirmSheetRequest(null);
-        void runConfirmBundlePayment(bundle, expectedSlotIds);
-      },
+      onConfirm,
       title:
         bundle.slots.length > 1
           ? `멤버 ${bundle.slots.length}명을 한 번에 확인할까요?`
@@ -1199,12 +1390,18 @@ export function HostedBuncheolManage({
       );
 
       // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 확인이 실패로 보이지 않게.
-      showToast(
-        buncheolConfirmed
-          ? "모든 입금이 확인돼 분철이 진행 확정됐어요. 이제 굿즈 구매와 배송을 진행해 주세요."
-          : "입금 확인이 완료됐어요.",
-        "success",
-      );
+      if (buncheolConfirmed) {
+        showBuncheolConfirmedToast(
+          "모든 입금이 확인돼 분철이 진행 확정됐어요. 이제 굿즈 구매와 배송을 진행해 주세요.",
+        );
+      } else {
+        showToast(
+          isConfirmedC2C
+            ? "입금을 확인했어요. 운송장 칸이 열렸어요"
+            : "입금 확인이 완료됐어요.",
+          "success",
+        );
+      }
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1230,6 +1427,137 @@ export function HostedBuncheolManage({
     } finally {
       setPendingC2CAction(null);
     }
+  }
+
+  // 묶음 단위 쓰기(수락·거절·「제외」)의 공통 틀. 실패하면 다른 탭에서 처리했거나 참여자가 그사이 취소한 것이라
+  // 다시 불러와 지금 상태를 보여 준다. 자리가 다시 비는 쓰기는 목록 카드의 남은 멤버도 바뀐다.
+  async function runBundleAction(
+    bundle: ManagementBundle,
+    action: "accept" | "reject" | "release",
+    request: (accessToken: string, bundleId: string) => Promise<void>,
+    successMessage: string,
+  ) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    if (!bundle.bundleId) {
+      showToast(MISSING_BUNDLE_MESSAGE, "error");
+      return;
+    }
+
+    setPendingC2CAction(`${action}:${bundle.key}`);
+
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
+        return;
+      }
+
+      await request(accessToken, bundle.bundleId);
+
+      if (action !== "accept") {
+        void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      }
+
+      // 성공 알림을 재조회보다 먼저 띄운다 — GET 이 실패해도 이미 반영된 처리가 실패로 보이지 않게.
+      showToast(successMessage, "success");
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        // 성공 알림을 그대로 둔다.
+      }
+    } catch (error: unknown) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "처리하지 못했어요. 잠시 후 다시 시도해 주세요.",
+        "error",
+      );
+
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
+    } finally {
+      setPendingC2CAction(null);
+    }
+  }
+
+  // 수락은 돈이 오가기 전이고 참여자가 스스로 취소할 수도 있어 확인 시트 없이 바로 보낸다.
+  function acceptExtraBundle(bundle: ManagementBundle, expectedSlotIds: string[]) {
+    void runBundleAction(
+      bundle,
+      "accept",
+      (accessToken, bundleId) =>
+        acceptBundle(accessToken, bundleId, expectedSlotIds),
+      "수락했어요. 참여자가 24시간 안에 입금해요",
+    );
+  }
+
+  function requestRejectExtraBundle(
+    bundle: ManagementBundle,
+    expectedSlotIds: string[],
+  ) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    const head = bundle.slots[0];
+
+    setConfirmSheetRequest({
+      confirmLabel: "거절",
+      description: `추가 신청이 취소되고 참여자에게 알림톡이 가요. ${bundle.slots
+        .map(getSlotMemberLabel)
+        .join(", ")} 자리는 다시 비어요.`,
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runBundleAction(
+          bundle,
+          "reject",
+          (accessToken, bundleId) =>
+            rejectBundle(accessToken, bundleId, expectedSlotIds),
+          "거절했어요. 자리가 다시 비었어요",
+        );
+      },
+      title: `${getParticipantLabel(head)}님의 추가 신청을 거절할까요?`,
+    });
+  }
+
+  function requestReleaseBundle(bundle: ManagementBundle) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    const head = bundle.slots[0];
+
+    setConfirmSheetRequest({
+      confirmLabel: "제외",
+      description: `입금 기한이 지났어요. 제외하면 참여가 취소되고 참여자에게 알림톡이 가요. ${bundle.slots
+        .map(getSlotMemberLabel)
+        .join(", ")} 자리는 다시 비어요.`,
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void runBundleAction(
+          bundle,
+          "release",
+          releaseBundle,
+          "제외했어요. 자리가 다시 비었어요",
+        );
+      },
+      title: `${getParticipantLabel(head)}님을 제외할까요?`,
+      warnings: [
+        "통장에 입금이 있다면 제외하지 말고 「입금 확인」을 눌러 주세요.",
+      ],
+    });
   }
 
   // 운송장 수정은 처음 등록과 같은 API 다. 서버가 번호를 바꿀 때마다 운송장 알림톡을 다시 보내
@@ -1362,21 +1690,24 @@ export function HostedBuncheolManage({
     }
   }
 
-  // 서버는 빼는 순간 최소 인원을 남은 열린 자리 수로 낮추고(다시 넣어도 올리지 않는다), 남은 열린 자리가
+  // 모집 중에는 빼는 순간 서버가 최소 인원을 남은 열린 자리 수로 낮추고(다시 넣어도 올리지 않는다), 남은 열린 자리가
   // 모두 신청됐으면 같은 요청 안에서 입금 단계를 시작한다. 경고는 그 결과를 미리 알리는 것뿐이고,
-  // 실제로 시작됐는지는 빼고 난 관리 응답의 상태로 본다.
+  // 실제로 시작됐는지는 빼고 난 관리 응답의 상태로 본다. 진행 확정 뒤 빼기는 둘 다 하지 않는다.
   function requestRemoveMemberSlot(option: BuncheolManagementOption) {
     if (!detail || pendingC2CAction) {
       return;
     }
 
+    const isRecruiting = isBuncheolRecruitingStatus(detail.status);
     const nextOpenSlotCount = openMemberSlotCount - 1;
-    const lowersMinHeadcount = nextOpenSlotCount < minHeadcount;
+    const lowersMinHeadcount =
+      isRecruiting && nextOpenSlotCount < minHeadcount;
     const nextMinHeadcount = Math.min(minHeadcount, nextOpenSlotCount);
-    const occupiedSlotCount = memberSlots.filter(
-      (slot) => getMemberSlotState(slot.saleStatus).kind === "occupied",
+    const occupiedSlotCount = memberSlotStates.filter(
+      ({ state }) => state.kind === "occupied",
     ).length;
     const startsPayment =
+      isRecruiting &&
       occupiedSlotCount > 0 &&
       occupiedSlotCount === nextOpenSlotCount &&
       occupiedSlotCount >= nextMinHeadcount;
@@ -1396,7 +1727,7 @@ export function HostedBuncheolManage({
     setConfirmSheetRequest({
       confirmLabel: "빼기",
       description:
-        "이 멤버는 더 신청받지 않아요. 실수였다면 「멤버 추가」로 다시 넣을 수 있어요.",
+        "뺀 멤버는 신청을 받지 않아요. 실수였다면 「멤버 추가」로 다시 넣을 수 있어요.",
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runRemoveMemberSlot(option);
@@ -1463,6 +1794,112 @@ export function HostedBuncheolManage({
       setPendingC2CAction(null);
     }
   }
+
+  async function changeExtraRecruit(open: boolean) {
+    if (pendingC2CAction) {
+      return;
+    }
+
+    hasChangedExtraRecruitRef.current = true;
+    setPendingC2CAction("extra-recruit");
+
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await getFreshAccessToken();
+
+      if (!accessToken) {
+        showToast("로그인이 만료됐어요. 다시 로그인해 주세요.", "error");
+        return;
+      }
+
+      await setExtraRecruit(accessToken, id, open);
+      // 목록 카드의 「추가 모집」 배지와 남은 멤버 칩이 60초 저장본으로 남지 않게 한다.
+      void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
+      showToast(
+        open ? "추가 모집을 켰어요" : "추가 모집을 껐어요. 새 추가 신청만 막혀요",
+        "success",
+      );
+
+      try {
+        await reloadManagementDetail(accessToken);
+      } catch {
+        showToast("저장했어요. 화면 갱신에 실패해 잠시 뒤 다시 열어 주세요.");
+      }
+    } catch (error: unknown) {
+      showToast(
+        error instanceof Error ? error.message : "추가 모집을 바꾸지 못했어요.",
+        "error",
+      );
+
+      // 그사이 모든 배송이 도착해 끝났으면 서버가 켜기를 거절한다(BCH-131) — 다시 불러와 지금 상태를 보여 준다.
+      if (accessToken) {
+        try {
+          await reloadManagementDetail(accessToken);
+        } catch {
+          // 실패 토스트가 이미 떠 있다.
+        }
+      }
+    } finally {
+      setPendingC2CAction(null);
+    }
+  }
+
+  // 뜨는 순간 기억한다 — 「나중에」, 「추가 모집 열기」, 바깥 누르기 모두 다시 뜨지 않는다.
+  const openExtraRecruitPrompt = useEffectEvent(() => {
+    const slotNames = memberSlotStates
+      .filter(({ state }) => state.kind === "empty")
+      .map(({ option }) => option.memberName);
+
+    if (
+      !showsExtraRecruitControls ||
+      isExtraRecruitOn ||
+      hasChangedExtraRecruitRef.current ||
+      slotNames.length === 0 ||
+      confirmSheetRequest ||
+      hasSeenExtraRecruitPrompt(id)
+    ) {
+      return;
+    }
+
+    markExtraRecruitPromptSeen(id);
+    setConfirmSheetRequest({
+      cancelLabel: "나중에",
+      confirmLabel: "추가 모집 열기",
+      description: `추가 모집을 열면 ${slotNames.join(", ")}에 추가 신청을 받아요. 추가 신청을 수락하면 참여자가 24시간 안에 입금해요.`,
+      footnote:
+        "「나중에」를 눌러도 「멤버 관리」 카드의 스위치로 언제든 켤 수 있어요.",
+      onCancel: () => showToast("「멤버 관리」에서 언제든 켤 수 있어요"),
+      onConfirm: () => {
+        setConfirmSheetRequest(null);
+        void changeExtraRecruit(true);
+      },
+      title: `빈 자리 ${slotNames.length}개가 남았어요`,
+    });
+  });
+
+  // 진행 확정을 처음 본 순간(첫 응답, 또는 이 화면에서 넘어간 순간)에만 권한다. 스위치를 끄거나 거절·「제외」로
+  // 자리가 비는 때에 권하면 개최자가 방금 한 결정 위에 시트가 겹친다.
+  const hasCheckedExtraRecruitPromptRef = useRef(false);
+
+  useEffect(() => {
+    if (!isConfirmedC2C || hasCheckedExtraRecruitPromptRef.current) {
+      return;
+    }
+
+    hasCheckedExtraRecruitPromptRef.current = true;
+
+    const timer = window.setTimeout(
+      () => {
+        openExtraRecruitPrompt();
+      },
+      Math.max(0, confirmToastEndsAtRef.current - Date.now()),
+    );
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isConfirmedC2C]);
 
   async function openAddMemberSheet() {
     if (!detail || pendingC2CAction) {
@@ -1583,7 +2020,12 @@ export function HostedBuncheolManage({
       });
       setAddMemberSheet(null);
       void queryClient.invalidateQueries({ queryKey: buncheolsQueryKey });
-      showToast(`${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`, "success");
+      showToast(
+        isConfirmedC2C
+          ? `${candidate.name} 멤버를 넣었어요. 바로 추가 신청을 받을 수 있어요.`
+          : `${candidate.name} 멤버를 넣었어요. 바로 신청받을 수 있어요.`,
+        "success",
+      );
 
       try {
         await reloadManagementDetail(accessToken);
@@ -1791,9 +2233,15 @@ export function HostedBuncheolManage({
               </div>
               {isC2C ? (
                 <>
-                  <div className="rounded-[0.85rem] bg-[#f5f5f5] px-3 py-3">
+                  <div
+                    className={`rounded-[0.85rem] px-3 py-3 ${
+                      isConfirmedC2C && c2cAppliedCount > 0
+                        ? "bg-brand-pale ring-1 ring-inset ring-brand-soft"
+                        : "bg-surface-2"
+                    }`}
+                  >
                     <p className="text-[11px] font-medium text-black/35">
-                      {"\uc2e0\uccad"}
+                      {c2cAppliedTileLabel}
                     </p>
                     <p className="mt-1 text-[15px] font-semibold">
                       {formatMemberCount(c2cAppliedCount)}
@@ -1965,23 +2413,76 @@ export function HostedBuncheolManage({
             </section>
           ) : null}
 
-          {isAcceptingNewParticipation(detail) && hasMemberSlotSaleStatus ? (
-            <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
+          {/* 끝나면 「멤버 관리」와 스위치가 사라진다 — 스위치를 쓰던 개최자가 이유를 알도록 그 자리에 남긴다. */}
+          {isConfirmedC2C &&
+          detail.ended === true &&
+          typeof detail.extraRecruitOpen === "boolean" ? (
+            <section className="mt-4 rounded-[1.05rem] bg-surface-2 px-4 py-3.5">
               <p className="text-[15px] font-semibold tracking-[-0.04em]">
-                멤버 관리
+                분철이 끝났어요
               </p>
               <HelpText className="mt-1">
-                다른 곳에서 먼저 팔린 멤버는 빼 두세요. 뺀 멤버는 더 신청받지
-                않아요.
+                모든 배송이 도착해 「종료」됐어요. 추가 모집과 멤버 편집도 함께 닫혔어요. 다시 모으려면 새 분철을 열어 주세요.
               </HelpText>
+            </section>
+          ) : null}
+
+          {hasMemberSlotSaleStatus &&
+          (canEditMemberSlots || showsExtraRecruitControls) ? (
+            <section className="mt-4 rounded-[1.05rem] border border-black/10 bg-white px-4 py-4">
+              <div className="flex items-center gap-2">
+                <p className="text-[15px] font-semibold tracking-[-0.04em]">
+                  멤버 관리
+                </p>
+                {isExtraRecruitOn ? (
+                  <span className="shrink-0 rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-brand-strong">
+                    추가 모집 중
+                  </span>
+                ) : null}
+              </div>
+              {showsExtraRecruitControls ? (
+                <>
+                  <div className="mt-2.5 flex items-center justify-between gap-3 rounded-[0.85rem] bg-surface-2 px-3 py-3">
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold tracking-[-0.03em]">
+                        빈 자리 추가 모집
+                      </p>
+                      <p className="mt-px text-[12px] font-medium text-black/50">
+                        {isExtraRecruitOn
+                          ? "추가 신청을 수락해야 참여자가 입금해요"
+                          : "켜면 빈 자리에 추가 신청을 받아요"}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={isExtraRecruitOn}
+                      disabled={pendingC2CAction !== null}
+                      label="빈 자리 추가 모집"
+                      onCheckedChange={(open) => void changeExtraRecruit(open)}
+                    />
+                  </div>
+                  <HelpText className="mt-2">
+                    {isExtraRecruitOn
+                      ? "추가 모집을 하지 않을 멤버는 「빼기」를 눌러 주세요. 뺀 멤버는 신청을 받지 않아요."
+                      : "추가 모집을 켜야 빈 자리에 추가 신청을 받고, 멤버를 빼거나 더할 수 있어요."}
+                  </HelpText>
+                </>
+              ) : (
+                <HelpText className="mt-1">
+                  모집하지 않을 멤버는 「빼기」를 눌러 주세요. 뺀 멤버는 신청을 받지
+                  않아요.
+                </HelpText>
+              )}
               <ul className="mt-3 divide-y divide-black/[0.06]">
-                {memberSlots.map((option) => {
-                  const slotState = getMemberSlotState(option.saleStatus);
+                {memberSlotStates.map(({ option, state: slotState }) => {
                   const isLastOpenSlot = openMemberSlotCount <= 1;
-                  const blockedReason =
-                    slotState.kind === "occupied"
+                  const canRemove =
+                    canEditMemberSlots && slotState.kind === "empty";
+                  // 진행 확정 뒤에는 잡힌 자리가 대부분이라 「뺄 수 없어요」를 줄마다 달지 않는다.
+                  const blockedReason = !canEditMemberSlots
+                    ? null
+                    : slotState.kind === "occupied" && !isConfirmedC2C
                       ? "신청자가 있는 자리는 뺄 수 없어요."
-                      : slotState.kind === "empty" && isLastOpenSlot
+                      : canRemove && isLastOpenSlot
                         ? "마지막 멤버는 뺄 수 없어요."
                         : null;
                   const isRemoving =
@@ -2006,16 +2507,11 @@ export function HostedBuncheolManage({
                           </HelpText>
                         ) : null}
                       </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                          option.saleStatus?.toUpperCase() === "SOLD"
-                            ? "bg-black text-white"
-                            : "bg-[#eeeeee] text-black/60"
-                        }`}
-                      >
-                        {slotState.label}
-                      </span>
-                      {slotState.kind === "empty" ? (
+                      {slotState.extra ? (
+                        <StatusTag tone="extra">추가 모집</StatusTag>
+                      ) : null}
+                      <StatusTag tone={slotState.tone}>{slotState.label}</StatusTag>
+                      {canRemove ? (
                         <button
                           className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-[12px] font-semibold text-black/60 disabled:border-black/[0.06] disabled:text-black/25"
                           disabled={isLastOpenSlot || pendingC2CAction !== null}
@@ -2029,15 +2525,17 @@ export function HostedBuncheolManage({
                   );
                 })}
               </ul>
-              <button
-                className="mt-3 flex h-11 w-full items-center justify-center gap-1 rounded-full border border-black/10 bg-white text-[14px] font-semibold tracking-[-0.04em] text-black/70 disabled:text-black/25"
-                disabled={pendingC2CAction !== null}
-                onClick={() => void openAddMemberSheet()}
-                type="button"
-              >
-                <PlusIcon className="h-4 w-4" />
-                멤버 추가
-              </button>
+              {canEditMemberSlots ? (
+                <button
+                  className="mt-3 flex h-11 w-full items-center justify-center gap-1 rounded-full border border-black/10 bg-white text-[14px] font-semibold tracking-[-0.04em] text-black/70 disabled:text-black/25"
+                  disabled={pendingC2CAction !== null}
+                  onClick={() => void openAddMemberSheet()}
+                  type="button"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  멤버 추가
+                </button>
+              ) : null}
             </section>
           ) : null}
 
@@ -2168,9 +2666,6 @@ export function HostedBuncheolManage({
                   const isBundleAwaiting = bundle.slots.some((slot) =>
                     isParticipationAwaitingPaymentStatus(slot.status),
                   );
-                  const isBundleApplied = bundle.slots.some((slot) =>
-                    isParticipationAppliedStatus(slot.status),
-                  );
                   // 🔴 확정 대상은 서버가 슬롯마다 내려주는 confirmTarget 이다. 화면이 상태로
                   // 재판정하면 서버가 가진 집합과 갈려 409(BCH-115)가 영구히 난다.
                   // 판정이 없는 구 응답에서는 입금 가능 상태로 폴백한다.
@@ -2182,6 +2677,10 @@ export function HostedBuncheolManage({
                           isParticipationPaymentSentStatus(slot.status),
                     )
                     .map((slot) => slot.participationId);
+                  const acceptTargetIds = getAcceptTargetIds(bundle);
+                  const isPendingAccept = acceptTargetIds.length > 0;
+                  const releasability = getBundleReleasability(bundle);
+                  const isBundleExtra = head.extra === true;
                   const hasBundleId = Boolean(bundle.bundleId);
                   const isBundleConfirming =
                     pendingC2CAction === `confirm:${bundle.key}`;
@@ -2236,6 +2735,43 @@ export function HostedBuncheolManage({
                   const sentAtSlot = bundle.slots.find(
                     (slot) => slot.paymentSentAt,
                   );
+                  // 묶음 칩은 가장 뒤처진 자리의 상태로 정하고, 묶음에만 있는 두 경우(모두 확인, 「제외」 기한 지남)를 덮어쓴다.
+                  const bundleStatusSlot =
+                    bundle.slots.find((slot) =>
+                      isParticipationPaymentSentStatus(slot.status),
+                    ) ??
+                    bundle.slots.find((slot) =>
+                      isParticipationAwaitingPaymentStatus(slot.status),
+                    ) ??
+                    bundle.slots.find((slot) =>
+                      isParticipationAppliedStatus(slot.status),
+                    ) ??
+                    head;
+                  const bundleStatusTag: StatusChip = isBundleConfirmed
+                    ? { label: "입금 확인 완료", tone: "black" }
+                    : isBundleAwaiting &&
+                        !isBundleSent &&
+                        releasability === "RELEASABLE"
+                      ? { label: "기한 지남", tone: "warning" }
+                      : (getParticipationStatusChip(
+                          bundleStatusSlot,
+                          detail.status,
+                        ) ?? { label: "확인 필요", tone: "grey" });
+                  // 이름만 말줄임하고 표시는 줄 끝에 남긴다 — 닉네임이 길어도 추가 신청 묶음을 가를 수 있어야 한다.
+                  const extraApplyTag = isBundleExtra ? (
+                    <span className="ml-1.5 inline-flex shrink-0 rounded-full bg-brand-pale px-[7px] py-px text-[10.5px] font-bold text-brand-ink ring-1 ring-inset ring-brand-soft">
+                      추가 신청
+                    </span>
+                  ) : null;
+                  const showsNicknameLine =
+                    head.participantNickname !== depositorName &&
+                    !isSyntheticParticipantName(head.participantNickname);
+                  // 수락 전에 더 고른 자리가 같은 묶음에 붙으므로 묶음의 신청 시각은 가장 이른 자리 것이다.
+                  const bundleAppliedAt = bundle.slots
+                    .flatMap((slot) => (slot.appliedAt ? [slot.appliedAt] : []))
+                    .sort(
+                      (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+                    )[0];
                   const bundleTimeInfo =
                     isBundleSent && sentAtSlot?.paymentSentAt
                       ? ` · 보냈어요 ${formatKoreaDateTime(sentAtSlot.paymentSentAt)}`
@@ -2243,11 +2779,22 @@ export function HostedBuncheolManage({
                         ? ` · 기한 ${formatKoreaDateTime(head.dueAt)}`
                         : isBundleConfirmed && head.confirmedAt
                           ? ` · 확인 ${formatKoreaDateTime(head.confirmedAt)}`
-                          : "";
+                          : isPendingAccept && bundleAppliedAt
+                            ? ` · 신청 ${formatKoreaDateTime(bundleAppliedAt)}`
+                            : "";
 
                   return (
                     <article
-                      className="overflow-hidden rounded-[1.05rem] border border-black/10 bg-white px-4 py-3.5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]"
+                      className={`overflow-hidden rounded-[1.05rem] border bg-white px-4 py-3.5 ${
+                        isPendingAccept
+                          ? "scroll-mt-4 border-warning-ink/25 shadow-[0_0_0_3px_var(--warning-soft)]"
+                          : "border-black/10 shadow-[0_10px_28px_rgba(0,0,0,0.035)]"
+                      }`}
+                      id={
+                        bundle.key === firstPendingAcceptBundleKey
+                          ? EXTRA_ACCEPT_ANCHOR_ID
+                          : undefined
+                      }
                       key={bundle.key}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -2255,15 +2802,20 @@ export function HostedBuncheolManage({
                           {/* ⚠️ 값이 같으면 감춘다. 입금자명은 비면 닉네임으로 폴백하고(getDepositorName),
                               파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
                               같은 이름이 두 줄 뜬다. */}
-                          {head.participantNickname !== depositorName &&
-                          !isSyntheticParticipantName(head.participantNickname) ? (
-                            <p className="truncate text-[13px] font-semibold text-black/60">
-                              <span className="mr-1.5 text-black/35">참여자</span>
-                              {head.participantNickname}
+                          {showsNicknameLine ? (
+                            <p className="flex min-w-0 items-center text-[13px] font-semibold text-black/60">
+                              <span className="mr-1.5 shrink-0 text-black/35">참여자</span>
+                              <span className="min-w-0 truncate">
+                                {head.participantNickname}
+                              </span>
+                              {extraApplyTag}
                             </p>
                           ) : null}
-                          <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.04em]">
-                            입금자명 {depositorName}
+                          <p className="mt-0.5 flex min-w-0 items-center text-[14px] font-semibold tracking-[-0.04em]">
+                            <span className="min-w-0 truncate">
+                              입금자명 {depositorName}
+                            </span>
+                            {showsNicknameLine ? null : extraApplyTag}
                           </p>
                           <p className="mt-0.5 text-[12px] font-medium text-black/40">
                             {formatWonAmount(bundleTotal)}
@@ -2280,25 +2832,9 @@ export function HostedBuncheolManage({
                             </p>
                           ) : null}
                         </div>
-                        <span
-                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                            isBundleConfirmed
-                              ? "bg-black text-white"
-                              : isBundleSent
-                                ? "bg-[#D7FF5F] text-black"
-                                : "bg-[#eeeeee] text-black/60"
-                          }`}
-                        >
-                          {isBundleConfirmed
-                            ? "입금 확인 완료"
-                            : isBundleSent
-                              ? "보냈어요"
-                              : isBundleAwaiting
-                                ? "입금 대기"
-                                : isBundleApplied
-                                  ? "신청됨"
-                                  : "확인 필요"}
-                        </span>
+                        <StatusTag tone={bundleStatusTag.tone}>
+                          {bundleStatusTag.label}
+                        </StatusTag>
                       </div>
 
                       {/* 묶음으로 접으면서 "어느 자리를 잡았나" 가 흐려진다 — 칩으로 되살린다. */}
@@ -2313,6 +2849,45 @@ export function HostedBuncheolManage({
                         ))}
                       </div>
 
+                      {isPendingAccept ? (
+                        <>
+                          {hasBundleId ? null : (
+                            <HelpText className="mt-3" size="caption">
+                              {MISSING_BUNDLE_MESSAGE}
+                            </HelpText>
+                          )}
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              className="h-11 rounded-full bg-surface-2 text-[14px] font-semibold tracking-[-0.04em] text-black/60 disabled:text-black/25"
+                              disabled={!hasBundleId || pendingC2CAction !== null}
+                              onClick={() =>
+                                requestRejectExtraBundle(bundle, acceptTargetIds)
+                              }
+                              type="button"
+                            >
+                              {pendingC2CAction === `reject:${bundle.key}`
+                                ? "거절하는 중"
+                                : "거절"}
+                            </button>
+                            <button
+                              className="h-11 rounded-full bg-black text-[14px] font-semibold tracking-[-0.04em] text-brand-strong disabled:bg-black/15 disabled:text-black/35"
+                              disabled={!hasBundleId || pendingC2CAction !== null}
+                              onClick={() =>
+                                acceptExtraBundle(bundle, acceptTargetIds)
+                              }
+                              type="button"
+                            >
+                              {pendingC2CAction === `accept:${bundle.key}`
+                                ? "수락하는 중"
+                                : "수락"}
+                            </button>
+                          </div>
+                          <HelpText className="mt-2" size="caption">
+                            추가 신청을 수락하면 참여자가 24시간 안에 입금해요. 거절하면 그 자리는 다시 비어요.
+                          </HelpText>
+                        </>
+                      ) : null}
+
                       {/* 상태 화이트리스트로 게이트하면 모르는 status 에서 버튼이 0개인 유령 줄이 남는다.
                           서버가 입금확인 대상으로 내려 준 자리가 있을 때만 연다. */}
                       {!isBundleConfirmed && confirmTargetIds.length > 0 ? (
@@ -2322,6 +2897,29 @@ export function HostedBuncheolManage({
                               {MISSING_BUNDLE_MESSAGE}
                             </HelpText>
                           )}
+                          {releasability ? (
+                            <>
+                              <HelpText className="w-full" size="caption">
+                                {releasability === "RELEASABLE"
+                                  ? "입금 기한이 지났어요. 통장에 입금이 없다면 「제외」로 빼 주세요. 그 자리는 다시 비어요."
+                                  : `기한 ${formatKoreaDateTime(head.dueAt ?? undefined)}이 지나도 입금이 없으면 「제외」를 누를 수 있어요.`}
+                              </HelpText>
+                              <button
+                                className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3.5 text-[12px] font-semibold text-black/65 disabled:border-black/[0.06] disabled:text-black/25"
+                                disabled={
+                                  releasability !== "RELEASABLE" ||
+                                  !hasBundleId ||
+                                  pendingC2CAction !== null
+                                }
+                                onClick={() => requestReleaseBundle(bundle)}
+                                type="button"
+                              >
+                                {pendingC2CAction === `release:${bundle.key}`
+                                  ? "처리 중"
+                                  : "제외"}
+                              </button>
+                            </>
+                          ) : null}
                           {confirmTargetIds.length > 0 ? (
                             <button
                               className="h-9 shrink-0 rounded-full bg-black px-3.5 text-[12px] font-semibold text-white disabled:bg-black/15 disabled:text-black/35"
@@ -3031,7 +3629,10 @@ export function HostedBuncheolManage({
       ) : null}
 
       <ConfirmSheet
-        onCancel={() => setConfirmSheetRequest(null)}
+        onCancel={() => {
+          confirmSheetRequest?.onCancel?.();
+          setConfirmSheetRequest(null);
+        }}
         request={confirmSheetRequest}
       />
     </main>

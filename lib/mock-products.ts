@@ -42,9 +42,14 @@ export type ProductDetailItem = ProductCardItem & {
   hostEnded?: boolean | null;
   // 진행 확정 버튼 판정(서버 confirmCheck) — 개최 목록에서만 채운다.
   hostConfirmCheck?: ConfirmCheck | null;
+  // 추가 모집 스위치 값과 수락을 기다리는 추가 신청 묶음 수 — 개최 목록에서만 채운다.
+  hostExtraRecruitOpen?: boolean | null;
+  hostPendingAcceptCount?: number | null;
   courier: string;
   description: string;
   deadline: string;
+  // 진행 확정 분철이 끝났는지(상세 서버 판정). 없으면 null.
+  ended?: boolean | null;
   // 분철 flow_type — 없으면 LEGACY 취급(getFlowType). C2C 신청 플로우 분기 키.
   flowType?: string | null;
   // C2C 개최자 소통 채널(카카오 오픈채팅) — 없으면 null.

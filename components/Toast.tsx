@@ -15,6 +15,8 @@ import { createPortal } from "react-dom";
 
 const TOAST_DURATION_MS = 3200;
 const TOAST_LEAVE_MS = 200;
+// useAppToast 알림이 떠서 다 사라질 때까지 걸리는 시간.
+export const TOAST_VISIBLE_MS = TOAST_DURATION_MS + TOAST_LEAVE_MS;
 // 입력칸 옆 안내처럼 사용자가 이미 그 자리를 보고 있을 때 쓴다.
 export const BRIEF_TOAST_DURATION_MS = 1800;
 
