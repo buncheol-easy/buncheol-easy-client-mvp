@@ -52,6 +52,7 @@ import {
   createLoginHref,
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
+import { IMAGE_HOSTS } from "@/lib/image-hosts";
 import {
   clearAuthState,
   getInitialAuthState,
@@ -131,22 +132,15 @@ type HomeBanner = {
 // 2배가 넘는 후보를 받았다 (첫 배너는 priority 라 LCP 대역폭에 그대로 얹힌다).
 const HOME_BANNER_IMAGE_SIZES = "(min-width: 462px) 398px, calc(100vw - 2rem)";
 
-// next.config.ts images.remotePatterns 와 같은 목록. API 가 이 밖의 호스트를
-// 내려주면 next/image 로더가 throw(개발)하거나 400(프로덕션)이 나므로,
-// 미등록 호스트는 최적화를 끄고 원본을 그대로 그린다.
-const OPTIMIZED_BANNER_HOSTS = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
-
+// API 가 IMAGE_HOSTS 밖의 호스트를 내려주면 next/image 로더가 throw(개발)하거나
+// 400(프로덕션)이 나므로, 미등록 호스트는 최적화를 끄고 원본을 그대로 그린다.
 function isOptimizableBannerSrc(src: string) {
   if (src.startsWith("/")) {
     return true;
   }
 
   try {
-    return OPTIMIZED_BANNER_HOSTS.has(new URL(src).hostname);
+    return IMAGE_HOSTS.has(new URL(src).hostname);
   } catch {
     return false;
   }
