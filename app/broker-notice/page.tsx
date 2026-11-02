@@ -1,4 +1,8 @@
 import { PolicyPageContent } from "@/components/PolicyPageContent";
+import {
+  REVISION_EFFECTIVE_DATE,
+  REVISION_HISTORY_DATE,
+} from "@/lib/policy-revision";
 import { buildPageMetadata } from "@/lib/seo";
 import { CONTACT_EMAIL, KAKAO_CHANNEL_URL } from "@/lib/site";
 import { whiteChromeViewport } from "@/lib/system-chrome";
@@ -16,8 +20,8 @@ export default function BrokerNoticePage() {
   return (
     <PolicyPageContent
       title="통신판매중개자 고지"
-      effectiveDate="2026.8.11"
-      description="전자상거래법 제20조제1항에 따른 통신판매중개자 고지입니다. 회원이 개최하는 분철에서 분철이지의 지위와 책임 범위를 안내합니다. 회원 개최 분철은 순차적으로 열릴 예정이며, 열리기 전까지 서비스의 모든 분철은 분철이지가 직접 개최하는 분철입니다."
+      effectiveDate={REVISION_EFFECTIVE_DATE}
+      description="전자상거래법 제20조제1항에 따른 통신판매중개자 고지입니다. 회원이 개최하는 분철에서 분철이지의 지위와 책임 범위를 안내합니다."
       sections={[
         {
           title: "분철 종류에 따라 분철이지의 지위가 다릅니다",
@@ -45,6 +49,7 @@ export default function BrokerNoticePage() {
             "개최자에게 거래조건을 사실대로 등록할 의무와 기한 내 이행 의무를 부과하고, 위반이 확인되면 분철 숨김·강제 취소, 개최 권한 제한, 회원 자격 정지 등의 조치를 취합니다.",
             "개최 자격을 성인 회원으로 제한하고, 개최 이력과 거래 이행 실적에 따라 개최 권한의 범위를 조정합니다.",
             "참여자가 송금 사실을 직접 표시할 수 있게 하여 입금 시점이 기록으로 남도록 하고, 개최자가 확인을 지연하는 경우의 처리 기준을 정해 운영합니다.",
+            "입금 단계가 시작된 뒤 개최자가 분철을 진행할 수 없게 되면, 참여자의 입금 내역과 개최자의 대금 반환 계획을 확인한 뒤 분철을 취소하고 참여자에게 알립니다.",
             "회원 간 분쟁이 발생하면 사실관계 확인, 연락 중개, 신고 접수·처리 등으로 해결을 조력합니다.",
           ],
         },
@@ -63,7 +68,7 @@ export default function BrokerNoticePage() {
             "회원 개최 분철은 개최자 개인과 직접 거래하는 방식입니다. 참여 전에 개최자의 개최 이력과 상품 정보를 확인해 주세요.",
             "입금은 반드시 서비스 화면에 표시된 개최자 계좌로만 진행해 주세요. 개최자가 오픈채팅 등 서비스 외부에서 다른 계좌를 안내하는 경우 응하지 마시고 고객문의로 알려 주세요.",
             "송금 후에는 참여 내역에서 입금 사실을 표시해 주세요. 입금 시점이 기록으로 남아 분쟁이 생겼을 때 근거가 됩니다.",
-            "성사 확정 전에는 입금이 이루어지지 않으므로, 확정 전 취소에는 환불 절차가 발생하지 않습니다.",
+            "모집이 끝나 입금 단계가 시작되기 전에는 입금이 이루어지지 않으므로, 그 전에 취소되면 환불 절차가 발생하지 않습니다.",
           ],
         },
         {
@@ -80,6 +85,13 @@ export default function BrokerNoticePage() {
             `이메일: ${CONTACT_EMAIL}`,
             "전화: 010-8678-2427",
             `카카오 채널: ${KAKAO_CHANNEL_URL}`,
+          ],
+        },
+        {
+          title: "시행일",
+          items: [
+            "이 고지는 2026년 8월 11일부터 시행합니다.",
+            `${REVISION_HISTORY_DATE} 개정: 회원 개최 분철의 입금 단계 도입에 맞춰 거래 전 확인 사항을 고치고, 개최자가 분철을 진행할 수 없게 된 경우 분철이지가 하는 일을 추가했습니다. 개정 고지는 ${REVISION_HISTORY_DATE}부터 시행합니다.`,
           ],
         },
       ]}
