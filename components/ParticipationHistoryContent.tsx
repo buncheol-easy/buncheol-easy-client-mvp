@@ -1127,14 +1127,6 @@ function ExtraApplyStatusNotice({ bid, now }: { bid: BidRecord; now: Date }) {
   return null;
 }
 
-// 썸네일 아래 칩 줄의 「추가 신청」 — 이 묶음이 진행 확정 뒤 추가 신청으로 들어왔음을 알린다.
-function ExtraApplyChip() {
-  return (
-    <span className="w-full truncate whitespace-nowrap rounded-full bg-brand-pale px-1 py-0.5 text-center text-[10px] font-semibold text-brand-ink ring-1 ring-inset ring-brand-soft">
-      추가 신청
-    </span>
-  );
-}
 
 // 기한 경과 여부 — 표시 전용이라 아무것도 잠그지 않는다. C2C 기한은 "지나면 개최자가 정리에 나설 수
 // 있는 시각" 이지 참여가 죽는 시각이 아니다 (docs/71 §8-1).
@@ -1177,6 +1169,56 @@ function isDeliveryInProgress(bid: BidRecord) {
     isDeliveryShippingStatus(bid.deliveryStatus) ||
     isDeliveryCompletedStatus(bid.deliveryStatus) ||
     Boolean(bid.trackingNumber)
+  );
+}
+
+function getExtraApplyStatusChip(bid: BidRecord, now: Date) {
+  if (isBidRecordCancelled(bid)) {
+    return { className: "bg-surface-2 text-black/45", label: "취소" };
+  }
+
+  if (isBidRecordPaymentConfirmed(bid)) {
+    return {
+      className: "bg-black text-white",
+      label: isDeliveryCompletedStatus(bid.deliveryStatus)
+        ? "배송 완료"
+        : isDeliveryInProgress(bid)
+          ? "배송 중"
+          : "진행 확정",
+    };
+  }
+
+  if (isParticipationPaymentSentStatus(bid.participationStatus)) {
+    return { className: "bg-brand-strong text-black", label: "보냈어요" };
+  }
+
+  if (isParticipationAwaitingPaymentStatus(bid.participationStatus)) {
+    return isBidRecordPaymentOverdue(bid, now)
+      ? { className: "bg-black text-white", label: "기한 지남" }
+      : { className: "bg-black text-brand-strong", label: "입금 필요" };
+  }
+
+  return { className: "bg-warning-soft text-warning-ink", label: "수락 대기" };
+}
+
+const thumbnailChipClassName =
+  "w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold";
+
+// 추가 신청의 분철은 늘 진행 확정이라, 분철 상태 칩을 그대로 두면 수락 전이나 거절된 신청도 확정처럼 읽힌다.
+function ExtraApplyChips({ bid, now }: { bid: BidRecord; now: Date }) {
+  const statusChip = getExtraApplyStatusChip(bid, now);
+
+  return (
+    <>
+      <span
+        className={`${thumbnailChipClassName} bg-brand-pale text-brand-ink ring-1 ring-inset ring-brand-soft`}
+      >
+        추가 신청
+      </span>
+      <span className={`${thumbnailChipClassName} ${statusChip.className}`}>
+        {statusChip.label}
+      </span>
+    </>
   );
 }
 
@@ -3368,20 +3410,25 @@ export function ParticipationHistoryContent({
                 />
               ) : null}
             </Link>
-            <span
-              className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
-            >
-              {buncheolChip.label}
-            </span>
-            {/* 자리 1개 카드와 같은 칩이다. 진행바는 C2C 기한 경과를 반영하지 않고(만료 판정이
-                LEGACY 전용) 분철 칩은 분철 축만 보므로, 이걸 빼면 묶음 카드만 "개최자가 취소할
-                수 있는 구간" 에 들어온 것을 목록에서 알리지 못한다. */}
-            {isOverdue ? (
-              <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
-                기한 지남
-              </span>
-            ) : null}
-            {head.extra === true ? <ExtraApplyChip /> : null}
+            {head.extra === true ? (
+              <ExtraApplyChips bid={progressSlot} now={now} />
+            ) : (
+              <>
+                <span
+                  className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+                >
+                  {buncheolChip.label}
+                </span>
+                {/* 자리 1개 카드와 같은 칩이다. 진행바는 C2C 기한 경과를 반영하지 않고(만료 판정이
+                    LEGACY 전용) 분철 칩은 분철 축만 보므로, 이걸 빼면 묶음 카드만 "개최자가 취소할
+                    수 있는 구간" 에 들어온 것을 목록에서 알리지 못한다. */}
+                {isOverdue ? (
+                  <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
+                    기한 지남
+                  </span>
+                ) : null}
+              </>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <Link
@@ -4264,21 +4311,26 @@ export function ParticipationHistoryContent({
                           />
                         ) : null}
                       </Link>
-                      {/* 썸네일 폭(56px)에 갇힌 칩이라 라벨이 길면 글자가 잘려 나갔다
-                          ("입금 모으는 중" → "입금 모으는"). 넘치면 말줄임으로 드러나게 한다. */}
-                      <span
-                        className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
-                      >
-                        {buncheolChip.label}
-                      </span>
-                      {/* 잠금이 풀리면서 기한 지난 카드가 기한 안 카드와 시각적으로 같아졌다.
-                          "개최자가 취소할 수 있는 구간" 에 들어온 것을 목록에서도 알린다. */}
-                      {isOverdue ? (
-                        <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
-                          기한 지남
-                        </span>
-                      ) : null}
-                      {bid.extra === true ? <ExtraApplyChip /> : null}
+                      {bid.extra === true ? (
+                        <ExtraApplyChips bid={bid} now={now} />
+                      ) : (
+                        <>
+                          {/* 썸네일 폭(56px)에 갇힌 칩이라 라벨이 길면 글자가 잘려 나갔다
+                              ("입금 모으는 중" → "입금 모으는"). 넘치면 말줄임으로 드러나게 한다. */}
+                          <span
+                            className={`w-full truncate whitespace-nowrap rounded-full px-1 py-0.5 text-center text-[10px] font-semibold ${buncheolChipToneClasses[buncheolChip.tone]}`}
+                          >
+                            {buncheolChip.label}
+                          </span>
+                          {/* 잠금이 풀리면서 기한 지난 카드가 기한 안 카드와 시각적으로 같아졌다.
+                              "개최자가 취소할 수 있는 구간" 에 들어온 것을 목록에서도 알린다. */}
+                          {isOverdue ? (
+                            <span className="w-full truncate whitespace-nowrap rounded-full bg-black px-1 py-0.5 text-center text-[10px] font-semibold text-[#D7FF5F]">
+                              기한 지남
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <Link
