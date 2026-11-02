@@ -555,6 +555,8 @@ export type MyParticipation = {
   // C2C "보냈어요" 마킹 시각 — 마킹 안 했으면 null.
   paymentSentAt?: string | null;
   createdAt?: string | null;
+  // 신청 시각. createdAt 과 합치지 않는다 — createdAt 은 운영진 입금 기한 폴백의 기준이라 값이 차면 화면 기한이 바뀐다.
+  appliedAt?: string | null;
   hostBankAccount?: BankAccountInfo | null;
   // 참여 시 등록한 환불계좌 예금주 = 입금자명. 입금 안내 시트에만 있고 결제 정보 시트엔 빠져 있어
   // 나중에 계좌를 다시 열어본 사용자가 다른 이름으로 송금할 위험이 있었다 (docs/53 Q-17).
@@ -4887,12 +4889,12 @@ export async function requestMyParticipations(accessToken: string) {
           null,
         createdAt:
           getOptionalStringValue(record, [
-            "appliedAt",
             "createdAt",
             "participationCreatedAt",
             "participatedAt",
             "requestedAt",
           ]) ?? null,
+        appliedAt: getOptionalStringValue(record, ["appliedAt"]) ?? null,
         hostBankAccount:
           getNestedBankAccountInfo(record, [
             "hostBankAccount",

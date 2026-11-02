@@ -626,6 +626,7 @@ type BidRecord = {
   paymentDueAt?: string | null;
   paymentSentAt?: string | null;
   createdAt?: string | null;
+  appliedAt?: string | null;
   participationStatus?: string;
   cancelReason?: string | null;
   // 서버가 취소 API 게이트와 같은 판정으로 내려주는 취소 가능 여부·사유 (docs/56 S-1).
@@ -1222,7 +1223,7 @@ function getExtraApplyTimeRow(statusSlot: BidRecord, slots: BidRecord[]) {
 
   // 수락 전에 더 고른 자리가 같은 묶음에 붙으므로 묶음의 신청 시각은 가장 이른 자리 것이다.
   const appliedAt = slots
-    .flatMap((slot) => (slot.createdAt ? [slot.createdAt] : []))
+    .flatMap((slot) => (slot.appliedAt ? [slot.appliedAt] : []))
     .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
 
   return appliedAt
@@ -1775,6 +1776,7 @@ function getBidRecordFromParticipation(
     paymentDueAt:
       participation.paymentDueAt ?? cachedPayment?.paymentDueAt ?? null,
     createdAt: participation.createdAt,
+    appliedAt: participation.appliedAt ?? null,
     productId: participation.buncheolId,
     participationStatus,
     cancelReason: participation.cancelReason ?? null,
