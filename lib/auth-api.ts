@@ -4887,6 +4887,7 @@ export async function requestMyParticipations(accessToken: string) {
           null,
         createdAt:
           getOptionalStringValue(record, [
+            "appliedAt",
             "createdAt",
             "participationCreatedAt",
             "participatedAt",

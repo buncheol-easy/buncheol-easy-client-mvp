@@ -20,6 +20,7 @@ import { StaffContactLink } from "@/components/StaffContactLink";
 import { StatusTag, type StatusTagTone } from "@/components/StatusTag";
 import { Switch } from "@/components/Switch";
 import { useAppToast } from "@/components/Toast";
+import { formatKoreaDateTime } from "@/lib/format-korea-date-time";
 import {
   acceptBundle,
   addBuncheolMember,
@@ -110,45 +111,6 @@ function getDepositorName(participant: BuncheolManagementParticipant) {
   // 파서 합성 폴백(「참여 {id}」)은 통장 대조에 쓸 수 없다 — 입금자명 노출 지점 전부가
   // 이 함수를 거치므로 여기 한 곳에서 흡수한다.
   return isSyntheticParticipantName(name) ? "확인 필요" : name;
-}
-
-function formatKoreaDateTime(value: string | undefined) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  /*
-   * 참여 내역·개최 기록과 같은 "8월 12일 17:30" 모양으로 맞춘다.
-   * 같은 정보가 화면마다 "8.12 17시" / "2026년 07월 05일 14시" / "2026. 12. 22. 20:00"
-   * 세 가지로 보이고 있었다. 연도는 올해가 아닐 때만 붙인다.
-   */
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "numeric",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "numeric",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const currentYear = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).format(new Date());
-  const yearPrefix = currentYear.includes(partMap.year)
-    ? ""
-    : `${partMap.year}년 `;
-
-  return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
 }
 
 // 금액을 하나도 모르면 0 이 아니라 null — 0 은 「0원」으로 그려져 실제 0원 자리와 구분되지 않는다.

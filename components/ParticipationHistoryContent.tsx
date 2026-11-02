@@ -39,6 +39,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { FloatingHelpButton } from "@/components/FloatingHelpButton";
 import { ProductPhoto } from "@/components/ProductPhoto";
 import { createLoginHref } from "@/lib/auth-navigation";
+import { formatKoreaDateTime } from "@/lib/format-korea-date-time";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import { getFreshAccessToken } from "@/lib/auth-session";
 import {
@@ -1199,6 +1200,34 @@ function getExtraApplyStatusChip(bid: BidRecord, now: Date) {
   }
 
   return { className: "bg-warning-soft text-warning-ink", label: "수락 대기" };
+}
+
+// 추가 신청 카드 금액 상자의 마지막 줄. 모집 기한은 이미 지난 시각이라 이 신청의 시각을 보인다.
+// 응답에 값이 없으면 줄을 그리지 않는다.
+function getExtraApplyTimeRow(statusSlot: BidRecord, slots: BidRecord[]) {
+  const isPaymentStage =
+    !isBidRecordCancelled(statusSlot) &&
+    !isBidRecordPaymentConfirmed(statusSlot) &&
+    (isParticipationAwaitingPaymentStatus(statusSlot.participationStatus) ||
+      isParticipationPaymentSentStatus(statusSlot.participationStatus));
+
+  if (isPaymentStage) {
+    return statusSlot.paymentDueAt
+      ? {
+          label: "입금 기한",
+          value: formatKoreaDateTime(statusSlot.paymentDueAt),
+        }
+      : null;
+  }
+
+  // 수락 전에 더 고른 자리가 같은 묶음에 붙으므로 묶음의 신청 시각은 가장 이른 자리 것이다.
+  const appliedAt = slots
+    .flatMap((slot) => (slot.createdAt ? [slot.createdAt] : []))
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
+
+  return appliedAt
+    ? { label: "신청", value: formatKoreaDateTime(appliedAt) }
+    : null;
 }
 
 const thumbnailChipClassName =
@@ -3351,6 +3380,10 @@ export function ParticipationHistoryContent({
       ) ??
       head;
     const progressSteps = getBidRecordProgressSteps(progressSlot, now);
+    const lastAmountRow =
+      head.extra === true
+        ? getExtraApplyTimeRow(progressSlot, slots)
+        : { label: "모집 기한", value: formatCompactDeadline(head.deadline) };
     // 금액은 「이 이체에 들어가는 자리」만 더한다 — 취소·확정 자리를 더하면 배송비가 이중 계산된다.
     const amountSlots = getBundleTransferSlots(slots);
     const bundleProductAmount = amountSlots.reduce(
@@ -3488,14 +3521,16 @@ export function ParticipationHistoryContent({
                       : "-"}
                   </dd>
                 </div>
-                <div className="flex items-baseline justify-between gap-2">
-                  <dt className="shrink-0 font-medium text-black/35">
-                    모집 기한
-                  </dt>
-                  <dd className="font-semibold tracking-[-0.03em]">
-                    {formatCompactDeadline(head.deadline)}
-                  </dd>
-                </div>
+                {lastAmountRow ? (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="shrink-0 font-medium text-black/35">
+                      {lastAmountRow.label}
+                    </dt>
+                    <dd className="font-semibold tracking-[-0.03em]">
+                      {lastAmountRow.value}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
             </div>
 
@@ -4244,6 +4279,13 @@ export function ParticipationHistoryContent({
                   ? getSafeOpenChatHref(bid.openChatUrl)
                   : null;
               const progressSteps = getBidRecordProgressSteps(bid, now);
+              const lastAmountRow =
+                bid.extra === true
+                  ? getExtraApplyTimeRow(bid, slots)
+                  : {
+                      label: "모집 기한",
+                      value: formatCompactDeadline(bid.deadline),
+                    };
               const cardShippingFee =
                 typeof bid.shippingFee === "number" ? bid.shippingFee : null;
               const cardTotalAmount = getBidRecordPaymentTotal(bid);
@@ -4380,14 +4422,16 @@ export function ParticipationHistoryContent({
                                 : "-"}
                             </dd>
                           </div>
-                          <div className="flex items-baseline justify-between gap-2">
-                            <dt className="shrink-0 font-medium text-black/35">
-                              모집 기한
-                            </dt>
-                            <dd className="truncate font-semibold tracking-[-0.03em]">
-                              {formatCompactDeadline(bid.deadline)}
-                            </dd>
-                          </div>
+                          {lastAmountRow ? (
+                            <div className="flex items-baseline justify-between gap-2">
+                              <dt className="shrink-0 font-medium text-black/35">
+                                {lastAmountRow.label}
+                              </dt>
+                              <dd className="truncate font-semibold tracking-[-0.03em]">
+                                {lastAmountRow.value}
+                              </dd>
+                            </div>
+                          ) : null}
                         </dl>
                       </div>
 
