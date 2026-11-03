@@ -17,7 +17,11 @@ import {
   type ConfirmSheetDetail,
   type ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
-import { AiDraftCard, type AiDraftForForm } from "@/components/AiDraftCard";
+import {
+  AiDraftStart,
+  type AiDraftForForm,
+  type AiDraftStep,
+} from "@/components/AiDraftStart";
 import {
   BRIEF_TOAST_DURATION_MS,
   Toast,
@@ -288,10 +292,68 @@ function formatReleaseDateLabel(value: string) {
   return `${yearLabel}${month}월 ${day}일(${weekday})`;
 }
 
-function AiFilledTag() {
+// AI 를 기다리는 동안 칸 안에서 반짝이는 줄. 가운데에 겹쳐 그린다.
+function AiDraftShim({ widths }: { widths: string[] }) {
   return (
-    <span className="ml-1.5 inline-flex rounded-full bg-[#CFE86B] px-1.5 align-[1px] text-[10px] font-semibold leading-4 text-black">
-      AI
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-x-4 top-1/2 flex -translate-y-1/2 flex-col gap-2"
+    >
+      {widths.map((width) => (
+        <span
+          className="ai-draft-shim block h-3 rounded-full"
+          key={width}
+          style={{ width }}
+        />
+      ))}
+    </span>
+  );
+}
+
+const aiMirrorInputClassName =
+  "flex h-14 items-center whitespace-pre border border-transparent px-4 text-[17px] font-semibold tracking-[-0.04em]";
+const aiMirrorTextareaClassName =
+  "whitespace-pre-wrap break-words border border-transparent px-4 py-3 text-[15px] leading-6 tracking-[-0.04em]";
+
+// 입력칸은 글자 일부에 배경을 깔 수 없다. AI 값 그대로인 동안 칸의 글자는 투명하게 두고, 같은 글을 표시 전용으로
+// 위에 그린다. 누르면(포커스) 표시를 걷어 칸의 글자가 그대로 보이므로 둘의 줄바꿈이 어긋나도 드러나지 않는다.
+function AiFieldFrame({
+  children,
+  filledValue,
+  isPending,
+  mirrorClassName,
+  shimWidths,
+}: {
+  children: ReactNode;
+  filledValue?: string;
+  isPending: boolean;
+  mirrorClassName: string;
+  shimWidths: string[];
+}) {
+  const mirrorRef = useRef<HTMLSpanElement | null>(null);
+
+  return (
+    <span
+      className={`ai-field-frame relative mt-2 block ${
+        filledValue ? "ai-field-frame--filled" : ""
+      }`}
+      onScrollCapture={(event) => {
+        if (mirrorRef.current) {
+          mirrorRef.current.scrollTop = (event.target as HTMLElement).scrollTop;
+        }
+      }}
+    >
+      {children}
+      {filledValue ? (
+        <span
+          aria-hidden
+          className={`ai-field-frame__mirror ${mirrorClassName}`}
+          ref={mirrorRef}
+        >
+          <span className="ai-filled-mark">{filledValue}</span>
+        </span>
+      ) : null}
+      {isPending ? <AiDraftShim widths={shimWidths} /> : null}
     </span>
   );
 }
@@ -843,6 +905,12 @@ export function UploadProductForm({
     releaseDate: string | null;
   } | null>(null);
   const [isAiDraftPending, setIsAiDraftPending] = useState(false);
+  // 새 개최는 AI 를 쓸 수 있는지 알 때까지 폼을 열지 않는다 — 폼이 보였다가 시작 화면으로 바뀌지 않게.
+  const [aiStep, setAiStep] = useState<AiDraftStep>(
+    isEditMode ? "form" : "checking",
+  );
+  const [hasAiStart, setHasAiStart] = useState(false);
+  const [aiFilledCount, setAiFilledCount] = useState(0);
   const [aiConfirmRequest, setAiConfirmRequest] =
     useState<ConfirmSheetRequest | null>(null);
   const [isAiGroupPickNeeded, setIsAiGroupPickNeeded] = useState(false);
@@ -889,6 +957,18 @@ export function UploadProductForm({
       formSignature !== baselineFormSignatureRef.current
     : // AI 를 기다리는 동안 나가면 결과를 못 받는다 — 빈 폼이어도 묻는다.
       isAiDraftPending || formSignature !== emptyFormSignatureRef.current;
+  // 시작 화면 흐름 안에서 뒤로 갈 곳. null 이면 이 화면을 나간다. 다시 채우러 온 사람은 폼으로 돌아간다.
+  const aiBackStep: AiDraftStep | null = !hasAiStart
+    ? null
+    : aiStep === "input"
+      ? isFormDirty
+        ? "form"
+        : "start"
+      : aiStep === "form" && !isFormDirty
+        ? "start"
+        : null;
+  // 시작 화면 다음부터는 기기 뒤로가기도 한 칸 뒤로 가야 하니 입력 전이어도 막이 칸을 넣는다.
+  const shouldHoldDeviceBack = isFormDirty || aiBackStep !== null;
 
   // 수정 모드 기준선 — 불러오기가 끝나 editingProduct 가 채워진 시점의 폼 값을 기억한다.
   useEffect(() => {
@@ -944,6 +1024,11 @@ export function UploadProductForm({
 
   // 이탈 요청(헤더 ‹) — 폼에 손댄 흔적이 없으면 그대로 보내고, 있으면 확인 시트를 띄운다.
   function requestExit() {
+    if (aiBackStep) {
+      setAiStep(aiBackStep);
+      return;
+    }
+
     if (!isFormDirty) {
       void leaveToExitDestination();
       return;
@@ -1014,6 +1099,11 @@ export function UploadProductForm({
       return;
     }
 
+    if (aiBackStep) {
+      setAiStep(aiBackStep);
+      return;
+    }
+
     // 입력을 다 지웠다면 사용자가 누른 뒤로가기를 그대로 이어 준다.
     if (!isFormDirty) {
       window.history.back();
@@ -1075,7 +1165,7 @@ export function UploadProductForm({
   }, []);
 
   useEffect(() => {
-    if (!isFormDirty || isExitConfirmOpen) {
+    if (!shouldHoldDeviceBack || isExitConfirmOpen) {
       return;
     }
 
@@ -1099,7 +1189,14 @@ export function UploadProductForm({
       document.removeEventListener("pointerdown", handleUserInput, true);
       document.removeEventListener("keydown", handleUserInput, true);
     };
-  }, [isExitConfirmOpen, isFormDirty]);
+  }, [isExitConfirmOpen, shouldHoldDeviceBack]);
+
+  // AI 를 기다리기 시작하면 폼 맨 위부터 보여 준다.
+  useEffect(() => {
+    if (isAiDraftPending) {
+      formScrollRef.current?.scrollTo({ top: 0 });
+    }
+  }, [isAiDraftPending]);
 
   // 입력이 있을 때 새로고침·탭 닫기 경고(브라우저 기본 문구). 앱 안 이동 직전에는 풀어 둔다.
   useEffect(() => {
@@ -3193,29 +3290,54 @@ export function UploadProductForm({
               </div>
             </header>
 
+            {isEditMode ? null : (
+              <AiDraftStart
+                getFieldsToReplace={getAiFieldsToReplace}
+                onApply={applyAiDraft}
+                onAvailabilityChange={setHasAiStart}
+                onConfirmRequest={(request) =>
+                  setAiConfirmRequest({
+                    ...request,
+                    onConfirm: () => {
+                      setAiConfirmRequest(null);
+                      request.onConfirm();
+                    },
+                  })
+                }
+                onFilled={setAiFilledCount}
+                onPendingChange={setIsAiDraftPending}
+                onStepChange={setAiStep}
+                step={aiStep}
+              />
+            )}
             <form
               className="tab-content-enter app-page-scroll min-h-0 flex-1 overflow-y-auto pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+              hidden={aiStep !== "form"}
               onSubmit={(event) => event.preventDefault()}
               ref={formScrollRef}
             >
-          {isEditMode ? null : (
-            <AiDraftCard
-              getFieldsToReplace={getAiFieldsToReplace}
-              onApply={applyAiDraft}
-              onConfirmRequest={(request) =>
-                setAiConfirmRequest({
-                  ...request,
-                  onConfirm: () => {
-                    setAiConfirmRequest(null);
-                    request.onConfirm();
-                  },
-                })
-              }
-              onPendingChange={setIsAiDraftPending}
-            />
-          )}
+          {aiFilledCount > 0 && !isAiDraftPending ? (
+            <div className="flex items-center gap-2.5 px-5 pt-4" role="status">
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-strong text-black">
+                <CheckIcon />
+              </span>
+              <p className="min-w-0 flex-1 text-[14px] font-semibold tracking-[-0.04em]">
+                AI가 {aiFilledCount}칸을 채웠어요. 확인해 주세요.
+              </p>
+              <button
+                aria-label="다른 주소로 다시 채우기"
+                className="shrink-0 text-[13px] font-semibold text-black/55 underline underline-offset-2"
+                onClick={() => setAiStep("input")}
+                type="button"
+              >
+                다시
+              </button>
+            </div>
+          ) : null}
           <section
-            className="upload-ai-lock px-4 pt-4"
+            className={`upload-ai-lock px-4 pt-4 ${
+              coverPhoto ? "upload-ai-lock--dim" : ""
+            }`}
             inert={isAiDraftPending}
             ref={registerSubmitField("photos")}
           >
@@ -3230,7 +3352,11 @@ export function UploadProductForm({
                     {photos.length}/{maxPhotos}
                   </span>
                 </p>
-                <label className="mt-2.5 flex h-[76px] w-[76px] cursor-pointer items-center justify-center rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA] focus-within:ring-2 focus-within:ring-black">
+                <label
+                  className={`mt-2.5 flex h-[76px] w-[76px] cursor-pointer items-center justify-center rounded-[0.8rem] border border-[#CDEB55] bg-[#F7FBEA] focus-within:ring-2 focus-within:ring-black ${
+                    isAiDraftPending ? "ai-draft-shim" : ""
+                  }`}
+                >
                   <CameraIcon className="h-6 w-6 text-brand-ink" />
                   <input
                     accept="image/*"
@@ -3313,7 +3439,7 @@ export function UploadProductForm({
                             />
                           </button>
                           {photo.id.startsWith(aiPhotoIdPrefix) ? (
-                            <span className="pointer-events-none absolute left-1 top-1 rounded-full bg-[#CFE86B] px-1.5 text-[10px] font-semibold leading-4 text-black">
+                            <span className="pointer-events-none absolute left-1 top-1 rounded-[0.3rem] bg-brand-strong px-1 text-[9px] font-bold leading-[14px] text-black">
                               AI
                             </span>
                           ) : null}
@@ -3372,18 +3498,24 @@ export function UploadProductForm({
               <label className="block">
                 <span className="text-[13px] font-semibold text-black/45">
                   상품 제목
-                  {title && title === aiFilledValues.title ? (
-                    <AiFilledTag />
-                  ) : null}
                 </span>
-                <input
-                  {...getSubmitFieldErrorProps("title")}
-                  className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
-                  maxLength={maxTitleLength}
-                  onChange={(event) => setTitle(event.currentTarget.value)}
-                  placeholder="예: LOVE DIVE 원영 미공포 분철"
-                  value={title}
-                />
+                <AiFieldFrame
+                  filledValue={
+                    title && title === aiFilledValues.title ? title : undefined
+                  }
+                  isPending={isAiDraftPending}
+                  mirrorClassName={aiMirrorInputClassName}
+                  shimWidths={["72%"]}
+                >
+                  <input
+                    {...getSubmitFieldErrorProps("title")}
+                    className="h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    maxLength={maxTitleLength}
+                    onChange={(event) => setTitle(event.currentTarget.value)}
+                    placeholder="예: LOVE DIVE 원영 미공포 분철"
+                    value={title}
+                  />
+                </AiFieldFrame>
                 <span
                   className={`mt-1.5 block text-right text-[12px] font-semibold ${
                     isTitleOverLimit ? "text-[#c03131]" : "text-black/35"
@@ -3403,22 +3535,30 @@ export function UploadProductForm({
               <label className="block">
                 <span className="text-[13px] font-semibold text-black/45">
                   구매처
-                  {purchaseSource &&
-                  purchaseSource === aiFilledValues.purchaseSource ? (
-                    <AiFilledTag />
-                  ) : null}
                 </span>
-                <input
-                  {...getSubmitFieldErrorProps("purchaseSource")}
-                  className="mt-2 h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/60"
-                  disabled={isApiEditMode}
-                  maxLength={maxPurchaseSourceLength}
-                  onChange={(event) =>
-                    setPurchaseSource(event.currentTarget.value)
+                <AiFieldFrame
+                  filledValue={
+                    purchaseSource &&
+                    purchaseSource === aiFilledValues.purchaseSource
+                      ? purchaseSource
+                      : undefined
                   }
-                  placeholder="위버스샵, 스타쉽 스퀘어, 양도자 구매처 등"
-                  value={purchaseSource}
-                />
+                  isPending={isAiDraftPending}
+                  mirrorClassName={aiMirrorInputClassName}
+                  shimWidths={["44%"]}
+                >
+                  <input
+                    {...getSubmitFieldErrorProps("purchaseSource")}
+                    className="h-14 w-full rounded-[0.9rem] border border-black/10 px-4 text-[17px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black disabled:bg-[#f7f7f7] disabled:text-black/60"
+                    disabled={isApiEditMode}
+                    maxLength={maxPurchaseSourceLength}
+                    onChange={(event) =>
+                      setPurchaseSource(event.currentTarget.value)
+                    }
+                    placeholder="위버스샵, 스타쉽 스퀘어, 양도자 구매처 등"
+                    value={purchaseSource}
+                  />
+                </AiFieldFrame>
                 <span
                   className={`mt-1.5 block text-right text-[12px] font-semibold ${
                     isPurchaseSourceOverLimit
@@ -3433,16 +3573,14 @@ export function UploadProductForm({
             </div>
 
             <div
-              className="upload-ai-lock mt-7 border-t border-black/10 pt-6"
+              className={`upload-ai-lock mt-7 border-t border-black/10 pt-6 ${
+                selectedGroup ? "upload-ai-lock--dim" : ""
+              }`}
               inert={isAiDraftPending}
               ref={registerSubmitField("members")}
             >
               <h2 className="text-[18px] font-semibold tracking-[-0.05em]">
                 아이돌 선택
-                {selectedGroupId &&
-                selectedGroupId === aiFilledValues.groupId ? (
-                  <AiFilledTag />
-                ) : null}
               </h2>
               {renderSubmitFieldError("members")}
               {selectedGroup ? (
@@ -3456,7 +3594,13 @@ export function UploadProductForm({
                         선택된 아이돌
                       </span>
                       <span className="mt-1 block text-[17px] font-semibold tracking-[-0.05em]">
-                        {selectedGroup.name}
+                        {selectedGroup.id === aiFilledValues.groupId ? (
+                          <span className="ai-filled-mark">
+                            {selectedGroup.name}
+                          </span>
+                        ) : (
+                          selectedGroup.name
+                        )}
                       </span>
                     </span>
                     <button
@@ -3480,7 +3624,7 @@ export function UploadProductForm({
                     </span>
                   </div>
                   {aiReference?.listPrice ? (
-                    <p className="mt-2 rounded-[0.65rem] bg-[#F7FBEA] px-3 py-2 text-[12px] font-semibold text-black/60">
+                    <p className="mt-2 rounded-[0.65rem] bg-surface-2 px-3 py-2 text-[12px] font-medium text-black/60">
                       판매 페이지 정가 {formatWon(aiReference.listPrice)} · 참고
                     </p>
                   ) : null}
@@ -3712,7 +3856,8 @@ export function UploadProductForm({
                       AI가 그룹을 정하지 못했어요. 아래에서 골라 주세요.
                     </p>
                   ) : null}
-                  <label className="mt-3 flex h-14 items-center gap-3 rounded-[0.9rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
+                  <label className="ai-field-frame relative mt-3 flex h-14 items-center gap-3 rounded-[0.9rem] border border-black/10 bg-[#f7f7f7] px-4 focus-within:border-black">
+                    {isAiDraftPending ? <AiDraftShim widths={["58%"]} /> : null}
                     <input
                       className="min-w-0 flex-1 bg-transparent text-[16px] font-semibold tracking-[-0.04em] outline-none placeholder:text-black/30"
                       disabled={isApiEditMode}
@@ -3851,7 +3996,7 @@ export function UploadProductForm({
               </h2>
               {renderSubmitFieldError("closingDate")}
               {aiReference?.releaseDate ? (
-                <p className="mt-2 rounded-[0.65rem] bg-[#F7FBEA] px-3 py-2 text-[12px] font-semibold text-black/60">
+                <p className="mt-2 rounded-[0.65rem] bg-surface-2 px-3 py-2 text-[12px] font-medium text-black/60">
                   발매일 {formatReleaseDateLabel(aiReference.releaseDate)} · 마감은
                   직접 정해 주세요
                 </p>
@@ -4037,17 +4182,25 @@ export function UploadProductForm({
               >
                 <span className="text-[13px] font-semibold text-black/45">
                   상품 설명
-                  {description && description === aiFilledValues.description ? (
-                    <AiFilledTag />
-                  ) : null}
                 </span>
-                <textarea
-                  className="mt-2 min-h-28 w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-3 text-[15px] leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
-                  maxLength={maxDescriptionLength}
-                  onChange={(event) => setDescription(event.currentTarget.value)}
-                  placeholder="구성, 하자, 포장 방식 등을 적어주세요."
-                  value={description}
-                />
+                <AiFieldFrame
+                  filledValue={
+                    description && description === aiFilledValues.description
+                      ? description
+                      : undefined
+                  }
+                  isPending={isAiDraftPending}
+                  mirrorClassName={aiMirrorTextareaClassName}
+                  shimWidths={["84%", "62%", "74%"]}
+                >
+                  <textarea
+                    className="block min-h-28 w-full resize-none rounded-[0.9rem] border border-black/10 px-4 py-3 text-[15px] leading-6 tracking-[-0.04em] outline-none placeholder:text-black/25 focus:border-black"
+                    maxLength={maxDescriptionLength}
+                    onChange={(event) => setDescription(event.currentTarget.value)}
+                    placeholder="구성, 하자, 포장 방식 등을 적어주세요."
+                    value={description}
+                  />
+                </AiFieldFrame>
                 <span className="mt-1.5 block text-right text-[12px] font-semibold text-black/35">
                   {description.length}/{maxDescriptionLength}자
                 </span>

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type {
   ConfirmSheetDetail,
   ConfirmSheetRequest,
 } from "@/components/ConfirmSheet";
 import { HelpText } from "@/components/HelpText";
-import { BrandSparkleIcon, CheckIcon } from "@/components/icons";
+import { BrandSparkleIcon } from "@/components/icons";
 import {
   AI_DRAFT_DAILY_LIMIT_EXCEEDED_CODE,
   AI_DRAFT_DISABLED_CODE,
@@ -27,18 +27,29 @@ export type AiDraftForForm = AiDraft & {
   imageUrls: string[];
 };
 
-type AiDraftCardProps = {
+// checking: AI 를 쓸 수 있는지 묻는 중 · start: 시작 방법 고르기 · input: 주소·설명 넣기 · form: 개최 폼
+export type AiDraftStep = "checking" | "start" | "input" | "form";
+
+type AiDraftStartProps = {
   // 개최자가 직접 써서 AI 결과로 바뀔 칸. 비어 있으면 묻지 않고 보낸다.
   getFieldsToReplace: () => ConfirmSheetDetail[];
-  // 채운 칸 이름을 돌려준다. 접힌 카드 요약에 쓴다. 그사이 그만두면(signal) 폼을 바꾸지 않는다.
+  // 채운 칸 이름을 돌려준다. 그사이 그만두면(signal) 폼을 바꾸지 않는다.
   onApply: (draft: AiDraftForForm, signal: AbortSignal) => Promise<string[]>;
+  // 시작 화면으로 돌아갈 수 있는지. 스위치가 꺼졌거나 이 API 가 없는 서버면 false 이고 폼은 지금 그대로다.
+  onAvailabilityChange: (isAvailable: boolean) => void;
   // 확인 창은 부르는 쪽이 띄운다. 개최 폼은 transform 이 남아 있어 그 안의 fixed 시트가 폼 기준으로 놓인다.
   onConfirmRequest: (request: ConfirmSheetRequest) => void;
+  onFilled: (filledCount: number) => void;
   onPendingChange: (isPending: boolean) => void;
+  onStepChange: (step: AiDraftStep) => void;
+  step: AiDraftStep;
 };
 
 type InputMode = "url" | "text";
 type Phase = "idle" | "pending" | "done";
+
+// 응답이 이보다 늦으면 폼을 먼저 연다. 이미 쓰고 있는 사람 앞에 시작 화면을 띄우지 않는다.
+const aiQuotaWaitMs = 2000;
 
 const maxRawTextLength = 5000;
 const networkErrorMessage =
@@ -132,20 +143,17 @@ async function toFormImageUrls(images: string[]) {
   return urls.filter((url): url is string => url !== null);
 }
 
-function withObjectParticle(word: string) {
-  const lastCode = word.charCodeAt(word.length - 1) - 0xac00;
-  const hasBatchim = lastCode >= 0 && lastCode <= 11171 && lastCode % 28 !== 0;
-
-  return `${word}${hasBatchim ? "을" : "를"}`;
-}
-
-export function AiDraftCard({
+export function AiDraftStart({
   getFieldsToReplace,
   onApply,
+  onAvailabilityChange,
   onConfirmRequest,
+  onFilled,
   onPendingChange,
-}: AiDraftCardProps) {
-  // null 이면 카드를 그리지 않는다 — 조회 전, 조회 실패, 이 API 가 아직 없는 서버까지 지금 폼 그대로.
+  onStepChange,
+  step,
+}: AiDraftStartProps) {
+  // null 이면 AI 화면을 그리지 않는다 — 조회 전, 조회 실패, 이 API 가 아직 없는 서버까지 지금 폼 그대로.
   const [quota, setQuota] = useState<AiDraftQuota | null>(null);
   const [mode, setMode] = useState<InputMode>("url");
   const [urlInput, setUrlInput] = useState("");
@@ -153,11 +161,18 @@ export function AiDraftCard({
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
-  const [filledLabels, setFilledLabels] = useState<string[]>([]);
   // 객체로 감싸 effect 정리 함수가 마지막 요청을 끊게 한다.
   const pendingRef = useRef<{ controller: AbortController | null }>({
     controller: null,
   });
+  const urlInputRef = useRef<HTMLInputElement | null>(null);
+
+  function turnOff() {
+    setQuota(null);
+    setPhase("idle");
+    onAvailabilityChange(false);
+    onStepChange("form");
+  }
 
   function refreshQuota() {
     getFreshAccessToken()
@@ -165,30 +180,59 @@ export function AiDraftCard({
         accessToken ? requestAiDraftQuota(accessToken) : null,
       )
       .then((nextQuota) => {
-        setQuota(nextQuota?.enabled ? nextQuota : null);
+        if (nextQuota?.enabled) {
+          setQuota(nextQuota);
+        } else {
+          turnOff();
+        }
       })
       .catch(() => {
         // 실패 직후 다시 세는 것이라 못 세도 지금 숫자를 둔다.
       });
   }
 
+  const openAfterQuota = useEffectEvent((nextQuota: AiDraftQuota | null) => {
+    if (!nextQuota?.enabled) {
+      onStepChange("form");
+      return;
+    }
+
+    setQuota(nextQuota);
+
+    // 횟수를 다 쓴 날은 고를 것이 없으니 폼으로 바로 간다.
+    if (nextQuota.remainingToday > 0) {
+      onAvailabilityChange(true);
+      onStepChange("start");
+    } else {
+      onStepChange("form");
+    }
+  });
+
   useEffect(() => {
-    let isActive = true;
+    let isSettled = false;
     const pending = pendingRef.current;
+    const timeout = window.setTimeout(() => settle(null), aiQuotaWaitMs);
+
+    function settle(nextQuota: AiDraftQuota | null) {
+      if (isSettled) {
+        return;
+      }
+
+      isSettled = true;
+      window.clearTimeout(timeout);
+      openAfterQuota(nextQuota);
+    }
 
     getFreshAccessToken()
       .then((accessToken) =>
         accessToken ? requestAiDraftQuota(accessToken) : null,
       )
-      .then((nextQuota) => {
-        if (isActive && nextQuota?.enabled) {
-          setQuota(nextQuota);
-        }
-      })
-      .catch(() => {});
+      .then(settle)
+      .catch(() => settle(null));
 
     return () => {
-      isActive = false;
+      isSettled = true;
+      window.clearTimeout(timeout);
       pending.controller?.abort();
     };
   }, []);
@@ -268,6 +312,7 @@ export function AiDraftCard({
     setErrorMessage("");
     setPhase("pending");
     onPendingChange(true);
+    onStepChange("form");
     trackEvent("ai_draft_requested", { source: sourceType });
 
     try {
@@ -310,11 +355,12 @@ export function AiDraftCard({
           "AI가 채울 내용을 찾지 못했어요. 다른 주소로 시도하거나 직접 써 주세요.",
         );
         setPhase("idle");
+        onStepChange("input");
         return;
       }
 
-      setFilledLabels(labels);
       setPhase("done");
+      onFilled(labels.length);
     } catch (error: unknown) {
       if (controller.signal.aborted) {
         return;
@@ -329,7 +375,7 @@ export function AiDraftCard({
       });
 
       if (code === AI_DRAFT_DISABLED_CODE) {
-        setQuota(null);
+        turnOff();
         return;
       }
 
@@ -337,10 +383,12 @@ export function AiDraftCard({
         setMode("text");
       }
 
+      setPhase("idle");
+      onStepChange("input");
+
       if (code === AI_DRAFT_DAILY_LIMIT_EXCEEDED_CODE) {
         // 남은 횟수 자리가 같은 문장을 보인다.
         setQuota((current) => current && { ...current, remainingToday: 0 });
-        setPhase("idle");
         return;
       }
 
@@ -351,7 +399,6 @@ export function AiDraftCard({
             ? error.message
             : networkErrorMessage,
       );
-      setPhase("idle");
       refreshQuota();
     } finally {
       if (pendingRef.current.controller === controller) {
@@ -366,6 +413,7 @@ export function AiDraftCard({
     pendingRef.current.controller = null;
     onPendingChange(false);
     setPhase("idle");
+    onStepChange("input");
     setNoticeMessage(
       "그만뒀어요. AI가 이미 쓰기 시작했다면 오늘 횟수에서 1번 빠질 수 있어요.",
     );
@@ -378,165 +426,213 @@ export function AiDraftCard({
     setNoticeMessage("");
   }
 
-  const quotaText = isOutOfQuota
-    ? "오늘은 AI 작성을 모두 썼어요. 내일 다시 이용해 주세요."
-    : `오늘 ${quota.remainingToday}번 남았어요 (하루 ${quota.dailyLimit}번)`;
-
-  return (
-    <section aria-label="판매 페이지 주소로 채우기" className="px-4 pt-4">
-      <div className="rounded-[1rem] border border-[#CDEB55] bg-[#F7FBEA] px-4 py-4">
-        {phase === "done" ? (
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#CFE86B] text-black">
-              <CheckIcon />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[14px] font-semibold leading-5 tracking-[-0.04em]">
-                AI가 {withObjectParticle(filledLabels.join("·"))} 채웠어요.
-              </p>
-              <HelpText className="mt-1" size="caption">
-                등록 전에 꼭 확인해 주세요.
-              </HelpText>
-              <button
-                className="mt-3 rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-black/70 ring-1 ring-black/10"
-                onClick={() => {
-                  setPhase("idle");
-                  setErrorMessage("");
-                }}
-                type="button"
-              >
-                다른 주소로 다시
-              </button>
-            </div>
-          </div>
-        ) : isPending ? (
-          <div aria-live="polite">
+  if (step === "form") {
+    if (isPending) {
+      return (
+        <div
+          aria-live="polite"
+          className="flex shrink-0 items-start gap-3 border-b border-black/10 px-5 py-3"
+        >
+          <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold tracking-[-0.045em]">
               {mode === "text"
                 ? "AI가 붙여 넣은 설명을 읽고 있어요"
                 : "AI가 판매 페이지를 읽고 있어요"}
             </p>
-            <HelpText className="mt-1" size="caption">
+            <HelpText className="mt-0.5" size="caption">
               보통 10~15초 걸려요. 이 화면에 머물러 주세요.
             </HelpText>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/10">
-              <div className="ai-draft-wait-bar h-full w-2/5 rounded-full bg-[#9DBF2A]" />
-            </div>
+          </div>
+          <button
+            className="shrink-0 rounded-full bg-surface-2 px-3.5 py-1.5 text-[13px] font-semibold text-black/70"
+            onClick={handleCancel}
+            type="button"
+          >
+            그만두기
+          </button>
+        </div>
+      );
+    }
+
+    return isOutOfQuota && phase === "idle" ? (
+      <p className="shrink-0 border-b border-black/10 px-5 py-2.5 text-[12px] font-semibold text-black/45">
+        오늘은 AI 작성을 모두 썼어요. 내일 다시 이용해 주세요.
+      </p>
+    ) : null;
+  }
+
+  if (step === "start") {
+    return (
+      <section
+        aria-label="개최 시작 방법"
+        className="tab-content-enter flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6 pt-7"
+      >
+        <h2 className="mb-2 text-[24px] font-semibold leading-[1.35] tracking-[-0.05em]">
+          어떻게 시작할까요?
+        </h2>
+        <button
+          className="flex w-full items-start gap-3 rounded-[1.25rem] bg-black p-5 text-left text-white"
+          onClick={() => {
+            trackEvent("ai_start_chosen", { choice: "ai" });
+            setErrorMessage("");
+            setNoticeMessage("");
+            onStepChange("input");
+            window.requestAnimationFrame(() => urlInputRef.current?.focus());
+          }}
+          type="button"
+        >
+          <BrandSparkleIcon className="mt-0.5 h-5 w-5 shrink-0 text-brand-strong" />
+          <span className="min-w-0">
+            <span className="block text-[17px] font-semibold tracking-[-0.04em]">
+              판매 페이지 주소로 시작
+            </span>
+            <span className="mt-1 block text-[14px] tracking-[-0.03em] text-white/70">
+              AI가 사진·제목·설명을 먼저 채워 드려요
+            </span>
+          </span>
+        </button>
+        <button
+          className="w-full rounded-[1.25rem] bg-surface-2 p-5 text-left text-black"
+          onClick={() => {
+            trackEvent("ai_start_chosen", { choice: "manual" });
+            onStepChange("form");
+          }}
+          type="button"
+        >
+          <span className="block text-[17px] font-semibold tracking-[-0.04em]">
+            직접 쓰기
+          </span>
+          <span className="mt-1 block text-[14px] tracking-[-0.03em] text-black/55">
+            빈 칸부터 하나씩 써요
+          </span>
+        </button>
+      </section>
+    );
+  }
+
+  if (step !== "input") {
+    return null;
+  }
+
+  const quotaText = isOutOfQuota
+    ? "오늘은 AI 작성을 모두 썼어요. 내일 다시 이용해 주세요."
+    : `오늘 ${quota.remainingToday}번 남았어요`;
+
+  return (
+    <section
+      aria-label="판매 페이지 주소로 채우기"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pt-7"
+    >
+      <h2 className="text-[24px] font-semibold leading-[1.35] tracking-[-0.05em]">
+        {mode === "url" ? (
+          <>
+            판매 페이지 주소를
+            <br />
+            알려 주세요
+          </>
+        ) : (
+          <>
+            상품 설명을
+            <br />
+            붙여 넣어 주세요
+          </>
+        )}
+      </h2>
+
+      {errorMessage ? (
+        <p
+          className="mt-3 break-keep text-[13px] font-semibold leading-5 text-danger-base"
+          role="alert"
+        >
+          {errorMessage}
+        </p>
+      ) : null}
+      {noticeMessage ? (
+        <HelpText className="mt-3" size="caption">
+          {noticeMessage}
+        </HelpText>
+      ) : null}
+
+      {mode === "url" ? (
+        <>
+          <input
+            aria-label="판매 페이지 주소"
+            className="mt-5 h-14 w-full shrink-0 rounded-[1rem] border border-transparent bg-surface-2 px-4 text-[16px] tracking-[-0.03em] outline-none placeholder:text-black/35 focus:border-black disabled:text-black/40"
+            disabled={isOutOfQuota}
+            enterKeyHint="go"
+            inputMode="url"
+            onChange={(event) => setUrlInput(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                handleSubmit();
+              }
+            }}
+            placeholder="https://"
+            ref={urlInputRef}
+            type="text"
+            value={urlInput}
+          />
+          <p className="mt-2.5 break-keep text-[12px] font-medium leading-5 text-black/50">
+            네이버 스토어·올리브영·위드뮤는{" "}
             <button
-              className="mt-3 rounded-full bg-white px-4 py-2 text-[13px] font-semibold text-black/60 ring-1 ring-black/10"
-              onClick={handleCancel}
+              className="underline underline-offset-2"
+              onClick={() => switchMode("text")}
               type="button"
             >
-              그만두기
+              글을 붙여 넣어
+            </button>{" "}
+            주세요.
+          </p>
+        </>
+      ) : (
+        <>
+          <textarea
+            aria-label="상품 설명 붙여 넣기"
+            className="mt-5 min-h-36 w-full shrink-0 resize-none break-keep rounded-[1rem] border border-transparent bg-surface-2 px-4 py-3 text-[16px] leading-6 tracking-[-0.03em] outline-none placeholder:text-black/35 focus:border-black disabled:text-black/40"
+            disabled={isOutOfQuota}
+            maxLength={maxRawTextLength}
+            onChange={(event) => setTextInput(event.currentTarget.value)}
+            placeholder="판매 페이지의 상품명·구성·특전 설명을 복사해서 붙여 넣어 주세요."
+            value={textInput}
+          />
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <button
+              className="text-[12px] font-semibold text-black/55 underline underline-offset-2"
+              onClick={() => switchMode("url")}
+              type="button"
+            >
+              주소로 넣기
             </button>
+            <span className="text-[12px] font-semibold text-black/35">
+              {textInput.length}/{maxRawTextLength}자
+            </span>
           </div>
-        ) : (
-          // 개최 폼(<form>) 안에 놓이므로 form 을 쓰지 않는다. 버튼도 submit 이면 폼의 다른 칸에서
-          // 엔터를 쳤을 때 이 버튼이 눌린다.
-          <div>
-            <p className="flex items-center gap-1.5 text-[15px] font-semibold tracking-[-0.045em]">
-              <BrandSparkleIcon className="h-4 w-4 text-brand-ink" />
-              판매 페이지 주소로 채우기
-            </p>
-            <HelpText className="mt-1" size="caption">
-              AI가 사진·제목·구매처·아이돌·설명을 채워 줘요. 가격·배송·마감은
-              직접 정해 주세요.
-            </HelpText>
+        </>
+      )}
 
-            {mode === "url" ? (
-              <>
-                <div className="mt-3 flex gap-2">
-                  <input
-                    aria-label="판매 페이지 주소"
-                    className="h-12 min-w-0 flex-1 rounded-[0.9rem] border border-black/10 bg-white px-4 text-[15px] tracking-[-0.04em] outline-none placeholder:text-black/30 focus:border-black disabled:text-black/40"
-                    disabled={isOutOfQuota}
-                    enterKeyHint="go"
-                    inputMode="url"
-                    onChange={(event) => setUrlInput(event.currentTarget.value)}
-                    onKeyDown={(event) => {
-                      if (
-                        event.key === "Enter" &&
-                        !event.nativeEvent.isComposing
-                      ) {
-                        event.preventDefault();
-                        handleSubmit();
-                      }
-                    }}
-                    placeholder="https://"
-                    type="text"
-                    value={urlInput}
-                  />
-                  <button
-                    className="h-12 shrink-0 rounded-full bg-[#CFE86B] px-4 text-[14px] font-semibold tracking-[-0.04em] text-black disabled:opacity-50"
-                    disabled={isOutOfQuota}
-                    onClick={handleSubmit}
-                    type="button"
-                  >
-                    AI로 채우기
-                  </button>
-                </div>
-                <HelpText className="mt-2" size="caption">
-                  네이버 스토어·올리브영·위드뮤는 주소로 읽지 못해요. 상품 설명을
-                  붙여 넣어 주세요.
-                </HelpText>
-              </>
-            ) : (
-              <>
-                <textarea
-                  aria-label="상품 설명 붙여 넣기"
-                  className="mt-3 min-h-32 w-full resize-none rounded-[0.9rem] border border-black/10 bg-white px-4 py-3 text-[14px] leading-6 tracking-[-0.04em] outline-none placeholder:text-black/30 focus:border-black disabled:text-black/40"
-                  disabled={isOutOfQuota}
-                  maxLength={maxRawTextLength}
-                  onChange={(event) => setTextInput(event.currentTarget.value)}
-                  placeholder="판매 페이지의 상품명·구성·특전 설명을 복사해서 붙여 넣어 주세요."
-                  value={textInput}
-                />
-                <div className="mt-1 flex items-center justify-between gap-3">
-                  <span className="text-[12px] font-semibold text-black/35">
-                    {textInput.length}/{maxRawTextLength}자
-                  </span>
-                  <button
-                    className="h-11 shrink-0 rounded-full bg-[#CFE86B] px-4 text-[14px] font-semibold tracking-[-0.04em] text-black disabled:opacity-50"
-                    disabled={isOutOfQuota}
-                    onClick={handleSubmit}
-                    type="button"
-                  >
-                    AI로 채우기
-                  </button>
-                </div>
-              </>
-            )}
-
-            {errorMessage ? (
-              <p
-                className="mt-3 text-[13px] font-semibold leading-5 text-[#c03131]"
-                role="alert"
-              >
-                {errorMessage}
-              </p>
-            ) : null}
-            {noticeMessage ? (
-              <HelpText className="mt-3" size="caption">
-                {noticeMessage}
-              </HelpText>
-            ) : null}
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <button
-                className="text-[12px] font-semibold text-black/55 underline underline-offset-2"
-                onClick={() => switchMode(mode === "url" ? "text" : "url")}
-                type="button"
-              >
-                {mode === "url"
-                  ? "주소 대신 상품 설명 붙여 넣기"
-                  : "판매 페이지 주소로 넣기"}
-              </button>
-              <span className="text-[12px] font-semibold text-black/40">
-                {quotaText}
-              </span>
-            </div>
-          </div>
-        )}
+      {/* 키보드가 열리면 화면 아래가 가려진다. 그때는 위 칸 바로 밑으로 올린다(globals.css). */}
+      <div className="ai-start-foot mt-auto pb-[calc(1rem+env(safe-area-inset-bottom))] pt-5">
+        <button
+          className="h-14 w-full rounded-full bg-black text-[16px] font-semibold tracking-[-0.04em] text-brand-strong disabled:opacity-40"
+          disabled={isOutOfQuota}
+          onClick={handleSubmit}
+          type="button"
+        >
+          AI로 채우기
+        </button>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <button
+            className="text-[13px] font-semibold text-black/55 underline underline-offset-2"
+            onClick={() => onStepChange("form")}
+            type="button"
+          >
+            직접 쓰기로 바꾸기
+          </button>
+          <span className="text-[12px] font-semibold text-black/40">
+            {quotaText}
+          </span>
+        </div>
       </div>
     </section>
   );
