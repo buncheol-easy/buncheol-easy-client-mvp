@@ -11,7 +11,11 @@ if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_API_BASE_U
 // lib/optimizable-image.ts 의 판정 목록과 같아야 한다 — 어긋나면 next/image 가 개발에서 throw, 프로덕션에서 400 을 낸다.
 // 이 파일은 다른 파일을 import 하지 않는다: Dockerfile runner 단계가 next.config.ts 한 파일만 복사하고 런타임에도 이 파일을 읽는다.
 // 같은 이유로 환경별로 버킷을 나누지 않는다(런타임 컨테이너에는 빌드 env 가 없다).
-const OPTIMIZED_IMAGE_HOSTS = ["images.buncheoleasy.com"];
+const OPTIMIZED_IMAGE_HOSTS = [
+  "images.buncheoleasy.com",
+  // 시험 서버 사진 버킷의 공개 주소.
+  "pub-34e7ef8de5074997b4e16dd631b92e51.r2.dev",
+];
 const OPTIMIZED_IMAGE_PATHNAMES = ["/buncheols/**", "/notices/**", "/idol-groups/**"];
 
 const nextConfig: NextConfig = {
