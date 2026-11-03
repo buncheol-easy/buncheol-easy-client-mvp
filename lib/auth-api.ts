@@ -10,6 +10,7 @@ import {
 } from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { FEATURES } from "@/lib/feature-flags";
+import { IMAGE_HOSTS } from "@/lib/image-hosts";
 import {
   getBuncheolStatusBadgeLabel,
   isParticipationCancelledStatus,
@@ -2219,11 +2220,6 @@ function normalizeImageUrl(imageUrl: string) {
   return trimmedImageUrl;
 }
 
-const proxiedGroupImageHosts = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
 const groupImagePathPrefix = "/idol-groups/";
 
 function getProxiedGroupImageUrl(imageUrl: string | undefined) {
@@ -2237,7 +2233,7 @@ function getProxiedGroupImageUrl(imageUrl: string | undefined) {
     const parsedImageUrl = new URL(normalizedImageUrl);
 
     if (
-      proxiedGroupImageHosts.has(parsedImageUrl.hostname) &&
+      IMAGE_HOSTS.has(parsedImageUrl.hostname) &&
       parsedImageUrl.pathname.startsWith(groupImagePathPrefix)
     ) {
       return `/api/group-image?url=${encodeURIComponent(normalizedImageUrl)}`;

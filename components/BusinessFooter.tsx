@@ -21,7 +21,7 @@ const businessInfoRows = [
   { label: "사업자등록번호", value: "731-62-00820" },
   { label: "통신판매업 신고번호", value: "2026-대전서구-0940" },
   { label: "개인정보보호책임자", value: "신동운" },
-  { label: "호스팅", value: "Amazon Web Services" },
+  { label: "호스팅", value: "Oracle Cloud Infrastructure" },
   {
     full: true,
     label: "주소",
