@@ -3324,14 +3324,17 @@ export function UploadProductForm({
               <p className="min-w-0 flex-1 text-[14px] font-semibold tracking-[-0.04em]">
                 AI가 {aiFilledCount}칸을 채웠어요. 확인해 주세요.
               </p>
-              <button
-                aria-label="다른 주소로 다시 채우기"
-                className="shrink-0 text-[13px] font-semibold text-black/55 underline underline-offset-2"
-                onClick={() => setAiStep("input")}
-                type="button"
-              >
-                다시
-              </button>
+              {/* AI 가 꺼지면 주소 화면을 그릴 수 없다. 누르면 폼만 숨어 빈 화면에 갇힌다. */}
+              {hasAiStart ? (
+                <button
+                  aria-label="다른 주소로 다시 채우기"
+                  className="shrink-0 text-[13px] font-semibold text-black/55 underline underline-offset-2"
+                  onClick={() => setAiStep("input")}
+                  type="button"
+                >
+                  다시
+                </button>
+              ) : null}
             </div>
           ) : null}
           <section
