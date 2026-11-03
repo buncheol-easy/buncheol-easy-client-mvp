@@ -1,7 +1,11 @@
 // next.config.ts images.remotePatterns 와 같은 목록이어야 한다. next.config.ts 는 이 파일을 import 할 수
 // 없어서(Dockerfile runner 단계가 그 파일만 복사) 두 곳에 따로 적는다. 목록 밖 주소를 next/image 로
 // 최적화하면 개발에서는 throw, 프로덕션에서는 400 이 나므로, 밖이면 원본을 그대로 그린다.
-const OPTIMIZABLE_IMAGE_HOSTS = new Set(["images.buncheoleasy.com"]);
+const OPTIMIZABLE_IMAGE_HOSTS = new Set([
+  "images.buncheoleasy.com",
+  // 시험 서버 사진 버킷의 공개 주소.
+  "pub-34e7ef8de5074997b4e16dd631b92e51.r2.dev",
+]);
 const OPTIMIZABLE_IMAGE_PATH_PREFIXES = ["/buncheols/", "/notices/", "/idol-groups/"];
 
 // 넓은 카드와 상세 캐러셀은 같은 값이어야 한다 — 같은 변환 주소를 받아야 목록에서 상세로 들어갈 때
