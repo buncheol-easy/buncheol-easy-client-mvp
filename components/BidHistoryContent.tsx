@@ -3840,7 +3840,7 @@ export function BidHistoryContent({
         // 도움말 버튼(absolute bottom-5, h-12)이 스크롤 맨 아래에서 마지막 카드를 덮는다 —
         // 하단 여백을 버튼 높이(48px)+오프셋(20px) 이상으로 잡는다 (docs/53 Q-21).
         className={`app-page-scroll min-h-0 flex-1 px-4 pb-24 ${
-          isPaymentSheetOpen || isStatusHelpSheetOpen
+          (isPaymentSheetOpen && selectedPaymentBid) || isStatusHelpSheetOpen
             ? "overflow-hidden"
             : "overflow-y-auto"
         }`}
