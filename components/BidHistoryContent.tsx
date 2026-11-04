@@ -1988,6 +1988,10 @@ export function BidHistoryContent({
   const paymentSlotCount = paymentAmountSources.length;
   const selectedPaymentBankAccount =
     selectedPaymentBid?.hostBankAccount ?? null;
+  // 입금이 확인되면 서버가 계좌를 내려주지 않는다 — 이때는 계좌를 찾는 중이 아니라 필요 없는 것이다.
+  const isSelectedPaymentAccountNeeded = selectedPaymentBid
+    ? canViewBidRecordPaymentSheet(selectedPaymentBid, now)
+    : false;
   const selectedPaymentStatusLabel = selectedPaymentBid
     ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
     : "";
@@ -3832,7 +3836,11 @@ export function BidHistoryContent({
       <main
         // 도움말 버튼(absolute bottom-5, h-12)이 스크롤 맨 아래에서 마지막 카드를 덮는다 —
         // 하단 여백을 버튼 높이(48px)+오프셋(20px) 이상으로 잡는다 (docs/53 Q-21).
-        className="app-page-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-24"
+        className={`app-page-scroll min-h-0 flex-1 px-4 pb-24 ${
+          isPaymentSheetOpen || isStatusHelpSheetOpen
+            ? "overflow-hidden"
+            : "overflow-y-auto"
+        }`}
         ref={scrollContainerRef}
       >
         {/* 필터 칩 전환은 모션 없이 즉시 반영 — key 는 참여↔개최 전환에만 걸어 재생한다. */}
@@ -4502,7 +4510,7 @@ export function BidHistoryContent({
 
       {isStatusHelpSheetOpen ? (
         <div
-          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
+          className={`bid-sheet-backdrop fixed inset-0 z-40 flex touch-none items-end ${
             isStatusHelpSheetEntered && !isStatusHelpSheetClosing
               ? "bid-sheet-backdrop-active"
               : ""
@@ -4547,7 +4555,7 @@ export function BidHistoryContent({
               </button>
             </div>
 
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1 sheet-scroll">
+            <div className="mt-4 min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain pb-1 sheet-scroll">
               <div className="rounded-[0.95rem] bg-[#f7f7f7] px-4 py-4">
                 {statusHelpSheetGuide.map((item, index) => (
                   <div className="flex gap-3" key={item.label}>
@@ -4647,7 +4655,7 @@ export function BidHistoryContent({
 
       {isPaymentSheetOpen && selectedPaymentBid ? (
         <div
-          className={`bid-sheet-backdrop fixed inset-0 z-40 flex items-end ${
+          className={`bid-sheet-backdrop fixed inset-0 z-40 flex touch-none items-end ${
             isPaymentSheetEntered && !isPaymentSheetClosing
               ? "bid-sheet-backdrop-active"
               : ""
@@ -4682,9 +4690,11 @@ export function BidHistoryContent({
                   입금 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  {isSelectedPaymentC2C
-                    ? "계좌 확인 후 입금하고 '보냈어요'를 눌러주세요."
-                    : "계좌와 금액을 확인한 뒤 기한 내 입금해 주세요."}
+                  {!isSelectedPaymentAccountNeeded
+                    ? "이번 참여의 입금 내역이에요."
+                    : isSelectedPaymentC2C
+                      ? "계좌 확인 후 입금하고 '보냈어요'를 눌러주세요."
+                      : "계좌와 금액을 확인한 뒤 기한 내 입금해 주세요."}
                 </p>
               </div>
               <button
@@ -4697,7 +4707,7 @@ export function BidHistoryContent({
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 sheet-scroll">
+            <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain pb-4 sheet-scroll">
             <div className="mt-5 rounded-[0.9rem] bg-[#f7f7f7] px-4 py-3">
               <p className="truncate text-[15px] font-semibold tracking-[-0.04em]">
                 {selectedPaymentBid.title}
@@ -4747,66 +4757,68 @@ export function BidHistoryContent({
                 />
               ) : null}
             </div>
-            <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
-              <p className="text-[12px] font-semibold leading-[1.4] text-black/40">
-                개최자 계좌
-              </p>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[16px] font-semibold leading-[1.35] tracking-[-0.02em] tabular-nums">
-                    {selectedPaymentBankAccount
-                      ? `${selectedPaymentBankAccount.bank} ${selectedPaymentBankAccount.account}`.trim()
-                      : "계좌 정보 확인 중"}
-                  </p>
-                  <p className="mt-1 text-[12.5px] font-medium leading-[1.45] text-black/45">
-                    {selectedPaymentBankAccount?.holder
-                      ? `예금주 ${selectedPaymentBankAccount.holder}`
-                      : "개최자가 등록한 계좌로 입금해 주세요."}
-                  </p>
-                </div>
-                <CopyButton
-                  disabled={
-                    !selectedPaymentBankAccount?.account.trim() ||
-                    selectedPaymentBankAccount.account.includes("준비 중")
-                  }
-                  label="계좌 복사"
-                  onCopyFailed={showAccountCopyFailedToast}
-                  value={selectedPaymentBankAccount?.account ?? ""}
-                  variant="dark"
-                />
-              </div>
-              {/* 입금할 차례에는 위 마감 카드가 입금자명을 크게 안내한다(C2C 는 기한이 지나도 입금할 차례다). 보냈어요
-                  뒤에는 다시 보낼 일이 없으니 대조용으로 이름만 남긴다 (docs/53 Q-17). */}
-              {!isSelectedPaymentReady && selectedPaymentBid.refundHolder ? (
-                <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
-                  입금자명{" "}
-                  <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
-                    {selectedPaymentBid.refundHolder}
-                  </span>
+            {isSelectedPaymentAccountNeeded ? (
+              <div className="relative mt-4 rounded-[0.95rem] border border-black/10 px-4 py-4">
+                <p className="text-[12px] font-semibold leading-[1.4] text-black/40">
+                  개최자 계좌
                 </p>
-              ) : null}
-              {/*
-                중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 안내 문장에 흡수했다 (docs/56 H-06).
-                고지 자체를 뺄 수는 없다 — 약관 제9조와 /broker-notice 가 "분철 상세 화면 및 참여·입금
-                화면에 표시된다"고 공표하고 있고, 신청(APPLIED) 후 알림톡을 받고 오는 경로에서는
-                사용자가 개최자 계좌를 보는 화면이 이 시트뿐이다.
-              */}
-              {isSelectedPaymentC2C ? (
-                <HelpText className="mt-3.5 border-t border-black/[0.06] pt-3.5">
-                  {`송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. ${BROKER_NOTICE}`}
-                </HelpText>
-              ) : null}
-              {selectedPaymentOpenChatHref ? (
-                <a
-                  className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/60 underline underline-offset-2"
-                  href={selectedPaymentOpenChatHref}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  개최자 오픈채팅 참여하기 →
-                </a>
-              ) : null}
-            </div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[16px] font-semibold leading-[1.35] tracking-[-0.02em] tabular-nums">
+                      {selectedPaymentBankAccount
+                        ? `${selectedPaymentBankAccount.bank} ${selectedPaymentBankAccount.account}`.trim()
+                        : "계좌 정보 확인 중"}
+                    </p>
+                    <p className="mt-1 text-[12.5px] font-medium leading-[1.45] text-black/45">
+                      {selectedPaymentBankAccount?.holder
+                        ? `예금주 ${selectedPaymentBankAccount.holder}`
+                        : "개최자가 등록한 계좌로 입금해 주세요."}
+                    </p>
+                  </div>
+                  <CopyButton
+                    disabled={
+                      !selectedPaymentBankAccount?.account.trim() ||
+                      selectedPaymentBankAccount.account.includes("준비 중")
+                    }
+                    label="계좌 복사"
+                    onCopyFailed={showAccountCopyFailedToast}
+                    value={selectedPaymentBankAccount?.account ?? ""}
+                    variant="dark"
+                  />
+                </div>
+                {/* 입금할 차례에는 위 마감 카드가 입금자명을 크게 안내한다(C2C 는 기한이 지나도 입금할 차례다). 보냈어요
+                    뒤에는 다시 보낼 일이 없으니 대조용으로 이름만 남긴다 (docs/53 Q-17). */}
+                {!isSelectedPaymentReady && selectedPaymentBid.refundHolder ? (
+                  <p className="mt-3 text-[12px] font-medium leading-5 text-black/45">
+                    입금자명{" "}
+                    <span className="rounded-full bg-[#E4F6A5] px-2 py-0.5 font-semibold text-black/70">
+                      {selectedPaymentBid.refundHolder}
+                    </span>
+                  </p>
+                ) : null}
+                {/*
+                  중개자 고지(전상법 §20①)를 별도 문단으로 두지 않고 안내 문장에 흡수했다 (docs/56 H-06).
+                  고지 자체를 뺄 수는 없다 — 약관 제9조와 /broker-notice 가 "분철 상세 화면 및 참여·입금
+                  화면에 표시된다"고 공표하고 있고, 신청(APPLIED) 후 알림톡을 받고 오는 경로에서는
+                  사용자가 개최자 계좌를 보는 화면이 이 시트뿐이다.
+                */}
+                {isSelectedPaymentC2C ? (
+                  <HelpText className="mt-3.5 border-t border-black/[0.06] pt-3.5">
+                    {`송금 후 아래 '보냈어요'를 누르면 개최자가 입금을 확인해요. ${BROKER_NOTICE}`}
+                  </HelpText>
+                ) : null}
+                {selectedPaymentOpenChatHref ? (
+                  <a
+                    className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-black/60 underline underline-offset-2"
+                    href={selectedPaymentOpenChatHref}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    개최자 오픈채팅 참여하기 →
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
             {isSelectedPaymentReady ? (
               <HelpText className="mt-3 px-1">
                 입금이 확인되면 카카오 알림톡으로 알려 드려요.
@@ -4855,7 +4867,9 @@ export function BidHistoryContent({
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[15px] font-semibold tracking-[-0.04em]">
-                  결제 예정 금액
+                  {isSelectedPaymentAccountNeeded
+                    ? "결제 예정 금액"
+                    : "결제 금액"}
                   {paymentSlotCount > 1 ? (
                     <span className="ml-1 text-[12px] font-medium text-black/40">
                       멤버 {paymentSlotCount}명 합계
@@ -4876,7 +4890,7 @@ export function BidHistoryContent({
                   </HelpText>
                 ) : null}
                 <button
-                  className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
+                  className="mt-4 h-14 w-full shrink-0 rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
                   disabled={
                     !selectedPaymentBankAccount ||
                     !selectedPaymentBid.bundleId ||
@@ -4898,8 +4912,10 @@ export function BidHistoryContent({
               </HelpText>
             ) : (
               <button
-                className="mt-4 h-14 w-full rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
-                disabled={!selectedPaymentBankAccount}
+                className="mt-4 h-14 w-full shrink-0 rounded-full bg-black text-[17px] font-semibold tracking-[-0.04em] text-[#D7FF5F] shadow-[0_12px_24px_rgba(0,0,0,0.18)] disabled:bg-black/20 disabled:text-white/70"
+                disabled={
+                  isSelectedPaymentAccountNeeded && !selectedPaymentBankAccount
+                }
                 onClick={closePaymentSheet}
                 type="button"
               >
