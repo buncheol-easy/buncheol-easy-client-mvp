@@ -1992,6 +1992,9 @@ export function BidHistoryContent({
   const isSelectedPaymentAccountNeeded = selectedPaymentBid
     ? canViewBidRecordPaymentSheet(selectedPaymentBid, now)
     : false;
+  const isSelectedPaymentConfirmed = selectedPaymentBid
+    ? isBidRecordPaymentConfirmed(selectedPaymentBid)
+    : false;
   const selectedPaymentStatusLabel = selectedPaymentBid
     ? getBidRecordPaymentStatusLabel(selectedPaymentBid, now)
     : "";
@@ -4690,11 +4693,13 @@ export function BidHistoryContent({
                   입금 정보
                 </h2>
                 <p className="mt-1 text-[13px] font-medium text-black/45">
-                  {!isSelectedPaymentAccountNeeded
+                  {isSelectedPaymentConfirmed
                     ? "이번 참여의 입금 내역이에요."
-                    : isSelectedPaymentC2C
-                      ? "계좌 확인 후 입금하고 '보냈어요'를 눌러주세요."
-                      : "계좌와 금액을 확인한 뒤 기한 내 입금해 주세요."}
+                    : !isSelectedPaymentAccountNeeded
+                      ? "이번 참여의 금액과 배송지예요."
+                      : isSelectedPaymentC2C
+                        ? "계좌 확인 후 입금하고 '보냈어요'를 눌러주세요."
+                        : "계좌와 금액을 확인한 뒤 기한 내 입금해 주세요."}
                 </p>
               </div>
               <button
@@ -4867,9 +4872,7 @@ export function BidHistoryContent({
               </div>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[15px] font-semibold tracking-[-0.04em]">
-                  {isSelectedPaymentAccountNeeded
-                    ? "결제 예정 금액"
-                    : "결제 금액"}
+                  {isSelectedPaymentConfirmed ? "결제 금액" : "결제 예정 금액"}
                   {paymentSlotCount > 1 ? (
                     <span className="ml-1 text-[12px] font-medium text-black/40">
                       멤버 {paymentSlotCount}명 합계
