@@ -140,7 +140,7 @@ export const boardPosts: BoardPost[] = [
       "입금 전에는 상품명, 멤버 옵션, 배송지를 다시 한 번 확인하는 걸 추천해요.",
     ],
     action: {
-      href: "/profile/bids",
+      href: "/profile/participations",
       label: "참여 내역으로 이동",
       title: "결제할 참여 내역을 확인해요",
     },
@@ -169,7 +169,7 @@ export const boardPosts: BoardPost[] = [
       "잠시 후 다시 확인하면 결제 가능한 참여 항목이 갱신돼요.",
     ],
     action: {
-      href: "/profile/bids",
+      href: "/profile/participations",
       label: "참여 내역으로 이동",
       title: "내 참여 상태를 다시 확인해요",
     },

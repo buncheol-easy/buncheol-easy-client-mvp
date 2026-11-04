@@ -243,13 +243,13 @@ body:has(.system-chrome-black) {
 
 html:has(.favorites-header),
 html:has(.profile-header),
-html:has(.bid-history-header),
+html:has(.participation-history-header),
 html:has(.product-detail-header),
 html:has(.upload-header),
 html:has(.system-chrome-white),
 body:has(.favorites-header),
 body:has(.profile-header),
-body:has(.bid-history-header),
+body:has(.participation-history-header),
 body:has(.product-detail-header),
 body:has(.upload-header),
 body:has(.system-chrome-white) {
@@ -1509,16 +1509,16 @@ body.is-pwa-standalone {
     margin-top: 0.25rem;
   }
 
-  .bid-history-header {
+  .participation-history-header {
     padding-bottom: 1rem;
     padding-top: 1.25rem;
   }
 
-  .bid-history-header__copy {
+  .participation-history-header__copy {
     height: auto;
   }
 
-  .bid-history-header__title {
+  .participation-history-header__title {
     font-size: 26px;
     line-height: 1.2;
     margin-top: 0.25rem;
@@ -1711,16 +1711,16 @@ body.is-pwa-standalone .upload-header__title {
   margin-top: 0.25rem;
 }
 
-body.is-pwa-standalone .bid-history-header {
+body.is-pwa-standalone .participation-history-header {
   padding-bottom: 1rem;
   padding-top: 1.25rem;
 }
 
-body.is-pwa-standalone .bid-history-header__copy {
+body.is-pwa-standalone .participation-history-header__copy {
   height: auto;
 }
 
-body.is-pwa-standalone .bid-history-header__title {
+body.is-pwa-standalone .participation-history-header__title {
   font-size: 26px;
   line-height: 1.2;
   margin-top: 0.25rem;
@@ -2014,7 +2014,7 @@ body.is-browser-tab .bid-sheet-panel {
   transition: none;
 }
 
-.bid-history-panel {
+.participation-history-panel {
   border-bottom-left-radius: 24px;
   border-top-left-radius: 24px;
   opacity: 0.92;
@@ -2026,14 +2026,14 @@ body.is-browser-tab .bid-sheet-panel {
   will-change: border-radius, opacity, transform;
 }
 
-.bid-history-panel-enter {
+.participation-history-panel-enter {
   border-bottom-left-radius: 0;
   border-top-left-radius: 0;
   opacity: 1;
   transform: translate3d(0, 0, 0);
 }
 
-.bid-history-panel-exit {
+.participation-history-panel-exit {
   border-bottom-left-radius: 24px;
   border-top-left-radius: 24px;
   opacity: 0.92;

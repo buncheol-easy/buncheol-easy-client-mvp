@@ -20,7 +20,7 @@ function getSafeReturnHref(returnTo: string | string[] | undefined) {
   const returnTarget = Array.isArray(returnTo) ? returnTo[0] : returnTo;
 
   if (returnTarget === "bids") {
-    return "/profile/bids";
+    return "/profile/participations";
   }
 
   if (returnTarget === "profile") {

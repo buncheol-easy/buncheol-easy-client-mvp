@@ -42,6 +42,16 @@ const nextConfig: NextConfig = {
     // 기본값은 기동 때 남은 디스크의 50% 다. 서버 디스크를 다른 컨테이너와 같이 쓰므로 상한을 고정한다.
     maximumDiskCacheSize: 256_000_000,
   },
+  // 이미 보낸 알림톡 버튼과 수신함 기록(link_path)이 옛 주소를 담고 있어 지우지 않는다. 쿼리는 그대로 넘어간다.
+  redirects() {
+    return [
+      {
+        source: "/profile/bids",
+        destination: "/profile/participations",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

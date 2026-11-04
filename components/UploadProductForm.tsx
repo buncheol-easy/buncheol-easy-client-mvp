@@ -2501,7 +2501,7 @@ export function UploadProductForm({
           }
 
           await removeUploadExitGuard(exitGuardRef.current);
-          router.push("/profile/bids");
+          router.push("/profile/participations");
           return;
         }
       } catch (error) {

@@ -740,10 +740,10 @@ export function ProfileContent({
             className="mt-5 flex h-12 items-center justify-center rounded-full bg-[#CFE86B] text-[15px] font-semibold tracking-[-0.04em] text-black shadow-[0_10px_24px_rgba(120,132,82,0.2)]"
             href={
               authState.isLoggedIn
-                ? "/profile/bids"
+                ? "/profile/participations"
                 : createLoginHref({
                     cancelTo: "/profile",
-                    returnTo: "/profile/bids",
+                    returnTo: "/profile/participations",
                   })
             }
           >

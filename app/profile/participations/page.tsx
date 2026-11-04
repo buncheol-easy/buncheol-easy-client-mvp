@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { BidHistoryExperience } from "@/components/BidHistoryExperience";
+import { ParticipationHistoryExperience } from "@/components/ParticipationHistoryExperience";
 import { whiteChromeViewport } from "@/lib/system-chrome";
 
 export const viewport = whiteChromeViewport;
@@ -9,6 +9,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function BidHistoryPage() {
-  return <BidHistoryExperience />;
+export default function ParticipationHistoryPage() {
+  return <ParticipationHistoryExperience />;
 }

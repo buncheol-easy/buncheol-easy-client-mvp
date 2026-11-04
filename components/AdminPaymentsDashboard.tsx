@@ -634,7 +634,7 @@ function AdminNoticeUploader({ accessToken }: { accessToken: string }) {
               className="h-11 rounded-[0.85rem] border border-black/10 bg-white px-3 text-[14px] font-semibold outline-none placeholder:text-black/25 focus:border-black"
               maxLength={500}
               onChange={updateTextField("linkPath")}
-              placeholder="/profile/bids"
+              placeholder="/profile/participations"
               value={form.linkPath}
             />
           </label>
