@@ -5862,7 +5862,7 @@ export async function requestFavoriteGroups(
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   return getBuncheolList(await readJsonBody(response))
