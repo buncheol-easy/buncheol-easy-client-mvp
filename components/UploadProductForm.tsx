@@ -28,6 +28,7 @@ import {
   useToast,
 } from "@/components/Toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { IMAGE_HOSTS } from "@/lib/image-hosts";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
   BackIcon,
@@ -69,6 +70,7 @@ import { idolDirectory } from "@/lib/mock-idol-directory";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { HelpText } from "@/components/HelpText";
 import { trackEvent } from "@/lib/analytics";
+import { formatKoreanDateTime } from "@/lib/korean-time";
 
 type PhotoPreview = {
   file?: File;
@@ -508,6 +510,19 @@ function formatDateTimeLabel(value: string) {
 
   const date = new Date(value);
 
+  return Number.isNaN(date.getTime())
+    ? ""
+    : formatKoreanDateTime(date, { withWeekday: true });
+}
+
+// toScheduleInputValue 가 다시 읽는 값이라 모양을 바꾸지 않는다.
+function formatStoredDateTime(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) {
     return "";
   }
@@ -635,19 +650,13 @@ function canExportImageThroughCanvas(imageUrl: string) {
   return imageUrl.startsWith("data:") || imageUrl.startsWith("blob:");
 }
 
-const editableImageProxyHosts = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
-
 function getEditableImageFetchUrl(imageUrl: string) {
   try {
     const parsedImageUrl = new URL(imageUrl);
 
     if (
       parsedImageUrl.protocol === "https:" &&
-      editableImageProxyHosts.has(parsedImageUrl.hostname) &&
+      IMAGE_HOSTS.has(parsedImageUrl.hostname) &&
       parsedImageUrl.pathname.startsWith("/buncheols/")
     ) {
       return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;
@@ -2607,7 +2616,8 @@ export function UploadProductForm({
       minHeadcount: parsedMinHeadcount,
       targetMembers: targetMembers.map((member) => member.name),
       uploadedAt:
-        editingProduct?.uploadedAt ?? formatDateTimeLabel(new Date().toISOString()),
+        editingProduct?.uploadedAt ??
+        formatStoredDateTime(new Date().toISOString()),
       era: selectedGroup.name,
       rating: "0.0",
       reviews: "0",
@@ -2615,7 +2625,7 @@ export function UploadProductForm({
       liked: editingProduct?.liked ?? false,
       tone: editingProduct?.tone ?? "from-zinc-950 via-zinc-700 to-zinc-300",
       courier: selectedShipping[0],
-      deadline: formatDateTimeLabel(closingDate) || "일정 미정",
+      deadline: formatStoredDateTime(closingDate) || "일정 미정",
       imageUrl: storedPhotoUrls[coverPhotoIndex] ?? coverPhoto.url,
       imageUrls: storedPhotoUrls,
       purchaseSource: purchaseSource.trim(),

@@ -18,6 +18,7 @@ import { BackIcon, HeartIcon, SearchIcon } from "@/components/icons";
 import { ARTIST_LIST_ENTRY_GROUP_KEY } from "@/lib/artist-browse";
 import {
   addFavoriteGroup,
+  ApiRequestError,
   removeFavoriteGroup,
   type ApiGroup,
 } from "@/lib/auth-api";
@@ -242,20 +243,17 @@ export function ArtistExploreContent({
     return sortFavoriteGroupsFirst(rankedGroups, pinnedIds);
   }, [groups, trimmedQuery, pinnedFavoriteIds]);
 
-  // 최애 조회가 401 이면 토큰이 죽은 것이라 로그인 상태를 정리한다 (기존 fetch 경로와 동일).
+  // 최애 조회가 401 이면 토큰이 죽은 것이라 로그인 상태를 정리한다. 서버 401 문구는 한국어라 글자로 판정하면 안 된다.
   const favoriteGroupsError = favoriteGroupsQuery.error;
+  const isFavoriteGroupsUnauthorized =
+    favoriteGroupsError instanceof ApiRequestError &&
+    favoriteGroupsError.status === 401;
 
   useEffect(() => {
-    if (!favoriteGroupsError) {
-      return;
-    }
-
-    const message = favoriteGroupsError.message;
-
-    if (message.includes("401") || message.includes("Unauthorized")) {
+    if (isFavoriteGroupsUnauthorized) {
       clearAuthState();
     }
-  }, [favoriteGroupsError]);
+  }, [isFavoriteGroupsUnauthorized]);
 
   // 하이드레이션 뒤, 페인트 전에 되살린다. useState 초기값으로 읽으면 서버가 그린 빈 검색창과 어긋난다.
   useLayoutEffect(() => {
@@ -319,7 +317,7 @@ export function ArtistExploreContent({
   // 토글 실패 안내(message)가 있으면 그것을 우선 보여준다 — 사용자가 방금 한 행동의 결과다.
   const loadErrorMessage = allGroupsQuery.isError
     ? (allGroupsQuery.error.message || "아티스트 목록을 불러오지 못했어요.")
-    : favoriteGroupsQuery.isError
+    : favoriteGroupsQuery.isError && !isFavoriteGroupsUnauthorized
       ? (favoriteGroupsQuery.error.message || "최애 그룹을 불러오지 못했어요.")
       : "";
   const visibleMessage = message || loadErrorMessage;

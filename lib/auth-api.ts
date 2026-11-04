@@ -10,6 +10,7 @@ import {
 } from "@/lib/browser-api-cache";
 import type { ProductDetailItem, ProductOption } from "@/lib/mock-products";
 import { FEATURES } from "@/lib/feature-flags";
+import { IMAGE_HOSTS } from "@/lib/image-hosts";
 import {
   getBuncheolStatusBadgeLabel,
   isParticipationCancelledStatus,
@@ -58,8 +59,13 @@ export type UserProfileStatus = {
 
 // 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
 export const hostingEligibilityReasons = [
+  // 카카오 가입자가 아님(애플 가입 등) — 회복 경로 없음
+  "KAKAO_ACCOUNT_REQUIRED",
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
+  // 「만 19세 이상」 본인 체크 기록 없음 — 체크를 저장하면 통과
+  "ADULT_CONFIRM_REQUIRED",
+  // ⚠️ 아래 연령대 사유 둘은 새 서버가 내리지 않지만, 웹이 서버보다 먼저 나가므로 그동안은 옛 서버 응답을 받아야 한다.
   // 연령대 미확인 — 카카오 연령대 추가 동의로 회복 가능 (서버 USR-032)
   "AGE_UNVERIFIED",
   // 미성년 확정 — 개최 불가 (서버 USR-033)
@@ -1728,6 +1734,25 @@ export async function requestHostingEligibility(
   return { eligible, reason: getHostingEligibilityReason(data) };
 }
 
+// 「만 19세 이상」 본인 체크 저장 (server: POST /v1/buncheols/hosting-eligibility/adult-confirmation). 본문 없음, 멱등, 성공 204.
+export async function requestHostingAdultConfirmation(accessToken: string) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/hosting-eligibility/adult-confirmation`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      await parseErrorMessage(response),
+      response.status,
+    );
+  }
+}
+
 function getHostingEligibilityReason(data: unknown): HostingEligibilityReason {
   if (!isRecord(data)) {
     return null;
@@ -2372,11 +2397,6 @@ function normalizeImageUrl(imageUrl: string) {
   return trimmedImageUrl;
 }
 
-const proxiedGroupImageHosts = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
 const groupImagePathPrefix = "/idol-groups/";
 
 function getProxiedGroupImageUrl(imageUrl: string | undefined) {
@@ -2390,7 +2410,7 @@ function getProxiedGroupImageUrl(imageUrl: string | undefined) {
     const parsedImageUrl = new URL(normalizedImageUrl);
 
     if (
-      proxiedGroupImageHosts.has(parsedImageUrl.hostname) &&
+      IMAGE_HOSTS.has(parsedImageUrl.hostname) &&
       parsedImageUrl.pathname.startsWith(groupImagePathPrefix)
     ) {
       return `/api/group-image?url=${encodeURIComponent(normalizedImageUrl)}`;
@@ -5995,7 +6015,7 @@ export async function requestFavoriteGroups(
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   return getBuncheolList(await readJsonBody(response))

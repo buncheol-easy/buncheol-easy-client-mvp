@@ -1,8 +1,5 @@
-const allowedImageHosts = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
+import { IMAGE_HOSTS } from "@/lib/image-hosts";
+
 const allowedPathPrefixes = ["/idol-groups/", "/buncheols/"];
 // 그룹 로고 대부분이 SVG 라 SVG 는 그룹 이미지 경로에서만 허용한다.
 const vectorImagePathPrefix = "/idol-groups/";
@@ -94,7 +91,7 @@ export async function GET(request: Request) {
 
   if (
     parsedImageUrl.protocol !== "https:" ||
-    !allowedImageHosts.has(parsedImageUrl.hostname) ||
+    !IMAGE_HOSTS.has(parsedImageUrl.hostname) ||
     !allowedPathPrefixes.some((prefix) =>
       parsedImageUrl.pathname.startsWith(prefix),
     )

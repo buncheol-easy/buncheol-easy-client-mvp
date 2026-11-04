@@ -42,6 +42,7 @@ import { useIsUnderlay } from "@/components/SwipeUnderlay";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import {
   addFavoriteGroup,
+  ApiRequestError,
   readCachedBanners,
   removeFavoriteGroup,
   requestBanners,
@@ -737,11 +738,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     [railGroups],
   );
   const favoriteGroupsError = favoriteGroupsQuery.error;
-  // 401 은 토큰이 죽은 것이라 안내 대신 로그인 상태를 정리한다 (기존 fetch 경로와 동일).
+  // 401 은 토큰이 죽은 것이라 안내 대신 로그인 상태를 정리한다. 서버 401 문구는 한국어라 글자로 판정하면 안 된다.
   const isFavoriteGroupsUnauthorized =
-    favoriteGroupsError !== null &&
-    (favoriteGroupsError.message.includes("401") ||
-      favoriteGroupsError.message.includes("Unauthorized"));
+    favoriteGroupsError instanceof ApiRequestError &&
+    favoriteGroupsError.status === 401;
   // 토글 실패·한도 안내(groupMessage)는 사용자가 방금 한 행동의 결과라 조회 실패보다 우선한다.
   // 조회 실패 원문은 브라우저·서버 영어('Failed to fetch'·'Bad Gateway')라 화면에 쓰지 않는다.
   const visibleGroupMessage =
@@ -1597,8 +1597,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               ))}
               <HelpText className="px-1 pt-1">
                 분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 10분 안에
-                입금하면 돼요. 분철이지는 통신판매중개자이며, 회원 개최 분철의
-                대금은 개최자 계좌로 직접 입금돼요.
+                입금하면 돼요.
               </HelpText>
               <HelpText className="px-1 pt-2">
                 마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 원하는 분철이
