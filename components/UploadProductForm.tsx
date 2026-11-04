@@ -22,6 +22,7 @@ import {
   useToast,
 } from "@/components/Toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { IMAGE_HOSTS } from "@/lib/image-hosts";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
   BackIcon,
@@ -538,19 +539,13 @@ function canExportImageThroughCanvas(imageUrl: string) {
   return imageUrl.startsWith("data:") || imageUrl.startsWith("blob:");
 }
 
-const editableImageProxyHosts = new Set([
-  "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-  "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-]);
-
 function getEditableImageFetchUrl(imageUrl: string) {
   try {
     const parsedImageUrl = new URL(imageUrl);
 
     if (
       parsedImageUrl.protocol === "https:" &&
-      editableImageProxyHosts.has(parsedImageUrl.hostname) &&
+      IMAGE_HOSTS.has(parsedImageUrl.hostname) &&
       parsedImageUrl.pathname.startsWith("/buncheols/")
     ) {
       return `/api/group-image?url=${encodeURIComponent(imageUrl)}`;

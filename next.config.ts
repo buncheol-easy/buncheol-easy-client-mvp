@@ -19,22 +19,17 @@ const nextConfig: NextConfig = {
     "*.trycloudflare.com",
   ],
   images: {
+    // lib/image-hosts.ts 와 같은 목록. ⚠️ 여기서 import 하지 말 것 — Docker 실행 단계가 이 파일만 복사한다.
     remotePatterns: [
       {
         protocol: "https",
+        hostname: "images.buncheoleasy.com",
+        port: "",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
         hostname: "buncheol-easy-bucket.s3.ap-northeast-2.amazonaws.com",
-        port: "",
-        pathname: "/**",
-      },
-      {
-        protocol: "https",
-        hostname: "buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
-        port: "",
-        pathname: "/**",
-      },
-      {
-        protocol: "https",
-        hostname: "staging-buncheoleasy-bucket.s3.ap-northeast-2.amazonaws.com",
         port: "",
         pathname: "/**",
       },
