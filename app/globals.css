@@ -1058,6 +1058,96 @@ body.is-pwa-standalone {
   }
 }
 
+/* AI 를 기다리는 동안 AI 가 채울 칸. inert 로 잠그고 칸 안에서만 반짝인다. 서버가 진행 단계를 주지 않아 진행률은 없다. */
+@keyframes ai-draft-shim {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -120% 0;
+  }
+}
+
+.ai-draft-shim {
+  animation: ai-draft-shim 1500ms linear infinite;
+  background-image: linear-gradient(
+    90deg,
+    var(--brand-soft) 20%,
+    var(--brand-pale) 50%,
+    var(--brand-soft) 80%
+  );
+  background-size: 220% 100%;
+  border-color: transparent;
+}
+
+.ai-draft-shim svg {
+  visibility: hidden;
+}
+
+.upload-ai-lock {
+  transition: opacity 160ms ease;
+}
+
+/* 다시 채울 때 칸의 글자를 줄 뒤로 숨긴다. 그만두면 그대로 돌아온다. */
+.upload-ai-lock[inert] .ai-field-frame input,
+.upload-ai-lock[inert] .ai-field-frame textarea {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.upload-ai-lock[inert] .ai-field-frame input::placeholder,
+.upload-ai-lock[inert] .ai-field-frame textarea::placeholder {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.upload-ai-lock[inert] .ai-field-frame__mirror {
+  visibility: hidden;
+}
+
+/* 이미 고른 사진·그룹처럼 줄을 그릴 수 없는 곳은 잠겼다는 것만 흐리게 보인다. */
+.upload-ai-lock--dim[inert] {
+  opacity: 0.45;
+}
+
+/* AI 가 넣은 글자 뒤 옅은 라임. 고치면 사라진다. */
+.ai-filled-mark {
+  -webkit-box-decoration-break: clone;
+  background: color-mix(in srgb, var(--brand-strong) 60%, transparent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  padding: 1px 2px;
+}
+
+.ai-field-frame__mirror {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+}
+
+.ai-field-frame--filled:not(:focus-within) input,
+.ai-field-frame--filled:not(:focus-within) textarea {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.ai-field-frame--filled:focus-within .ai-field-frame__mirror {
+  display: none;
+}
+
+/* 키보드는 화면 높이를 줄이지 않아 맨 아래 버튼이 가려진다. 열려 있는 동안은 입력칸 바로 밑에 둔다. */
+body.is-virtual-keyboard-open .ai-start-foot {
+  margin-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-draft-shim {
+    animation: none;
+  }
+}
+
 .motion-carousel {
   scroll-behavior: smooth;
   scroll-padding-inline: 1rem;
