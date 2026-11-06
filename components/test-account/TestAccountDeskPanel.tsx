@@ -8,6 +8,7 @@ import { TestAccountAvatar } from "@/components/test-account/TestAccountAvatar";
 import { useTestAccountView } from "@/components/test-account/use-test-account-view";
 import {
   getPrimaryTestAccount,
+  getWelcomeReturnHref,
   switchTestAccount,
   testAccountFirstTodos,
   testAccountRoleNames,
@@ -44,7 +45,11 @@ export function TestAccountDeskPanel({ renderQr }: TestAccountDeskPanelProps) {
     setSwitchingRole(role);
 
     try {
-      await switchTestAccount(account, queryClient);
+      await switchTestAccount(
+        account,
+        queryClient,
+        view.isWelcomeVisible ? getWelcomeReturnHref() : undefined,
+      );
     } catch {
       setSwitchingRole(null);
       showToast(
@@ -61,6 +66,7 @@ export function TestAccountDeskPanel({ renderQr }: TestAccountDeskPanelProps) {
         aria-hidden="true"
         className="pointer-events-none absolute -top-[80px] right-5 h-24 w-auto"
         height={240}
+        loading="eager"
         src="/mascot/songni-wave.png"
         width={176}
       />

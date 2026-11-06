@@ -15,8 +15,6 @@ type TestAccount = {
 };
 
 // primary 는 평가위원이 고르는 대표 계정이다. 역할마다 하나씩만 둔다.
-
-
 const testAccountDefinitions = [
   {
     accessTokenEnv: "TEST_USER1_ACCESS_TOKEN",

@@ -139,6 +139,13 @@ export function getTestAccountHome(role: TestAccountRole) {
   return role === "host" ? "/profile/bids" : "/";
 }
 
+// 첫 화면이 덮은 화면이 홈이 아니면(상세 링크, QR 등) 역할을 고른 뒤 그 화면으로 돌아간다.
+export function getWelcomeReturnHref() {
+  const { pathname, search } = window.location;
+
+  return pathname === "/" ? undefined : `${pathname}${search}`;
+}
+
 export function openTestAccountSheet() {
   setState({ isSheetOpen: true });
 }

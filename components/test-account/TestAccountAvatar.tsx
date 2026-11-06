@@ -6,7 +6,7 @@ type TestAccountAvatarProps = {
   size: number;
 };
 
-// 참여자는 웃는 송니, 개최자는 머리띠를 맨 응원 송니다.
+// 참여자는 웃는 송니, 개최자는 머리띠를 맨 응원 송니다. 데스크톱 옆 패널에서는 지연 로딩이 시작되지 않아 바로 불러온다.
 export function TestAccountAvatar({ role, size }: TestAccountAvatarProps) {
   const isHost = role === "host";
 
@@ -22,6 +22,7 @@ export function TestAccountAvatar({ role, size }: TestAccountAvatarProps) {
         alt=""
         className="h-full w-full"
         height={size}
+        loading="eager"
         src={isHost ? "/mascot/songni-cheer.png" : "/mascot/songni-face.png"}
         width={size}
       />

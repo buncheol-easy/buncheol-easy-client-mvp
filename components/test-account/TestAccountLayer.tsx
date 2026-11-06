@@ -17,6 +17,7 @@ import {
   closeTestAccountSheet,
   dismissTestAccountWelcome,
   getPrimaryTestAccount,
+  getWelcomeReturnHref,
   isTestAccountTipSeen,
   leaveTestAccount,
   markTestAccountTipSeen,
@@ -112,14 +113,8 @@ export function TestAccountLayer() {
   function handlePick(role: TestAccountRole) {
     const account = getPrimaryTestAccount(view.accounts, role);
 
-    // 상세 링크나 QR 로 들어와 첫 화면이 덮였으면 고른 뒤 그 화면으로 돌아간다.
     if (account) {
-      void handleSwitch(
-        account,
-        view.pathname === "/"
-          ? undefined
-          : `${window.location.pathname}${window.location.search}`,
-      );
+      void handleSwitch(account, getWelcomeReturnHref());
     }
   }
 
