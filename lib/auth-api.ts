@@ -59,8 +59,13 @@ export type UserProfileStatus = {
 
 // 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
 export const hostingEligibilityReasons = [
+  // 카카오 가입자가 아님(애플 가입 등) — 회복 경로 없음
+  "KAKAO_ACCOUNT_REQUIRED",
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
+  // 「만 19세 이상」 본인 체크 기록 없음 — 체크를 저장하면 통과
+  "ADULT_CONFIRM_REQUIRED",
+  // ⚠️ 아래 연령대 사유 둘은 새 서버가 내리지 않지만, 웹이 서버보다 먼저 나가므로 그동안은 옛 서버 응답을 받아야 한다.
   // 연령대 미확인 — 카카오 연령대 추가 동의로 회복 가능 (서버 USR-032)
   "AGE_UNVERIFIED",
   // 미성년 확정 — 개최 불가 (서버 USR-033)
@@ -1729,6 +1734,25 @@ export async function requestHostingEligibility(
   return { eligible, reason: getHostingEligibilityReason(data) };
 }
 
+// 「만 19세 이상」 본인 체크 저장 (server: POST /v1/buncheols/hosting-eligibility/adult-confirmation). 본문 없음, 멱등, 성공 204.
+export async function requestHostingAdultConfirmation(accessToken: string) {
+  const response = await fetch(
+    `${getVersionedApiBaseUrl()}/buncheols/hosting-eligibility/adult-confirmation`,
+    {
+      credentials: "include",
+      headers: getAuthHeaders(accessToken),
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      await parseErrorMessage(response),
+      response.status,
+    );
+  }
+}
+
 function getHostingEligibilityReason(data: unknown): HostingEligibilityReason {
   if (!isRecord(data)) {
     return null;
@@ -1743,6 +1767,159 @@ function isHostingEligibilityReason(
   value: string,
 ): value is NonNullable<HostingEligibilityReason> {
   return (hostingEligibilityReasons as readonly string[]).includes(value);
+}
+
+// AI 개최글 도우미(/v1/ai/drafts). 서버 오류 문구는 화면이 그대로 보여 주는 계약이라 코드로만 분기한다.
+export const AI_DRAFT_FETCH_FAILED_CODE = "AI-002";
+export const AI_DRAFT_DAILY_LIMIT_EXCEEDED_CODE = "AI-003";
+export const AI_DRAFT_DISABLED_CODE = "AI-007";
+// 서버가 엔진을 최대 25초 기다린 뒤 그룹 찾기·기록까지 한다. 그보다 넉넉히 두되 끝없이 기다리지 않는다.
+const AI_DRAFT_TIMEOUT_MS = 45000;
+
+export type AiDraftQuota = {
+  enabled: boolean;
+  dailyLimit: number;
+  remainingToday: number;
+};
+
+export type AiDraftSource = { url: string } | { rawText: string };
+
+export type AiDraft = {
+  title: string;
+  description: string;
+  purchaseSite: string;
+  group: { id: string; name: string } | null;
+  groupKeywords: string[];
+  // 원화로 확인된 정가만 온다.
+  listPrice: number | null;
+  // yyyy-MM-dd
+  releaseDate: string | null;
+  // base64, 데이터 URL 접두어 없음.
+  images: string[];
+  thumbnailIndex: number;
+  remainingToday: number | null;
+};
+
+export class AiDraftTimeoutError extends Error {
+  constructor() {
+    super("AI 응답이 늦어지고 있어요. 잠시 후 다시 시도해 주세요.");
+    this.name = "AiDraftTimeoutError";
+  }
+}
+
+export async function requestAiDraftQuota(
+  accessToken: string,
+): Promise<AiDraftQuota> {
+  const response = await fetch(`${getVersionedApiBaseUrl()}/ai/drafts/quota`, {
+    credentials: "include",
+    headers: getAuthHeaders(accessToken),
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      await parseErrorMessage(response),
+      response.status,
+    );
+  }
+
+  const data = getNestedData(await readJsonBody(response));
+
+  if (!isRecord(data)) {
+    throw new Error("AI 작성 횟수를 확인할 수 없어요.");
+  }
+
+  return {
+    enabled: getBooleanValue(data, ["enabled"]) === true,
+    dailyLimit: getNumberValue(data, ["dailyLimit"]) ?? 0,
+    remainingToday: getNumberValue(data, ["remainingToday"]) ?? 0,
+  };
+}
+
+export async function requestAiDraft(
+  accessToken: string,
+  source: AiDraftSource,
+  signal?: AbortSignal,
+): Promise<AiDraft> {
+  const controller = new AbortController();
+  let didTimeOut = false;
+  const timeoutId = globalThis.setTimeout(() => {
+    didTimeOut = true;
+    controller.abort();
+  }, AI_DRAFT_TIMEOUT_MS);
+  const abortFromCaller = () => controller.abort();
+
+  if (signal?.aborted) {
+    controller.abort();
+  }
+
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
+
+  try {
+    const response = await fetch(`${getVersionedApiBaseUrl()}/ai/drafts`, {
+      body: JSON.stringify(source),
+      credentials: "include",
+      headers: getJsonHeaders(accessToken),
+      method: "POST",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const parsedErrorBody: unknown = await readJsonBody(response);
+      const errorBody = isRecord(parsedErrorBody) ? parsedErrorBody : null;
+      const errorMessage =
+        getFirstNonEmptyString(
+          errorBody?.message,
+          errorBody?.detail,
+          errorBody?.title,
+          response.statusText,
+        ) || DEFAULT_ERROR_MESSAGE;
+      const errorCode = errorBody
+        ? getOptionalStringValue(errorBody, ["code"])
+        : undefined;
+
+      throw new ApiRequestError(errorMessage, response.status, errorCode);
+    }
+
+    const data = getNestedData(await readJsonBody(response));
+
+    if (!isRecord(data)) {
+      throw new Error("AI가 쓴 글을 받지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }
+
+    return getAiDraftFromRecord(data);
+  } catch (error: unknown) {
+    if (didTimeOut) {
+      throw new AiDraftTimeoutError();
+    }
+
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+function getAiDraftFromRecord(data: Record<string, unknown>): AiDraft {
+  const group = isRecord(data.group) ? data.group : null;
+  const groupId = group ? getStringValue(group, ["id", "groupId"]) : "";
+  const releaseDate = getStringValue(data, ["releaseDate"]);
+
+  return {
+    title: getStringValue(data, ["title"]),
+    description: getStringValue(data, ["description"]),
+    purchaseSite: getStringValue(data, ["purchaseSite"]),
+    group:
+      group && groupId
+        ? { id: groupId, name: getStringValue(group, ["name"]) }
+        : null,
+    groupKeywords: getStringArrayValue(data, ["groupKeywords"]),
+    listPrice: getNumberValue(data, ["listPrice"]),
+    releaseDate: /^\d{4}-\d{2}-\d{2}$/.test(releaseDate) ? releaseDate : null,
+    images: getStringArrayValue(data, ["images"]),
+    thumbnailIndex: getNumberValue(data, ["thumbnailIndex"]) ?? 0,
+    remainingToday: getNumberValue(data, ["remainingToday"]),
+  };
 }
 
 export async function requestUserProfileStatus(accessToken: string) {
@@ -5838,7 +6015,7 @@ export async function requestFavoriteGroups(
   );
 
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
+    throw new ApiRequestError(await parseErrorMessage(response), response.status);
   }
 
   return getBuncheolList(await readJsonBody(response))

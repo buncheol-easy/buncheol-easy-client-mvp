@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { BackIcon, CheckIcon, KakaoIcon, ProfileIcon } from "@/components/icons";
 import { getKakaoAuthorizationUrl } from "@/lib/auth-api";
-import { authReturnHrefStorageKey } from "@/lib/auth-store";
+import {
+  authLoginHrefStorageKey,
+  authReturnHrefStorageKey,
+} from "@/lib/auth-store";
 import { getHistoryIndex } from "@/lib/history-index";
 
 type LoginContentProps = {
@@ -35,6 +38,10 @@ export function LoginContent({
 
   function handleKakaoLogin() {
     window.sessionStorage.setItem(authReturnHrefStorageKey, returnHref);
+    window.sessionStorage.setItem(
+      authLoginHrefStorageKey,
+      `${window.location.pathname}${window.location.search}`,
+    );
     window.location.href = getKakaoAuthorizationUrl();
   }
 

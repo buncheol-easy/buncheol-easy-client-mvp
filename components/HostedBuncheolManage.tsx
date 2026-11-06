@@ -58,6 +58,7 @@ import {
 } from "@/lib/auth-store";
 import { createLoginHref } from "@/lib/auth-navigation";
 import { getFreshAccessToken } from "@/lib/auth-session";
+import { formatKoreanDateTime } from "@/lib/korean-time";
 
 type HostedBuncheolManageProps = {
   id: string;
@@ -96,36 +97,7 @@ function formatKoreaDateTime(value: string | undefined) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  /*
-   * 참여 내역·개최 기록과 같은 "8월 12일 17:30" 모양으로 맞춘다.
-   * 같은 정보가 화면마다 "8.12 17시" / "2026년 07월 05일 14시" / "2026. 12. 22. 20:00"
-   * 세 가지로 보이고 있었다. 연도는 올해가 아닐 때만 붙인다.
-   */
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    day: "numeric",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "numeric",
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).formatToParts(date);
-  const partMap = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const currentYear = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-  }).format(new Date());
-  const yearPrefix = currentYear.includes(partMap.year)
-    ? ""
-    : `${partMap.year}년 `;
-
-  return `${yearPrefix}${partMap.month}월 ${partMap.day}일 ${partMap.hour}:${partMap.minute}`;
+  return Number.isNaN(date.getTime()) ? value : formatKoreanDateTime(date);
 }
 
 // 금액을 하나도 모르면 0 이 아니라 null — 0 은 「0원」으로 그려져 실제 0원 자리와 구분되지 않는다.
@@ -1073,12 +1045,19 @@ export function HostedBuncheolManage({
 
     setConfirmSheetRequest({
       confirmLabel: "입금 확인",
-      // 합계가 0원이면 「0원을 받으셨나요」가 돼 받을 돈이 있는 것처럼 읽힌다. 0원 슬롯 조합에서
-      // 실제로 도달할 수 있어, 받을 금액이 없으면 금액 절을 통째로 뺀다.
+      // 합계가 0원이면 「0원」이 받을 돈이 있는 것처럼 읽힌다. 0원 슬롯 조합에서 실제로 도달할 수
+      // 있어, 받을 금액이 없으면 금액 줄과 통장 대조 문장을 뺀다.
       description:
         total > 0
-          ? `${depositorName}님의 ${memberNames} ${formatWonAmount(total)}을 받으셨나요? 확인하면 되돌릴 수 없어요.`
-          : `${depositorName}님의 ${memberNames} 입금을 받으셨나요? 확인하면 되돌릴 수 없어요.`,
+          ? "통장에 아래 이름과 금액으로 들어왔나요? 확인하면 되돌릴 수 없어요."
+          : "확인하면 되돌릴 수 없어요.",
+      details: [
+        { label: "입금자명", value: depositorName },
+        ...(total > 0
+          ? [{ label: "받을 금액", value: formatWonAmount(total) }]
+          : []),
+        { label: "멤버", value: memberNames },
+      ],
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runConfirmBundlePayment(bundle, expectedSlotIds);
@@ -1160,7 +1139,12 @@ export function HostedBuncheolManage({
 
     setConfirmSheetRequest({
       confirmLabel: "제외",
-      description: `${depositorName}님의 ${memberNames} 자리를 뺄까요? 참여자에게 취소 안내가 나가고, 그 자리는 다시 신청받을 수 있어요. 되돌릴 수 없어요.`,
+      description:
+        "참여자에게 취소 안내가 나가고, 그 자리는 다시 신청받을 수 있어요. 되돌릴 수 없어요.",
+      details: [
+        { label: "입금자명", value: depositorName },
+        { label: "멤버", value: memberNames },
+      ],
       onConfirm: () => {
         setConfirmSheetRequest(null);
         void runReleaseBundle(bundle);
@@ -1898,7 +1882,7 @@ export function HostedBuncheolManage({
                 </p>
                 {detail.paymentDueAt ? (
                   <span className="shrink-0 text-[12px] font-semibold text-black/45">
-                    기한 {formatKoreaDateTime(detail.paymentDueAt)}
+                    입금 기한 {formatKoreaDateTime(detail.paymentDueAt)}
                   </span>
                 ) : null}
               </div>
@@ -2135,7 +2119,7 @@ export function HostedBuncheolManage({
               ) : isC2C ? (
                 // 🔴 C2C 는 <b>묶음</b> 단위로 보여준다 — 「제외」·입금확인이 묶음 API 하나뿐이라,
                 // 멤버 자리 줄에 버튼을 달면 "한 줄을 눌렀는데 그 사람 자리가 전부 빠지는" 화면이 된다.
-                // 대신 자리 축(누가 남았나)이 흐려지므로 줄 안에 멤버명을 칩으로 나열한다 (docs/84 §3-5).
+                // 대신 자리 축(누가 남았나)이 흐려지므로 금액 표 안에 멤버별 줄을 둔다 (docs/84 §3-5).
                 c2cBundles.map((bundle) => {
                   const head = bundle.slots[0];
                   const depositorName = getDepositorName(head);
@@ -2238,14 +2222,23 @@ export function HostedBuncheolManage({
                   const sentAtSlot = bundle.slots.find(
                     (slot) => slot.paymentSentAt,
                   );
-                  const bundleTimeInfo =
+                  const bundleTimeRow =
                     isBundleSent && sentAtSlot?.paymentSentAt
-                      ? ` · 보냈어요 ${formatKoreaDateTime(sentAtSlot.paymentSentAt)}`
+                      ? {
+                          label: "보낸 시각",
+                          value: formatKoreaDateTime(sentAtSlot.paymentSentAt),
+                        }
                       : isBundleAwaiting && head.dueAt
-                        ? ` · 기한 ${formatKoreaDateTime(head.dueAt)}`
+                        ? {
+                            label: "입금 기한",
+                            value: formatKoreaDateTime(head.dueAt),
+                          }
                         : isBundleConfirmed && head.confirmedAt
-                          ? ` · 확인 ${formatKoreaDateTime(head.confirmedAt)}`
-                          : "";
+                          ? {
+                              label: "확인한 시각",
+                              value: formatKoreaDateTime(head.confirmedAt),
+                            }
+                          : null;
 
                   return (
                     <article
@@ -2254,11 +2247,9 @@ export function HostedBuncheolManage({
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          {/* ⚠️ 값이 같으면 감춘다. 입금자명은 비면 닉네임으로 폴백하고(getDepositorName),
-                              파서의 participantNickname 도 depositorName 을 별칭으로 흡수한다 — 그대로 두면
-                              같은 이름이 두 줄 뜬다. */}
-                          {head.participantNickname !== depositorName &&
-                          !isSyntheticParticipantName(head.participantNickname) ? (
+                          {!isSyntheticParticipantName(
+                            head.participantNickname,
+                          ) ? (
                             <p className="truncate text-[13px] font-semibold text-black/60">
                               <span className="mr-1.5 text-black/35">참여자</span>
                               {head.participantNickname}
@@ -2267,20 +2258,6 @@ export function HostedBuncheolManage({
                           <p className="mt-0.5 truncate text-[14px] font-semibold tracking-[-0.04em]">
                             입금자명 {depositorName}
                           </p>
-                          <p className="mt-0.5 text-[12px] font-medium text-black/40">
-                            {formatWonAmount(bundleTotal)}
-                            {bundle.slots.length > 1
-                              ? ` · 멤버 ${bundle.slots.length}명`
-                              : ""}
-                            {bundleTimeInfo}
-                          </p>
-                          {/* 배송비는 묶음에 1회만 붙는다 — 합계만 보여주면 개최자가 통장 금액과
-                              왜 다른지 설명할 수 없다 (docs/53 Q-22). */}
-                          {bundleShippingFee > 0 ? (
-                            <p className="mt-0.5 text-[11px] font-medium text-black/30">
-                              {`상품 ${formatWonAmount(Math.max(bundleTotal - bundleShippingFee, 0))} + 배송비 ${formatWonAmount(bundleShippingFee)}`}
-                            </p>
-                          ) : null}
                         </div>
                         <span
                           className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
@@ -2303,17 +2280,74 @@ export function HostedBuncheolManage({
                         </span>
                       </div>
 
-                      {/* 묶음으로 접으면서 "어느 자리를 잡았나" 가 흐려진다 — 칩으로 되살린다. */}
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {bundle.slots.map((slot) => (
-                          <span
-                            className="rounded-full bg-[#f1f1f1] px-2 py-0.5 text-[11px] font-semibold text-black/60"
-                            key={slot.participationId}
-                          >
-                            {getSlotMemberLabel(slot)}
-                          </span>
-                        ))}
-                      </div>
+                      {/* 배송비는 묶음에 1회만 붙는다 — 합계만 보여주면 개최자가 통장 금액과
+                          왜 다른지 설명할 수 없다 (docs/53 Q-22). */}
+                      <dl className="mt-2.5 space-y-1 rounded-[0.8rem] bg-[#f7f7f7] px-3 py-2.5 text-[12px]">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <dt className="shrink-0 font-medium text-black/40">
+                            받을 금액
+                          </dt>
+                          <dd className="text-[14px] font-semibold tracking-[-0.04em]">
+                            {formatWonAmount(bundleTotal)}
+                          </dd>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <dt className="min-w-0 truncate font-medium text-black/40">
+                            {bundle.slots.length > 1
+                              ? `상품 (멤버 ${bundle.slots.length}명)`
+                              : `상품 (${getSlotMemberLabel(head)})`}
+                          </dt>
+                          <dd className="shrink-0 font-semibold tracking-[-0.03em]">
+                            {formatWonAmount(
+                              Math.max(bundleTotal - bundleShippingFee, 0),
+                            )}
+                          </dd>
+                        </div>
+                        {bundle.slots.length > 1
+                          ? bundle.slots.map((slot) => (
+                              <div
+                                className="flex items-baseline justify-between gap-2 pl-2.5 text-[11px]"
+                                key={slot.participationId}
+                              >
+                                <dt className="min-w-0 truncate font-medium text-black/40">
+                                  <span aria-hidden="true">ㄴ </span>
+                                  {getSlotMemberLabel(slot)}
+                                </dt>
+                                <dd className="shrink-0 font-medium tracking-[-0.03em] text-black/50">
+                                  {formatWonAmount(
+                                    Math.max(
+                                      slot.amount -
+                                        (typeof slot.shippingFee === "number"
+                                          ? slot.shippingFee
+                                          : 0),
+                                      0,
+                                    ),
+                                  )}
+                                </dd>
+                              </div>
+                            ))
+                          : null}
+                        {bundleShippingFee > 0 ? (
+                          <div className="flex items-baseline justify-between gap-2">
+                            <dt className="shrink-0 font-medium text-black/40">
+                              배송비
+                            </dt>
+                            <dd className="font-semibold tracking-[-0.03em]">
+                              {formatWonAmount(bundleShippingFee)}
+                            </dd>
+                          </div>
+                        ) : null}
+                        {bundleTimeRow ? (
+                          <div className="flex items-baseline justify-between gap-2 border-t border-black/[0.06] pt-1.5">
+                            <dt className="shrink-0 font-medium text-black/40">
+                              {bundleTimeRow.label}
+                            </dt>
+                            <dd className="text-right font-semibold tracking-[-0.03em]">
+                              {bundleTimeRow.value}
+                            </dd>
+                          </div>
+                        ) : null}
+                      </dl>
 
                       {/* 상태 화이트리스트로 게이트하면 모르는 status(제외 직후 서버가 새 값을 주는 등)에서
                           버튼이 0개인 유령 줄이 남는다. 실제로 할 수 있는 것이 하나라도 있으면 연다. */}
@@ -2391,17 +2425,38 @@ export function HostedBuncheolManage({
 
                             return (
                               <div key={entry.delivery.deliveryId}>
-                                <p className="text-[12px] font-medium text-black/40">
+                                <dl className="space-y-1 text-[12px]">
                                   {[
-                                    getShippingMethodLabel(
-                                      entry.delivery.shippingMethod,
-                                    ),
-                                    entry.delivery.storeName,
-                                    entry.delivery.receiverPhoneNumber,
+                                    {
+                                      label: "택배",
+                                      value: getShippingMethodLabel(
+                                        entry.delivery.shippingMethod,
+                                      ),
+                                    },
+                                    {
+                                      label: "받는 점포",
+                                      value: entry.delivery.storeName,
+                                    },
+                                    {
+                                      label: "연락처",
+                                      value: entry.delivery.receiverPhoneNumber,
+                                    },
                                   ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                                </p>
+                                    .filter((row) => row.value)
+                                    .map((row) => (
+                                      <div
+                                        className="flex items-baseline justify-between gap-2"
+                                        key={row.label}
+                                      >
+                                        <dt className="shrink-0 font-medium text-black/40">
+                                          {row.label}
+                                        </dt>
+                                        <dd className="min-w-0 break-words text-right font-semibold text-black/60">
+                                          {row.value}
+                                        </dd>
+                                      </div>
+                                    ))}
+                                </dl>
                                 {hasTracking && !isEditingTracking ? (
                                   <div className="mt-1.5 flex items-center justify-between gap-2">
                                     <p className="min-w-0 text-[13px] font-semibold text-black/60">

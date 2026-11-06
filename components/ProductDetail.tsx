@@ -72,6 +72,10 @@ import {
   parseIsoTimeMs,
 } from "@/lib/buncheol-open-time";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
+import {
+  PRODUCT_WIDE_IMAGE_SIZES,
+  PRODUCT_ZOOM_IMAGE_SIZES,
+} from "@/lib/optimizable-image";
 import { FEATURES } from "@/lib/feature-flags";
 import { getHistoryIndex } from "@/lib/history-index";
 import {
@@ -116,6 +120,7 @@ import {
   type MemberChipState,
   MemberChips,
 } from "@/components/MemberChips";
+import { formatKoreanDateTime } from "@/lib/korean-time";
 import { BottomNavigator } from "@/components/BottomNavigator";
 import {
   OpensAtBand,
@@ -139,6 +144,7 @@ import {
 } from "@/components/FavoritesContent";
 import { HOME_SKIP_ENTER_KEY, HomeContent } from "@/components/HomeContent";
 import { PRODUCT_HOME_ENTRY_INDEX_KEY } from "@/components/ProductCard";
+import { ProductPhoto } from "@/components/ProductPhoto";
 import { PROFILE_SKIP_ENTER_KEY } from "@/components/ProfileContent";
 import {
   SEARCH_SKIP_ENTER_KEY,
@@ -624,14 +630,7 @@ function formatPurchaseDeadlineCountdown(deadline: string, now = Date.now()) {
    * 시선을 끈다. 마감이 임박한 24시간 안에서만 시계가 의미를 갖는다.
    */
   if (days >= 1) {
-    return `${new Intl.DateTimeFormat("ko-KR", {
-      day: "numeric",
-      hour: "2-digit",
-      hour12: false,
-      minute: "2-digit",
-      month: "long",
-      timeZone: "Asia/Seoul",
-    }).format(deadlineDate)}`;
+    return formatKoreanDateTime(deadlineDate);
   }
 
   return `${formatCountdownClock(totalSeconds)} 남음`;
@@ -791,7 +790,6 @@ const MEMBER_STATUS_CHIP_LABELS = {
   otherComplete: "매진",
   otherPaymentWaiting: "다른 사람이 입금 중이에요",
   otherPaymentChecking: "입금 확인 중이에요",
-  otherPaymentOverdue: "입금 기한이 지났어요",
   codeOnly: "서포터즈 전용 자리",
   notOpen: "오픈 전",
 } as const;
@@ -850,13 +848,12 @@ function getOptionPaymentWaitingLabel(
       : MEMBER_STATUS_CHIP_LABELS.myPaymentWaiting;
   }
 
-  if (!isOverdue) {
+  // C2C 는 기한이 지나도 입금할 수 있고, 남의 기한 사정은 보는 사람에게 드러내지 않는다.
+  if (!isOverdue || isC2C) {
     return MEMBER_STATUS_CHIP_LABELS.otherPaymentWaiting;
   }
 
-  return isC2C
-    ? MEMBER_STATUS_CHIP_LABELS.otherPaymentOverdue
-    : MEMBER_STATUS_CHIP_LABELS.otherPaymentChecking;
+  return MEMBER_STATUS_CHIP_LABELS.otherPaymentChecking;
 }
 
 // 자리가 열리기를 기다리는 사람이 가늠하는 용도라, 1시간 넘게 남으면 시간 단위까지만 보인다.
@@ -979,12 +976,7 @@ function formatCheckoutDateTime(value: string | null | undefined) {
     return value ?? "-";
   }
 
-  return new Intl.DateTimeFormat("ko-KR", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-  }).format(date);
+  return formatKoreanDateTime(date);
 }
 
 function getBankAccountKey(account: BankAccountInfo | null | undefined) {
@@ -2661,6 +2653,11 @@ export function ProductDetail({
     product.options,
   ]);
 
+  // 선택에서 파생되는 값이라 deps 로 두면 자리를 고를 때마다 복원이 다시 돌아 고르던 선택을 덮어쓴다.
+  const getRestorableMemberLimit = useEffectEvent(() =>
+    canSelectMultipleMembers ? maxSelectableMemberCount : 1,
+  );
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -2771,7 +2768,7 @@ export function ProductDetail({
 
         return optionIds;
       }, [])
-      .slice(0, canSelectMultipleMembers ? maxSelectableMemberCount : 1);
+      .slice(0, getRestorableMemberLimit());
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -2897,16 +2894,13 @@ export function ProductDetail({
     };
 
     void restoreAddressSheet();
-    // TODO(#99): hasMyActiveParticipation 이 deps 에서 빠져 있다. 추가하면 주소 시트 복원
-    // 타이밍이 바뀌어 회귀 가능성이 있어(참여 상태 변경마다 복원이 재실행됨) 수동 QA 와 함께
-    // 별도 PR 에서 처리한다. 그때까지 신규 warning 유입을 막기 위해 이 지점만 억제한다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     auctionOptions,
     authState.isLoggedIn,
     availableShippingStoreTypes,
     buncheolId,
     deliveryAddressState,
+    hasMyActiveParticipation,
     myBids,
     product.isApiProduct,
   ]);
@@ -4655,7 +4649,7 @@ export function ProductDetail({
           </div>
         </header>
 
-        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32">
+        <div className="app-page-scroll min-h-0 flex-1 overflow-y-auto pb-32 [body.is-browser-tab_&]:pb-[calc(8rem+env(safe-area-inset-bottom))]">
           <section
             className={`px-4 ${revealOnEnter ? "detail-reveal" : ""}`}
             style={revealOnEnter ? getRevealStyle(0) : undefined}
@@ -4689,16 +4683,16 @@ export function ProductDetail({
                     >
                       {productImages.map((imageUrl, imageIndex) => (
                         <div
-                          className="h-full w-full shrink-0 overflow-hidden"
+                          className="relative h-full w-full shrink-0 overflow-hidden"
                           key={imageUrl}
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
+                          <ProductPhoto
                             alt=""
-                            className="h-full w-full object-cover"
+                            className="object-cover"
                             draggable={false}
                             fetchPriority={imageIndex === 0 ? "high" : "auto"}
                             loading={imageIndex === 0 ? "eager" : "lazy"}
+                            sizes={PRODUCT_WIDE_IMAGE_SIZES}
                             src={imageUrl}
                           />
                         </div>
@@ -5966,18 +5960,10 @@ export function ProductDetail({
                       </HelpText>
                     </div>
 
-                    {/* 여기서도 고지를 별도 문단이 아니라 안내 문장에 흡수한다.
-                        원래 문단은 isC2CProduct 로 감싸여 있지 않아 회사 개최 분철에도
-                        노출될 수 있었으므로, 흡수하면서 C2C 분기로 좁혔다. */}
+                    {/* 중개자 고지는 바로 앞 확인 단계에 있다 — 신청 완료 화면에서 되풀이하지 않는다. */}
                     <HelpText className="px-1">
                       개최자 확정 전에는 참여 내역에서 언제든 무료로 취소할 수
                       있어요.
-                      {isC2CProduct ? (
-                        <span className="block font-semibold text-black/75">
-                          분철이지는 통신판매중개자이며, 대금은 개최자 계좌로
-                          직접 입금돼요.
-                        </span>
-                      ) : null}
                     </HelpText>
                   </div>
 
@@ -6230,7 +6216,7 @@ export function ProductDetail({
               type="button"
             />
             <section
-              className={`sheet-scroll bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
+              className={`sheet-scroll bid-sheet-panel relative mx-auto max-h-[calc(100dvh-2.5rem)] w-full max-w-[430px] overflow-y-auto rounded-t-[1.4rem] bg-white px-5 pb-6 pt-4 [--bid-sheet-padding-bottom:1.5rem] shadow-[0_-18px_50px_rgba(0,0,0,0.22)] ${
                 isRefundAccountSheetEntered ? "bid-sheet-panel-active" : ""
               }`}
             >
@@ -6388,14 +6374,15 @@ export function ProductDetail({
               >
                 {productImages.map((imageUrl, imageIndex) => (
                   <div
-                    className="flex h-full w-full shrink-0 items-center justify-center"
+                    className="relative h-full w-full shrink-0"
                     key={imageUrl}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <ProductPhoto
                       alt={`${product.title} 이미지 ${imageIndex + 1}`}
-                      className="max-h-full w-full object-contain"
+                      className="object-contain"
                       draggable={false}
+                      loading="eager"
+                      sizes={PRODUCT_ZOOM_IMAGE_SIZES}
                       src={imageUrl}
                     />
                   </div>

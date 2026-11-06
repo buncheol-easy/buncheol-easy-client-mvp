@@ -42,6 +42,7 @@ import { useIsUnderlay } from "@/components/SwipeUnderlay";
 import { useScrollDirectionHidden } from "@/lib/use-scroll-direction-hidden";
 import {
   addFavoriteGroup,
+  ApiRequestError,
   readCachedBanners,
   removeFavoriteGroup,
   requestBanners,
@@ -52,7 +53,6 @@ import {
   createLoginHref,
   getCurrentBrowserHref,
 } from "@/lib/auth-navigation";
-import { IMAGE_HOSTS } from "@/lib/image-hosts";
 import {
   clearAuthState,
   getInitialAuthState,
@@ -87,6 +87,7 @@ import {
   normalizeGroupSearchText,
   toArtistRailItem,
 } from "@/lib/group-presenters";
+import { isOptimizableImageSrc } from "@/lib/optimizable-image";
 import { mergeCachedProductImage } from "@/lib/product-card-image";
 import { useProfileCompletionGuard } from "@/lib/use-profile-completion-guard";
 
@@ -131,20 +132,6 @@ type HomeBanner = {
 // 이전 값은 1120px 미만에서 뷰포트 폭을 그대로 요청해, 폰 가로·태블릿에서 실제 폭의
 // 2배가 넘는 후보를 받았다 (첫 배너는 priority 라 LCP 대역폭에 그대로 얹힌다).
 const HOME_BANNER_IMAGE_SIZES = "(min-width: 462px) 398px, calc(100vw - 2rem)";
-
-// API 가 IMAGE_HOSTS 밖의 호스트를 내려주면 next/image 로더가 throw(개발)하거나
-// 400(프로덕션)이 나므로, 미등록 호스트는 최적화를 끄고 원본을 그대로 그린다.
-function isOptimizableBannerSrc(src: string) {
-  if (src.startsWith("/")) {
-    return true;
-  }
-
-  try {
-    return IMAGE_HOSTS.has(new URL(src).hostname);
-  } catch {
-    return false;
-  }
-}
 
 const HOME_BANNERS: HomeBanner[] = [
   {
@@ -751,11 +738,10 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
     [railGroups],
   );
   const favoriteGroupsError = favoriteGroupsQuery.error;
-  // 401 은 토큰이 죽은 것이라 안내 대신 로그인 상태를 정리한다 (기존 fetch 경로와 동일).
+  // 401 은 토큰이 죽은 것이라 안내 대신 로그인 상태를 정리한다. 서버 401 문구는 한국어라 글자로 판정하면 안 된다.
   const isFavoriteGroupsUnauthorized =
-    favoriteGroupsError !== null &&
-    (favoriteGroupsError.message.includes("401") ||
-      favoriteGroupsError.message.includes("Unauthorized"));
+    favoriteGroupsError instanceof ApiRequestError &&
+    favoriteGroupsError.status === 401;
   // 토글 실패·한도 안내(groupMessage)는 사용자가 방금 한 행동의 결과라 조회 실패보다 우선한다.
   // 조회 실패 원문은 브라우저·서버 영어('Failed to fetch'·'Bad Gateway')라 화면에 쓰지 않는다.
   const visibleGroupMessage =
@@ -1347,7 +1333,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                     loading={index === 0 ? "eager" : "lazy"}
                     sizes={HOME_BANNER_IMAGE_SIZES}
                     src={banner.imageSrc}
-                    unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
+                    unoptimized={!isOptimizableImageSrc(banner.imageSrc)}
                   />
                   <Image
                     alt={banner.imageAlt}
@@ -1357,7 +1343,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
                     priority={index === 0}
                     sizes={HOME_BANNER_IMAGE_SIZES}
                     src={banner.imageSrc}
-                    unoptimized={!isOptimizableBannerSrc(banner.imageSrc)}
+                    unoptimized={!isOptimizableImageSrc(banner.imageSrc)}
                   />
                 </span>
               </Link>
@@ -1611,8 +1597,7 @@ export function HomeContent({ skipEnterAnimation = false }: HomeContentProps) {
               ))}
               <HelpText className="px-1 pt-1">
                 분철이지가 직접 개최한 분철은 신청 단계 없이 참여 즉시 10분 안에
-                입금하면 돼요. 분철이지는 통신판매중개자이며, 회원 개최 분철의
-                대금은 개최자 계좌로 직접 입금돼요.
+                입금하면 돼요.
               </HelpText>
               <HelpText className="px-1 pt-2">
                 마음에 드는 분철은 하트를 눌러 찜해 둘 수 있어요. 원하는 분철이
