@@ -12,6 +12,7 @@ import {
   buildReviewTweetIntentUrl,
   formatPaybackDeadlineNotice,
   isValidTweetUrl,
+  PAYBACK_SUBMIT_PERIOD_LABEL,
 } from "@/lib/shipping-fee-payback";
 
 const SHEET_CLOSE_MS = 280;
@@ -222,11 +223,20 @@ export function ShippingFeePaybackSheet({
           <div className="mt-3 rounded-[0.9rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-3">
             <p className="text-[12px] font-semibold text-black/40">후기 조건</p>
             <ul className="mt-2 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
-              <li>1. 아래 버튼으로 열리는 작성창에서 자유롭게 후기를 남겨 주세요.</li>
-              <li>2. 앨범 수령 사진을 꼭 첨부해 주세요.</li>
-              <li>3. 이벤트 트윗 인용과 해시태그는 지우지 말아 주세요.</li>
-              <li>4. 계정이 공개 상태여야 후기를 확인할 수 있어요.</li>
+              <li>1. 실물 사진 2장 이상</li>
+              <li>2. 본문 100자 이상, 분철이지를 이용하며 좋았던 점 1가지 포함</li>
+              <li>3. 분철이지 이벤트 글 인용</li>
+              <li>4. #분철이지 해시태그 포함</li>
+              <li>5. 전체 공개 게시물</li>
             </ul>
+            <p className="mt-3 text-[12px] font-semibold text-black/40">등록 기한</p>
+            <p className="mt-1 text-[13px] font-medium leading-5 text-black/60">
+              {PAYBACK_SUBMIT_PERIOD_LABEL} 이내
+            </p>
+            <p className="mt-3 text-[12px] font-medium leading-5 text-black/40">
+              비공개 계정이거나 게시물이 삭제되어 후기를 확인할 수 없으면 돌려받기
+              대상에서 제외될 수 있어요.
+            </p>
           </div>
 
           <button
@@ -236,6 +246,10 @@ export function ShippingFeePaybackSheet({
           >
             X에서 후기 쓰기
           </button>
+          <HelpText className="mt-2">
+            작성창에 이벤트 글 인용과 해시태그가 미리 들어가 있어요. 지우지 말고
+            올려 주세요.
+          </HelpText>
 
           <div className="mt-4">
             <p className="text-[13px] font-semibold text-black/60">
