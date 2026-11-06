@@ -220,7 +220,7 @@ export function ShippingFeePaybackSheet({
             </div>
           ) : null}
 
-          <div className="mt-3 rounded-[0.9rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-3">
+          <div className="mt-3 break-keep rounded-[0.9rem] border border-[#DDE7B8] bg-[#F7FAEE] px-4 py-3">
             <p className="text-[12px] font-semibold text-black/40">후기 조건</p>
             <ul className="mt-2 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
               <li>1. 실물 사진 2장 이상</li>
