@@ -33,7 +33,7 @@ const keyPoints = [
 ] as const;
 
 const hostRequirements = [
-  "카카오 가입, 만 19세 이상",
+  "만 19세 이상",
   "닉네임과 전화번호",
   "정산 계좌(지원금도 여기로)",
 ] as const;
