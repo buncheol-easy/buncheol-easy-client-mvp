@@ -2946,3 +2946,98 @@ body.is-browser-tab .bid-sheet-panel {
     transform: translateY(4px);
   }
 }
+
+/* 체험 계정(staging 전용). 라임은 칩 테두리와 상태 점에만 쓴다. */
+.test-account-chip__ring {
+  background: conic-gradient(from 200deg, #d7ff5f, #9bd40a, #d7ff5f);
+}
+
+.test-account-chip__ring--intro::after {
+  animation: test-account-ring-pulse 1.4s var(--motion-pop) 0.3s 2 both;
+  border-radius: 9999px;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+@keyframes test-account-ring-pulse {
+  from {
+    box-shadow: 0 0 0 0 rgba(215, 255, 95, 0.75);
+  }
+  to {
+    box-shadow: 0 0 0 12px rgba(215, 255, 95, 0);
+  }
+}
+
+.test-account-tip {
+  animation: test-account-tip-in var(--duration-screen) var(--motion-snap) 0.2s both;
+}
+
+@keyframes test-account-tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.test-account-sheet-backdrop {
+  animation: test-account-fade-in var(--duration-base) ease-out both;
+}
+
+.test-account-sheet {
+  animation: test-account-sheet-in var(--duration-screen) var(--motion-snap) both;
+}
+
+@keyframes test-account-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.test-account-welcome {
+  animation: test-account-fade-in var(--duration-base) ease-out both;
+}
+
+.test-account-welcome__mascot {
+  animation: test-account-mascot-in var(--duration-emphasis) var(--motion-soft) 0.15s both;
+}
+
+@keyframes test-account-mascot-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) rotate(-6deg);
+  }
+}
+
+@keyframes test-account-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.test-account-desk__qr {
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.08);
+  flex-shrink: 0;
+  height: 64px;
+  padding: 5px;
+  width: 64px;
+}
+
+.test-account-desk__qr svg {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .test-account-chip__ring--intro::after,
+  .test-account-tip,
+  .test-account-sheet-backdrop,
+  .test-account-sheet,
+  .test-account-welcome,
+  .test-account-welcome__mascot {
+    animation: none;
+  }
+}

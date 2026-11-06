@@ -2,48 +2,65 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+type TestAccountRole = "participant" | "host";
+
 type TestAccount = {
   accessToken: string;
   id: string;
   label: string;
+  primary: boolean;
   refreshToken: string;
+  role: TestAccountRole;
   userId: string;
 };
+
+// primary 는 평가위원이 고르는 대표 계정이다. 역할마다 하나씩만 둔다.
+
 
 const testAccountDefinitions = [
   {
     accessTokenEnv: "TEST_USER1_ACCESS_TOKEN",
     id: "user1",
     label: "김판매",
+    primary: true,
     refreshTokenEnv: "TEST_USER1_REFRESH_TOKEN",
+    role: "host" as const,
     userId: "7",
   },
   {
     accessTokenEnv: "TEST_USER2_ACCESS_TOKEN",
     id: "user2",
     label: "일구매",
+    primary: true,
     refreshTokenEnv: "TEST_USER2_REFRESH_TOKEN",
+    role: "participant" as const,
     userId: "8",
   },
   {
     accessTokenEnv: "TEST_USER3_ACCESS_TOKEN",
     id: "user3",
     label: "이구매",
+    primary: false,
     refreshTokenEnv: "TEST_USER3_REFRESH_TOKEN",
+    role: "participant" as const,
     userId: "9",
   },
   {
     accessTokenEnv: "TEST_USER4_ACCESS_TOKEN",
     id: "user4",
     label: "삼구매",
+    primary: false,
     refreshTokenEnv: "TEST_USER4_REFRESH_TOKEN",
+    role: "host" as const,
     userId: "10",
   },
   {
     accessTokenEnv: "TEST_USER5_ACCESS_TOKEN",
     id: "user5",
     label: "박기타",
+    primary: false,
     refreshTokenEnv: "TEST_USER5_REFRESH_TOKEN",
+    role: "participant" as const,
     userId: "11",
   },
 ];
@@ -70,7 +87,9 @@ function getConfiguredTestAccounts(): TestAccount[] {
         accessToken,
         id: definition.id,
         label: definition.label,
+        primary: definition.primary,
         refreshToken,
+        role: definition.role,
         userId: definition.userId,
       },
     ];
@@ -125,9 +144,11 @@ function jsonNoStore(body: unknown, init?: ResponseInit) {
 
 export async function GET() {
   const accounts = getConfiguredTestAccounts().map(
-    ({ id, label, userId }) => ({
+    ({ id, label, primary, role, userId }) => ({
       id,
       label,
+      primary,
+      role,
       userId,
     }),
   );

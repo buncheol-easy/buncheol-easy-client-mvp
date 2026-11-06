@@ -5,6 +5,8 @@ import Image from "next/image";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
+import { TestAccountDeskPanel } from "@/components/test-account/TestAccountDeskPanel";
+import { useTestAccountView } from "@/components/test-account/use-test-account-view";
 import {
   ArrowUpRightIcon,
   EditIcon,
@@ -25,7 +27,15 @@ function getQrPath(modules: boolean[][]) {
 }
 
 // 패널은 모바일에서 display:none 이라 화면에 보일 때만 QR 라이브러리를 불러온다.
-function PageQrCode({ url }: { url: string }) {
+function PageQrCode({
+  className = "desktop-web-help__qr",
+  label = "지금 보는 화면을 폰에서 여는 QR 코드",
+  url,
+}: {
+  className?: string;
+  label?: string;
+  url: string;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [qr, setQr] = useState<{ modules: boolean[][]; url: string } | null>(
@@ -75,10 +85,10 @@ function PageQrCode({ url }: { url: string }) {
   const modules = qr?.url === url ? qr.modules : null;
 
   return (
-    <div className="desktop-web-help__qr" ref={containerRef}>
+    <div className={className} ref={containerRef}>
       {modules ? (
         <svg
-          aria-label="지금 보는 화면을 폰에서 여는 QR 코드"
+          aria-label={label}
           role="img"
           shapeRendering="crispEdges"
           viewBox={`0 0 ${modules.length} ${modules.length}`}
@@ -100,6 +110,7 @@ export function DesktopBrandPanel() {
     () => false,
   );
   const pathname = usePathname();
+  const testAccountView = useTestAccountView();
   // 의견 시트는 가운데 앱 화면 안에서 올라와야 해서 main 에 붙인다(데스크톱에서 main 안의 fixed 는 main 기준).
   const [feedbackTarget, setFeedbackTarget] = useState<{
     frame: HTMLElement;
@@ -143,60 +154,79 @@ export function DesktopBrandPanel() {
         <span aria-hidden="true" className="desktop-web-brand__rule" />
         <p className="desktop-web-brand__body">이름값 하는 분철 전용 공간.</p>
       </aside>
-      <aside className="desktop-web-help" aria-label="폰으로 이어 보기와 도움">
-        <PageQrCode url={`${window.location.origin}${pathname}`} />
-        <p className="desktop-web-help__title">폰으로 이어 보기</p>
-        <p className="desktop-web-help__desc">
-          카메라로 찍으면 지금 보는
-          <br />
-          화면이 폰에서 열려요.
-        </p>
-        <div className="desktop-web-help__links">
-          <p className="desktop-web-help__eyebrow">도움이 필요하면</p>
-          <a
-            className="desktop-web-help__link"
-            href={KAKAO_CHANNEL_URL}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            <span className="desktop-web-help__icon desktop-web-help__icon--kakao">
-              <KakaoIcon className="h-4 w-4" />
-            </span>
-            <span className="desktop-web-help__label">
-              카카오톡 고객센터
-              <small>카카오톡 채널로 연결돼요</small>
-            </span>
-            <ArrowUpRightIcon className="desktop-web-help__arrow h-4 w-4 shrink-0" />
-            <span className="sr-only">(새 창에서 열림)</span>
-          </a>
-          <button
-            className="desktop-web-help__link"
-            onClick={openFeedbackSheet}
-            type="button"
-          >
-            <span className="desktop-web-help__icon">
-              <EditIcon className="h-4 w-4" />
-            </span>
-            <span className="desktop-web-help__label">
-              의견 남기기
-              <small>앱 화면 안에서 바로 보내요</small>
-            </span>
-            <ForwardIcon className="desktop-web-help__arrow desktop-web-help__arrow--forward h-4 w-4 shrink-0" />
-          </button>
-          <a
-            className="desktop-web-help__link"
-            href={X_PROFILE_URL}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            <span className="desktop-web-help__icon">
-              <XLogoIcon className="h-4 w-4" />
-            </span>
-            <span className="desktop-web-help__label">X에서 새 소식</span>
-            <ArrowUpRightIcon className="desktop-web-help__arrow h-4 w-4 shrink-0" />
-            <span className="sr-only">(새 창에서 열림)</span>
-          </a>
-        </div>
+      <aside
+        className="desktop-web-help"
+        aria-label={
+          testAccountView.isEnabled ? "체험 환경 안내" : "폰으로 이어 보기와 도움"
+        }
+      >
+        {testAccountView.isEnabled ? (
+          <TestAccountDeskPanel
+            renderQr={(url) => (
+              <PageQrCode
+                className="test-account-desk__qr"
+                label="같은 역할로 폰에서 이어 보는 QR 코드"
+                url={url}
+              />
+            )}
+          />
+        ) : (
+          <>
+            <PageQrCode url={`${window.location.origin}${pathname}`} />
+            <p className="desktop-web-help__title">폰으로 이어 보기</p>
+            <p className="desktop-web-help__desc">
+              카메라로 찍으면 지금 보는
+              <br />
+              화면이 폰에서 열려요.
+            </p>
+            <div className="desktop-web-help__links">
+              <p className="desktop-web-help__eyebrow">도움이 필요하면</p>
+              <a
+                className="desktop-web-help__link"
+                href={KAKAO_CHANNEL_URL}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <span className="desktop-web-help__icon desktop-web-help__icon--kakao">
+                  <KakaoIcon className="h-4 w-4" />
+                </span>
+                <span className="desktop-web-help__label">
+                  카카오톡 고객센터
+                  <small>카카오톡 채널로 연결돼요</small>
+                </span>
+                <ArrowUpRightIcon className="desktop-web-help__arrow h-4 w-4 shrink-0" />
+                <span className="sr-only">(새 창에서 열림)</span>
+              </a>
+              <button
+                className="desktop-web-help__link"
+                onClick={openFeedbackSheet}
+                type="button"
+              >
+                <span className="desktop-web-help__icon">
+                  <EditIcon className="h-4 w-4" />
+                </span>
+                <span className="desktop-web-help__label">
+                  의견 남기기
+                  <small>앱 화면 안에서 바로 보내요</small>
+                </span>
+                <ForwardIcon className="desktop-web-help__arrow desktop-web-help__arrow--forward h-4 w-4 shrink-0" />
+              </button>
+              <a
+                className="desktop-web-help__link"
+                href={X_PROFILE_URL}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                <span className="desktop-web-help__icon">
+                  <XLogoIcon className="h-4 w-4" />
+                </span>
+                <span className="desktop-web-help__label">X에서 새 소식</span>
+                <ArrowUpRightIcon className="desktop-web-help__arrow h-4 w-4 shrink-0" />
+                <span className="sr-only">(새 창에서 열림)</span>
+              </a>
+            </div>
+          </>
+        )}
       </aside>
       {feedbackTarget
         ? createPortal(
