@@ -48,6 +48,9 @@ export const PAYBACK_STATUS_LABELS: Partial<
   EXPIRED: "배송비 환급 신청 기간이 지났어요.",
 };
 
+// 서버 shipping-fee-payback.submit-window-days 와 같은 값이어야 한다. 기산점은 delivered_at(편의점 도착).
+export const PAYBACK_SUBMIT_PERIOD_LABEL = "택배가 편의점에 도착한 날부터 7일";
+
 // 신청 마감 안내 문구. 마감 판정(ELIGIBLE/EXPIRED)은 서버가 소유하므로 프론트는 남은 시간을
 // 재계산하지 않고, 서버가 내려준 payback.submitDeadline 이 있을 때만 시각(KST)을 안내한다.
 export function formatPaybackDeadlineNotice(submitDeadline: string) {
