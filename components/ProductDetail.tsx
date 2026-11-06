@@ -138,6 +138,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { updateListingCachesLiked } from "@/lib/listing-bookmark-cache";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import { writeCachedParticipationPayment } from "@/lib/participation-payment-cache";
+import { PAYBACK_SUBMIT_PERIOD_LABEL } from "@/lib/shipping-fee-payback";
 import {
   FAVORITES_SKIP_ENTER_KEY,
   FavoritesContent,
@@ -5062,12 +5063,12 @@ export function ProductDetail({
                       배송비는 환급되니 걱정 마세요!
                     </p>
                   </div>
-                  <ol className="mt-3 space-y-1.5 text-[13px] font-medium leading-5 text-black/60">
+                  <ol className="mt-3 space-y-1.5 break-keep text-[13px] font-medium leading-5 text-black/60">
                     <li>1. 지금은 배송비만 입금하고 참여해요.</li>
                     <li>2. 택배를 수령해요.</li>
                     <li>
-                      3. 참여 내역의 [후기 쓰고 배송비 돌려받기] 버튼을 눌러 X에
-                      후기를 작성해요.
+                      3. {PAYBACK_SUBMIT_PERIOD_LABEL} 안에 참여 내역의 [후기 쓰고
+                      배송비 돌려받기] 버튼을 눌러 X에 후기를 작성해요.
                     </li>
                     <li>4. 작성한 후기 링크로 신청해 주시면 배송비를 환급해 드려요!</li>
                   </ol>
@@ -5594,8 +5595,8 @@ export function ProductDetail({
                           배송비 {formatPrice(estimatedShippingAmount)}은 보증금
                           개념으로 받고 있어요.
                           <br />
-                          택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
-                          계좌로 그대로 돌려드려요.
+                          {PAYBACK_SUBMIT_PERIOD_LABEL} 안에 이벤트 후기를
+                          남겨주시면 등록한 환불 계좌로 그대로 돌려드려요.
                         </p>
                       ) : null}
                     </div>
@@ -5870,8 +5871,8 @@ export function ProductDetail({
                             {formatPrice(checkoutPaymentSummary.shippingAmount)}은
                             보증금 개념으로 받고 있어요.
                             <br />
-                            택배를 수령한 뒤 이벤트 후기를 남겨주시면 등록한 환불
-                            계좌로 그대로 돌려드려요.
+                            {PAYBACK_SUBMIT_PERIOD_LABEL} 안에 이벤트 후기를
+                            남겨주시면 등록한 환불 계좌로 그대로 돌려드려요.
                           </p>
                         ) : null}
                       </div>
