@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { getOptionalSafeInternalHref } from "@/lib/auth-navigation";
 import { writeAuthTokens } from "@/lib/auth-store";
 import { storeBidHistoryMode } from "@/lib/bid-history-view-state";
 import { clearUserSessionState } from "@/lib/user-session";
@@ -138,13 +139,25 @@ export function getTestAccountHome(role: TestAccountRole) {
 
 export const testAccountStartHref = "/try";
 
-// 로그인 전에 상세 링크나 QR 로 들어와 보던 화면이 있으면 역할을 고른 뒤 그 화면으로 돌아간다.
+// 역할을 고른 뒤 돌아갈 화면. 역할 고르기 화면에서는 주소의 next 를, 다른 화면에서는 지금 화면을 쓴다.
 export function getCurrentReturnHref() {
   const { pathname, search } = window.location;
 
-  return pathname === "/" || pathname.startsWith(testAccountStartHref)
+  if (pathname === testAccountStartHref) {
+    return getOptionalSafeInternalHref(new URLSearchParams(search).get("next"));
+  }
+
+  return pathname === "/" || pathname.startsWith(`${testAccountStartHref}/`)
     ? undefined
     : `${pathname}${search}`;
+}
+
+export function getTestAccountStartHrefWithReturn() {
+  const next = getCurrentReturnHref();
+
+  return next
+    ? `${testAccountStartHref}?next=${encodeURIComponent(next)}`
+    : testAccountStartHref;
 }
 
 export function openTestAccountSheet() {

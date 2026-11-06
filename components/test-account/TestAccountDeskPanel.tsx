@@ -48,7 +48,9 @@ export function TestAccountDeskPanel({ renderQr }: TestAccountDeskPanelProps) {
       await switchTestAccount(
         account,
         queryClient,
-        view.isLoggedIn ? undefined : getCurrentReturnHref(),
+        view.isStartPage || !view.isLoggedIn
+          ? getCurrentReturnHref()
+          : undefined,
       );
     } catch {
       setSwitchingRole(null);

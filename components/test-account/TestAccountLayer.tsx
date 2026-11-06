@@ -14,13 +14,13 @@ import { TestAccountSheet } from "@/components/test-account/TestAccountSheet";
 import { useTestAccountView } from "@/components/test-account/use-test-account-view";
 import {
   closeTestAccountSheet,
+  getTestAccountStartHrefWithReturn,
   isTestAccountTipSeen,
   leaveTestAccount,
   markTestAccountTipSeen,
   openTestAccountSheet,
   switchTestAccount,
   takePendingTestAccountToast,
-  testAccountStartHref,
   type TestAccount,
 } from "@/lib/test-account-store";
 
@@ -111,7 +111,7 @@ export function TestAccountLayer() {
     if (view.isLoggedIn) {
       openTestAccountSheet();
     } else {
-      router.push(testAccountStartHref);
+      router.push(getTestAccountStartHrefWithReturn());
     }
   }
 
