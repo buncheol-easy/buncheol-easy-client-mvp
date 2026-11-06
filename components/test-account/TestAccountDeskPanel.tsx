@@ -8,7 +8,7 @@ import { TestAccountAvatar } from "@/components/test-account/TestAccountAvatar";
 import { useTestAccountView } from "@/components/test-account/use-test-account-view";
 import {
   getPrimaryTestAccount,
-  getWelcomeReturnHref,
+  getCurrentReturnHref,
   switchTestAccount,
   testAccountFirstTodos,
   testAccountRoleNames,
@@ -48,7 +48,9 @@ export function TestAccountDeskPanel({ renderQr }: TestAccountDeskPanelProps) {
       await switchTestAccount(
         account,
         queryClient,
-        view.isWelcomeVisible ? getWelcomeReturnHref() : undefined,
+        view.isStartPage || !view.isLoggedIn
+          ? getCurrentReturnHref()
+          : undefined,
       );
     } catch {
       setSwitchingRole(null);
@@ -87,7 +89,7 @@ export function TestAccountDeskPanel({ renderQr }: TestAccountDeskPanelProps) {
           </>
         ) : (
           <p className="mt-4 text-[22px] font-bold leading-[1.35] tracking-[-0.045em] [word-break:keep-all]">
-            {view.isWelcomeVisible
+            {view.isStartPage
               ? "가운데 화면에서 역할을 고르십시오"
               : "역할을 고르면 바로 시작됩니다"}
           </p>

@@ -216,7 +216,7 @@ export function TestAccountSheet({
           onClick={onLeave}
           type="button"
         >
-          처음 화면으로 돌아가기
+          역할 고르기로 돌아가기
         </button>
       </section>
     </div>

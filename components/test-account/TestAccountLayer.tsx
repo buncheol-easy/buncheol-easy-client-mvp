@@ -11,22 +11,17 @@ import {
   TestAccountTip,
 } from "@/components/test-account/TestAccountChip";
 import { TestAccountSheet } from "@/components/test-account/TestAccountSheet";
-import { TestAccountWelcome } from "@/components/test-account/TestAccountWelcome";
 import { useTestAccountView } from "@/components/test-account/use-test-account-view";
 import {
   closeTestAccountSheet,
-  dismissTestAccountWelcome,
-  getPrimaryTestAccount,
-  getWelcomeReturnHref,
+  getTestAccountStartHrefWithReturn,
   isTestAccountTipSeen,
   leaveTestAccount,
   markTestAccountTipSeen,
   openTestAccountSheet,
-  requestTestAccountWelcome,
   switchTestAccount,
   takePendingTestAccountToast,
   type TestAccount,
-  type TestAccountRole,
 } from "@/lib/test-account-store";
 
 const tipDurationMs = 6000;
@@ -96,11 +91,11 @@ export function TestAccountLayer() {
     setIsTipClosed(true);
   }
 
-  async function handleSwitch(account: TestAccount, target?: string) {
+  async function handleSwitch(account: TestAccount) {
     setSwitchingAccountId(account.id);
 
     try {
-      await switchTestAccount(account, queryClient, target);
+      await switchTestAccount(account, queryClient);
     } catch {
       setSwitchingAccountId(null);
       showToast(
@@ -110,34 +105,19 @@ export function TestAccountLayer() {
     }
   }
 
-  function handlePick(role: TestAccountRole) {
-    const account = getPrimaryTestAccount(view.accounts, role);
-
-    if (account) {
-      void handleSwitch(account, getWelcomeReturnHref());
-    }
-  }
-
   function handleChipClick() {
     closeTip();
 
     if (view.isLoggedIn) {
       openTestAccountSheet();
     } else {
-      requestTestAccountWelcome();
+      router.push(getTestAccountStartHrefWithReturn());
     }
   }
 
-  const switchingRole =
-    view.accounts.find((account) => account.id === switchingAccountId)
-      ?.role ?? null;
-  const availableRoles = (["participant", "host"] as const).filter((role) =>
-    view.accounts.some((account) => account.role === role),
-  );
-
   return createPortal(
     <>
-      {placement && !view.isWelcomeVisible ? (
+      {placement ? (
         <TestAccountChip
           activeAccount={view.activeAccount}
           isIntro={isTipVisible}
@@ -146,28 +126,17 @@ export function TestAccountLayer() {
           placement={placement}
         />
       ) : null}
-      {placement && isTipVisible && !view.isWelcomeVisible ? (
+      {placement && isTipVisible ? (
         <TestAccountTip onClose={closeTip} placement={placement} />
       ) : null}
-      {view.isSheetOpen && !view.isWelcomeVisible ? (
+      {view.isSheetOpen ? (
         <TestAccountSheet
           accounts={view.accounts}
           activeAccount={view.activeAccount}
           onClose={closeTestAccountSheet}
-          onLeave={() => {
-            leaveTestAccount(queryClient);
-            router.push("/");
-          }}
+          onLeave={() => leaveTestAccount(queryClient)}
           onSwitch={(account) => void handleSwitch(account)}
           switchingAccountId={switchingAccountId}
-        />
-      ) : null}
-      {view.isWelcomeVisible ? (
-        <TestAccountWelcome
-          availableRoles={availableRoles}
-          onBrowse={dismissTestAccountWelcome}
-          onPick={handlePick}
-          switchingRole={switchingRole}
         />
       ) : null}
     </>,

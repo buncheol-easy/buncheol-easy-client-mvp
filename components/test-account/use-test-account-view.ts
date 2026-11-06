@@ -9,15 +9,12 @@ import {
 } from "@/lib/auth-store";
 import {
   getInitialTestAccountState,
-  isTestAccountWelcomeDismissed,
   loadTestAccounts,
   readTestAccountState,
   subscribeTestAccountState,
   syncActiveTestAccount,
+  testAccountStartHref,
 } from "@/lib/test-account-store";
-
-const welcomeHiddenPaths =
-  /^\/(admin|try|login|signup|search|privacy|terms|refund-policy|shipping-policy|broker-notice)(\/|$)/;
 
 export function useTestAccountView() {
   const pathname = usePathname();
@@ -50,11 +47,6 @@ export function useTestAccountView() {
         (account) => account.id === testAccountState.activeAccountId,
       ) ?? null)
     : null;
-  const isWelcomeVisible =
-    isEnabled &&
-    !welcomeHiddenPaths.test(pathname) &&
-    (testAccountState.isWelcomeRequested ||
-      (!isLoggedIn && !isTestAccountWelcomeDismissed()));
 
   return {
     accounts: testAccountState.accounts,
@@ -63,7 +55,7 @@ export function useTestAccountView() {
     isLoaded: testAccountState.status === "ready",
     isLoggedIn,
     isSheetOpen: testAccountState.isSheetOpen,
-    isWelcomeVisible,
+    isStartPage: pathname === testAccountStartHref,
     pathname,
   };
 }
