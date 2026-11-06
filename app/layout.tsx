@@ -6,8 +6,8 @@ import { DisplayModeClassSync } from "@/components/DisplayModeClassSync";
 import { JsonLd } from "@/components/JsonLd";
 import { QueryProvider } from "@/components/QueryProvider";
 import { SystemChromeColorSync } from "@/components/SystemChromeColorSync";
-import { TestAccountSwitcher } from "@/components/TestAccountSwitcher";
 import { ToastProvider } from "@/components/Toast";
+import { TestAccountLayer } from "@/components/test-account/TestAccountLayer";
 import {
   CONTACT_EMAIL,
   KAKAO_CHANNEL_URL,
@@ -118,11 +118,13 @@ export default function RootLayout({
           <SystemChromeColorSync />
         </Suspense>
         <ToastProvider>
-          <QueryProvider>{children}</QueryProvider>
-          {/* 장식 패널이지만 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
-              라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
-          <DesktopBrandPanel />
-          <TestAccountSwitcher />
+          <QueryProvider>
+            {children}
+            {/* 장식 패널이지만 링크가 포커스를 받으므로 main 뒤에 둔다 — 앞에 두면 모든
+                라우트의 첫 Tab 이 이 링크에 걸린다. 화면상 위치는 grid-column 으로 되돌린다. */}
+            <DesktopBrandPanel />
+            <TestAccountLayer />
+          </QueryProvider>
         </ToastProvider>
         <JsonLd data={organizationJsonLd} />
         <AdPixels />

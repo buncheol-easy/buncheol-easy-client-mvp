@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { BackIcon, CheckIcon, KakaoIcon, ProfileIcon } from "@/components/icons";
+import { TestAccountLoginCard } from "@/components/test-account/TestAccountLoginCard";
+import { useTestAccountView } from "@/components/test-account/use-test-account-view";
 import { getKakaoAuthorizationUrl } from "@/lib/auth-api";
 import {
   authLoginHrefStorageKey,
@@ -19,6 +21,7 @@ export function LoginContent({
   returnHref = "/profile",
 }: LoginContentProps) {
   const router = useRouter();
+  const testAccountView = useTestAccountView();
 
   function handleBack() {
     if (onBack) {
@@ -88,24 +91,33 @@ export function LoginContent({
             참여 내역, 배송지, 찜한 포토카드를 한 번에 관리해요.
           </p>
 
-          <div className="mt-6 grid gap-2">
-            {["진행 중인 참여 확인", "배송지 관리", "찜한 분철 이어보기"].map(
-              (label) => (
-                <div
-                  className="flex h-11 items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] px-3 text-[13px] font-semibold tracking-[-0.04em] text-black/65"
-                  key={label}
-                >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black text-white">
-                    <CheckIcon />
-                  </span>
-                  {label}
-                </div>
-              ),
-            )}
-          </div>
+          {testAccountView.isEnabled ? (
+            <TestAccountLoginCard
+              accounts={testAccountView.accounts}
+              returnHref={returnHref}
+            />
+          ) : (
+            <div className="mt-6 grid gap-2">
+              {["진행 중인 참여 확인", "배송지 관리", "찜한 분철 이어보기"].map(
+                (label) => (
+                  <div
+                    className="flex h-11 items-center gap-3 rounded-[0.85rem] bg-[#f7f7f7] px-3 text-[13px] font-semibold tracking-[-0.04em] text-black/65"
+                    key={label}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black text-white">
+                      <CheckIcon />
+                    </span>
+                    {label}
+                  </div>
+                ),
+              )}
+            </div>
+          )}
 
           <button
-            className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#fee500] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(254,229,0,0.32)]"
+            className={`${
+              testAccountView.isEnabled ? "mt-4" : "mt-6"
+            } flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#fee500] text-[15px] font-semibold text-black shadow-[0_10px_24px_rgba(254,229,0,0.32)]`}
             onClick={handleKakaoLogin}
             type="button"
           >

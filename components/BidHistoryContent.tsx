@@ -87,6 +87,7 @@ import {
   isUserCancelledReason,
   USER_CANCELLED_REASON,
 } from "@/lib/buncheol-states";
+import { BID_HISTORY_VIEW_STATE_KEY } from "@/lib/bid-history-view-state";
 import { FEATURES } from "@/lib/feature-flags";
 import { rememberNextHistoryIndex } from "@/lib/history-index";
 import { getSafeOpenChatHref } from "@/lib/open-chat-url";
@@ -139,7 +140,6 @@ const PRODUCT_BID_HISTORY_ENTRY_INDEX_KEY = "product-bid-history-entry-index";
 export const MANAGE_BID_HISTORY_ENTRY_INDEX_KEY =
   "manage-bid-history-entry-index";
 const BID_HISTORY_SCROLL_TOP_KEY = "bid-history-scroll-top";
-const BID_HISTORY_VIEW_STATE_KEY = "bid-history-view-state";
 export const BID_HISTORY_OPEN_PAYMENT_ID_KEY = "bid-history-open-payment-id";
 // 묶음 id 가 없으면 「보냈어요」를 서버에 보낼 수 없다. 버튼을 막고 이 문구를 미리 보여 준다.
 const MARK_SENT_MISSING_BUNDLE_MESSAGE =
