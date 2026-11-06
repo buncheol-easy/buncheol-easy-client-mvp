@@ -75,9 +75,9 @@ function getNoticeCopy(
 ): NoticeCopy {
   if (reason === "KAKAO_ACCOUNT_REQUIRED") {
     return {
-      headline: "분철 열기는 카카오로 가입한 계정에서 할 수 있어요",
+      headline: "이 계정으로는 분철을 열 수 없어요",
       description:
-        "애플로 가입한 계정은 전화번호를 확인할 수 없어 분철을 열 수 없어요. 참여는 지금처럼 할 수 있어요.",
+        "분철 열기는 카카오 또는 Apple로 가입한 계정에서 할 수 있어요. 참여는 지금처럼 할 수 있어요.",
       sectionTitle: "",
       items: [],
       primaryAction: { label: "진행 중인 분철 둘러보기", href: "/" },
