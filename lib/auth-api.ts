@@ -59,7 +59,7 @@ export type UserProfileStatus = {
 
 // 개최 자격 사전 조회 사유. 개최 폼 진입 전 차단 안내를 사유별로 분기한다 (docs/53 Q-07).
 export const hostingEligibilityReasons = [
-  // 카카오·애플 가입자가 아님(구글 가입) — 회복 경로 없음
+  // 카카오·애플 외 가입 경로(지금은 없음, 새 로그인이 붙으면 그 회원) — 회복 경로 없음
   "KAKAO_ACCOUNT_REQUIRED",
   // 가입 미완료(전화번호 미등록) — 서버 USR-018
   "PHONE_REQUIRED",
