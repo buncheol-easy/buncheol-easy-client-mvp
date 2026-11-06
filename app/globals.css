@@ -2995,11 +2995,7 @@ body.is-browser-tab .bid-sheet-panel {
   }
 }
 
-.test-account-welcome {
-  animation: test-account-fade-in var(--duration-base) ease-out both;
-}
-
-.test-account-welcome__mascot {
+.test-account-start__mascot {
   animation: test-account-mascot-in var(--duration-emphasis) var(--motion-soft) 0.15s both;
 }
 
@@ -3036,8 +3032,7 @@ body.is-browser-tab .bid-sheet-panel {
   .test-account-tip,
   .test-account-sheet-backdrop,
   .test-account-sheet,
-  .test-account-welcome,
-  .test-account-welcome__mascot {
+  .test-account-start__mascot {
     animation: none;
   }
 }

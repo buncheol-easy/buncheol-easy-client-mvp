@@ -17,11 +17,9 @@ type TestAccountState = {
   accounts: TestAccount[];
   activeAccountId: string | null;
   isSheetOpen: boolean;
-  isWelcomeRequested: boolean;
   status: "idle" | "loading" | "ready";
 };
 
-const welcomeDismissedKey = "buncheol-test-account-welcome-dismissed";
 const tipSeenKey = "buncheol-test-account-tip-seen";
 const pendingToastKey = "buncheol-test-account-toast";
 const storeEvent = "buncheol-test-account-change";
@@ -49,7 +47,6 @@ const initialState: TestAccountState = {
   accounts: [],
   activeAccountId: null,
   isSheetOpen: false,
-  isWelcomeRequested: false,
   status: "idle",
 };
 
@@ -139,11 +136,15 @@ export function getTestAccountHome(role: TestAccountRole) {
   return role === "host" ? "/profile/bids" : "/";
 }
 
-// 첫 화면이 덮은 화면이 홈이 아니면(상세 링크, QR 등) 역할을 고른 뒤 그 화면으로 돌아간다.
-export function getWelcomeReturnHref() {
+export const testAccountStartHref = "/try";
+
+// 로그인 전에 상세 링크나 QR 로 들어와 보던 화면이 있으면 역할을 고른 뒤 그 화면으로 돌아간다.
+export function getCurrentReturnHref() {
   const { pathname, search } = window.location;
 
-  return pathname === "/" ? undefined : `${pathname}${search}`;
+  return pathname === "/" || pathname.startsWith(testAccountStartHref)
+    ? undefined
+    : `${pathname}${search}`;
 }
 
 export function openTestAccountSheet() {
@@ -152,20 +153,6 @@ export function openTestAccountSheet() {
 
 export function closeTestAccountSheet() {
   setState({ isSheetOpen: false });
-}
-
-export function requestTestAccountWelcome() {
-  writeFlag(welcomeDismissedKey, false);
-  setState({ isSheetOpen: false, isWelcomeRequested: true });
-}
-
-export function dismissTestAccountWelcome() {
-  writeFlag(welcomeDismissedKey, true);
-  setState({ isWelcomeRequested: false });
-}
-
-export function isTestAccountWelcomeDismissed() {
-  return readFlag(welcomeDismissedKey);
 }
 
 export function isTestAccountTipSeen() {
@@ -210,7 +197,6 @@ export async function switchTestAccount(
 
   clearUserSessionState(queryClient);
   writeAuthTokens({ accessToken: data.accessToken });
-  writeFlag(welcomeDismissedKey, true);
 
   if (target === "/profile/bids") {
     storeBidHistoryMode(account.role === "host" ? "hosted" : "joined");
@@ -228,9 +214,10 @@ export async function switchTestAccount(
   window.location.assign(target);
 }
 
+// 문서 이동을 먼저 시작한다. 세션을 먼저 지우면 로그인이 필요한 화면이 로그인 화면으로 먼저 보내 버린다.
 export function leaveTestAccount(queryClient: QueryClient) {
+  window.location.replace(testAccountStartHref);
   clearUserSessionState(queryClient);
-  requestTestAccountWelcome();
 }
 
 function readFlag(key: string) {
