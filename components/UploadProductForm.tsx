@@ -86,6 +86,7 @@ type MinimumPricePrompt = {
 };
 
 type ScheduleWheelProps = {
+  isActive: boolean;
   field: ScheduleField;
   formatter?: (value: number) => string;
   label: string;
@@ -503,6 +504,43 @@ function getNextAvailableScheduleValue() {
   return buildScheduleValue(getDefaultScheduleParts());
 }
 
+const aiClosingHour = 23;
+const aiClosingDaysBeforeRelease = 3;
+const aiClosingFallbackDays = 14;
+
+// 발매 3일 전 밤으로 잡는다. 그 날이 오늘이거나 지났으면(발매일을 모를 때도) 2주 뒤 —
+// 당일 밤 마감은 모을 시간이 없다.
+function getAiClosingDate(releaseDate: string | null) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const [year, month, day] = (releaseDate ?? "").split("-").map(Number);
+  const beforeRelease = new Date(
+    year,
+    month - 1,
+    day - aiClosingDaysBeforeRelease,
+  );
+  const isBeforeReleaseUsable =
+    /^\d{4}-\d{2}-\d{2}$/.test(releaseDate ?? "") &&
+    beforeRelease.getTime() > today.getTime();
+  const date = isBeforeReleaseUsable
+    ? beforeRelease
+    : new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() + aiClosingFallbackDays,
+      );
+
+  return {
+    basis: isBeforeReleaseUsable ? ("release" as const) : ("fallback" as const),
+    value: buildScheduleValue({
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+      day: date.getDate(),
+      hour: aiClosingHour,
+    }),
+  };
+}
+
 function formatDateTimeLabel(value: string) {
   if (!value) {
     return "";
@@ -726,6 +764,7 @@ async function writeApiProductPreview(product: ProductDetailItem) {
 function ScheduleWheel({
   field,
   formatter = String,
+  isActive,
   label,
   onSelect,
   options,
@@ -745,12 +784,14 @@ function ScheduleWheel({
     wheelRef.current?.scrollTo({
       top: selectedIndex * itemHeight,
     });
-  }, [options, selectedValue]);
+  }, [isActive, options, selectedValue]);
 
   function handleScroll() {
     const wheel = wheelRef.current;
 
-    if (!wheel || options.length === 0) {
+    // 닫힌 바퀴는 사람이 굴릴 수 없다. 값이 밖에서 바뀌어(AI 마감) 자리를 맞추는 스크롤을
+    // 선택으로 읽으면 방금 넣은 값을 덮어쓴다.
+    if (!isActive || !wheel || options.length === 0) {
       return;
     }
 
@@ -903,13 +944,15 @@ export function UploadProductForm({
   const [didGroupSearchFail, setDidGroupSearchFail] = useState(false);
   // AI 가 마지막으로 넣은 값. 지금 값과 같으면 「AI」 꼬리표를 붙이고, 다시 돌릴 때 묻지 않고 바꾼다.
   const [aiFilledValues, setAiFilledValues] = useState<{
+    closingDate?: string;
     description?: string;
     groupId?: string;
     purchaseSource?: string;
     title?: string;
   }>({});
-  // AI 가 읽어 왔지만 넣을 칸이 없는 값. 칸은 비워 두고 참고로만 보인다.
+  // AI 가 읽어 온 값 중 칸에 그대로 들어가지 않는 것. 안내 줄에 쓴다.
   const [aiReference, setAiReference] = useState<{
+    closingBasis: "release" | "fallback" | null;
     listPrice: number | null;
     releaseDate: string | null;
   } | null>(null);
@@ -2041,6 +2084,27 @@ export function UploadProductForm({
     hideMinimumPricePrompt();
   }
 
+  function getAiClosingDateNote() {
+    const releaseLabel = aiReference?.releaseDate
+      ? `발매일 ${formatReleaseDateLabel(aiReference.releaseDate)}`
+      : "";
+    const isAiClosingDate =
+      Boolean(closingDate) && closingDate === aiFilledValues.closingDate;
+
+    if (!isAiClosingDate || !aiReference?.closingBasis) {
+      return releaseLabel ? `${releaseLabel} · 참고` : "";
+    }
+
+    const filledLabel =
+      aiReference.closingBasis === "release"
+        ? `마감을 발매 ${aiClosingDaysBeforeRelease}일 전으로 넣었어요`
+        : "마감을 2주 뒤로 넣었어요";
+
+    return `${[releaseLabel, filledLabel].filter(Boolean).join(" · ")}. 바꿀 수 있어요`;
+  }
+
+  const aiClosingDateNote = getAiClosingDateNote();
+
   // 개최자가 직접 써 둔 칸만 묻는다. AI 가 넣은 그대로인 칸은 다시 돌릴 때 묻지 않고 바꾼다.
   function getAiFieldsToReplace(): ConfirmSheetDetail[] {
     const fields: ConfirmSheetDetail[] = [];
@@ -2075,6 +2139,13 @@ export function UploadProductForm({
 
     if (description.trim() && description !== aiFilledValues.description) {
       fields.push({ label: "상품 설명", value: "AI 글로 바뀌어요" });
+    }
+
+    if (closingDate && closingDate !== aiFilledValues.closingDate) {
+      fields.push({
+        label: "마감 기한",
+        value: "AI가 다시 정해요",
+      });
     }
 
     return fields;
@@ -2196,8 +2267,20 @@ export function UploadProductForm({
       labels.push(`사진 ${aiPhotos.length}장`);
     }
 
+    // AI 가 아무것도 못 찾았으면 마감만 채워진 폼을 열지 않는다.
+    const aiClosingDate =
+      labels.length > 0 ? getAiClosingDate(draft.releaseDate) : null;
+
+    if (aiClosingDate) {
+      setActiveScheduleField(null);
+      setClosingDate(aiClosingDate.value);
+      nextFilledValues.closingDate = aiClosingDate.value;
+      labels.push("마감 기한");
+    }
+
     setAiFilledValues(nextFilledValues);
     setAiReference({
+      closingBasis: aiClosingDate?.basis ?? null,
       listPrice: draft.listPrice,
       releaseDate: draft.releaseDate,
     });
@@ -4008,10 +4091,9 @@ export function UploadProductForm({
                 일정
               </h2>
               {renderSubmitFieldError("closingDate")}
-              {aiReference?.releaseDate ? (
+              {aiClosingDateNote ? (
                 <p className="mt-2 rounded-[0.65rem] bg-surface-2 px-3 py-2 text-[12px] font-medium text-black/60">
-                  발매일 {formatReleaseDateLabel(aiReference.releaseDate)} · 마감은
-                  직접 정해 주세요
+                  {aiClosingDateNote}
                 </p>
               ) : null}
               <div className="mt-3 grid gap-3">
@@ -4137,6 +4219,7 @@ export function UploadProductForm({
                         <div className="rounded-[0.95rem] border border-black/10 bg-[#f7f7f7] p-3">
                           <div className="grid grid-cols-[1.25fr_0.85fr_0.85fr_0.85fr] gap-2">
                             <ScheduleWheel
+                              isActive={isActive}
                               field={field}
                               label="연"
                               onSelect={selectSchedulePart}
@@ -4145,6 +4228,7 @@ export function UploadProductForm({
                               selectedValue={scheduleParts.year}
                             />
                             <ScheduleWheel
+                              isActive={isActive}
                               formatter={padNumber}
                               field={field}
                               label="월"
@@ -4154,6 +4238,7 @@ export function UploadProductForm({
                               selectedValue={scheduleParts.month}
                             />
                             <ScheduleWheel
+                              isActive={isActive}
                               formatter={padNumber}
                               field={field}
                               label="일"
@@ -4163,6 +4248,7 @@ export function UploadProductForm({
                               selectedValue={scheduleParts.day}
                             />
                             <ScheduleWheel
+                              isActive={isActive}
                               field={field}
                               formatter={padNumber}
                               label="시"
