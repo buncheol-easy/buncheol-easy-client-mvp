@@ -2144,7 +2144,7 @@ export function UploadProductForm({
     if (closingDate && closingDate !== aiFilledValues.closingDate) {
       fields.push({
         label: "마감 기한",
-        value: "발매일 기준으로 다시 정해져요",
+        value: "AI가 다시 정해요",
       });
     }
 
