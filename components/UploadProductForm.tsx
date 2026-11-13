@@ -2203,6 +2203,14 @@ export function UploadProductForm({
       });
     }
 
+    // 그룹이 그대로여도 정가를 읽어 오면 가격은 새로 채워진다.
+    if (hasOwnMemberPrices) {
+      fields.push({
+        label: "멤버별 가격",
+        value: "AI가 정가를 찾으면 다시 채워요",
+      });
+    }
+
     if (description.trim() && description !== aiFilledValues.description) {
       fields.push({ label: "상품 설명", value: "AI 글로 바뀌어요" });
     }
