@@ -28,7 +28,6 @@ import {
   useToast,
 } from "@/components/Toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { getAiMemberPrices } from "@/lib/ai-member-prices";
 import { IMAGE_HOSTS } from "@/lib/image-hosts";
 import { buncheolsQueryKey } from "@/lib/query-keys";
 import {
@@ -48,7 +47,6 @@ import {
   createBuncheol,
   createStaffBuncheol,
   requestBuncheolDetail,
-  requestGroupMemberPopularity,
   requestGroupMembers,
   requestGroups,
   requestMyHostedBuncheols,
@@ -504,6 +502,13 @@ function clampScheduleValue(value: string, minimumValue: string) {
 
 function getNextAvailableScheduleValue() {
   return buildScheduleValue(getDefaultScheduleParts());
+}
+
+// 분철은 멤버 한 자리가 앨범 한 장 값이라 멤버마다 정가를 넣는다. 가격 칸은 100원 단위만 받는다.
+function getListPriceMemberPrices(listPrice: number, memberIds: string[]) {
+  const price = String(Math.round(listPrice / 100) * 100);
+
+  return Object.fromEntries(memberIds.map((id) => [id, price]));
 }
 
 // 같은 가격표인지 비교하려고 빈 칸을 빼고 멤버 순으로 줄 세운다.
@@ -966,7 +971,6 @@ export function UploadProductForm({
   const [aiReference, setAiReference] = useState<{
     closingBasis: "release" | "fallback" | null;
     listPrice: number | null;
-    priceBasis: "rank" | "even" | null;
     releaseDate: string | null;
   } | null>(null);
   const [isAiDraftPending, setIsAiDraftPending] = useState(false);
@@ -980,8 +984,6 @@ export function UploadProductForm({
     useState<ConfirmSheetRequest | null>(null);
   const [isAiGroupPickNeeded, setIsAiGroupPickNeeded] = useState(false);
   const aiDraftUsedRef = useRef(false);
-  // 그룹을 고른 뒤 순위를 받는 사이 그룹이 또 바뀌면 늦게 온 가격을 버린다.
-  const groupPickRequestRef = useRef(0);
   // 제출을 눌렀을 때 안내한 항목.
   const [highlightedSubmitField, setHighlightedSubmitField] =
     useState<SubmitFieldKey | null>(null);
@@ -2081,42 +2083,23 @@ export function UploadProductForm({
   function pickGroup(group: IdolGroup) {
     selectGroup(group);
 
-    const listPrice = aiReference?.listPrice;
-
-    if (!listPrice) {
+    if (!aiReference?.listPrice) {
       return;
     }
 
-    const requestId = groupPickRequestRef.current;
+    const memberPrices = getListPriceMemberPrices(
+      aiReference.listPrice,
+      group.members.map((member) => member.id),
+    );
 
-    void requestGroupMemberPopularity(group.id).then((rankByMemberId) => {
-      if (groupPickRequestRef.current !== requestId) {
-        return;
-      }
-
-      const memberPrices = getAiMemberPrices(
-        listPrice,
-        group.members.map((member) => member.id),
-        rankByMemberId,
-      );
-
-      setMemberMinimumPrices((current) =>
-        Object.values(current).some((price) => price.trim())
-          ? current
-          : memberPrices.prices,
-      );
-      setAiFilledValues((current) => ({
-        ...current,
-        memberPrices: serializeMemberPrices(memberPrices.prices),
-      }));
-      setAiReference(
-        (current) => current && { ...current, priceBasis: memberPrices.basis },
-      );
-    });
+    setMemberMinimumPrices(memberPrices);
+    setAiFilledValues((current) => ({
+      ...current,
+      memberPrices: serializeMemberPrices(memberPrices),
+    }));
   }
 
   function selectGroup(group: IdolGroup) {
-    groupPickRequestRef.current += 1;
     setSelectedGroupId(group.id);
     setIdolQuery("");
     setTargetMemberIds(group.members.map((member) => member.id));
@@ -2128,7 +2111,6 @@ export function UploadProductForm({
   }
 
   function clearSelectedGroup() {
-    groupPickRequestRef.current += 1;
     setSelectedGroupId(null);
     setIdolQuery("");
     setTargetMemberIds([]);
@@ -2162,11 +2144,9 @@ export function UploadProductForm({
   const isAiMemberPrices =
     aiFilledValues.memberPrices !== undefined &&
     serializeMemberPrices(memberMinimumPrices) === aiFilledValues.memberPrices;
-  const aiMemberPriceNote = !isAiMemberPrices
-    ? "참고"
-    : aiReference?.priceBasis === "rank"
-      ? "인기 순위에 맞춰 멤버별 가격을 넣었어요. 바꿀 수 있어요"
-      : "멤버마다 정가로 넣었어요. 바꿀 수 있어요";
+  const aiMemberPriceNote = isAiMemberPrices
+    ? "멤버마다 정가로 넣었어요. 바꿀 수 있어요"
+    : "참고";
 
   // 개최자가 직접 써 둔 칸만 묻는다. AI 가 넣은 그대로인 칸은 다시 돌릴 때 묻지 않고 바꾼다.
   function getAiFieldsToReplace(): ConfirmSheetDetail[] {
@@ -2229,10 +2209,6 @@ export function UploadProductForm({
   async function applyAiDraft(draft: AiDraftForForm, signal: AbortSignal) {
     const draftGroup = draft.group;
     // 기다리는 단계는 멤버 받기 하나뿐이다. 먼저 받고, 그사이 그만뒀으면 폼을 하나도 바꾸지 않는다.
-    const rankRequest =
-      draftGroup && draft.listPrice
-        ? requestGroupMemberPopularity(draftGroup.id)
-        : null;
     const fetchedGroup =
       draftGroup && draftGroup.id !== selectedGroupId
         ? await requestGroupMembers(draftGroup.id)
@@ -2248,7 +2224,6 @@ export function UploadProductForm({
             )
             .catch(() => null)
         : null;
-    const rankByMemberId = rankRequest ? await rankRequest : {};
 
     if (signal.aborted) {
       return [];
@@ -2307,18 +2282,15 @@ export function UploadProductForm({
           : fetchedGroup;
     const aiMemberPrices =
       pricedGroup && draft.listPrice
-        ? getAiMemberPrices(
+        ? getListPriceMemberPrices(
             draft.listPrice,
             pricedGroup.members.map((member) => member.id),
-            rankByMemberId,
           )
         : null;
 
     if (aiMemberPrices) {
-      setMemberMinimumPrices(aiMemberPrices.prices);
-      nextFilledValues.memberPrices = serializeMemberPrices(
-        aiMemberPrices.prices,
-      );
+      setMemberMinimumPrices(aiMemberPrices);
+      nextFilledValues.memberPrices = serializeMemberPrices(aiMemberPrices);
       labels.push("멤버별 가격");
     }
 
@@ -2384,7 +2356,6 @@ export function UploadProductForm({
     setAiReference({
       closingBasis: aiClosingDate?.basis ?? null,
       listPrice: draft.listPrice,
-      priceBasis: aiMemberPrices?.basis ?? null,
       releaseDate: draft.releaseDate,
     });
 
