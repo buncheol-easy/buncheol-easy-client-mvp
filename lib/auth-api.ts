@@ -6143,6 +6143,45 @@ export async function requestGroupMembers(groupId: string) {
     .filter((member): member is ApiGroupMember => member !== null);
 }
 
+// 순위 자료가 없는 그룹은 빈 배열이고, 이 API 가 없는 서버(404)도 같은 뜻으로 읽는다 —
+// 가격 미리 채움의 보조 자료라 실패해도 개최를 막지 않는다.
+export async function requestGroupMemberPopularity(
+  groupId: string,
+): Promise<Record<string, number>> {
+  try {
+    const response = await fetch(
+      `${getVersionedApiBaseUrl()}/groups/${groupId}/members/popularity`,
+      {
+        credentials: "omit",
+        method: "GET",
+      },
+    );
+
+    if (!response.ok) {
+      return {};
+    }
+
+    const rankByMemberId: Record<string, number> = {};
+
+    for (const item of getBuncheolList(await readJsonBody(response))) {
+      if (!isRecord(item)) {
+        continue;
+      }
+
+      const memberId = getNumberValue(item, ["memberId"]);
+      const rank = getNumberValue(item, ["rank"]);
+
+      if (memberId !== null && rank !== null) {
+        rankByMemberId[String(memberId)] = rank;
+      }
+    }
+
+    return rankByMemberId;
+  } catch {
+    return {};
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 관리자(운영자) API — /v1/admin/**
 // 관리자 토큰(로그인 응답의 accessToken)을 쓰며 유저 토큰과 호환되지 않는다.
